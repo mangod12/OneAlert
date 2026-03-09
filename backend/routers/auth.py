@@ -178,9 +178,9 @@ async def github_callback(request: Request, code: str, state: Optional[str] = No
         # Redirect to frontend with token in URL fragment (for JS to pick up)
         access_token = result.get("access_token")
         if access_token:
-            redirect_url = f"/index.html#github_token={access_token}"
+            redirect_url = f"/app/#github_token={access_token}"
             return RedirectResponse(url=redirect_url)
-        return RedirectResponse(url="/index.html?github_error=1")
+        return RedirectResponse(url="/app/?github_error=1")
     except HTTPException as e:
         raise e
     except Exception as e:
