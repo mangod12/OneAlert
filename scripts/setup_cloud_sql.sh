@@ -85,7 +85,7 @@ DATABASE_URL="postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@/${DB_NAME}?host=/
 gcloud run services update "$CLOUD_RUN_SERVICE" \
     --region="$DB_REGION" \
     --set-env-vars="DATABASE_URL=${DATABASE_URL},SECRET_KEY=$(openssl rand -base64 32)" \
-    --update-sql-instances="$CONNECTION_NAME"
+    --set-cloudsql-instances="$CONNECTION_NAME"
 
 echo "   ✓ Cloud Run updated with Cloud SQL connection"
 
