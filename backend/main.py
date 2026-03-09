@@ -118,16 +118,12 @@ async def health_check():
     }
 
 
-# Root endpoint - always returns JSON
+# Root endpoint - redirect to frontend
 @app.get("/")
 async def root():
-    """Root endpoint."""
-    return {
-        "message": "CyberSec Alert API",
-        "version": settings.app_version,
-        "docs": "/docs",
-        "health": "/health",
-    }
+    """Root endpoint - redirects to frontend."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/app/")
 
 
 # Serve static files from frontend directory

@@ -13,6 +13,14 @@ Production-deployed vulnerability intelligence platform that aggregates CVEs fro
 Email: `admin@example.com`
 Password: `password123`
 
+⚠️ **Important:** Demo requires PostgreSQL database. To set up on Cloud Run:
+1. Create a Cloud SQL PostgreSQL instance
+2. Set `DATABASE_URL` environment variable in Cloud Run:
+   ```
+   DATABASE_URL=postgresql://user:password@/dbname?host=/cloudsql/PROJECT:REGION:INSTANCE
+   ```
+3. Connect Cloud Run service to Cloud SQL
+
 ---
 
 ## Overview
