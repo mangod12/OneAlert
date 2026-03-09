@@ -21,7 +21,7 @@ async def create_database():
         
         # Import after path is set
         from backend.database.db import get_async_engine, Base
-        from backend.models import user, asset, alert
+        from backend.models import user, asset, alert, discovered_device
         
         # Get the async engine
         async_engine = get_async_engine()

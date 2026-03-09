@@ -12,7 +12,8 @@ import logging
 import os
 
 from backend.config import settings
-from backend.routers import auth, assets, alerts
+from backend.routers import auth, assets, alerts, ot
+from backend.routers import sensor_ingest
 from backend.scheduler.cron import scheduler
 
 
@@ -105,6 +106,8 @@ async def general_exception_handler(request, exc):
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(assets.router, prefix="/api/v1/assets", tags=["Assets"])
 app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["Alerts"])
+app.include_router(ot.router, prefix="/api/v1/ot", tags=["OT/ICS"])
+app.include_router(sensor_ingest.router, prefix="/api/v1/ot", tags=["OT/ICS"])
 
 
 # Health check endpoint

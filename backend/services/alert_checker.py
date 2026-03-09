@@ -16,11 +16,14 @@ from backend.models.user import User
 from backend.models.asset import Asset
 from backend.models.alert import Alert, Severity, AlertStatus
 from backend.models.audit_log import AuditLog
+from backend.models.discovered_device import DiscoveredDevice
 from backend.services.cve_scraper import cve_scraper
 from backend.services.vendor_scraper import vendor_scraper
+from backend.services.ics_cert_feed import ics_cert_feed_service
 from backend.services.email_alert import email_service
 from backend.services.notification_service import notify_all_services
 from backend.services.cve_enrichment import CVEEnrichmentService
+from backend.services.ot_risk_scorer import ot_risk_scorer
 from backend.services.slack_webhook import SlackNotificationService, WebhookNotificationService
 
 logger = logging.getLogger(__name__)
@@ -71,11 +74,20 @@ class AlertChecker:
             cves = list(cves_data) if cves_data else []
             vendor_advisories = list(vendor_advisories_data) if vendor_advisories_data else []
             
+            # NEW: Fetch ICS-specific advisories
+            ics_advisories_data = await ics_cert_feed_service.fetch_cisa_kev()
+            ics_advisories = [ics_cert_feed_service.advisory_to_dict(adv) for adv in ics_advisories_data]
+            
+            logger.info(f"Fetched {len(cves)} CVEs, {len(vendor_advisories)} vendor advisories, {len(ics_advisories)} ICS advisories")
+            
             # Process CVEs
             await self._process_cves(cves)
             
             # Process vendor advisories
             await self._process_vendor_advisories(vendor_advisories)
+            
+            # NEW: Process ICS advisories
+            await self._process_ics_advisories(ics_advisories)
             
             logger.info("Vulnerability check completed")
             
@@ -346,6 +358,158 @@ class AlertChecker:
             logger.info(f"Logged audit trail: {action} by user {user_id} on {target_type} {target_id}")
         except Exception as e:
             logger.error(f"Error logging audit trail: {e}")
+    
+    async def _process_ics_advisories(self, ics_advisories: List[Dict]):
+        """Process ICS-specific advisories and create alerts for affected OT assets."""
+        new_advisories = [
+            adv for adv in ics_advisories 
+            if adv.get('advisory_id') not in self.processed_advisories
+        ]
+        
+        if not new_advisories:
+            logger.info("No new ICS advisories to process")
+            return
+        
+        logger.info(f"Processing {len(new_advisories)} new ICS advisories")
+        
+        async with AsyncSessionLocal() as db:
+            # Get all users and their OT assets + discovered devices
+            result = await db.execute(
+                select(User, Asset)\
+                .join(Asset, User.id == Asset.user_id, isouter=True)\
+                .where(User.is_active == True, Asset.is_ot_asset == True)
+            )
+            user_assets = result.all()
+            
+            for advisory in new_advisories:
+                try:
+                    # Check affected OT assets
+                    affected_combinations = await self._find_ot_assets_affected_by_advisory(
+                        advisory, user_assets, db
+                    )
+                    
+                    for user, asset in affected_combinations:
+                        await self._create_alert_from_ics_advisory(db, user, asset, advisory)
+                    
+                    # Mark advisory as processed
+                    self.processed_advisories.add(advisory.get('advisory_id', ''))
+                    
+                except Exception as e:
+                    logger.error(f"Error processing ICS advisory {advisory.get('advisory_id')}: {e}")
+            
+            await db.commit()
+    
+    async def _find_ot_assets_affected_by_advisory(
+        self, 
+        advisory: Dict, 
+        user_assets: List, 
+        db: AsyncSession
+    ) -> List:
+        """Find OT assets affected by an ICS advisory."""
+        affected = []
+        
+        affected_products = advisory.get('affected_products', [])
+        cves = advisory.get('cves', [])
+        
+        if not affected_products and not cves:
+            return affected
+        
+        for user, asset in user_assets:
+            if asset is None:
+                continue
+            
+            # Match by vendor/product info
+            for prod in affected_products:
+                vendor = prod.get('vendor', '').lower()
+                product = prod.get('product', '').lower()
+                versions = prod.get('versions', [])
+                
+                if asset.vendor and asset.product:
+                    if (self._fuzzy_match(asset.vendor.lower(), vendor) and 
+                        self._fuzzy_match(asset.product.lower(), product)):
+                        
+                        # Version check (simplified)
+                        if not versions or not asset.version:
+                            affected.append((user, asset))
+                        elif await self._is_version_vulnerable(asset.version, versions):
+                            affected.append((user, asset))
+        
+        return affected
+    
+    async def _is_version_vulnerable(self, asset_version: str, vulnerability_versions: List[str]) -> bool:
+        """Check if asset version falls in vulnerability version range."""
+        # Simplified: assume versions like "< 4.5.0" means vulnerable before 4.5.0
+        try:
+            # Parse asset version
+            asset_parts = [int(p) for p in asset_version.split(".")[:3]]
+            
+            for vuln_version_spec in vulnerability_versions:
+                if "<" in vuln_version_spec:
+                    vuln_version = vuln_version_spec.replace("<", "").strip()
+                    vuln_parts = [int(p) for p in vuln_version.split(".")[:3]]
+                    
+                    # Compare tuples
+                    if tuple(asset_parts) < tuple(vuln_parts):
+                        return True
+        except:
+            pass
+        
+        return False
+    
+    async def _create_alert_from_ics_advisory(self, db: AsyncSession, user: User, asset: Asset, advisory: Dict):
+        """Create an alert from ICS advisory data."""
+        try:
+            advisory_id = advisory.get('advisory_id')
+            
+            # Check if alert already exists
+            existing = await db.execute(
+                select(Alert).where(
+                    Alert.user_id == user.id,
+                    Alert.asset_id == asset.id,
+                    Alert.vendor_advisory_id == advisory_id
+                )
+            )
+            
+            if existing.scalar_one_or_none():
+                return  # Alert already exists
+            
+            # Map severity
+            severity_map = {"critical": Severity.CRITICAL, "high": Severity.HIGH, 
+                          "medium": Severity.MEDIUM, "low": Severity.LOW}
+            severity = severity_map.get(advisory.get('severity', 'medium'), Severity.MEDIUM)
+            
+            alert = Alert(
+                user_id=user.id,
+                asset_id=asset.id,
+                vendor_advisory_id=advisory_id,
+                title=f"ICS Advisory: {advisory.get('title', 'Unknown')}",
+                description=advisory.get('description', ''),
+                severity=severity,
+                remediation=advisory.get('remediation'),
+                source_url=advisory.get('source_url'),
+                status=AlertStatus.PENDING
+            )
+            
+            db.add(alert)
+            await db.flush()  # Get the ID
+            
+            # For CISA KEV (known exploited), increase urgency
+            if advisory.get('cisa_kev') or advisory.get('known_exploited'):
+                alert_message = f"🚨 CRITICAL ICS ADVISORY (ACTIVELY EXPLOITED) for {user.email}: {alert.title}"
+            else:
+                alert_message = f"⚠️ ICS Advisory for {user.email}: {alert.title}"
+            
+            # Send notifications
+            await notify_all_services(alert_message, alert_id=alert.id, advisory_id=alert.vendor_advisory_id)
+            
+            logger.info(f"Created ICS alert {advisory_id} for user {user.email}")
+            
+            # Log audit trail
+            await self.log_audit(db, user.id, action="create_alert", target_type="ICS Advisory", 
+                               target_id=advisory_id, detail=str(alert))
+            
+        except Exception as e:
+            logger.error(f"Error creating ICS advisory alert: {e}")
 
 
 # Global alert checker instance

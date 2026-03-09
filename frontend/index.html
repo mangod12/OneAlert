@@ -214,11 +214,79 @@
             padding: 2rem;
             color: #667eea;
         }
+        .tabs {
+            display: flex;
+            gap: 1rem;
+            border-bottom: 2px solid #e0e7ff;
+            margin-bottom: 2rem;
+        }
+        .tab-btn {
+            background: none;
+            border: none;
+            padding: 1rem;
+            cursor: pointer;
+            font-size: 1rem;
+            color: #667eea;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            font-weight: 500;
+            width: auto;
+        }
+        .tab-btn.active {
+            border-bottom-color: #667eea;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .network-zone-label {
+            display: inline-block;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        .zone-field { background: #fff3cd; color: #856404; }
+        .zone-control { background: #cfe2ff; color: #084298; }
+        .zone-supervisory { background: #d1ecf1; color: #0c5460; }
+        .zone-safety { background: #f8d7da; color: #721c24; }
+        .risk-low { color: #28a745; font-weight: bold; }
+        .risk-medium { color: #ffc107; font-weight: bold; }
+        .risk-high { color: #dc3545; font-weight: bold; }
+        .device-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .device-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 1.2rem;
+            box-shadow: 0 2px 8px rgba(102,126,234,0.08);
+            border-left: 4px solid #667eea;
+        }
+        .device-card.risk-high { border-left-color: #dc3545; }
+        .device-card.risk-medium { border-left-color: #ffc107; }
+        .device-card-title {
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            font-size: 1rem;
+        }
+        .device-card-detail {
+            font-size: 0.9rem;
+            color: #666;
+            margin: 0.3rem 0;
+        }
         @media (max-width: 700px) {
             .dashboard-header { flex-direction: column; gap: 1rem; }
             .stats { flex-direction: column; gap: 1rem; }
             .dashboard-container { padding: 1rem; }
             .card { min-width: unset; }
+            .tabs { flex-wrap: wrap; }
+            .device-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -446,13 +514,80 @@ async function fetchAlerts() {
     }
 }
 
-// Fetch audit logs (admin only)
 async function fetchAuditLogs() {
     try {
         const response = await axios.get(`${API_BASE}/auth/audit-logs`);
         return response.data;
     } catch (error) {
         return [];
+    }
+}
+
+// OT API Functions
+async function fetchOTSummary() {
+    try {
+        const response = await axios.get(`${API_BASE}/ot/summary`);
+        return response.data;
+    } catch (error) {
+        console.error('Failed to fetch OT summary:', error);
+        return {};
+    }
+}
+
+async function fetchNetworkSensors() {
+    try {
+        const response = await axios.get(`${API_BASE}/ot/sensors`);
+        return response.data || [];
+    } catch (error) {
+        console.error('Failed to fetch sensors:', error);
+        return [];
+    }
+}
+
+async function fetchDiscoveredDevices() {
+    try {
+        const response = await axios.get(`${API_BASE}/ot/discovered-devices?size=50`);
+        return response.data.devices || [];
+    } catch (error) {
+        console.error('Failed to fetch discovered devices:', error);
+        return [];
+    }
+}
+
+async function fetchDevicesByZone() {
+    try {
+        const response = await axios.get(`${API_BASE}/ot/devices-by-zone`);
+        return response.data || {};
+    } catch (error) {
+        console.error('Failed to fetch devices by zone:', error);
+        return {};
+    }
+}
+
+async function fetchDevicesByProtocol() {
+    try {
+        const response = await axios.get(`${API_BASE}/ot/devices-by-protocol`);
+        return response.data || {};
+    } catch (error) {
+        console.error('Failed to fetch devices by protocol:', error);
+        return {};
+    }
+}
+
+async function createNetworkSensor(sensorData) {
+    try {
+        const response = await axios.post(`${API_BASE}/ot/sensors`, sensorData);
+        return response.data;
+    } catch (error) {
+        throw new Error(error.response?.data?.detail || 'Failed to create sensor');
+    }
+}
+
+async function deleteNetworkSensor(sensorId) {
+    try {
+        await axios.delete(`${API_BASE}/ot/sensors/${sensorId}`);
+    } catch (error) {
+        throw new Error(error.response?.data?.detail || 'Failed to delete sensor');
     }
 }
 
@@ -480,7 +615,7 @@ function logout() {
     renderLogin();
 }
 
-async function renderDashboard(editAssetId = null, editAlertId = null, createAlertMode = false) {
+async function renderDashboard(editAssetId = null, editAlertId = null, createAlertMode = false, activeTab = 'dashboard') {
     if (!authToken) { 
         renderLogin(); 
         return; 
@@ -491,13 +626,22 @@ async function renderDashboard(editAssetId = null, editAlertId = null, createAle
     // Show loading state
     document.getElementById('app').innerHTML = '<div class="loading">Loading dashboard...</div>';
     
-    let user, stats, assets, alerts;
+    let user, stats, assets, alerts, otSummary, sensors, discoveredDevices, devicesByZone, devicesByProtocol;
     try {
         [user, stats, assets, alerts] = await Promise.all([
             fetchProfile(),
             fetchStats(),
             fetchAssets(),
             fetchAlerts()
+        ]);
+        
+        // Load OT data in parallel
+        [otSummary, sensors, discoveredDevices, devicesByZone, devicesByProtocol] = await Promise.all([
+            fetchOTSummary(),
+            fetchNetworkSensors(),
+            fetchDiscoveredDevices(),
+            fetchDevicesByZone(),
+            fetchDevicesByProtocol()
         ]);
     } catch (error) {
         console.error('Failed to load dashboard data:', error);
@@ -509,6 +653,18 @@ async function renderDashboard(editAssetId = null, editAlertId = null, createAle
     if (user.role === 'admin') {
         auditLogs = await fetchAuditLogs();
     }
+    
+    const getRiskClass = (score) => {
+        if (score >= 70) return 'risk-high';
+        if (score >= 40) return 'risk-medium';
+        return 'risk-low';
+    };
+    
+    const getRiskLabel = (score) => {
+        if (score >= 70) return `<span class="risk-high">${score.toFixed(0)}</span>`;
+        if (score >= 40) return `<span class="risk-medium">${score.toFixed(0)}</span>`;
+        return `<span class="risk-low">${score.toFixed(0)}</span>`;
+    };
     
     document.getElementById('app').innerHTML = `
     <div class="dashboard-container">
@@ -522,102 +678,288 @@ async function renderDashboard(editAssetId = null, editAlertId = null, createAle
           <div><b>Email:</b> ${user.email}</div>
         </div>
       </div>
-      <!-- Stats Section -->
-      <div class="stats">
-        <div class="stat-card">
-          <div class="stat-title">Total Alerts</div>
-          <div class="stat-value">${stats.total_alerts || 0}</div>
+      
+      <!-- Tab Navigation -->
+      <div class="tabs">
+        <button class="tab-btn ${activeTab === 'dashboard' ? 'active' : ''}" onclick="switchTab('dashboard')">
+          <i class="fas fa-tachometer-alt"></i> Dashboard
+        </button>
+        <button class="tab-btn ${activeTab === 'ot' ? 'active' : ''}" onclick="switchTab('ot')">
+          <i class="fas fa-industry"></i> OT / ICS
+        </button>
+        <button class="tab-btn ${activeTab === 'assets' ? 'active' : ''}" onclick="switchTab('assets')">
+          <i class="fas fa-boxes"></i> All Assets
+        </button>
+        <button class="tab-btn ${activeTab === 'alerts' ? 'active' : ''}" onclick="switchTab('alerts')">
+          <i class="fas fa-bell"></i> Alerts
+        </button>
+        ${user.role === 'admin' ? `<button class="tab-btn ${activeTab === 'admin' ? 'active' : ''}" onclick="switchTab('admin')">
+          <i class="fas fa-cog"></i> Admin
+        </button>` : ''}
+      </div>
+      
+      <!-- Dashboard Tab -->
+      <div id="tab-dashboard" class="tab-content ${activeTab === 'dashboard' ? 'active' : ''}">
+        <div class="stats">
+          <div class="stat-card">
+            <div class="stat-title">Total Alerts</div>
+            <div class="stat-value">${stats.total_alerts || 0}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-title">Open Alerts</div>
+            <div class="stat-value">${stats.open_alerts || 0}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-title">Assets</div>
+            <div class="stat-value">${assets.length || 0}</div>
+          </div>
         </div>
-        <div class="stat-card">
-          <div class="stat-title">Open Alerts</div>
-          <div class="stat-value">${stats.open_alerts || 0}</div>
+        
+        <div class="section">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <h3>Recent Alerts</h3>
+          </div>
+          <table><thead><tr><th>Title</th><th>Severity</th><th>Asset</th><th>CVE</th><th>CVSS</th><th>Exploitability</th><th>Remediation</th><th>Status</th><th>Action</th></tr></thead><tbody>
+          ${alerts.map(al => `
+            <tr><td>${al.title}</td><td>${al.severity}</td><td>${al.asset_name||''}</td><td>${al.cve_id||''}</td><td>${al.cvss_score||''}</td><td>${al.exploitability||''}</td><td>${al.remediation?`<a href='${al.remediation}' target='_blank'>Link</a>`:''}</td><td>${al.status}</td><td>
+              <button class='btn btn-small' style='background:#28a745' onclick='ackAlert(${al.id})'>Acknowledge</button>
+            </td></tr>
+          `).join('') || '<tr><td colspan="9">No alerts found.</td></tr>'}
+          </tbody></table>
         </div>
-        <div class="stat-card">
-          <div class="stat-title">Assets</div>
-          <div class="stat-value">${assets.length || 0}</div>
+        
+        <div class="section">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <h3>Your Assets / Services</h3>
+          </div>
+          <form id="add-asset-form" style="display:flex;gap:1rem;flex-wrap:wrap;align-items:end;margin-bottom:1rem;">
+            <input type="text" id="asset-name" placeholder="Name" required style="min-width:120px;">
+            <input type="text" id="asset-type" placeholder="Type (e.g. server, SaaS, app)" required style="min-width:120px;">
+            <input type="text" id="asset-vendor" placeholder="Vendor" style="min-width:120px;">
+            <input type="text" id="asset-product" placeholder="Product" style="min-width:120px;">
+            <input type="text" id="asset-version" placeholder="Version" style="min-width:100px;">
+            <input type="text" id="asset-description" placeholder="Description" style="min-width:180px;">
+            <button type="submit">Add Asset</button>
+          </form>
+          <table><thead><tr><th>Name</th><th>Type</th><th>Vendor</th><th>Product</th><th>Version</th><th>Description</th><th>Action</th></tr></thead><tbody>
+          ${assets.map(asset => editAssetId === asset.id ? `
+            <tr><td colspan="7">
+              <form id="edit-asset-form-${asset.id}" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:end;">
+                <input type="text" id="edit-asset-name" value="${asset.name}" required style="min-width:120px;">
+                <input type="text" id="edit-asset-type" value="${asset.asset_type}" required style="min-width:120px;">
+                <input type="text" id="edit-asset-vendor" value="${asset.vendor||''}" style="min-width:120px;">
+                <input type="text" id="edit-asset-product" value="${asset.product||''}" style="min-width:120px;">
+                <input type="text" id="edit-asset-version" value="${asset.version||''}" style="min-width:100px;">
+                <input type="text" id="edit-asset-description" value="${asset.description||''}" style="min-width:180px;">
+                <button type="submit">Save</button>
+                <button type="button" id="cancel-edit-btn">Cancel</button>
+              </form>
+            </td></tr>
+          ` : `
+            <tr><td>${asset.name}</td><td>${asset.asset_type}</td><td>${asset.vendor||''}</td><td>${asset.product||''}</td><td>${asset.version||''}</td><td>${asset.description||''}</td><td>
+              <button class='btn btn-small' style='background:#ffc107;color:#333;' onclick='editAsset(${asset.id})'>Edit</button>
+              <button class='btn btn-small' style='background:#dc3545;' onclick='deleteAsset(${asset.id})'>Delete</button>
+            </td></tr>
+          `).join('') || '<tr><td colspan="7">No assets found.</td></tr>'}
+          </tbody></table>
+        </div>
+        
+        <div class="section">
+          <h3>Notification Integrations</h3>
+          <form id="integration-form" style="display:flex;gap:1rem;flex-wrap:wrap;align-items:end;">
+            <div><input type="text" id="slack-webhook" placeholder="Slack Webhook URL" value="${user.slack_webhook_url||''}" style="min-width:220px;"></div>
+            <div><input type="text" id="generic-webhook" placeholder="Generic Webhook URL" value="${user.webhook_url||''}" style="min-width:220px;"></div>
+            <div><button type="submit">Update</button></div>
+          </form>
+        </div>
+        
+        <div class="section">
+          <h3>Multi-Factor Authentication (MFA)</h3>
+          <div id="mfa-status">${user.mfa_enabled ? 'Enabled' : 'Disabled'}</div>
+          <button id="setup-mfa-btn">${user.mfa_enabled ? 'Reset MFA' : 'Enable MFA'}</button>
+          <div id="mfa-setup-area"></div>
         </div>
       </div>
-      <!-- Alerts Table with Enrichment -->
-      <div class="section">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <h3>Recent Alerts</h3>
+      
+      <!-- OT/ICS Dashboard Tab -->
+      <div id="tab-ot" class="tab-content ${activeTab === 'ot' ? 'active' : ''}">
+        <h3>Industrial Control Systems (OT/ICS) Dashboard</h3>
+        
+        <div class="stats">
+          <div class="stat-card">
+            <div class="stat-title">Managed OT Assets</div>
+            <div class="stat-value">${otSummary.managed_ot_assets || 0}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-title">Discovered Devices</div>
+            <div class="stat-value">${otSummary.discovered_ot_devices || 0}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-title">High-Risk Devices</div>
+            <div class="stat-value" style="color:#dc3545;">${otSummary.high_risk_devices || 0}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-title">Uncorrelated</div>
+            <div class="stat-value">${otSummary.uncorrelated_devices || 0}</div>
+          </div>
         </div>
-        <table><thead><tr><th>Title</th><th>Severity</th><th>Asset</th><th>CVE</th><th>CVSS</th><th>Exploitability</th><th>Remediation</th><th>Status</th><th>Action</th></tr></thead><tbody>
-        ${alerts.map(al => `
-          <tr><td>${al.title}</td><td>${al.severity}</td><td>${al.asset_name||''}</td><td>${al.cve_id||''}</td><td>${al.cvss_score||''}</td><td>${al.exploitability||''}</td><td>${al.remediation?`<a href='${al.remediation}' target='_blank'>Link</a>`:''}</td><td>${al.status}</td><td>
-            <button class='btn btn-small' style='background:#28a745' onclick='ackAlert(${al.id})'>Acknowledge</button>
-          </td></tr>
-        `).join('') || '<tr><td colspan="9">No alerts found.</td></tr>'}
-        </tbody></table>
-      </div>
-      <!-- Assets/Services Section -->
-      <div class="section">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <h3>Your Assets / Services</h3>
+        
+        <!-- Network Sensors Section -->
+        <div class="section">
+          <h3>Network Sensors</h3>
+          <form id="add-sensor-form" style="display:flex;gap:1rem;flex-wrap:wrap;align-items:end;margin-bottom:1rem;">
+            <input type="text" id="sensor-name" placeholder="Sensor Name" required style="min-width:150px;">
+            <select id="sensor-type" required style="min-width:120px;">
+              <option value="">Select Type</option>
+              <option value="snmp">SNMP</option>
+              <option value="zeek">Zeek</option>
+              <option value="shodan">Shodan</option>
+              <option value="nessus">Nessus</option>
+              <option value="custom">Custom</option>
+            </select>
+            <input type="text" id="sensor-location" placeholder="Location" style="min-width:120px;">
+            <input type="text" id="sensor-segment" placeholder="Network Segment" style="min-width:140px;">
+            <button type="submit">Register Sensor</button>
+          </form>
+          
+          <table><thead><tr><th>Sensor Name</th><th>Type</th><th>Location</th><th>Network Segment</th><th>Status</th><th>Last Heartbeat</th><th>Devices Found</th><th>Action</th></tr></thead><tbody>
+          ${sensors.map(s => `
+            <tr>
+              <td>${s.name}</td>
+              <td>${s.sensor_type}</td>
+              <td>${s.location || '-'}</td>
+              <td>${s.network_segment || '-'}</td>
+              <td>${s.enabled ? '<span style="color:green">✓ Active</span>' : '<span style="color:red">✗ Inactive</span>'}</td>
+              <td>${s.last_heartbeat ? new Date(s.last_heartbeat).toLocaleString() : 'Never'}</td>
+              <td>${s.last_discovery_count || 0}</td>
+              <td><button class='btn btn-small' style='background:#dc3545;' onclick='deleteSensor(${s.id})'>Delete</button></td>
+            </tr>
+          `).join('') || '<tr><td colspan="8">No sensors registered. Add one above.</td></tr>'}
+          </tbody></table>
         </div>
-        <form id="add-asset-form" style="display:flex;gap:1rem;flex-wrap:wrap;align-items:end;margin-bottom:1rem;">
-          <input type="text" id="asset-name" placeholder="Name" required style="min-width:120px;">
-          <input type="text" id="asset-type" placeholder="Type (e.g. server, SaaS, app)" required style="min-width:120px;">
-          <input type="text" id="asset-vendor" placeholder="Vendor" style="min-width:120px;">
-          <input type="text" id="asset-product" placeholder="Product" style="min-width:120px;">
-          <input type="text" id="asset-version" placeholder="Version" style="min-width:100px;">
-          <input type="text" id="asset-description" placeholder="Description" style="min-width:180px;">
-          <button type="submit">Add Asset</button>
-        </form>
-        <table><thead><tr><th>Name</th><th>Type</th><th>Vendor</th><th>Product</th><th>Version</th><th>Description</th><th>Action</th></tr></thead><tbody>
-        ${assets.map(asset => editAssetId === asset.id ? `
-          <tr><td colspan="7">
-            <form id="edit-asset-form-${asset.id}" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:end;">
-              <input type="text" id="edit-asset-name" value="${asset.name}" required style="min-width:120px;">
-              <input type="text" id="edit-asset-type" value="${asset.asset_type}" required style="min-width:120px;">
-              <input type="text" id="edit-asset-vendor" value="${asset.vendor||''}" style="min-width:120px;">
-              <input type="text" id="edit-asset-product" value="${asset.product||''}" style="min-width:120px;">
-              <input type="text" id="edit-asset-version" value="${asset.version||''}" style="min-width:100px;">
-              <input type="text" id="edit-asset-description" value="${asset.description||''}" style="min-width:180px;">
-              <button type="submit">Save</button>
-              <button type="button" id="cancel-edit-btn">Cancel</button>
-            </form>
-          </td></tr>
-        ` : `
-          <tr><td>${asset.name}</td><td>${asset.asset_type}</td><td>${asset.vendor||''}</td><td>${asset.product||''}</td><td>${asset.version||''}</td><td>${asset.description||''}</td><td>
-            <button class='btn btn-small' style='background:#ffc107;color:#333;' onclick='editAsset(${asset.id})'>Edit</button>
-            <button class='btn btn-small' style='background:#dc3545;' onclick='deleteAsset(${asset.id})'>Delete</button>
-          </td></tr>
-        `).join('') || '<tr><td colspan="7">No assets found.</td></tr>'}
-        </tbody></table>
+        
+        <!-- Discovered OT Devices -->
+        <div class="section">
+          <h3>Discovered OT Devices</h3>
+          <div style="margin-bottom:1rem;">
+            <label>Filter by Risk: 
+              <select id="risk-filter" onchange="applyRiskFilter()">
+                <option value="">All</option>
+                <option value="high">High Only</option>
+                <option value="medium">Medium Only</option>
+              </select>
+            </label>
+          </div>
+          
+          <div class="device-grid" id="device-grid">
+            ${discoveredDevices.length === 0 ? '<div style="grid-column:1/-1;">No discovered devices yet</div>' : discoveredDevices.map(d => `
+              <div class="device-card ${getRiskClass(d.risk_score || 0)}">
+                <div class="device-card-title">${d.hostname || d.ip_address}</div>
+                <div class="device-card-detail"><b>IP:</b> ${d.ip_address}</div>
+                <div class="device-card-detail"><b>MAC:</b> ${d.mac_address || '-'}</div>
+                <div class="device-card-detail"><b>Manufacturer:</b> ${d.manufacturer || '-'}</div>
+                <div class="device-card-detail"><b>Model:</b> ${d.model || '-'}</div>
+                <div class="device-card-detail"><b>Firmware:</b> ${d.firmware_version || '-'}</div>
+                <div class="device-card-detail"><b>Device Class:</b> ${d.device_class || '-'}</div>
+                <div class="device-card-detail"><b>Protocols:</b> ${(d.protocols || []).join(', ') || '-'}</div>
+                <div class="device-card-detail"><b>OT Type:</b> ${d.ot_device_type || '-'}</div>
+                <div class="device-card-detail"><b>Risk Score:</b> ${getRiskLabel(d.risk_score || 0)} / 100</div>
+                <div class="device-card-detail"><b>Confidence:</b> ${d.confidence || '-'}</div>
+                ${d.risk_factors ? `<div class="device-card-detail"><b>Risk Factors:</b> ${(d.risk_factors || []).join(', ')}</div>` : ''}
+                <div class="device-card-detail"><b>First Seen:</b> ${new Date(d.first_seen).toLocaleString()}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        
+        <!-- Devices by Network Zone -->
+        <div class="section">
+          <h3>Devices by Purdue Network Zone</h3>
+          <table><thead><tr><th>Zone</th><th>Device Count</th><th>High-Risk</th></tr></thead><tbody>
+          ${Object.entries(devicesByZone).map(([zone, data]) => `
+            <tr>
+              <td><span class="network-zone-label zone-${data.zone_lower || 'unknown'}">${zone}</span></td>
+              <td>${data.count || 0}</td>
+              <td>${data.high_risk_count || 0}</td>
+            </tr>
+          `).join('') || '<tr><td colspan="3">No zone data available</td></tr>'}
+          </tbody></table>
+        </div>
+        
+        <!-- Devices by Protocol -->
+        <div class="section">
+          <h3>Devices by Communication Protocol</h3>
+          <table><thead><tr><th>Protocol</th><th>Device Count</th><th>Risk Level</th></tr></thead><tbody>
+          ${Object.entries(devicesByProtocol).map(([protocol, data]) => `
+            <tr>
+              <td>${protocol}</td>
+              <td>${data.count || 0}</td>
+              <td>${data.security_level || 'Unknown'}</td>
+            </tr>
+          `).join('') || '<tr><td colspan="3">No protocol data available</td></tr>'}
+          </tbody></table>
+        </div>
       </div>
-      <!-- Integration Settings -->
-      <div class="section">
-        <h3>Notification Integrations</h3>
-        <form id="integration-form" style="display:flex;gap:1rem;flex-wrap:wrap;align-items:end;">
-          <div><input type="text" id="slack-webhook" placeholder="Slack Webhook URL" value="${user.slack_webhook_url||''}" style="min-width:220px;"></div>
-          <div><input type="text" id="generic-webhook" placeholder="Generic Webhook URL" value="${user.webhook_url||''}" style="min-width:220px;"></div>
-          <div><button type="submit">Update</button></div>
-        </form>
+      
+      <!-- Assets Tab -->
+      <div id="tab-assets" class="tab-content ${activeTab === 'assets' ? 'active' : ''}">
+        <h3>All Assets</h3>
+        <div class="section">
+          <form id="add-asset-form-2" style="display:flex;gap:1rem;flex-wrap:wrap;align-items:end;margin-bottom:1rem;">
+            <input type="text" id="asset-name-2" placeholder="Name" required style="min-width:120px;">
+            <input type="text" id="asset-type-2" placeholder="Type" required style="min-width:120px;">
+            <input type="text" id="asset-vendor-2" placeholder="Vendor" style="min-width:120px;">
+            <input type="text" id="asset-product-2" placeholder="Product" style="min-width:120px;">
+            <input type="text" id="asset-version-2" placeholder="Version" style="min-width:100px;">
+            <input type="text" id="asset-description-2" placeholder="Description" style="min-width:180px;">
+            <button type="submit">Add Asset</button>
+          </form>
+          <table><thead><tr><th>Name</th><th>Type</th><th>Vendor</th><th>Product</th><th>Version</th><th>Description</th><th>Action</th></tr></thead><tbody>
+          ${assets.map(asset => `
+            <tr><td>${asset.name}</td><td>${asset.asset_type}</td><td>${asset.vendor||''}</td><td>${asset.product||''}</td><td>${asset.version||''}</td><td>${asset.description||''}</td><td>
+              <button class='btn btn-small' style='background:#ffc107;color:#333;' onclick='editAsset(${asset.id})'>Edit</button>
+              <button class='btn btn-small' style='background:#dc3545;' onclick='deleteAsset(${asset.id})'>Delete</button>
+            </td></tr>
+          `).join('') || '<tr><td colspan="7">No assets found.</td></tr>'}
+          </tbody></table>
+        </div>
       </div>
-      <!-- MFA Section -->
-      <div class="section">
-        <h3>Multi-Factor Authentication (MFA)</h3>
-        <div id="mfa-status">${user.mfa_enabled ? 'Enabled' : 'Disabled'}</div>
-        <button id="setup-mfa-btn">${user.mfa_enabled ? 'Reset MFA' : 'Enable MFA'}</button>
-        <div id="mfa-setup-area"></div>
+      
+      <!-- Alerts Tab -->
+      <div id="tab-alerts" class="tab-content ${activeTab === 'alerts' ? 'active' : ''}">
+        <h3>All Alerts</h3>
+        <div class="section">
+          <table><thead><tr><th>Title</th><th>Severity</th><th>Asset</th><th>CVE</th><th>CVSS</th><th>Status</th><th>Action</th></tr></thead><tbody>
+          ${alerts.map(al => `
+            <tr><td>${al.title}</td><td>${al.severity}</td><td>${al.asset_name||''}</td><td>${al.cve_id||''}</td><td>${al.cvss_score||''}</td><td>${al.status}</td><td>
+              <button class='btn btn-small' style='background:#28a745' onclick='ackAlert(${al.id})'>Acknowledge</button>
+            </td></tr>
+          `).join('') || '<tr><td colspan="7">No alerts found.</td></tr>'}
+          </tbody></table>
+        </div>
       </div>
-      <!-- Audit Log Section (admin only) -->
+      
+      <!-- Admin Tab -->
       ${user.role === 'admin' ? `
-      <div class="section">
-        <h3>Audit Logs</h3>
-        <table><thead><tr><th>ID</th><th>User</th><th>Action</th><th>Target</th><th>Detail</th><th>Time</th></tr></thead><tbody>
-        ${auditLogs.map(log => `
-          <tr><td>${log.id}</td><td>${log.user_id}</td><td>${log.action}</td><td>${log.target_type||''} ${log.target_id||''}</td><td>${log.detail||''}</td><td>${log.timestamp||''}</td></tr>
-        `).join('') || '<tr><td colspan="6">No logs found.</td></tr>'}
-        </tbody></table>
+      <div id="tab-admin" class="tab-content ${activeTab === 'admin' ? 'active' : ''}">
+        <h3>Administration</h3>
+        <div class="section">
+          <h4>Audit Logs</h4>
+          <table><thead><tr><th>ID</th><th>User</th><th>Action</th><th>Target</th><th>Detail</th><th>Time</th></tr></thead><tbody>
+          ${auditLogs.map(log => `
+            <tr><td>${log.id}</td><td>${log.user_id}</td><td>${log.action}</td><td>${log.target_type||''} ${log.target_id||''}</td><td>${log.detail||''}</td><td>${log.timestamp||''}</td></tr>
+          `).join('') || '<tr><td colspan="6">No logs found.</td></tr>'}
+          </tbody></table>
+        </div>
       </div>
       ` : ''}
-      <!-- ...existing asset/profile sections... -->
     </div>
     `;
     
-    // Integration form handler
+    // Tab switching function
+    window.switchTab = (tabName) => renderDashboard(null, null, false, tabName);
+    
+    // Form handlers
     document.getElementById('integration-form').onsubmit = async (e) => {
         e.preventDefault();
         const slack = document.getElementById('slack-webhook').value;
@@ -625,12 +967,12 @@ async function renderDashboard(editAssetId = null, editAlertId = null, createAle
         try {
             await updateIntegrations(slack, webhook);
             showAlert('Integration settings updated!', 'success');
-            renderDashboard();
+            renderDashboard(null, null, false, activeTab);
         } catch (error) {
-            showAlert('Failed to update integrations: ' + (error.response?.data?.detail || 'Unknown error'));
+            showAlert('Failed to update integrations');
         }
     };
-    // MFA setup handler
+    
     document.getElementById('setup-mfa-btn').onclick = async () => {
         const mfaArea = document.getElementById('mfa-setup-area');
         mfaArea.innerHTML = 'Generating MFA secret...';
@@ -644,16 +986,15 @@ async function renderDashboard(editAssetId = null, editAlertId = null, createAle
                 const ok = await verifyMFA(code);
                 if (ok) {
                     showAlert('MFA enabled!', 'success');
-                    renderDashboard();
-                } else {
-                    showAlert('Invalid code. Try again.');
+                    renderDashboard(null, null, false, activeTab);
                 }
             };
         } catch (error) {
-            showAlert('Failed to setup MFA: ' + (error.response?.data?.detail || 'Unknown error'));
+            showAlert('Failed to setup MFA');
         }
     };
-    // Add asset form handler
+    
+    // Asset forms
     document.getElementById('add-asset-form').onsubmit = async (e) => {
         e.preventDefault();
         const assetData = {
@@ -667,39 +1008,56 @@ async function renderDashboard(editAssetId = null, editAlertId = null, createAle
         try {
             await axios.post(`${API_BASE}/assets/`, assetData);
             showAlert('Asset added!', 'success');
-            renderDashboard();
+            renderDashboard(null, null, false, activeTab);
         } catch (error) {
-            showAlert('Failed to add asset: ' + (error.response?.data?.detail || 'Unknown error'));
+            showAlert('Failed to add asset');
         }
     };
     
-    // Edit asset form handler
-    if (editAssetId) {
-        document.getElementById(`edit-asset-form-${editAssetId}`).onsubmit = async (e) => {
+    const addAssetForm2 = document.getElementById('add-asset-form-2');
+    if (addAssetForm2) {
+        addAssetForm2.onsubmit = async (e) => {
             e.preventDefault();
-            const updatedAsset = {
-                name: document.getElementById('edit-asset-name').value,
-                asset_type: document.getElementById('edit-asset-type').value,
-                vendor: document.getElementById('edit-asset-vendor').value,
-                product: document.getElementById('edit-asset-product').value,
-                version: document.getElementById('edit-asset-version').value,
-                description: document.getElementById('edit-asset-description').value
+            const assetData = {
+                name: document.getElementById('asset-name-2').value,
+                asset_type: document.getElementById('asset-type-2').value,
+                vendor: document.getElementById('asset-vendor-2').value,
+                product: document.getElementById('asset-product-2').value,
+                version: document.getElementById('asset-version-2').value,
+                description: document.getElementById('asset-description-2').value
             };
             try {
-                await axios.put(`${API_BASE}/assets/${editAssetId}`, updatedAsset);
-                showAlert('Asset updated!', 'success');
-                renderDashboard();
+                await axios.post(`${API_BASE}/assets/`, assetData);
+                showAlert('Asset added!', 'success');
+                renderDashboard(null, null, false, activeTab);
             } catch (error) {
-                showAlert('Failed to update asset: ' + (error.response?.data?.detail || 'Unknown error'));
+                showAlert('Failed to add asset');
             }
         };
-        document.getElementById('cancel-edit-btn').onclick = () => renderDashboard();
     }
+    
+    // Sensor form
+    document.getElementById('add-sensor-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const sensorData = {
+            name: document.getElementById('sensor-name').value,
+            sensor_type: document.getElementById('sensor-type').value,
+            location: document.getElementById('sensor-location').value || null,
+            network_segment: document.getElementById('sensor-segment').value || null
+        };
+        try {
+            await createNetworkSensor(sensorData);
+            showAlert('Sensor registered!', 'success');
+            renderDashboard(null, null, false, activeTab);
+        } catch (error) {
+            showAlert('Failed to register sensor: ' + error.message);
+        }
+    };
 }
 
 // Edit asset function
 function editAsset(assetId) {
-    renderDashboard(assetId);
+    renderDashboard(assetId, null, false, 'dashboard');
 }
 
 // Delete asset function
@@ -708,9 +1066,9 @@ async function deleteAsset(assetId) {
     try {
         await axios.delete(`${API_BASE}/assets/${assetId}`);
         showAlert('Asset deleted!', 'success');
-        renderDashboard();
+        renderDashboard(null, null, false, 'assets');
     } catch (error) {
-        showAlert('Failed to delete asset: ' + (error.response?.data?.detail || 'Unknown error'));
+        showAlert('Failed to delete asset');
     }
 }
 
@@ -721,8 +1079,36 @@ async function ackAlert(alertId) {
         showAlert('Alert acknowledged!', 'success');
         renderDashboard();
     } catch (error) {
-        showAlert('Failed to acknowledge alert: ' + (error.response?.data?.detail || 'Unknown error'));
+        showAlert('Failed to acknowledge alert');
     }
+}
+
+// OT specific functions
+async function deleteSensor(sensorId) {
+    if (!confirm('Are you sure you want to delete this sensor?')) return;
+    try {
+        await deleteNetworkSensor(sensorId);
+        showAlert('Sensor deleted!', 'success');
+        renderDashboard(null, null, false, 'ot');
+    } catch (error) {
+        showAlert('Failed to delete sensor: ' + error.message);
+    }
+}
+
+function applyRiskFilter() {
+    const filterVal = document.getElementById('risk-filter').value;
+    const cards = document.querySelectorAll('.device-card');
+    cards.forEach(card => {
+        if (!filterVal) {
+            card.style.display = 'block';
+        } else if (filterVal === 'high' && card.classList.contains('risk-high')) {
+            card.style.display = 'block';
+        } else if (filterVal === 'medium' && card.classList.contains('risk-medium')) {
+            card.style.display = 'block';
+        } else {
+            card.style.display = 'none';
+        }
+    });
 }
 
 // Initial render

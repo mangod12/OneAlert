@@ -13,6 +13,7 @@ from datetime import datetime
 
 from backend.config import settings
 from backend.services.alert_checker import alert_checker
+from backend.services.ot_risk_scorer import ot_risk_scorer
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,16 @@ class VulnerabilityScheduler:
             id='weekly_stats',
             name='Weekly Statistics',
             replace_existing=True
+        )
+        
+        # NEW: OT risk rescoring job - runs every 12 hours
+        self.scheduler.add_job(
+            func=self._run_ot_risk_rescore,
+            trigger=IntervalTrigger(hours=12),
+            id='ot_risk_rescore',
+            name='OT Risk Rescoring',
+            replace_existing=True,
+            max_instances=1
         )
         
         logger.info(f"Scheduled vulnerability checks every {settings.scraper_interval_hours} hours")
@@ -104,6 +115,51 @@ class VulnerabilityScheduler:
             
         except Exception as e:
             logger.error(f"Error generating weekly stats: {e}")
+    
+    async def _run_ot_risk_rescore(self):
+        """Rescore all OT assets based on latest vulnerability data."""
+        try:
+            logger.info("Starting OT asset risk rescoring...")
+            
+            from backend.database.db import AsyncSessionLocal
+            from sqlalchemy import select
+            from backend.models.user import User
+            from backend.models.asset import Asset
+            from backend.models.alert import Alert
+            
+            async with AsyncSessionLocal() as db:
+                # Get all active OT assets
+                result = await db.execute(
+                    select(User, Asset)\
+                    .join(Asset, User.id == Asset.user_id, isouter=True)\
+                    .where(User.is_active == True, Asset.is_ot_asset == True)
+                )
+                
+                user_assets = result.all()
+                rescored_count = 0
+                
+                for user, asset in user_assets:
+                    if asset is None:
+                        continue
+                    
+                    # Get asset's current alerts
+                    alert_result = await db.execute(
+                        select(Alert).where(Alert.asset_id == asset.id)
+                    )
+                    alerts = alert_result.scalars().all()
+                    
+                    # Calculate new risk score
+                    risk_score, breakdown = await ot_risk_scorer.score_managed_asset(asset, alerts, db)
+                    
+                    # Update asset (would need to add risk_score field to Asset model)
+                    # For now, just log
+                    logger.debug(f"Asset {asset.id}: risk={risk_score:.1f}")
+                    rescored_count += 1
+            
+            logger.info(f"OT risk rescoring completed for {rescored_count} assets")
+            
+        except Exception as e:
+            logger.error(f"Error during OT risk rescoring: {e}")
     
     def start(self):
         """Start the scheduler."""

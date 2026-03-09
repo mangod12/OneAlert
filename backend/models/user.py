@@ -53,6 +53,8 @@ class User(Base):
     # Relationships
     assets = relationship("Asset", back_populates="user", cascade="all, delete-orphan")
     alerts = relationship("Alert", back_populates="user", cascade="all, delete-orphan")
+    network_sensors = relationship("NetworkSensor", back_populates="user", cascade="all, delete-orphan")
+    discovered_devices = relationship("DiscoveredDevice", back_populates="user", cascade="all, delete-orphan")
 
 
 # Pydantic models for API
