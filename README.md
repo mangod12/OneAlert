@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/mangod12/cybersecuritysaas/actions/workflows/ci.yml/badge.svg)](https://github.com/mangod12/cybersecuritysaas/actions/workflows/ci.yml)
 
-Production-deployed vulnerability intelligence platform that aggregates CVEs from multiple authoritative sources and automatically correlates them with enterprise assets to generate real-time prioritized alerts.
+OneAlert 2.0 is an industrial-grade vulnerability intelligence platform built for hybrid IT/OT environments. It combines multi-source CVE aggregation with passive OT discovery, industrial advisory ingestion, and asset-aware alerting to reduce risk across enterprise and operational technology estates.
 
 🚀 **Live Demo:**
 [https://cybersec-saas-zjfau6dqcq-uc.a.run.app/](https://cybersec-saas-zjfau6dqcq-uc.a.run.app/)
@@ -13,24 +13,22 @@ Production-deployed vulnerability intelligence platform that aggregates CVEs fro
 - Email: `admin@example.com` / Password: `password123`
 - Or use **GitHub OAuth** login
 
-**Tech:** FastAPI + PostgreSQL + Cloud Run with auto-deploy on push to `main`
+**Tech:** FastAPI + SQLAlchemy + PostgreSQL/Cloud SQL + Cloud Run + Cloud Build CI/CD
 
 ---
 
 ## Overview
 
-CyberSec Alert SaaS solves a real operational security problem:
+Security teams are flooded with advisories, while OT teams need context that generic scanners rarely provide. OneAlert 2.0 addresses this by unifying vulnerability intelligence and OT-aware asset context in one workflow.
 
-Security teams receive thousands of vulnerability disclosures daily. Most are irrelevant. Manual triage is inefficient and error-prone.
+This platform:
 
-This system:
-
-* Aggregates CVEs from NVD, Microsoft MSRC, Cisco PSIRT, Red Hat, and RSS feeds
-* Enriches vulnerabilities with CVSS scoring
-* Correlates vulnerabilities against user-managed asset inventory
-* Automatically generates targeted alerts
-* Reduces alert fatigue through asset-based filtering
-* Provides centralized dashboard + notification workflows
+* Aggregates vulnerabilities and advisories from NVD, MSRC, Cisco, Red Hat, CISA KEV, and ICS/vendor sources
+* Performs passive network asset discovery with sensor support
+* Detects industrial protocols and classifies assets by Purdue-style network zones
+* Scores risk using vulnerability, exposure, and criticality factors
+* Correlates alerts directly to discovered and managed OT/IT assets
+* Supports notification and cloud-native deployment patterns
 
 ---
 
@@ -38,22 +36,22 @@ This system:
 
 ```
 External Sources
-(NVD, MSRC, Cisco, Red Hat, RSS)
+(NVD, MSRC, Cisco, Red Hat, CISA KEV, ICS Advisories)
         │
         ▼
 Async Scraping Engine (APScheduler)
         │
         ▼
-Vulnerability Enrichment Layer
+Vulnerability + Advisory Enrichment
         │
         ▼
-Asset Correlation Engine
+Asset Correlation Engine (IT/OT)
         │
         ▼
-Alert Generation + Deduplication
+Risk Scoring + Alert Deduplication
         │
         ▼
-Dashboard + Email Notifications
+Dashboard + Notifications (Email/Slack/Webhook)
 ```
 
 Deployed as a containerized FastAPI application on Google Cloud Run.
@@ -62,7 +60,14 @@ Deployed as a containerized FastAPI application on Google Cloud Run.
 
 ## Key Capabilities
 
-### Multi-Source Aggregation
+### OT/ICS Security Intelligence
+
+* Passive discovery pipeline for OT devices via sensors (SNMP, Zeek, Shodan, custom)
+* Industrial protocol detection (Modbus, DNP3, PROFINET, BACnet, and more)
+* Purdue-zone aware network classification and exposure context
+* ICS-CERT and vendor advisory processing with CISA KEV prioritization
+
+### Vulnerability Aggregation
 
 * NVD CVE feed
 * Microsoft MSRC advisories
@@ -71,17 +76,19 @@ Deployed as a containerized FastAPI application on Google Cloud Run.
 * Vendor RSS feeds
 * CVSS enrichment
 
-### Asset Management
+### Asset Management (IT + OT)
 
 * Full CRUD asset inventory
 * Vendor / product / version tracking
+* Discovered device ingestion and promotion to managed assets
 * Asset-to-vulnerability matching
 * Metadata tracking
 
-### Alert System
+### Risk & Alert System
 
 * Automatic alert generation
-* Severity classification (Critical → Low)
+* Multi-factor risk scoring (vulnerability + exposure + criticality)
+* Severity classification (Critical to Low)
 * Deduplication
 * Alert acknowledgment workflow
 * Dashboard visibility
@@ -97,7 +104,7 @@ Deployed as a containerized FastAPI application on Google Cloud Run.
 
 * Email integration (Mailgun)
 * Dashboard alert visibility
-* Slack webhook field ready for extension
+* Slack and generic webhook support
 
 ---
 
@@ -122,6 +129,8 @@ Infrastructure:
 
 * Docker
 * Google Cloud Run (production)
+* Cloud SQL PostgreSQL (production)
+* Cloud Build auto-deploy pipeline
 * Nginx (optional reverse proxy)
 * Gunicorn/Uvicorn ASGI server
 
@@ -146,11 +155,15 @@ Hosted on: **Google Cloud Run**
 
 ## Screenshots
 
-Login Interface
-![Login](./Screenshot%202026-02-23%20152721.png)
+### Updated Login Experience
 
-Dashboard & Asset Management
-![Dashboard](./Screenshot%202026-02-23%20152748.png)
+![OneAlert login interface](./Screenshot%202026-02-23%20152721.png)
+
+### Dashboard, Assets, and Integrations
+
+![OneAlert dashboard and asset management](./Screenshot%202026-02-23%20152748.png)
+
+To add additional OT dashboard, sensor management, and analytics screenshots, place image files in the repo root or a docs folder and reference them here.
 
 ---
 
@@ -170,6 +183,8 @@ uvicorn backend.main:app --reload
 ```
 
 Visit: http://localhost:8000/app/
+
+For OT onboarding (sensors, discovered devices, correlation, and analytics), see [QUICKSTART.md](QUICKSTART.md).
 
 ### Production Deployment (Google Cloud Run)
 
@@ -201,17 +216,19 @@ Copy `.env.example` to `.env` and configure:
 **Optional:**
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` - For GitHub OAuth
 - `MAILGUN_API_KEY` / `MAILGUN_DOMAIN` - For email alerts
+- `SLACK_WEBHOOK_URL` / `GENERIC_WEBHOOK_URL` - For external alert delivery
 - `NVD_API_KEY` - For CVE data (higher rate limits)
 
 See [.env.example](.env.example) for full configuration options.
 
 ---
 
-## Roadmap (Focused)
+## Roadmap
 
 * CPE-based asset matching
 * EPSS integration
 * Slack & Teams notifications
+* OT protocol-level scanning and topology awareness
 * Role-based access control (RBAC)
 * Multi-tenant architecture
 * CI/CD pipeline automation
