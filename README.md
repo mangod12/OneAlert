@@ -7,7 +7,7 @@ OneAlert is a **production-ready industrial cybersecurity platform** designed fo
 
 It correlates real-world assets with vulnerabilities and advisories to help organizations **prioritize and reduce risk across IT and industrial systems**.
 
-Built as a **full-stack, cloud-native system** with real-time ingestion, asset discovery, and risk-based alerting.
+Built and maintained end-to-end as a **full-stack, cloud-native system** — from ingestion pipelines to production deployment.
 
 ---
 
@@ -161,7 +161,7 @@ Deployed as a containerized FastAPI application on Google Cloud Run.
 - PostgreSQL (Cloud SQL in production)
 - SQLite (local development)
 - APScheduler
-- Python-JOSE (JWT)
+- PyJWT (JWT)
 - Passlib (bcrypt)
 
 ### Frontend
@@ -261,6 +261,16 @@ Dockerfile              Container image
 
 ---
 
+## Scale and Design Considerations
+
+- Handles multi-source CVE and advisory feeds with scheduled ingestion (6-hour cycles)
+- Supports batch device ingestion from multiple network sensors simultaneously
+- Deduplication across assets, alerts, and advisory sources to minimize noise
+- Designed for horizontal scaling on Cloud Run with managed PostgreSQL backend
+- 44 automated tests covering API, alert logic, and scraper integration
+
+---
+
 ## Roadmap
 
 - CPE-based asset matching improvements
@@ -276,7 +286,7 @@ Dockerfile              Container image
 ## Author
 
 **Anshaj Kumar**
-Backend & Security Engineer (Industrial Systems)
+Backend & Security Engineer (Industrial Systems | Cloud-Native Architectures)
 
 ---
 
