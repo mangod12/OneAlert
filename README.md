@@ -1,6 +1,7 @@
 # OneAlert 2.0 – Industrial Cybersecurity Platform
 
 [![CI](https://github.com/mangod12/OneAlert/actions/workflows/ci.yml/badge.svg)](https://github.com/mangod12/OneAlert/actions/workflows/ci.yml)
+[![Deploy](https://img.shields.io/badge/Google%20Cloud%20Run-deployed-4285F4?logo=googlecloud&logoColor=white)](https://cybersec-saas-zjfau6dqcq-uc.a.run.app/)
 
 OneAlert is a **production-ready industrial cybersecurity platform** designed for manufacturing and OT (Operational Technology) environments.
 

@@ -5,7 +5,8 @@ Handles token creation, verification, and password security.
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import PyJWTError as JWTError
 from passlib.context import CryptContext
 from backend.config import settings
 
