@@ -19,7 +19,7 @@ aiosqlite==0.20.0       # Async SQLite driver
 psycopg2-binary
 
 # Authentication
-PyJWT[crypto]==2.10.1
+PyJWT[crypto]==2.12.1
 passlib[bcrypt]==1.7.4
 bcrypt<=4.0.1
 python-multipart==0.0.22
