@@ -33,7 +33,7 @@ requests==2.32.4  # For Mailgun API and GitHub OAuth
 
 # Environment and configuration
 python-dotenv==1.0.1
-pydantic==2.7.1
+pydantic[email]==2.7.1
 pydantic-settings==2.3.0
 
 # Scheduling
