@@ -52,23 +52,57 @@ OneAlert solves this by:
 
 ## Architecture
 
-```
-External Sources (NVD, MSRC, Cisco, Red Hat, CISA KEV, ICS Advisories)
-        |
-        v
-Async Ingestion Engine (APScheduler)
-        |
-        v
-Vulnerability + Advisory Enrichment
-        |
-        v
-Asset Correlation Engine (IT/OT)
-        |
-        v
-OT Risk Scoring + Alert Deduplication
-        |
-        v
-Dashboard + Notifications (Email / Slack / Webhooks)
+```mermaid
+flowchart TD
+    subgraph Sources["External Vulnerability Sources"]
+        NVD["NVD CVE Feeds"]
+        MSRC["Microsoft MSRC"]
+        CISCO["Cisco PSIRT"]
+        REDHAT["Red Hat Security"]
+        KEV["CISA KEV Catalog"]
+        ICS["ICS-CERT Advisories"]
+    end
+
+    subgraph Sensors["Network Sensors"]
+        SNMP["SNMP Pollers"]
+        ZEEK["Zeek / Suricata"]
+        SHODAN["Shodan API"]
+        CUSTOM["Custom Agents"]
+    end
+
+    subgraph Backend["FastAPI Backend (Cloud Run)"]
+        INGEST["Async Ingestion Engine\n(APScheduler - 6hr cycles)"]
+        ENRICH["CVE + Advisory Enrichment"]
+        DISCO["Device Discovery\n& Fingerprinting"]
+        CORRELATE["Asset Correlation Engine\n(CPE + Fuzzy Matching)"]
+        RISK["OT Risk Scorer\nVuln 40% | Exposure 35% | Criticality 25%"]
+        DEDUP["Alert Deduplication"]
+        AUDIT["Audit Trail"]
+    end
+
+    subgraph Storage["Data Layer"]
+        DB[("PostgreSQL\n(Cloud SQL)")]
+    end
+
+    subgraph Notify["Notifications"]
+        EMAIL["Email (Mailgun)"]
+        SLACK["Slack Webhook"]
+        WEBHOOK["Generic Webhook"]
+        DASH["Dashboard UI"]
+    end
+
+    Sources --> INGEST
+    Sensors --> DISCO
+    INGEST --> ENRICH
+    ENRICH --> CORRELATE
+    DISCO --> CORRELATE
+    CORRELATE --> RISK
+    RISK --> DEDUP
+    DEDUP --> AUDIT
+    CORRELATE <--> DB
+    DEDUP --> DB
+    AUDIT --> DB
+    DEDUP --> Notify
 ```
 
 Deployed as a containerized FastAPI application on Google Cloud Run.
