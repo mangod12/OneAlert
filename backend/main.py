@@ -12,7 +12,7 @@ import logging
 import os
 
 from backend.config import settings
-from backend.routers import auth, assets, alerts, ot
+from backend.routers import auth, assets, alerts, ot, organizations
 from backend.routers import sensor_ingest
 from backend.scheduler.cron import scheduler
 from backend.middleware.security_headers import SecurityHeadersMiddleware
@@ -143,6 +143,7 @@ app.include_router(assets.router, prefix="/api/v1/assets", tags=["Assets"])
 app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["Alerts"])
 app.include_router(ot.router, prefix="/api/v1/ot", tags=["OT/ICS"])
 app.include_router(sensor_ingest.router, prefix="/api/v1/ot", tags=["OT/ICS"])
+app.include_router(organizations.router, prefix="/api/v1/orgs", tags=["Organizations"])
 
 
 # Health check endpoint

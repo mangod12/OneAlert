@@ -15,6 +15,7 @@ from backend.models.asset import Asset  # noqa: F401
 from backend.models.alert import Alert  # noqa: F401
 from backend.models.audit_log import AuditLog  # noqa: F401
 from backend.models.discovered_device import DiscoveredDevice, NetworkSensor  # noqa: F401
+from backend.models.organization import Organization  # noqa: F401
 
 config = context.config
 
