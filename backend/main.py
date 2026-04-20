@@ -165,11 +165,16 @@ async def root():
 
 
 # Serve static files from frontend directory
+# Prefer React build (frontend-v2/dist) over legacy vanilla frontend
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-frontend_dir = os.path.join(project_root, "frontend")
+react_dist_dir = os.path.join(project_root, "frontend-v2", "dist")
+legacy_frontend_dir = os.path.join(project_root, "frontend")
 
-if os.path.isdir(frontend_dir):
-    app.mount("/app", StaticFiles(directory=frontend_dir, html=True), name="frontend")
-    logger.info(f"Serving frontend from {frontend_dir}")
+if os.path.isdir(react_dist_dir):
+    app.mount("/app", StaticFiles(directory=react_dist_dir, html=True), name="frontend")
+    logger.info(f"Serving React frontend from {react_dist_dir}")
+elif os.path.isdir(legacy_frontend_dir):
+    app.mount("/app", StaticFiles(directory=legacy_frontend_dir, html=True), name="frontend")
+    logger.info(f"Serving legacy frontend from {legacy_frontend_dir}")
 else:
-    logger.warning(f"Frontend directory not found at {frontend_dir}")
+    logger.warning("No frontend directory found")
