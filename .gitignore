@@ -1,3 +1,8 @@
+# Secrets — NEVER commit
+env.yaml
+.env
+*.env.local
+
 # Python
 __pycache__/
 *.py[cod]

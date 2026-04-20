@@ -71,8 +71,7 @@ class UserBase(BaseModel):
     slack_webhook_url: Optional[str] = None
     webhook_url: Optional[str] = None
     mfa_enabled: Optional[bool] = False
-    mfa_secret: Optional[str] = None
-    
+
     model_config = {"from_attributes": True}
 
 
@@ -121,7 +120,6 @@ class UserResponse(UserBase):
     slack_webhook_url: Optional[str] = None
     webhook_url: Optional[str] = None
     mfa_enabled: Optional[bool] = False
-    mfa_secret: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

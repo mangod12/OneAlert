@@ -1,15 +1,15 @@
 """Request metrics middleware — tracks request counts and latencies."""
 
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
 
-# In-memory metrics store
+# In-memory metrics store (bounded to prevent memory leaks)
 _request_counts: dict = defaultdict(int)
-_request_durations: dict = defaultdict(list)
+_request_durations: dict = defaultdict(lambda: deque(maxlen=1000))
 _error_counts: dict = defaultdict(int)
 
 
