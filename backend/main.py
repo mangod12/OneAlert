@@ -221,7 +221,20 @@ react_dist_dir = os.path.join(project_root, "frontend-v2", "dist")
 legacy_frontend_dir = os.path.join(project_root, "frontend")
 
 if os.path.isdir(react_dist_dir):
-    app.mount("/app", StaticFiles(directory=react_dist_dir, html=True), name="frontend")
+    from fastapi.responses import FileResponse
+
+    # Serve static assets (JS, CSS, images)
+    app.mount("/app/assets", StaticFiles(directory=os.path.join(react_dist_dir, "assets")), name="frontend-assets")
+
+    # SPA catch-all: serve index.html for all /app/* routes (client-side routing)
+    @app.get("/app/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """Serve React SPA — all non-asset routes return index.html."""
+        file_path = os.path.join(react_dist_dir, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(os.path.join(react_dist_dir, "index.html"))
+
     logger.info(f"Serving React frontend from {react_dist_dir}")
 elif os.path.isdir(legacy_frontend_dir):
     app.mount("/app", StaticFiles(directory=legacy_frontend_dir, html=True), name="frontend")
