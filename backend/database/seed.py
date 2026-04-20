@@ -34,7 +34,7 @@ async def create_demo_user(session: AsyncSession) -> User:
     user = User(
         email="admin@example.com",
         hashed_password=get_password_hash("password123"),
-        full_name="Rajesh Kumar",
+        full_name="Admin User",
         company="AquaPure Water Treatment Ltd.",
         is_active=True,
         is_verified=True,

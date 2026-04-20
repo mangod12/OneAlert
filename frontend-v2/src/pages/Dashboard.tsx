@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import apiClient from '../api/client';
-import type { AlertStats, OTSummary } from '../api/types';
+import type { AlertStats, Alert } from '../api/types';
 import { KPICard } from '../components/KPICard';
 import { SeverityBreakdown } from '../components/charts/SeverityBreakdown';
 import { AlertTrend } from '../components/charts/AlertTrend';
@@ -9,18 +9,24 @@ import { ShieldAlert, Server, Activity, AlertTriangle } from 'lucide-react';
 
 export function Dashboard() {
   const [stats, setStats] = useState<AlertStats | null>(null);
-  const [otSummary, setOTSummary] = useState<OTSummary | null>(null);
+  const [totalAssets, setTotalAssets] = useState(0);
+  const [totalDiscovered, setTotalDiscovered] = useState(0);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const [statsRes, otRes] = await Promise.all([
+        const [statsRes, assetsRes, devicesRes, alertsRes] = await Promise.all([
           apiClient.get('/alerts/stats/overview'),
-          apiClient.get('/ot/summary'),
+          apiClient.get('/assets/', { params: { size: 1 } }),
+          apiClient.get('/ot/discovered-devices', { params: { size: 1 } }),
+          apiClient.get('/alerts/', { params: { size: 50 } }),
         ]);
         setStats(statsRes.data);
-        setOTSummary(otRes.data);
+        setTotalAssets(assetsRes.data.total ?? 0);
+        setTotalDiscovered(devicesRes.data.total ?? 0);
+        setAlerts(alertsRes.data.alerts ?? []);
       } catch (err) {
         console.error('Failed to load dashboard data:', err);
       } finally {
@@ -60,13 +66,13 @@ export function Dashboard() {
         />
         <KPICard
           title="Assets Monitored"
-          value={(otSummary?.managed_ot_assets ?? 0) + (stats?.total_alerts ? 1 : 0)}
+          value={totalAssets}
           icon={Server}
           color="success"
         />
         <KPICard
-          title="OT Devices Discovered"
-          value={otSummary?.discovered_ot_devices ?? 0}
+          title="Devices Discovered"
+          value={totalDiscovered}
           icon={Activity}
           color="warning"
         />
@@ -79,7 +85,7 @@ export function Dashboard() {
         </div>
         <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
           <h3 className="text-lg font-semibold text-white mb-4">Alert Trend (7 days)</h3>
-          <AlertTrend />
+          <AlertTrend alerts={alerts} />
         </div>
       </div>
 
