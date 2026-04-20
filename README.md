@@ -1,52 +1,77 @@
-# OneAlert 2.0 – Industrial Cybersecurity Platform
+# OneAlert 2.0 — Industrial OT/ICS Cybersecurity Platform
 
 [![CI](https://github.com/mangod12/OneAlert/actions/workflows/ci.yml/badge.svg)](https://github.com/mangod12/OneAlert/actions/workflows/ci.yml)
-[![Deploy](https://img.shields.io/badge/Google%20Cloud%20Run-deployed-4285F4?logo=googlecloud&logoColor=white)](https://cybersec-saas-zjfau6dqcq-uc.a.run.app/)
+[![Deploy](https://img.shields.io/badge/Cloud%20Run-live-4285F4?logo=googlecloud&logoColor=white)](https://cybersec-saas-ebqzvaqu6a-uc.a.run.app/app/)
+[![Tests](https://img.shields.io/badge/tests-166%20passing-brightgreen)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-OneAlert is a **production-ready industrial cybersecurity platform** designed for manufacturing and OT (Operational Technology) environments.
-
-It correlates real-world assets with vulnerabilities and advisories to help organizations **prioritize and reduce risk across IT and industrial systems**.
-
-Built and maintained end-to-end as a **full-stack, cloud-native system** — from ingestion pipelines to production deployment.
-
----
+**The affordable, self-service OT vulnerability management platform** — AI-powered remediation, continuous compliance monitoring, and SBOM analysis for SMB manufacturers at 1/50th the cost of enterprise alternatives (Claroty, Dragos, Nozomi).
 
 ## Live Demo
 
-**https://cybersec-saas-zjfau6dqcq-uc.a.run.app/**
+**https://cybersec-saas-ebqzvaqu6a-uc.a.run.app/app/**
 
-**Demo Login**
-- Email: `admin@example.com`
-- Password: `password123`
-- Or use GitHub OAuth
+| | |
+|---|---|
+| Email | `admin@example.com` |
+| Password | `password123` |
 
----
-
-## Real-World Use Case
-
-Designed for industrial environments such as:
-- Manufacturing plants
-- Energy and utility systems
-- SCADA / ICS networks
-- Hybrid IT-OT infrastructures
-
-### Problems Solved
-- Lack of context in vulnerability alerts
-- Manual tracking of industrial assets
-- Poor visibility into OT risk exposure
-- Disconnected IT and OT security workflows
+> Pre-loaded with a realistic water treatment plant environment: 11 OT/IT assets, 6 real CVE alerts, 4 discovered devices, network topology, and compliance frameworks.
 
 ---
 
-## System Overview
+## What Makes This Different
 
-Security teams are flooded with advisories, while OT environments require context-aware analysis.
+| Dimension | Enterprise Incumbents | OneAlert |
+|-----------|----------------------|----------|
+| **Price** | $300K–$800K/yr | $499–$4,999/mo |
+| **Deployment** | Hardware sensors + pro services (weeks) | Self-service SaaS (minutes) |
+| **SBOM** | None native | Built-in CycloneDX/SPDX parsing |
+| **Compliance** | Static PDF reports | Continuous automated evidence collection |
+| **Remediation** | Detection only | AI-powered OT-aware remediation guidance |
+| **Time to Value** | 3–6 months | Same day |
 
-OneAlert solves this by:
-- Aggregating vulnerabilities from multiple sources
-- Discovering and classifying OT/IT assets
-- Correlating vulnerabilities with real assets
-- Scoring and prioritizing risks intelligently
+---
+
+## Platform Capabilities
+
+### Security & Vulnerability Management
+- Multi-source CVE aggregation (NVD, CISA KEV, ICS-CERT, Cisco PSIRT, Microsoft MSRC, Red Hat)
+- AI-powered remediation engine with 5 OT-aware rules (patch vs. compensating control based on Purdue zone)
+- EPSS exploit probability scoring (FIRST.org API)
+- CISA KEV active exploitation flagging
+- Alert deduplication, acknowledgment workflow, and audit trail
+
+### OT/ICS Asset Discovery
+- Passive device discovery via network sensors (Zeek, Suricata, SNMP, Shodan)
+- Industrial protocol detection (Modbus, DNP3, PROFINET, EtherNet/IP, OPC-UA, HART)
+- Purdue model zone classification (Level 0–5)
+- Device-to-asset correlation and promotion workflow
+- Network topology mapping with graph visualization
+
+### Compliance-as-Code
+- IEC 62443-3-3 (10 controls) + NIST CSF 2.0 (11 controls) pre-loaded
+- Automated evidence collection from platform data
+- Continuous compliance scoring per framework
+- Manual assessment override with evidence documentation
+
+### SBOM & Software Composition Analysis
+- CycloneDX and SPDX JSON ingestion
+- Component extraction (name, version, supplier, PURL, CPE, license, hash)
+- Vulnerability cross-reference against tracked CVEs
+
+### SIEM/SOAR Integrations
+- Splunk HTTP Event Collector
+- Microsoft Sentinel (Log Analytics API)
+- ServiceNow incident creation
+- PagerDuty event triggering
+- Per-user configuration with test-connection validation
+
+### Billing & Multi-Tenancy
+- Organization model with role-based access (admin/analyst/viewer)
+- Stripe billing integration (checkout, webhooks, plan gating)
+- Plan tiers: Free (10 assets) → Starter ($499) → Pro ($1,999) → Enterprise ($4,999)
+- Feature gating and usage enforcement per plan
 
 ---
 
@@ -54,265 +79,182 @@ OneAlert solves this by:
 
 ```mermaid
 flowchart TD
-    subgraph Sources["External Vulnerability Sources"]
-        NVD["NVD CVE Feeds"]
+    subgraph Sources["Vulnerability Intelligence"]
+        NVD["NVD CVE"]
+        KEV["CISA KEV"]
+        ICS["ICS-CERT"]
         MSRC["Microsoft MSRC"]
         CISCO["Cisco PSIRT"]
-        REDHAT["Red Hat Security"]
-        KEV["CISA KEV Catalog"]
-        ICS["ICS-CERT Advisories"]
     end
 
-    subgraph Sensors["Network Sensors"]
-        SNMP["SNMP Pollers"]
+    subgraph Sensors["OT Network Sensors"]
         ZEEK["Zeek / Suricata"]
+        SNMP["SNMP Pollers"]
         SHODAN["Shodan API"]
-        CUSTOM["Custom Agents"]
     end
 
-    subgraph Backend["FastAPI Backend (Cloud Run)"]
-        INGEST["Async Ingestion Engine\n(APScheduler - 6hr cycles)"]
-        ENRICH["CVE + Advisory Enrichment"]
-        DISCO["Device Discovery\n& Fingerprinting"]
-        CORRELATE["Asset Correlation Engine\n(CPE + Fuzzy Matching)"]
-        RISK["OT Risk Scorer\nVuln 40% | Exposure 35% | Criticality 25%"]
-        DEDUP["Alert Deduplication"]
-        AUDIT["Audit Trail"]
+    subgraph Backend["FastAPI Backend"]
+        INGEST["CVE Ingestion\n(6hr cycles)"]
+        DISCO["Device Discovery"]
+        REMEDIATE["AI Remediation\nEngine"]
+        COMPLY["Compliance\nEngine"]
+        RISK["OT Risk Scorer"]
+        TOPO["Topology\nService"]
+    end
+
+    subgraph Frontend["React Frontend (Vite + TypeScript)"]
+        DASH["Dashboard"]
+        ALERTS["Alert Management"]
+        ASSETS["Asset Inventory"]
+        OT["OT Discovery"]
+        COMP_UI["Compliance View"]
     end
 
     subgraph Storage["Data Layer"]
-        DB[("PostgreSQL\n(Cloud SQL)")]
+        DB[("PostgreSQL")]
     end
 
-    subgraph Notify["Notifications"]
-        EMAIL["Email (Mailgun)"]
-        SLACK["Slack Webhook"]
-        WEBHOOK["Generic Webhook"]
-        DASH["Dashboard UI"]
+    subgraph Integrations["SIEM/SOAR"]
+        SPLUNK["Splunk"]
+        SENTINEL["Sentinel"]
+        SNOW["ServiceNow"]
+        PD["PagerDuty"]
     end
 
     Sources --> INGEST
     Sensors --> DISCO
-    INGEST --> ENRICH
-    ENRICH --> CORRELATE
-    DISCO --> CORRELATE
-    CORRELATE --> RISK
-    RISK --> DEDUP
-    DEDUP --> AUDIT
-    CORRELATE <--> DB
-    DEDUP --> DB
-    AUDIT --> DB
-    DEDUP --> Notify
+    INGEST --> RISK
+    DISCO --> TOPO
+    RISK --> REMEDIATE
+    RISK --> COMPLY
+    Backend <--> DB
+    Backend --> Integrations
+    Frontend <--> Backend
 ```
-
-Deployed as a containerized FastAPI application on Google Cloud Run.
-
----
-
-## Engineering Highlights
-
-- Async backend using **FastAPI + APScheduler**
-- Multi-source CVE aggregation (NVD, CISA KEV, Cisco, MSRC, Red Hat, ICS-CERT)
-- Asset-to-vulnerability correlation with CPE and fuzzy matching
-- OT risk scoring engine: **vulnerability (40%) + exposure (35%) + criticality (25%)**
-- Passive OT device discovery pipeline with sensor ingestion API
-- Cloud-native deployment (**Docker + Cloud Run + Cloud SQL**)
-- CI/CD: GitHub Actions (test) + Cloud Build (deploy)
-- JWT authentication + GitHub OAuth
-- Scheduled background processing with APScheduler
-
----
-
-## Key Capabilities
-
-### OT / ICS Security Intelligence
-- Passive OT device discovery via sensors (SNMP, Zeek, Shodan, custom agents)
-- Industrial protocol detection (Modbus, DNP3, PROFINET, BACnet, and more)
-- Purdue-zone aware network classification and exposure context
-- ICS-CERT and vendor advisory processing with CISA KEV prioritization
-- Discovered device ingestion, correlation, and promotion to managed assets
-
-### Vulnerability Aggregation
-- NVD CVE feeds
-- Microsoft MSRC advisories
-- Cisco PSIRT API
-- Red Hat Security data
-- ICS-CERT / CISA KEV catalog
-- Vendor RSS feeds + CVSS enrichment
-
-### Asset Management (IT + OT)
-- Full CRUD asset inventory
-- Vendor / product / version tracking
-- OT-specific fields: network zone, industrial protocols, firmware, serial number
-- Discovered device ingestion and promotion to managed assets
-- Asset-to-vulnerability matching (CPE + fuzzy vendor/product)
-
-### Risk & Alert System
-- Automated alert generation from CVEs, vendor advisories, and ICS advisories
-- Multi-factor OT risk scoring (vulnerability + exposure + criticality)
-- Severity classification (Critical / High / Medium / Low)
-- Deduplication engine (prevents duplicate alerts per user/asset/CVE)
-- Alert acknowledgment workflow
-- Audit trail logging
-
-### Notifications
-- Email alerts (Mailgun)
-- Slack webhook integration
-- Generic webhook support
-- Per-user webhook configuration
-
----
-
-## Screenshots
-
-### Alert Management Interface
-
-![Alert Management Interface](./Screenshot%202026-03-09%20183616.png)
-
-### Asset Discovery and Monitoring
-
-![Asset Discovery Dashboard](./Screenshot%202026-03-09%20183733.png)
-
-### OT Security Overview
-
-![OT Security Overview](./Screenshot%202026-03-09%20183739.png)
-
-### Vulnerability Intelligence Feed
-
-![Vulnerability Intelligence](./Screenshot%202026-03-09%20183750.png)
-
-### Risk Analysis Dashboard
-
-![Risk Analysis Dashboard](./Screenshot%202026-03-09%20183756.png)
 
 ---
 
 ## Tech Stack
 
-### Backend
-- FastAPI (async)
-- SQLAlchemy 2.0
-- PostgreSQL (Cloud SQL in production)
-- SQLite (local development)
-- APScheduler
-- PyJWT (JWT)
-- Passlib (bcrypt)
-
-### Frontend
-- Vanilla JavaScript SPA
-- REST API integration
-
-### Infrastructure
-- Docker
-- Google Cloud Run
-- Cloud SQL (PostgreSQL)
-- Cloud Build (auto-deploy on push)
-- GitHub Actions (CI / tests)
-- Nginx (optional reverse proxy)
-- Gunicorn / Uvicorn
-
-### Testing
-- pytest
-- pytest-asyncio
+| Layer | Technology |
+|-------|-----------|
+| **Backend** | Python 3.11, FastAPI, SQLAlchemy 2.0, Alembic, APScheduler |
+| **Frontend** | React 18, TypeScript, Vite, Tailwind CSS v4, Zustand, Recharts |
+| **Database** | PostgreSQL 16 (Cloud SQL), SQLite (dev) |
+| **Auth** | JWT + GitHub OAuth + TOTP MFA |
+| **Infra** | Docker (multi-stage), Google Cloud Run, Cloud Build |
+| **CI/CD** | GitHub Actions (test) + Cloud Build (deploy) |
+| **Observability** | structlog, request metrics middleware, health probes |
+| **Tests** | pytest (166 tests), pytest-asyncio, pytest-cov |
 
 ---
 
-## Deployment
+## Quick Start
 
 ### Local Development
 
 ```bash
+# Clone and install
+git clone https://github.com/mangod12/OneAlert.git
+cd OneAlert
 pip install -r requirements.txt
-python scripts/setup_database.py
-uvicorn backend.main:app --reload
+
+# Start both frontend + backend (parallel dev servers)
+./dev.sh
+
+# Or backend only
+uvicorn backend.main:app --reload --port 8000
 ```
 
 Visit: http://localhost:8000/app/
 
-For OT onboarding (sensors, discovered devices, correlation, and analytics), see [QUICKSTART.md](QUICKSTART.md).
+### Docker
+
+```bash
+docker compose up --build
+# App: http://localhost:8000/app/
+# PostgreSQL: localhost:5432
+```
 
 ### Production (Cloud Run)
 
-Automatic deployment is configured. Push to `main`:
+Push to `main` triggers Cloud Build → deploys to Cloud Run automatically.
 
 ```bash
-git push origin main
+# Manual deploy
+gcloud builds submit --config=cloudbuild.yaml --substitutions=COMMIT_SHA=$(git rev-parse HEAD)
 ```
-
-Cloud Build automatically builds the container and deploys to Cloud Run.
-
-**First-time setup:**
-1. Follow [CLOUD_SQL_SETUP.md](CLOUD_SQL_SETUP.md) to create the PostgreSQL database
-2. Or run the automated script in Cloud Shell:
-   ```bash
-   bash scripts/setup_cloud_sql.sh YOUR_PROJECT_ID
-   ```
 
 ---
 
 ## Configuration
 
-Copy `.env.example` to `.env` and configure:
-
-### Required
-- `SECRET_KEY` - Random secret for JWT signing
-- `DATABASE_URL` - PostgreSQL connection string
-
-### Optional
-- `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` - GitHub OAuth
-- `MAILGUN_API_KEY` / `MAILGUN_DOMAIN` - Email alerts
-- `SLACK_WEBHOOK_URL` / `GENERIC_WEBHOOK_URL` - External alert delivery
-- `NVD_API_KEY` - Higher rate limits for CVE data
-
-See [.env.example](.env.example) for all options.
-
----
-
-## Testing
-
-```bash
-pytest -v
-```
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SECRET_KEY` | Yes | JWT signing key (32+ chars) |
+| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `GITHUB_CLIENT_ID` | No | GitHub OAuth app ID |
+| `GITHUB_CLIENT_SECRET` | No | GitHub OAuth secret |
+| `STRIPE_SECRET_KEY` | No | Stripe billing integration |
+| `MAILGUN_API_KEY` | No | Email alert delivery |
+| `NVD_API_KEY` | No | Higher NVD rate limits |
 
 ---
 
 ## Repository Structure
 
 ```
-backend/                FastAPI app, routers, models, services
-  routers/              API endpoints (auth, assets, alerts, OT, sensor ingest)
-  services/             Business logic & external API integrations
-  models/               SQLAlchemy ORM models (user, asset, alert, discovered_device)
-  database/             DB connection & seeding
-  scheduler/            APScheduler cron jobs
-frontend/               Vanilla JS SPA
-scripts/                Deployment & setup utilities
-tests/                  pytest test suite
-.github/workflows/      GitHub Actions CI
-cloudbuild.yaml         Cloud Build deploy pipeline
-Dockerfile              Container image
+backend/
+  routers/          API endpoints (auth, assets, alerts, OT, compliance, sbom, topology, billing, integrations)
+  services/         Business logic (remediation engine, EPSS, compliance, SBOM parser, billing, integrations)
+  models/           SQLAlchemy models (user, asset, alert, org, remediation, compliance, sbom, topology, subscription)
+  middleware/       Rate limiting, security headers, request ID, metrics
+  database/         DB connection, seeding
+  scheduler/        APScheduler cron jobs (CVE scraping, OT rescoring)
+frontend-v2/
+  src/pages/        React pages (Dashboard, Alerts, Assets, OT, Settings, AuditLog)
+  src/components/   Reusable components (charts, layout, modals)
+  src/stores/       Zustand state management
+  src/api/          Axios client + TypeScript types
+alembic/            Database migrations
+tests/              166 pytest tests
+docker-compose.yml  Full stack (app + PostgreSQL)
+cloudbuild.yaml     Cloud Build deploy pipeline
+Dockerfile          Multi-stage (Node build + Python runtime)
 ```
 
 ---
 
-## Scale and Design Considerations
+## Testing
 
-- Handles multi-source CVE and advisory feeds with scheduled ingestion (6-hour cycles)
-- Supports batch device ingestion from multiple network sensors simultaneously
-- Deduplication across assets, alerts, and advisory sources to minimize noise
-- Designed for horizontal scaling on Cloud Run with managed PostgreSQL backend
-- 44 automated tests covering API, alert logic, and scraper integration
+```bash
+# Run all 166 tests
+pytest -q
+
+# With coverage
+pytest --cov=backend --cov-report=term-missing
+```
 
 ---
 
-## Roadmap
+## Roadmap (Completed)
 
-- CPE-based asset matching improvements
-- EPSS integration for exploit probability scoring
-- Active OT protocol scanning and topology mapping
-- Role-based access control (RBAC)
-- Multi-tenant architecture
-- NERC CIP / IEC 62443 compliance reporting
+- [x] Phase 1: Security Hardening (rate limiting, MFA, security headers, Alembic)
+- [x] Phase 2: Modern React Frontend (Vite + TypeScript + Tailwind)
+- [x] Phase 3: Multi-Tenancy & Organizations
+- [x] Phase 4: AI Remediation Engine + EPSS
+- [x] Phase 5: Compliance-as-Code (IEC 62443, NIST CSF)
+- [x] Phase 6: SBOM & Software Composition Analysis
+- [x] Phase 7: Network Topology Mapping
+- [x] Phase 8: Stripe Billing & Subscriptions
+- [x] Phase 9: SIEM/SOAR Integrations (Splunk, Sentinel, ServiceNow, PagerDuty)
+- [x] Phase 10: Observability (structured logging, metrics, health probes)
+
+### Next Up
+- NERC CIP / NIS2 compliance framework expansion
+- Real-time WebSocket alerts
+- Network topology interactive visualization (React Flow)
+- SAML/SSO for enterprise customers
 - Anomaly detection for OT protocol traffic
 
 ---
@@ -320,19 +262,7 @@ Dockerfile              Container image
 ## Author
 
 **Anshaj Kumar**
-Backend & Security Engineer (Industrial Systems | Cloud-Native Architectures)
-
----
-
-## Why This Project Matters
-
-This project demonstrates:
-
-- **Production-grade backend engineering** — async FastAPI, background jobs, multi-source API integration
-- **Real-world security system design** — CVE correlation, risk scoring, deduplication, audit trails
-- **Industrial (OT/ICS) domain expertise** — Purdue model, protocol-aware classification, CISA KEV
-- **Cloud-native deployment & CI/CD** — Docker, Cloud Run, Cloud Build, GitHub Actions
-- **End-to-end system ownership** — from data ingestion to alerting to production monitoring
+Backend & Security Engineer — Industrial Systems | Cloud-Native Architectures
 
 ---
 
