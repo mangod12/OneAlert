@@ -16,13 +16,13 @@ from backend.database.db import get_db, get_async_db, Base
 
 
 # Use the same test.db as test_api.py to avoid cross-module override conflicts
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
+SQLALCHEMY_DATABASE_URL = "sqlite:///./test_orgs.db"
 _engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
 )
 _TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
 
-ASYNC_SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+ASYNC_SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///./test_orgs.db"
 _async_engine_test = create_async_engine(
     ASYNC_SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
 )

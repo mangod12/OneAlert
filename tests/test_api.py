@@ -18,14 +18,14 @@ from backend.models.alert import Alert, AlertStatus, Severity
 
 
 # Synchronous Test database setup (for schema management and sync override if needed)
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
+SQLALCHEMY_DATABASE_URL = "sqlite:///./test_api.db"
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Asynchronous Test database setup (for async endpoint override)
-ASYNC_SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///./test.db" # Same file as sync
+ASYNC_SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///./test_api.db" # Same file as sync
 async_engine_test = create_async_engine(
     ASYNC_SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
 )
@@ -46,13 +46,13 @@ async def override_get_async_db():
     async with AsyncTestingSessionLocal() as session:
         yield session
 
-app.dependency_overrides[get_db] = override_get_db
-app.dependency_overrides[get_async_db] = override_get_async_db
 
 
 @pytest.fixture(scope="function")
 def client():
     """Create a test client for the FastAPI app."""
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_async_db] = override_get_async_db
     # Create test tables using the application's Base and the synchronous engine
     Base.metadata.create_all(bind=engine)
     

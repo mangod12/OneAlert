@@ -25,13 +25,13 @@ from backend.services.auth_service import get_password_hash
 
 
 # Test database setup
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
+SQLALCHEMY_DATABASE_URL = "sqlite:///./test_topology.db"
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-ASYNC_SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+ASYNC_SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///./test_topology.db"
 async_engine_test = create_async_engine(
     ASYNC_SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
 )
@@ -53,13 +53,11 @@ async def override_get_async_db():
         yield session
 
 
-app.dependency_overrides[get_db] = override_get_db
-app.dependency_overrides[get_async_db] = override_get_async_db
-
-
 @pytest.fixture(scope="function")
 def client():
     """Create a test client with seeded user."""
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_async_db] = override_get_async_db
     Base.metadata.create_all(bind=engine)
 
     # Seed a test user
