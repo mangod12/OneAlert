@@ -9,4 +9,7 @@ def pytest_configure(config):
     """Remove stale test DBs before test run to avoid cross-file conflicts."""
     import pathlib
     for db_file in pathlib.Path(".").glob("test*.db"):
-        db_file.unlink(missing_ok=True)
+        try:
+            db_file.unlink(missing_ok=True)
+        except PermissionError:
+            pass

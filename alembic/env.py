@@ -21,6 +21,7 @@ from backend.models.compliance import ComplianceFramework, ComplianceControl, Co
 from backend.models.sbom import SBOM, SBOMComponent  # noqa: F401
 from backend.models.network_connection import NetworkConnection  # noqa: F401
 from backend.models.subscription import Subscription  # noqa: F401
+from backend.models.integration_config import IntegrationConfig  # noqa: F401
 
 config = context.config
 

@@ -60,5 +60,8 @@ isort==5.13.2
 # Rate limiting
 slowapi==0.1.9
 
+# Observability
+structlog==24.4.0
+
 # Added asyncpg
 asyncpg

@@ -13,16 +13,21 @@ import os
 
 from backend.config import settings
 from backend.routers import auth, assets, alerts, ot, organizations, compliance, sbom, topology, billing
-from backend.routers import sensor_ingest
+from backend.routers import sensor_ingest, integrations
 from backend.scheduler.cron import scheduler
 from backend.middleware.security_headers import SecurityHeadersMiddleware
 from backend.middleware.rate_limiter import limiter, SlowAPIMiddleware, RateLimitExceeded, rate_limit_exceeded_handler
 from backend.middleware.request_id import RequestIDMiddleware
+from backend.middleware.metrics import MetricsMiddleware, get_metrics_summary
+from backend.logging_config import setup_logging, get_logger as get_struct_logger
 
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Initialize structured logging
+setup_logging(debug=os.getenv("DEBUG", "").lower() in ("1", "true"))
 
 
 @asynccontextmanager
@@ -101,6 +106,9 @@ app.add_middleware(SecurityHeadersMiddleware)
 # Request ID tracing
 app.add_middleware(RequestIDMiddleware)
 
+# Request metrics
+app.add_middleware(MetricsMiddleware)
+
 
 # Exception handlers with standardized envelope
 @app.exception_handler(HTTPException)
@@ -154,6 +162,7 @@ app.include_router(compliance.router, prefix="/api/v1/compliance", tags=["Compli
 app.include_router(sbom.router, prefix="/api/v1/sbom", tags=["SBOM"])
 app.include_router(topology.router, prefix="/api/v1/topology", tags=["Network Topology"])
 app.include_router(billing.router, prefix="/api/v1/billing", tags=["Billing"])
+app.include_router(integrations.router, prefix="/api/v1/integrations", tags=["Integrations"])
 
 
 # Health check endpoint
@@ -165,6 +174,36 @@ async def health_check():
         "app_name": settings.app_name,
         "version": settings.app_version
     }
+
+
+@app.get("/health/live")
+async def health_live():
+    """Liveness probe — always returns OK if the process is running."""
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    """Readiness probe — checks database connectivity."""
+    try:
+        from backend.database.db import get_async_engine
+        async_engine = get_async_engine()
+        async with async_engine.connect() as conn:
+            await conn.execute(
+                __import__("sqlalchemy").text("SELECT 1")
+            )
+        return {"status": "ready", "database": "connected"}
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "database": str(e)},
+        )
+
+
+@app.get("/metrics")
+async def metrics_endpoint():
+    """Return in-memory request metrics summary."""
+    return {"success": True, "data": get_metrics_summary()}
 
 
 # Root endpoint - redirect to frontend
