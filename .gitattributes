@@ -1,0 +1,3 @@
+# Force Unix line endings for shell scripts (critical for Docker/Cloud Run)
+*.sh text eol=lf
+Dockerfile text eol=lf
