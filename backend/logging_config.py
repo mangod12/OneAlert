@@ -1,21 +1,40 @@
+"""Structured logging configuration using structlog."""
+
 import logging
-from logging.handlers import RotatingFileHandler
-import os
+import structlog
 
-LOG_DIR = os.path.join(os.path.dirname(__file__), '..', 'logs')
-os.makedirs(LOG_DIR, exist_ok=True)
-LOG_FILE = os.path.join(LOG_DIR, 'app.log')
 
-logger = logging.getLogger("cybersaas")
-logger.setLevel(logging.INFO)
+def setup_logging(debug: bool = False):
+    """Configure structured logging for the application."""
 
-formatter = logging.Formatter('[%(asctime)s] %(levelname)s %(name)s: %(message)s')
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.stdlib.filter_by_level,
+            structlog.stdlib.add_logger_name,
+            structlog.stdlib.add_log_level,
+            structlog.stdlib.PositionalArgumentsFormatter(),
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
+            structlog.processors.UnicodeDecoder(),
+            structlog.processors.JSONRenderer()
+            if not debug
+            else structlog.dev.ConsoleRenderer(),
+        ],
+        context_class=dict,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
+    )
 
-file_handler = RotatingFileHandler(LOG_FILE, maxBytes=5*1024*1024, backupCount=5)
-file_handler.setFormatter(formatter)
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(formatter)
+    # Set root logger level
+    logging.basicConfig(
+        format="%(message)s",
+        level=logging.DEBUG if debug else logging.INFO,
+    )
 
-if not logger.hasHandlers():
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler) 
+
+def get_logger(name: str = __name__):
+    """Get a structured logger instance."""
+    return structlog.get_logger(name)

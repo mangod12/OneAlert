@@ -8,7 +8,7 @@ schemas for user-related API operations (registration, login, profile, etc).
 - The Pydantic models (`UserBase`, `UserCreate`, `UserUpdate`, `UserResponse`, `Token`, `TokenData`) are used for request/response validation and serialization.
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from backend.database.db import Base
@@ -43,6 +43,10 @@ class User(Base):
     auth_provider = Column(String, default="email")  # "email" or "github"
     role = Column(String, default="viewer")  # 'admin', 'analyst', 'viewer'
 
+    # Organization (multi-tenancy)
+    org_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+    organization = relationship("Organization", back_populates="users")
+
     # Slack and webhook URLs
     slack_webhook_url = Column(String, nullable=True)
     webhook_url = Column(String, nullable=True)
@@ -67,8 +71,7 @@ class UserBase(BaseModel):
     slack_webhook_url: Optional[str] = None
     webhook_url: Optional[str] = None
     mfa_enabled: Optional[bool] = False
-    mfa_secret: Optional[str] = None
-    
+
     model_config = {"from_attributes": True}
 
 
@@ -113,11 +116,11 @@ class UserResponse(UserBase):
     is_verified: bool
     created_at: datetime
     updated_at: Optional[datetime] = None
+    org_id: Optional[int] = None
     slack_webhook_url: Optional[str] = None
     webhook_url: Optional[str] = None
     mfa_enabled: Optional[bool] = False
-    mfa_secret: Optional[str] = None
-    
+
     model_config = {"from_attributes": True}
 
 

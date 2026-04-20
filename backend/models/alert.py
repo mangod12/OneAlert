@@ -68,14 +68,15 @@ class Alert(Base):
             "asset_id": self.asset_id,
             "cve_id": self.cve_id,
             "vendor_advisory_id": self.vendor_advisory_id,
+            "title": self.title,
             "description": self.description,
-            "status": self.status.value if self.status else None, # Ensure enum is serialized
-            "severity": self.severity.value if self.severity else None, # Ensure enum is serialized
+            "severity": self.severity.value if hasattr(self.severity, 'value') else self.severity,
+            "cvss_score": self.cvss_score,
+            "status": self.status.value if hasattr(self.status, 'value') else self.status,
+            "remediation": self.remediation,
+            "source_url": self.source_url,
             "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "source": self.source,
-            "notes": self.notes,
-            # Asset details will be added by the router if joined
+            "acknowledged_at": self.acknowledged_at.isoformat() if self.acknowledged_at else None,
         }
 
 

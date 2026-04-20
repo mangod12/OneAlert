@@ -119,7 +119,9 @@ class TestAuthenticationAPI:
         response = client.post("/api/v1/auth/register", json=test_user_data)
         
         assert response.status_code == 400
-        assert "Email already registered" in response.json()["detail"]
+        body = response.json()
+        error_msg = body.get("detail") or body.get("error", {}).get("message", "")
+        assert "Email already registered" in error_msg
     
     def test_login_success(self, client, test_user_data):
         """Test successful login."""
@@ -147,7 +149,9 @@ class TestAuthenticationAPI:
         response = client.post("/api/v1/auth/login", data=login_data)
         
         assert response.status_code == 401
-        assert "Incorrect email or password" in response.json()["detail"]
+        body = response.json()
+        error_msg = body.get("detail") or body.get("error", {}).get("message", "")
+        assert "Incorrect email or password" in error_msg
     
     def test_get_current_user(self, client, test_user_data):
         """Test getting current user profile."""
