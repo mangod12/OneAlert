@@ -15,6 +15,9 @@ from backend.config import settings
 from backend.routers import auth, assets, alerts, ot
 from backend.routers import sensor_ingest
 from backend.scheduler.cron import scheduler
+from backend.middleware.security_headers import SecurityHeadersMiddleware
+from backend.middleware.rate_limiter import limiter, SlowAPIMiddleware, RateLimitExceeded, rate_limit_exceeded_handler
+from backend.middleware.request_id import RequestIDMiddleware
 
 
 # Configure logging
@@ -36,7 +39,8 @@ async def lifespan(app: FastAPI):
         logger.info("Initializing database tables...")
         async_engine = get_async_engine()
         
-        # Create tables if they don't exist
+        # NOTE: In production, use `alembic upgrade head` instead of create_all.
+        # create_all is kept for development convenience.
         async with async_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         
@@ -72,6 +76,8 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+app.state.limiter = limiter
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
@@ -81,25 +87,54 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(SlowAPIMiddleware)
 
-# Exception handlers
+# Security headers on all responses
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Request ID tracing
+app.add_middleware(RequestIDMiddleware)
+
+
+# Exception handlers with standardized envelope
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
-    """Handle HTTP exceptions."""
+    """Handle HTTP exceptions with standardized envelope."""
+    request_id = getattr(request.state, "request_id", "unknown")
     return JSONResponse(
         status_code=exc.status_code,
-        content={"detail": exc.detail, "status_code": exc.status_code}
+        content={
+            "success": False,
+            "data": None,
+            "error": {
+                "code": f"HTTP_{exc.status_code}",
+                "message": exc.detail,
+            },
+            "metadata": {"request_id": request_id},
+        },
     )
 
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc):
-    """Handle general exceptions."""
-    logger.error(f"Unhandled exception: {exc}")
+    """Handle general exceptions with standardized envelope."""
+    request_id = getattr(request.state, "request_id", "unknown")
+    logger.error(f"Unhandled exception [request_id={request_id}]: {exc}")
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error", "status_code": 500}
+        content={
+            "success": False,
+            "data": None,
+            "error": {
+                "code": "INTERNAL_ERROR",
+                "message": "Internal server error",
+            },
+            "metadata": {"request_id": request_id},
+        },
     )
+
+
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 
 # Include routers

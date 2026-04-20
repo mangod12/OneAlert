@@ -21,22 +21,30 @@ from backend.services.auth_service import (
 )
 from backend.services.github_auth_service import github_auth_service
 from backend.config import settings
+from backend.middleware.rate_limiter import limiter
 
 router = APIRouter()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
+    token: Optional[str] = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_async_db)
 ) -> User:
-    """Get current authenticated user from JWT token."""
+    """Get current authenticated user from JWT token or httpOnly cookie."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
+    # Fallback to cookie if no Bearer token
+    if not token:
+        token = request.cookies.get("access_token")
+    if not token:
+        raise credentials_exception
+
     # Verify token and get email
     email = verify_token(token)
     if email is None:
@@ -60,7 +68,9 @@ async def get_active_user(current_user: User = Depends(get_current_user)) -> Use
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("3/minute")
 async def register_user(
+    request: Request,
     user_data: UserCreate,
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -94,7 +104,9 @@ async def register_user(
 
 
 @router.post("/login", response_model=Token)
+@limiter.limit("5/minute")
 async def login_user(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -116,13 +128,29 @@ async def login_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user"
         )
-    
+
+    # Check MFA if enabled
+    if user.mfa_enabled and user.mfa_secret:
+        import pyotp
+        mfa_code = form_data.scopes[0] if form_data.scopes else None
+        if not mfa_code:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="MFA code required",
+            )
+        totp = pyotp.TOTP(user.mfa_secret)
+        if not totp.verify(mfa_code, valid_window=1):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid MFA code",
+            )
+
     # Create access token
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     access_token = create_access_token(
         data={"sub": user.email}, expires_delta=access_token_expires
     )
-    
+
     return {"access_token": access_token, "token_type": "bearer"}
 
 
@@ -175,11 +203,20 @@ async def github_callback(request: Request, code: str, state: Optional[str] = No
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="GitHub authentication failed"
             )
-        # Redirect to frontend with token in URL fragment (for JS to pick up)
+        # Set token as httpOnly cookie instead of URL fragment
         access_token = result.get("access_token")
         if access_token:
-            redirect_url = f"/app/#github_token={access_token}"
-            return RedirectResponse(url=redirect_url)
+            response = RedirectResponse(url="/app/", status_code=302)
+            response.set_cookie(
+                key="access_token",
+                value=access_token,
+                httponly=True,
+                secure=True,
+                samesite="lax",
+                max_age=settings.access_token_expire_minutes * 60,
+                path="/",
+            )
+            return response
         return RedirectResponse(url="/app/?github_error=1")
     except HTTPException as e:
         raise e
@@ -208,19 +245,31 @@ async def update_my_integrations(
     return current_user
 
 
-@router.post("/me/mfa/setup", response_model=UserResponse)
+@router.post("/me/mfa/setup")
 async def setup_mfa(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_async_db)):
-    """Enable MFA for the current user and return the TOTP secret."""
+    """Enable MFA for the current user and return the TOTP provisioning URI."""
     import pyotp
     if current_user.mfa_enabled and current_user.mfa_secret:
-        return current_user
+        totp = pyotp.TOTP(current_user.mfa_secret)
+        return {
+            "mfa_enabled": True,
+            "provisioning_uri": totp.provisioning_uri(
+                name=current_user.email, issuer_name="OneAlert"
+            ),
+        }
     secret = pyotp.random_base32()
     current_user.mfa_secret = secret
     current_user.mfa_enabled = True
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
-    return current_user
+    totp = pyotp.TOTP(secret)
+    return {
+        "mfa_enabled": True,
+        "provisioning_uri": totp.provisioning_uri(
+            name=current_user.email, issuer_name="OneAlert"
+        ),
+    }
 
 
 @router.post("/me/mfa/verify", response_model=bool)
