@@ -12,7 +12,7 @@ import logging
 import os
 
 from backend.config import settings
-from backend.routers import auth, assets, alerts, ot, organizations
+from backend.routers import auth, assets, alerts, ot, organizations, compliance
 from backend.routers import sensor_ingest
 from backend.scheduler.cron import scheduler
 from backend.middleware.security_headers import SecurityHeadersMiddleware
@@ -33,8 +33,9 @@ async def lifespan(app: FastAPI):
     
     # Initialize database tables and seed demo data
     try:
-        from backend.database.db import get_async_engine, Base
+        from backend.database.db import get_async_engine, AsyncSessionLocal, Base
         from backend.database.seed import seed_database
+        from backend.services.compliance_seed import seed_compliance_data
         
         logger.info("Initializing database tables...")
         async_engine = get_async_engine()
@@ -49,6 +50,11 @@ async def lifespan(app: FastAPI):
         # Seed demo user if needed
         await seed_database()
         logger.info("Database seeding complete")
+
+        # Seed compliance frameworks and controls
+        async with AsyncSessionLocal() as session:
+            await seed_compliance_data(session)
+        logger.info("Compliance data seeding complete")
         
     except Exception as e:
         logger.error(f"Database initialization error: {e}")
@@ -144,6 +150,7 @@ app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["Alerts"])
 app.include_router(ot.router, prefix="/api/v1/ot", tags=["OT/ICS"])
 app.include_router(sensor_ingest.router, prefix="/api/v1/ot", tags=["OT/ICS"])
 app.include_router(organizations.router, prefix="/api/v1/orgs", tags=["Organizations"])
+app.include_router(compliance.router, prefix="/api/v1/compliance", tags=["Compliance"])
 
 
 # Health check endpoint

@@ -17,6 +17,7 @@ from backend.models.audit_log import AuditLog  # noqa: F401
 from backend.models.discovered_device import DiscoveredDevice, NetworkSensor  # noqa: F401
 from backend.models.organization import Organization  # noqa: F401
 from backend.models.remediation import RemediationAction  # noqa: F401
+from backend.models.compliance import ComplianceFramework, ComplianceControl, ComplianceAssessment  # noqa: F401
 
 config = context.config
 
