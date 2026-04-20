@@ -173,6 +173,79 @@ async def acknowledge_alert(
     return {"message": "Alert acknowledged successfully"}
 
 
+@router.get("/{alert_id}/remediations")
+async def get_alert_remediations(
+    alert_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get remediation actions for an alert. Generates on-demand if none exist."""
+    from backend.models.remediation import RemediationAction, RemediationResponse
+    from backend.services.remediation_engine import generate_remediations
+
+    # Get alert
+    result = await db.execute(
+        select(Alert).where(Alert.id == alert_id, Alert.user_id == current_user.id)
+    )
+    alert = result.scalar_one_or_none()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    # Check for existing remediations
+    existing = await db.execute(
+        select(RemediationAction).where(RemediationAction.alert_id == alert_id)
+    )
+    actions = existing.scalars().all()
+
+    # Generate if none exist
+    if not actions:
+        # Get the asset
+        asset_result = await db.execute(select(Asset).where(Asset.id == alert.asset_id))
+        asset = asset_result.scalar_one_or_none()
+
+        remediation_data = generate_remediations(alert, asset)
+        actions = []
+        for data in remediation_data:
+            action = RemediationAction(alert_id=alert_id, **data)
+            db.add(action)
+            actions.append(action)
+        await db.commit()
+        for action in actions:
+            await db.refresh(action)
+
+    return actions
+
+
+@router.get("/{alert_id}/epss")
+async def get_alert_epss(
+    alert_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get EPSS exploit probability score for an alert's CVE."""
+    from backend.services.epss_service import get_epss_score
+
+    result = await db.execute(
+        select(Alert).where(Alert.id == alert_id, Alert.user_id == current_user.id)
+    )
+    alert = result.scalar_one_or_none()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    if not alert.cve_id:
+        return {"epss_score": None, "epss_percentile": None, "message": "No CVE ID associated"}
+
+    epss = await get_epss_score(alert.cve_id)
+    if not epss:
+        return {"epss_score": None, "epss_percentile": None, "message": "EPSS data not available"}
+
+    return {
+        "cve_id": alert.cve_id,
+        "epss_score": epss["score"],
+        "epss_percentile": epss["percentile"],
+    }
+
+
 @router.get("/stats/overview", response_model=AlertStats)
 async def get_alert_stats(
     current_user: User = Depends(get_active_user),
