@@ -13,7 +13,7 @@
     "@headlessui/react": "^2.2.10",
     "@tailwindcss/vite": "^4.2.2",
     "@tanstack/react-query": "^5.99.2",
-    "axios": "^1.15.1",
+    "axios": "^1.15.2",
     "clsx": "^2.1.1",
     "lucide-react": "^1.8.0",
     "react": "^19.2.5",
