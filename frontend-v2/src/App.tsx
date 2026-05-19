@@ -13,6 +13,7 @@ import { Events } from './pages/Events';
 import { Assets } from './pages/Assets';
 import { OTDiscovery } from './pages/OTDiscovery';
 import { MitreMap } from './pages/MitreMap';
+import { HuntLab } from './pages/HuntLab';
 import { Settings } from './pages/Settings';
 import { AuditLog } from './pages/AuditLog';
 
@@ -45,6 +46,7 @@ function App() {
           <Route path="/assets" element={<Assets />} />
           <Route path="/ot" element={<OTDiscovery />} />
           <Route path="/mitre" element={<MitreMap />} />
+          <Route path="/hunt" element={<HuntLab />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/audit-log" element={<AuditLog />} />
         </Route>

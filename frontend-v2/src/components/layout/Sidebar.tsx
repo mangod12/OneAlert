@@ -12,6 +12,7 @@ import {
   BriefcaseMedical,
   Activity,
   Target,
+  Search,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -23,6 +24,7 @@ const navItems = [
   { to: '/assets', icon: Server, label: 'Assets' },
   { to: '/ot', icon: Network, label: 'OT Discovery' },
   { to: '/mitre', icon: Target, label: 'MITRE ATT&CK' },
+  { to: '/hunt', icon: Search, label: 'Hunt Lab' },
   { to: '/audit-log', icon: ClipboardList, label: 'Audit Log' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];
