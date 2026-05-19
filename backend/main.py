@@ -13,7 +13,7 @@ import os
 
 from backend.config import settings
 from backend.routers import auth, assets, alerts, ot, organizations, compliance, sbom, topology, billing
-from backend.routers import sensor_ingest, integrations, events, cases, mitre
+from backend.routers import sensor_ingest, integrations, events, cases, mitre, hunt
 from backend.scheduler.cron import scheduler
 from backend.middleware.security_headers import SecurityHeadersMiddleware
 from backend.middleware.rate_limiter import limiter, SlowAPIMiddleware, RateLimitExceeded, rate_limit_exceeded_handler
@@ -166,6 +166,7 @@ app.include_router(integrations.router, prefix="/api/v1/integrations", tags=["In
 app.include_router(events.router, prefix="/api/v1/events", tags=["Security Events"])
 app.include_router(cases.router, prefix="/api/v1/cases", tags=["Cases & Investigations"])
 app.include_router(mitre.router, prefix="/api/v1/mitre", tags=["MITRE ATT&CK"])
+app.include_router(hunt.router, prefix="/api/v1/hunt", tags=["Threat Hunting"])
 
 
 # Health check endpoint
