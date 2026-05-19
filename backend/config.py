@@ -104,6 +104,16 @@ class Settings(BaseSettings):
     # GitHub OAuth redirect URI (port 8000 for local, 8001 for Docker)
     github_redirect_uri: str = "http://localhost:8000/api/v1/auth/github/callback"
 
+    # AI Provider Configuration
+    ai_provider: str = "anthropic"  # anthropic | openai | ollama | vllm | groq | together | llamacpp
+    ai_base_url: Optional[str] = None
+    ai_api_key: Optional[str] = None  # Falls back to ANTHROPIC_API_KEY
+    ai_triage_model: Optional[str] = None
+    ai_code_model: Optional[str] = None
+    ai_embedding_model: Optional[str] = None
+    ai_default_model: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
+
     # Pydantic Model Configuration
     # Tells Pydantic how to load and manage settings.
     model_config = SettingsConfigDict(
