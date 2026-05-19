@@ -510,6 +510,232 @@ async def create_network_connections(session: AsyncSession, user_id: int):
     logger.info(f"Created {len(connections)} network connections.")
 
 
+async def create_security_events(session: AsyncSession, user_id: int):
+    """Create a realistic multi-stage attack scenario in security events.
+
+    Scenario: Attacker compromises VPN → lateral movement to engineering
+    workstation → attempts PLC modification → detected by Suricata/Zeek.
+    """
+    from backend.models.security_event import SecurityEvent, EventSource
+
+    result = await session.execute(select(SecurityEvent).where(SecurityEvent.user_id == user_id).limit(1))
+    if result.scalar_one_or_none():
+        logger.info("Security events already seeded.")
+        return
+
+    # Create event sources
+    suricata_src = EventSource(user_id=user_id, name="DMZ Suricata IDS", source_type="suricata", status="active", event_count=0)
+    zeek_src = EventSource(user_id=user_id, name="Control Net Zeek Sensor", source_type="zeek", status="active", event_count=0)
+    session.add(suricata_src)
+    session.add(zeek_src)
+    await session.flush()
+
+    # Attack timeline (multi-stage intrusion scenario)
+    events = [
+        # Stage 1: Initial Access — VPN brute force from external IP
+        SecurityEvent(user_id=user_id, source_id=suricata_src.id, timestamp=NOW - timedelta(hours=8),
+                      event_type="alert", severity="medium", signature="ET SCAN Potential VPN Brute Force",
+                      signature_id="2024501", category="Attempted Information Leak",
+                      source_ip="203.0.113.42", dest_ip="10.4.0.1", dest_port=443, protocol="tcp",
+                      action="allowed", source_type="suricata"),
+        SecurityEvent(user_id=user_id, source_id=suricata_src.id, timestamp=NOW - timedelta(hours=7, minutes=55),
+                      event_type="alert", severity="high", signature="ET POLICY Successful VPN Login After Multiple Failures",
+                      signature_id="2024502", category="Potentially Bad Traffic",
+                      source_ip="203.0.113.42", dest_ip="10.4.0.1", dest_port=443, protocol="tcp",
+                      action="allowed", source_type="suricata"),
+
+        # Stage 2: Reconnaissance — internal port scanning
+        SecurityEvent(user_id=user_id, source_id=zeek_src.id, timestamp=NOW - timedelta(hours=7, minutes=30),
+                      event_type="conn", severity="info", category="network_connection",
+                      source_ip="10.5.0.50", dest_ip="10.3.1.5", dest_port=445, protocol="tcp",
+                      source_type="zeek"),
+        SecurityEvent(user_id=user_id, source_id=zeek_src.id, timestamp=NOW - timedelta(hours=7, minutes=29),
+                      event_type="conn", severity="info", category="network_connection",
+                      source_ip="10.5.0.50", dest_ip="10.3.1.10", dest_port=3389, protocol="tcp",
+                      source_type="zeek"),
+        SecurityEvent(user_id=user_id, source_id=suricata_src.id, timestamp=NOW - timedelta(hours=7, minutes=25),
+                      event_type="alert", severity="high", signature="ET SCAN Nmap SYN Scan — Multiple Ports",
+                      signature_id="2024100", category="Attempted Information Leak",
+                      source_ip="10.5.0.50", dest_ip="10.2.1.0", dest_port=None, protocol="tcp",
+                      action="allowed", source_type="suricata"),
+
+        # Stage 3: Lateral Movement — RDP to engineering workstation
+        SecurityEvent(user_id=user_id, source_id=zeek_src.id, timestamp=NOW - timedelta(hours=6, minutes=45),
+                      event_type="conn", severity="medium", category="network_connection",
+                      source_ip="10.5.0.50", dest_ip="10.3.1.10", dest_port=3389, protocol="tcp",
+                      bytes_in=2048000, bytes_out=512000, source_type="zeek", action="SF"),
+
+        # Stage 4: SMB access to historian
+        SecurityEvent(user_id=user_id, source_id=zeek_src.id, timestamp=NOW - timedelta(hours=6, minutes=20),
+                      event_type="conn", severity="medium", category="network_connection",
+                      source_ip="10.3.1.10", dest_ip="10.3.1.20", dest_port=445, protocol="tcp",
+                      bytes_in=50000000, bytes_out=1024, source_type="zeek"),
+
+        # Stage 5: Suspicious DNS — C2 beacon
+        SecurityEvent(user_id=user_id, source_id=suricata_src.id, timestamp=NOW - timedelta(hours=6),
+                      event_type="dns", severity="high", signature="ET TROJAN DNS Query for Suspected C2 Domain",
+                      signature_id="2024600", category="A Network Trojan was detected",
+                      source_ip="10.3.1.10", dest_ip="8.8.8.8", domain="update.systempatch-cdn.xyz",
+                      source_type="suricata"),
+        SecurityEvent(user_id=user_id, source_id=zeek_src.id, timestamp=NOW - timedelta(hours=5, minutes=50),
+                      event_type="dns", severity="info", category="dns_a",
+                      source_ip="10.3.1.10", dest_ip="8.8.8.8", domain="update.systempatch-cdn.xyz",
+                      source_type="zeek"),
+
+        # Stage 6: Attempt to reach PLC subnet (BLOCKED by firewall rule)
+        SecurityEvent(user_id=user_id, source_id=suricata_src.id, timestamp=NOW - timedelta(hours=5, minutes=30),
+                      event_type="alert", severity="critical",
+                      signature="ET EXPLOIT Modbus TCP Unauthorized Write — From Non-Engineering Source",
+                      signature_id="2024700", category="Attempted Admin Privilege Gain",
+                      source_ip="10.3.1.10", dest_ip="10.2.1.30", dest_port=502, protocol="tcp",
+                      action="blocked", source_type="suricata"),
+        SecurityEvent(user_id=user_id, source_id=suricata_src.id, timestamp=NOW - timedelta(hours=5, minutes=29),
+                      event_type="alert", severity="critical",
+                      signature="ET EXPLOIT CIP Protocol — Unauthorized Program Upload Attempt",
+                      signature_id="2024701", category="Attempted Admin Privilege Gain",
+                      source_ip="10.3.1.10", dest_ip="10.2.1.10", dest_port=44818, protocol="tcp",
+                      action="blocked", source_type="suricata"),
+
+        # Stage 7: Data exfiltration attempt
+        SecurityEvent(user_id=user_id, source_id=suricata_src.id, timestamp=NOW - timedelta(hours=5),
+                      event_type="alert", severity="high",
+                      signature="ET POLICY Large Outbound Data Transfer — Possible Exfiltration",
+                      signature_id="2024800", category="Potential Corporate Privacy Violation",
+                      source_ip="10.3.1.10", dest_ip="203.0.113.42", dest_port=443, protocol="tcp",
+                      action="allowed", bytes_out=75000000, source_type="suricata"),
+
+        # Normal baseline traffic (to show contrast)
+        SecurityEvent(user_id=user_id, source_id=zeek_src.id, timestamp=NOW - timedelta(hours=4),
+                      event_type="conn", severity="info", category="network_connection",
+                      source_ip="10.2.1.10", dest_ip="10.3.1.5", dest_port=44818, protocol="tcp",
+                      bytes_in=1024, bytes_out=2048, source_type="zeek"),
+        SecurityEvent(user_id=user_id, source_id=zeek_src.id, timestamp=NOW - timedelta(hours=3),
+                      event_type="conn", severity="info", category="network_connection",
+                      source_ip="10.2.1.20", dest_ip="10.3.1.5", dest_port=102, protocol="tcp",
+                      bytes_in=512, bytes_out=1024, source_type="zeek"),
+        SecurityEvent(user_id=user_id, source_id=zeek_src.id, timestamp=NOW - timedelta(hours=2),
+                      event_type="http", severity="info", category="http_get",
+                      source_ip="10.3.1.10", dest_ip="10.3.1.20", dest_port=443, protocol="tcp",
+                      hostname="pi-historian.local", url="/api/streams/default", source_type="zeek"),
+    ]
+
+    for e in events:
+        session.add(e)
+
+    suricata_src.event_count = sum(1 for e in events if e.source_type == "suricata")
+    zeek_src.event_count = sum(1 for e in events if e.source_type == "zeek")
+    suricata_src.last_event_at = NOW
+    zeek_src.last_event_at = NOW
+
+    await session.commit()
+    logger.info(f"Created {len(events)} demo security events (attack scenario).")
+
+
+async def create_demo_case(session: AsyncSession, user_id: int):
+    """Create a pre-built AI investigation case from the attack scenario."""
+    from backend.models.case import Case, CaseTimeline
+
+    result = await session.execute(select(Case).where(Case.user_id == user_id).limit(1))
+    if result.scalar_one_or_none():
+        logger.info("Demo case already seeded.")
+        return
+
+    case = Case(
+        user_id=user_id,
+        title="Multi-Stage OT Intrusion: VPN Compromise → Lateral Movement → PLC Access Attempt",
+        summary="Attacker brute-forced VPN access from 203.0.113.42, pivoted to engineering workstation via RDP, "
+                "accessed historian data via SMB, established C2 beacon to systempatch-cdn.xyz, then attempted "
+                "unauthorized Modbus write to M340 PLC and CIP program upload to ControlLogix. PLC attacks were "
+                "blocked by firewall rules. Data exfiltration of ~75MB detected.",
+        severity="critical",
+        status="investigating",
+        confidence_score=0.92,
+        mitre_tactics=["TA0001", "TA0007", "TA0008", "TA0011", "TA0009", "TA0010", "TA0107"],
+        mitre_techniques=[
+            {"id": "T1133", "name": "External Remote Services", "confidence": 0.95},
+            {"id": "T1110", "name": "Brute Force", "confidence": 0.88},
+            {"id": "T1046", "name": "Network Service Discovery", "confidence": 0.90},
+            {"id": "T1021.001", "name": "Remote Desktop Protocol", "confidence": 0.92},
+            {"id": "T1021.002", "name": "SMB/Windows Admin Shares", "confidence": 0.85},
+            {"id": "T1071.004", "name": "DNS (C2)", "confidence": 0.78},
+            {"id": "T0855", "name": "Unauthorized Command Message", "confidence": 0.95},
+            {"id": "T1041", "name": "Exfiltration Over C2 Channel", "confidence": 0.82},
+        ],
+        attack_narrative=(
+            "A sophisticated multi-stage attack targeting the water treatment plant's OT infrastructure was detected.\n\n"
+            "**Stage 1 — Initial Access (T-8h):** The attacker conducted a brute force attack against the SSL VPN "
+            "endpoint on the DMZ firewall (10.4.0.1) from external IP 203.0.113.42. After approximately 5 minutes "
+            "of attempts, a successful login was observed.\n\n"
+            "**Stage 2 — Reconnaissance (T-7.5h):** From an internal IP (10.5.0.50, likely VPN-assigned), the attacker "
+            "performed an Nmap SYN scan targeting the SCADA and control networks, probing ports 445, 3389, 102, 502, and 44818.\n\n"
+            "**Stage 3 — Lateral Movement (T-6.75h):** RDP session established from 10.5.0.50 to the AVEVA InTouch HMI "
+            "workstation (10.3.1.10) in the supervisory zone.\n\n"
+            "**Stage 4 — Collection (T-6.3h):** Large SMB data transfer (~50MB) from the PI Historian (10.3.1.20) to "
+            "the compromised HMI workstation. Process data and historian archives likely exfiltrated.\n\n"
+            "**Stage 5 — C2 Communication (T-6h):** DNS queries to suspicious domain 'update.systempatch-cdn.xyz' "
+            "from the compromised HMI. Likely a command-and-control beacon.\n\n"
+            "**Stage 6 — OT Attack Attempt (T-5.5h):** CRITICAL — Unauthorized Modbus write command attempted against "
+            "the Schneider M340 PLC (10.2.1.30:502) and CIP program upload attempted against the Rockwell ControlLogix "
+            "(10.2.1.10:44818). Both were BLOCKED by firewall rules preventing direct HMI-to-PLC traffic without "
+            "engineering workstation authorization.\n\n"
+            "**Stage 7 — Exfiltration (T-5h):** ~75MB outbound data transfer from the compromised HMI to the "
+            "attacker's external IP (203.0.113.42:443) over HTTPS."
+        ),
+        created_by="agent",
+    )
+    session.add(case)
+    await session.flush()
+
+    # Timeline entries
+    timeline = [
+        CaseTimeline(case_id=case.id, timestamp=NOW - timedelta(hours=8),
+                     entry_type="event", content="VPN brute force detected from 203.0.113.42 → 10.4.0.1:443", source="system"),
+        CaseTimeline(case_id=case.id, timestamp=NOW - timedelta(hours=7, minutes=55),
+                     entry_type="alert", content="Successful VPN login after multiple failures — credential compromise confirmed", source="system"),
+        CaseTimeline(case_id=case.id, timestamp=NOW - timedelta(hours=7, minutes=25),
+                     entry_type="alert", content="Nmap SYN scan from 10.5.0.50 targeting SCADA/control subnets", source="system"),
+        CaseTimeline(case_id=case.id, timestamp=NOW - timedelta(hours=6, minutes=45),
+                     entry_type="event", content="RDP lateral movement: 10.5.0.50 → 10.3.1.10 (HMI workstation)", source="system"),
+        CaseTimeline(case_id=case.id, timestamp=NOW - timedelta(hours=6, minutes=20),
+                     entry_type="event", content="SMB data collection: 50MB transferred from PI Historian to compromised HMI", source="system"),
+        CaseTimeline(case_id=case.id, timestamp=NOW - timedelta(hours=6),
+                     entry_type="alert", content="C2 beacon detected: DNS query to update.systempatch-cdn.xyz", source="system"),
+        CaseTimeline(case_id=case.id, timestamp=NOW - timedelta(hours=5, minutes=30),
+                     entry_type="alert", content="CRITICAL: Unauthorized Modbus write to M340 PLC — BLOCKED by firewall", source="system"),
+        CaseTimeline(case_id=case.id, timestamp=NOW - timedelta(hours=5, minutes=29),
+                     entry_type="alert", content="CRITICAL: Unauthorized CIP program upload to ControlLogix — BLOCKED", source="system"),
+        CaseTimeline(case_id=case.id, timestamp=NOW - timedelta(hours=5),
+                     entry_type="alert", content="Data exfiltration: 75MB outbound to attacker IP 203.0.113.42", source="system"),
+        CaseTimeline(case_id=case.id, timestamp=NOW - timedelta(hours=4, minutes=50),
+                     entry_type="ai_analysis",
+                     content="AI Triage Agent correlated 15 events across 7 MITRE ATT&CK techniques into a single multi-stage intrusion case. Confidence: 92%.",
+                     source="agent",
+                     metadata_json={"confidence": 0.92, "model": "claude-sonnet-4-20250514"}),
+        CaseTimeline(case_id=case.id, timestamp=NOW - timedelta(hours=4, minutes=45),
+                     entry_type="action",
+                     content="Recommended: Revoke VPN session for compromised credentials immediately",
+                     source="agent"),
+        CaseTimeline(case_id=case.id, timestamp=NOW - timedelta(hours=4, minutes=44),
+                     entry_type="action",
+                     content="Recommended: Isolate HMI workstation 10.3.1.10 from network",
+                     source="agent"),
+        CaseTimeline(case_id=case.id, timestamp=NOW - timedelta(hours=4, minutes=43),
+                     entry_type="action",
+                     content="Recommended: Block external IP 203.0.113.42 at perimeter firewall",
+                     source="agent"),
+        CaseTimeline(case_id=case.id, timestamp=NOW - timedelta(hours=4, minutes=42),
+                     entry_type="action",
+                     content="Recommended: Preserve forensic images of HMI workstation and historian logs",
+                     source="agent"),
+    ]
+
+    for t in timeline:
+        session.add(t)
+
+    await session.commit()
+    logger.info("Created demo investigation case with attack timeline.")
+
+
 async def seed_database():
     """Seed complete demo environment."""
     logger.info("Seeding demo database...")
@@ -522,6 +748,8 @@ async def seed_database():
             await create_network_sensors(session, user.id)
             await create_discovered_devices(session, user.id)
             await create_network_connections(session, user.id)
+            await create_security_events(session, user.id)
+            await create_demo_case(session, user.id)
             logger.info("Database seeding complete.")
         except Exception as e:
             logger.error(f"Seeding error: {e}", exc_info=True)
