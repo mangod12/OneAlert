@@ -122,6 +122,18 @@ async def update_case(
     return {"success": True, "message": "Case updated"}
 
 
+@router.post("/pipeline")
+async def run_agent_pipeline(
+    hours_back: int = Query(24, ge=1, le=168),
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Run full agent pipeline: Detect → Triage → Cases."""
+    from backend.services.agents.orchestrator import run_pipeline
+    result = await run_pipeline(db=db, user_id=current_user.id, hours_back=hours_back)
+    return {"success": True, "data": result}
+
+
 @router.post("/auto-triage")
 async def auto_triage(
     hours_back: int = Query(24, ge=1, le=168),
