@@ -21,7 +21,6 @@ from backend.services.cve_scraper import cve_scraper
 from backend.services.vendor_scraper import vendor_scraper
 from backend.services.ics_cert_feed import ics_cert_feed_service
 from backend.services.email_alert import email_service
-from backend.services.notification_service import notify_all_services
 from backend.services.cve_enrichment import CVEEnrichmentService
 from backend.services.ot_risk_scorer import ot_risk_scorer
 from backend.services.slack_webhook import SlackNotificationService, WebhookNotificationService
@@ -29,20 +28,18 @@ from backend.services.slack_webhook import SlackNotificationService, WebhookNoti
 logger = logging.getLogger(__name__)
 
 # Notification service instances (read from env)
-slack_webhook = os.getenv("SLACK_WEBHOOK_URL")
-generic_webhook = os.getenv("GENERIC_WEBHOOK_URL")
-
-slack_service = SlackNotificationService(slack_webhook) if slack_webhook else None
-webhook_service = WebhookNotificationService(generic_webhook) if generic_webhook else None
+_default_slack_webhook = os.getenv("SLACK_WEBHOOK_URL")
+_default_generic_webhook = os.getenv("GENERIC_WEBHOOK_URL")
 
 cve_enrichment_service = CVEEnrichmentService()
 
-async def notify_all_services(message: str, user: User = None, **kwargs):
+
+async def _notify_all_services(message: str, user: User = None, **kwargs):
     # Prefer user-specific webhooks if set
     user_slack = getattr(user, 'slack_webhook_url', None)
     user_webhook = getattr(user, 'webhook_url', None)
-    slack_url = user_slack or slack_webhook
-    webhook_url = user_webhook or generic_webhook
+    slack_url = user_slack or _default_slack_webhook
+    webhook_url = user_webhook or _default_generic_webhook
     slack_service = SlackNotificationService(slack_url) if slack_url else None
     webhook_service = WebhookNotificationService(webhook_url) if webhook_url else None
     tasks = []
@@ -296,7 +293,7 @@ class AlertChecker:
             await email_service.send_vulnerability_alert(user, asset, alert, cve)
             
             # Send notifications
-            await notify_all_services(f"New CVE alert for {user.email}: {alert.title}", alert_id=alert.id, cve_id=alert.cve_id)
+            await _notify_all_services(f"New CVE alert for {user.email}: {alert.title}", alert_id=alert.id, cve_id=alert.cve_id)
             
             logger.info(f"Created CVE alert {cve.get('cve_id')} for user {user.email}")
             
@@ -339,7 +336,7 @@ class AlertChecker:
             await email_service.send_vendor_advisory_alert(user, asset, alert, advisory)
             
             # Send notifications
-            await notify_all_services(f"New vendor alert for {user.email}: {alert.title}", alert_id=alert.id, vendor_advisory_id=alert.vendor_advisory_id)
+            await _notify_all_services(f"New vendor alert for {user.email}: {alert.title}", alert_id=alert.id, vendor_advisory_id=alert.vendor_advisory_id)
             
             logger.info(f"Created vendor alert {advisory.get('vendor_advisory_id')} for user {user.email}")
             
@@ -451,9 +448,9 @@ class AlertChecker:
                     # Compare tuples
                     if tuple(asset_parts) < tuple(vuln_parts):
                         return True
-        except:
-            pass
-        
+        except (ValueError, IndexError, TypeError) as e:
+            logger.debug(f"Version comparison failed for {asset_version}: {e}")
+
         return False
     
     async def _create_alert_from_ics_advisory(self, db: AsyncSession, user: User, asset: Asset, advisory: Dict):
@@ -500,7 +497,7 @@ class AlertChecker:
                 alert_message = f"⚠️ ICS Advisory for {user.email}: {alert.title}"
             
             # Send notifications
-            await notify_all_services(alert_message, alert_id=alert.id, advisory_id=alert.vendor_advisory_id)
+            await _notify_all_services(alert_message, alert_id=alert.id, advisory_id=alert.vendor_advisory_id)
             
             logger.info(f"Created ICS alert {advisory_id} for user {user.email}")
             

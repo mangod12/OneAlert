@@ -152,7 +152,8 @@ class AlertListResponse(BaseModel):
     total: int
     page: int
     size: int
-    
+    pages: int = 1
+
     model_config = {"from_attributes": True }
 
 

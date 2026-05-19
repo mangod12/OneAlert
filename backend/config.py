@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     # Secret key used to sign and verify JWTs. CRITICAL for security.
     # Should be a long, random, and unique string in production.
     secret_key: str = "dev-secret-key-change-in-production" # Default for development only.
+
+    # Environment flag: "production", "staging", or "development"
+    environment: str = "development"
     
     # Algorithm used for JWT signing (e.g., HS256, RS256).
     algorithm: str = "HS256"
@@ -148,6 +151,13 @@ class Settings(BaseSettings):
 # Global instance of the Settings class.
 # This instance is imported by other modules to access configuration values.
 settings = Settings()
+
+# Guard: refuse to start in production with the default secret key
+if settings.environment == "production" and settings.secret_key == "dev-secret-key-change-in-production":
+    raise RuntimeError(
+        "FATAL: SECRET_KEY is still the default dev value. "
+        "Set a strong, unique SECRET_KEY environment variable before running in production."
+    )
 
 # Example of how to access settings in other modules:
 #

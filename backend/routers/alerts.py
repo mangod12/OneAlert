@@ -148,8 +148,8 @@ async def acknowledge_alert(
     db: AsyncSession = Depends(get_async_db)
 ):
     """Acknowledge an alert."""
-    from datetime import datetime
-    
+    from datetime import datetime, timezone
+
     result = await db.execute(
         select(Alert).where(
             Alert.id == alert_id,
@@ -157,15 +157,15 @@ async def acknowledge_alert(
         )
     )
     alert = result.scalar_one_or_none()
-    
+
     if not alert:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Alert not found"
         )
-    
+
     alert.status = AlertStatus.ACKNOWLEDGED
-    alert.acknowledged_at = datetime.utcnow()
+    alert.acknowledged_at = datetime.now(timezone.utc)
     
     await db.commit()
     await db.refresh(alert)

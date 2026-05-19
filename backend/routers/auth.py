@@ -11,6 +11,7 @@ from sqlalchemy import select
 from typing import Optional, List
 
 from backend.database.db import get_async_db
+from pydantic import BaseModel
 from backend.models.user import User, UserCreate, UserResponse, Token, GitHubUserCreate
 from backend.models.audit_log import AuditLog
 from backend.services.auth_service import (
@@ -272,23 +273,39 @@ async def setup_mfa(current_user: User = Depends(get_current_user), db: AsyncSes
     }
 
 
+class MFAVerifyRequest(BaseModel):
+    """Request body for MFA verification."""
+    code: str
+
+
 @router.post("/me/mfa/verify", response_model=bool)
-async def verify_mfa(code: str, current_user: User = Depends(get_current_user)):
+async def verify_mfa(body: MFAVerifyRequest, current_user: User = Depends(get_current_user)):
     """Verify a TOTP code for the current user."""
     import pyotp
     if not current_user.mfa_enabled or not current_user.mfa_secret:
         return False
     totp = pyotp.TOTP(current_user.mfa_secret)
-    return totp.verify(code)
+    return totp.verify(body.code)
 
 
 @router.get("/audit-logs", response_model=List[dict])
 async def get_audit_logs(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_async_db)):
-    """Admin: Get all audit logs."""
-    # Only allow admin users
+    """Admin: Get audit logs scoped to the admin's organization."""
     if not current_user.role or current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
-    result = await db.execute(select(AuditLog))
+
+    # Scope audit logs to admin's org members (or just their own if no org)
+    if current_user.org_id:
+        org_user_ids = (await db.execute(
+            select(User.id).where(User.org_id == current_user.org_id)
+        )).scalars().all()
+        result = await db.execute(
+            select(AuditLog).where(AuditLog.user_id.in_(org_user_ids))
+        )
+    else:
+        result = await db.execute(
+            select(AuditLog).where(AuditLog.user_id == current_user.id)
+        )
     logs = result.scalars().all()
     return [
         {
