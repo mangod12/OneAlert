@@ -92,3 +92,14 @@ celerybeat.pid
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+# Claude Code
+.claude/settings.local.json
+
+# Playwright
+tests/e2e/playwright-report/
+tests/e2e/test-results/
+
+# Misc local files
+logs.txt
+start.sh
