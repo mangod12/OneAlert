@@ -9,14 +9,20 @@ import {
   LogOut,
   Shield,
   ClipboardList,
+  BriefcaseMedical,
+  Activity,
+  Target,
 } from 'lucide-react';
 import clsx from 'clsx';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/cases', icon: BriefcaseMedical, label: 'Cases' },
   { to: '/alerts', icon: Bell, label: 'Alerts' },
+  { to: '/events', icon: Activity, label: 'Events' },
   { to: '/assets', icon: Server, label: 'Assets' },
   { to: '/ot', icon: Network, label: 'OT Discovery' },
+  { to: '/mitre', icon: Target, label: 'MITRE ATT&CK' },
   { to: '/audit-log', icon: ClipboardList, label: 'Audit Log' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];
@@ -25,15 +31,15 @@ export function Sidebar() {
   const { user, logout } = useAuthStore();
 
   return (
-    <aside className="fixed left-0 top-0 h-screen w-64 bg-surface-900 border-r border-surface-700 flex flex-col z-50">
-      <div className="p-6 border-b border-surface-700">
+    <aside className="sticky top-0 z-50 flex w-full flex-col border-b border-surface-800 bg-surface-900 md:fixed md:left-0 md:top-0 md:h-screen md:w-64 md:border-b-0 md:border-r">
+      <div className="border-b border-surface-800 p-4 md:p-6">
         <div className="flex items-center gap-2">
           <Shield className="w-8 h-8 text-primary-400" />
           <span className="text-xl font-bold text-white">OneAlert</span>
         </div>
       </div>
 
-      <nav className="flex-1 p-4 space-y-1">
+      <nav className="flex gap-2 overflow-x-auto p-3 md:flex-1 md:flex-col md:gap-0 md:space-y-1 md:p-4">
         {navItems.map((item) => (
           <NavLink
             key={item.to}
@@ -41,7 +47,7 @@ export function Sidebar() {
             end={item.to === '/'}
             className={({ isActive }) =>
               clsx(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                'flex shrink-0 items-center gap-3 px-3 py-2.5 text-sm font-medium transition-colors',
                 isActive
                   ? 'bg-primary-600/20 text-primary-300'
                   : 'text-surface-400 hover:bg-surface-800 hover:text-surface-200'
@@ -54,7 +60,7 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="p-4 border-t border-surface-700">
+      <div className="hidden border-t border-surface-800 p-4 md:block">
         <div className="flex items-center gap-3 px-3 py-2 mb-2">
           <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center text-white text-sm font-medium">
             {user?.full_name?.[0] || user?.email?.[0] || '?'}

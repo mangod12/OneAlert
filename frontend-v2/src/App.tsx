@@ -6,9 +6,13 @@ import { AppLayout } from './components/layout/AppLayout';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Dashboard } from './pages/Dashboard';
+import { Cases } from './pages/Cases';
+import { CaseDetail } from './pages/CaseDetail';
 import { Alerts } from './pages/Alerts';
+import { Events } from './pages/Events';
 import { Assets } from './pages/Assets';
 import { OTDiscovery } from './pages/OTDiscovery';
+import { MitreMap } from './pages/MitreMap';
 import { Settings } from './pages/Settings';
 import { AuditLog } from './pages/AuditLog';
 
@@ -34,9 +38,13 @@ function App() {
           }
         >
           <Route path="/" element={<Dashboard />} />
+          <Route path="/cases" element={<Cases />} />
+          <Route path="/cases/:caseId" element={<CaseDetail />} />
           <Route path="/alerts" element={<Alerts />} />
+          <Route path="/events" element={<Events />} />
           <Route path="/assets" element={<Assets />} />
           <Route path="/ot" element={<OTDiscovery />} />
+          <Route path="/mitre" element={<MitreMap />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/audit-log" element={<AuditLog />} />
         </Route>
