@@ -1,270 +1,304 @@
-# OneAlert 2.0 — Industrial OT/ICS Cybersecurity Platform
+# OneAlert
 
 [![CI](https://github.com/mangod12/OneAlert/actions/workflows/ci.yml/badge.svg)](https://github.com/mangod12/OneAlert/actions/workflows/ci.yml)
 [![Deploy](https://img.shields.io/badge/Cloud%20Run-live-4285F4?logo=googlecloud&logoColor=white)](https://cybersec-saas-ebqzvaqu6a-uc.a.run.app/app/)
-[![Tests](https://img.shields.io/badge/tests-166%20passing-brightgreen)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**The affordable, self-service OT vulnerability management platform** — AI-powered remediation, continuous compliance monitoring, and SBOM analysis for SMB manufacturers at 1/50th the cost of enterprise alternatives (Claroty, Dragos, Nozomi).
+**OneAlert is an open, self-hostable OT/ICS security platform evolving into a governed AI security agent for asset protection, network telemetry, vulnerability intelligence, compliance evidence, and authorized purple-team validation.**
 
-## Live Demo
+It is built for SMB manufacturers, utilities, and industrial operators that need serious security visibility without the cost and deployment weight of enterprise OT platforms.
 
-**https://cybersec-saas-ebqzvaqu6a-uc.a.run.app/app/**
+Live demo: https://cybersec-saas-ebqzvaqu6a-uc.a.run.app/app/
 
-| | |
-|---|---|
+| Demo account | Value |
+| --- | --- |
 | Email | `admin@example.com` |
 | Password | `password123` |
 
-> Pre-loaded with a realistic water treatment plant environment: 11 OT/IT assets, 6 real CVE alerts, 4 discovered devices, network topology, and compliance frameworks.
+The demo is seeded with a water-treatment environment: OT/IT assets, real CVE-style alerts, discovered devices, network topology data, compliance controls, and integrations.
 
----
+## Why This Project Matters
 
-## What Makes This Different
+Most security tools stop at one of three layers:
 
-| Dimension | Enterprise Incumbents | OneAlert |
-|-----------|----------------------|----------|
-| **Price** | $300K–$800K/yr | $499–$4,999/mo |
-| **Deployment** | Hardware sensors + pro services (weeks) | Self-service SaaS (minutes) |
-| **SBOM** | None native | Built-in CycloneDX/SPDX parsing |
-| **Compliance** | Static PDF reports | Continuous automated evidence collection |
-| **Remediation** | Detection only | AI-powered OT-aware remediation guidance |
-| **Time to Value** | 3–6 months | Same day |
+- Vulnerability scanners show CVEs but miss process risk.
+- SIEMs collect logs but require expensive rules and analysts.
+- AI SOC products promise automation but are often closed-source, cloud-bound, and hard to audit.
 
----
+OneAlert is designed to combine the useful parts:
 
-## Platform Capabilities
+- **OT-aware asset graph:** assets, firmware, protocols, Purdue zones, topology, SBOMs, and CVEs.
+- **Security telemetry foundation:** Zeek, Suricata, syslog, endpoint, cloud, IAM, and SIEM events.
+- **Governed AI agents:** detect, triage, hunt, respond, report, and purple-team validation with full run ledgers.
+- **Open model support:** Ollama, vLLM, LM Studio, llama.cpp, and OpenAI-compatible local endpoints.
+- **Authorization-first offensive validation:** scoped, sandboxed, dry-run by default, and approval-gated.
 
-### Security & Vulnerability Management
-- Multi-source CVE aggregation (NVD, CISA KEV, ICS-CERT, Cisco PSIRT, Microsoft MSRC, Red Hat)
-- AI-powered remediation engine with 5 OT-aware rules (patch vs. compensating control based on Purdue zone)
-- EPSS exploit probability scoring (FIRST.org API)
-- CISA KEV active exploitation flagging
-- Alert deduplication, acknowledgment workflow, and audit trail
+## Current Capabilities
 
-### OT/ICS Asset Discovery
-- Passive device discovery via network sensors (Zeek, Suricata, SNMP, Shodan)
-- Industrial protocol detection (Modbus, DNP3, PROFINET, EtherNet/IP, OPC-UA, HART)
-- Purdue model zone classification (Level 0–5)
-- Device-to-asset correlation and promotion workflow
-- Network topology mapping with graph visualization
+### OT/ICS Vulnerability Management
 
-### Compliance-as-Code
-- IEC 62443-3-3 (10 controls) + NIST CSF 2.0 (11 controls) pre-loaded
-- Automated evidence collection from platform data
-- Continuous compliance scoring per framework
-- Manual assessment override with evidence documentation
+- CVE and advisory ingestion from NVD, CISA KEV, ICS-CERT, Cisco PSIRT, Microsoft MSRC, Red Hat, and vendor feeds.
+- EPSS exploit probability enrichment.
+- Alert deduplication, acknowledgment workflow, and audit trail.
+- OT-aware remediation rules that account for asset criticality and Purdue-style zones.
 
-### SBOM & Software Composition Analysis
-- CycloneDX and SPDX JSON ingestion
-- Component extraction (name, version, supplier, PURL, CPE, license, hash)
-- Vulnerability cross-reference against tracked CVEs
+### Asset, Discovery, and Topology
 
-### SIEM/SOAR Integrations
-- Splunk HTTP Event Collector
-- Microsoft Sentinel (Log Analytics API)
-- ServiceNow incident creation
-- PagerDuty event triggering
-- Per-user configuration with test-connection validation
+- Managed asset inventory with vendor, product, firmware, CPE, criticality, OT flag, network zone, and protocol.
+- Discovered device ingestion for sensors such as Zeek, Suricata, SNMP pollers, Shodan, and custom collectors.
+- Industrial protocol awareness for Modbus, DNP3, PROFINET, EtherNet/IP, OPC-UA, HART, and related OT traffic.
+- Network connection storage and graph-ready topology service.
 
-### Billing & Multi-Tenancy
-- Organization model with role-based access (admin/analyst/viewer)
-- Stripe billing integration (checkout, webhooks, plan gating)
-- Plan tiers: Free (10 assets) → Starter ($499) → Pro ($1,999) → Enterprise ($4,999)
-- Feature gating and usage enforcement per plan
+### Compliance and SBOM
 
----
+- Compliance-as-code for IEC 62443 and NIST CSF.
+- Automated evidence collection from platform data.
+- CycloneDX and SPDX JSON SBOM ingestion.
+- Component extraction with PURL, CPE, supplier, license, and hash fields.
+
+### Integrations and Operations
+
+- Splunk HTTP Event Collector.
+- Microsoft Sentinel Log Analytics API.
+- ServiceNow incident creation.
+- PagerDuty event triggering.
+- Slack, webhook, and SIEM alert senders.
+- Multi-tenant organizations, RBAC, Stripe plan gating, health probes, metrics middleware, and structured logging.
+
+## AI Agent Roadmap
+
+The next product step is an agentic security layer on top of the existing platform. The full plan is in [docs/AI_SECURITY_AGENT_ROADMAP.md](docs/AI_SECURITY_AGENT_ROADMAP.md).
+
+| Phase | Goal | Outcome |
+| --- | --- | --- |
+| 0 | Safety and positioning | Scope, policy, approval, and audit contract for agent actions |
+| 1 | Telemetry foundation | Normalized Zeek, Suricata, syslog, endpoint, IAM, and cloud events |
+| 2 | Agent runtime | Local model provider abstraction, run ledger, tool-call history |
+| 3 | AI triage and cases | Incident cases with evidence, blast radius, and MITRE mapping |
+| 4 | Hunt and detection engineering | Natural-language hunts plus Sigma, KQL, SPL, Suricata, Snort, and YARA drafts |
+| 5 | Response planning | Dry-run containment plans, approvals, rollback steps, ChatOps |
+| 6 | Purple-team validation | Caldera/OpenBAS/Atomic/Nmap/nuclei adapters under strict authorization |
+| 7 | Security graph memory | Similar incident retrieval, attack paths, entity risk, and remediation history |
+| 8 | Recruiter-grade demo | One-command demo, screenshots, benchmark data, and case replay |
+
+## Safety Model For Offensive Features
+
+OneAlert's offensive capability is planned as **authorized purple-team validation**, not uncontrolled exploitation.
+
+Required controls:
+
+- A scope object for every active test: tenant, CIDR, assets, allowed techniques, time window, and forbidden actions.
+- Dry-run first for every playbook.
+- Human approval for active scans, exploit validation, credentialed testing, containment, and firewall/EDR changes.
+- Isolated worker containers for security tools.
+- Full ledger of commands, model calls, tool outputs, artifacts, approver, and rollback guidance.
+- No autonomous testing against third-party targets.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    subgraph Sources["Vulnerability Intelligence"]
+    subgraph Intel["Threat and Vulnerability Intelligence"]
         NVD["NVD CVE"]
         KEV["CISA KEV"]
         ICS["ICS-CERT"]
         MSRC["Microsoft MSRC"]
         CISCO["Cisco PSIRT"]
+        REDHAT["Red Hat"]
     end
 
-    subgraph Sensors["OT Network Sensors"]
-        ZEEK["Zeek / Suricata"]
-        SNMP["SNMP Pollers"]
-        SHODAN["Shodan API"]
+    subgraph Telemetry["Network and Security Telemetry"]
+        ZEEK["Zeek"]
+        SURICATA["Suricata"]
+        SYSLOG["Syslog"]
+        EDR["Endpoint / EDR"]
+        IAM["IAM / Cloud / SaaS"]
     end
 
     subgraph Backend["FastAPI Backend"]
-        INGEST["CVE Ingestion\n(6hr cycles)"]
-        DISCO["Device Discovery"]
-        REMEDIATE["AI Remediation\nEngine"]
-        COMPLY["Compliance\nEngine"]
-        RISK["OT Risk Scorer"]
-        TOPO["Topology\nService"]
+        INGEST["CVE and telemetry ingestion"]
+        ASSETS["Asset and discovery service"]
+        TOPO["Topology service"]
+        RISK["OT risk scorer"]
+        REMEDIATE["Remediation engine"]
+        COMPLY["Compliance engine"]
+        AGENT["Planned agent runtime"]
     end
 
-    subgraph Frontend["React Frontend (Vite + TypeScript)"]
-        DASH["Dashboard"]
-        ALERTS["Alert Management"]
-        ASSETS["Asset Inventory"]
+    subgraph Data["Data Layer"]
+        DB[("PostgreSQL / SQLite")]
+        VECTOR["pgvector / vector memory"]
+        GRAPH["Optional Neo4j / graph memory"]
+    end
+
+    subgraph Frontend["React + TypeScript Frontend"]
+        DASH["Command dashboard"]
+        ALERTS["Alerts"]
+        ASSET_UI["Assets"]
         OT["OT Discovery"]
-        COMP_UI["Compliance View"]
+        CASES["Planned cases and agent ledger"]
     end
 
-    subgraph Storage["Data Layer"]
-        DB[("PostgreSQL")]
-    end
-
-    subgraph Integrations["SIEM/SOAR"]
+    subgraph Integrations["SIEM / SOAR"]
         SPLUNK["Splunk"]
         SENTINEL["Sentinel"]
         SNOW["ServiceNow"]
         PD["PagerDuty"]
+        SLACK["Slack"]
     end
 
-    Sources --> INGEST
-    Sensors --> DISCO
-    INGEST --> RISK
-    DISCO --> TOPO
+    Intel --> INGEST
+    Telemetry --> INGEST
+    INGEST --> DB
+    ASSETS --> DB
+    TOPO --> DB
     RISK --> REMEDIATE
-    RISK --> COMPLY
-    Backend <--> DB
-    Backend --> Integrations
-    Frontend <--> Backend
+    REMEDIATE --> DB
+    COMPLY --> DB
+    DB --> Frontend
+    VECTOR --> AGENT
+    GRAPH --> AGENT
+    AGENT --> Integrations
 ```
-
----
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
-| **Backend** | Python 3.11, FastAPI, SQLAlchemy 2.0, Alembic, APScheduler |
-| **Frontend** | React 18, TypeScript, Vite, Tailwind CSS v4, Zustand, Recharts |
-| **Database** | PostgreSQL 16 (Cloud SQL), SQLite (dev) |
-| **Auth** | JWT + GitHub OAuth + TOTP MFA |
-| **Infra** | Docker (multi-stage), Google Cloud Run, Cloud Build |
-| **CI/CD** | GitHub Actions (test) + Cloud Build (deploy) |
-| **Observability** | structlog, request metrics middleware, health probes |
-| **Tests** | pytest (166 tests), pytest-asyncio, pytest-cov |
+| --- | --- |
+| Backend | Python, FastAPI, SQLAlchemy 2.0, Alembic, APScheduler |
+| Frontend | React, TypeScript, Vite, Tailwind CSS, Zustand, Recharts |
+| Database | PostgreSQL for production, SQLite for local development |
+| Auth | JWT, GitHub OAuth, TOTP MFA |
+| Security | Rate limiting, security headers, request IDs, standardized error envelopes |
+| Integrations | Splunk, Sentinel, ServiceNow, PagerDuty, Slack, webhooks |
+| AI roadmap | Ollama, vLLM, LM Studio, llama.cpp, OpenAI-compatible local endpoints |
+| Deployment | Docker, Docker Compose, Google Cloud Run, Cloud Build |
+| Tests | pytest, pytest-asyncio, pytest-cov, Playwright E2E scaffold |
 
----
+## Repository Structure
+
+```text
+backend/
+  routers/          API endpoints for auth, assets, alerts, OT, topology, compliance, SBOM, billing, integrations
+  services/         CVE ingestion, remediation, EPSS, compliance, SBOM parsing, topology, integrations
+  models/           SQLAlchemy models for users, orgs, assets, alerts, SBOM, compliance, topology, billing
+  middleware/       Rate limits, security headers, request IDs, metrics
+  database/         DB connection and demo seed data
+  scheduler/        Cron jobs for CVE scraping and OT rescoring
+frontend-v2/
+  src/pages/        Dashboard, alerts, assets, OT discovery, settings, audit log
+  src/components/   Layout, KPI cards, charts, alert detail
+  src/api/          Axios client and TypeScript API types
+docs/
+  ARCHITECTURE.md
+  AI_CONTEXT.md
+  CODEMAP.md
+  AI_SECURITY_AGENT_ROADMAP.md
+tests/
+  pytest coverage for auth, assets, alerts, compliance, SBOM, topology, integrations, security headers
+```
 
 ## Quick Start
 
 ### Local Development
 
 ```bash
-# Clone and install
 git clone https://github.com/mangod12/OneAlert.git
 cd OneAlert
 pip install -r requirements.txt
-
-# Start both frontend + backend (parallel dev servers)
 ./dev.sh
-
-# Or backend only
-uvicorn backend.main:app --reload --port 8000
 ```
 
 Visit: http://localhost:8000/app/
+
+Backend only:
+
+```bash
+uvicorn backend.main:app --reload --port 8000
+```
+
+Frontend only:
+
+```bash
+cd frontend-v2
+npm install
+npm run dev
+```
 
 ### Docker
 
 ```bash
 docker compose up --build
-# App: http://localhost:8000/app/
-# PostgreSQL: localhost:5432
 ```
 
-### Production (Cloud Run)
+App: http://localhost:8000/app/
 
-Push to `main` triggers Cloud Build → deploys to Cloud Run automatically.
+### Tests
 
 ```bash
-# Manual deploy
-gcloud builds submit --config=cloudbuild.yaml --substitutions=COMMIT_SHA=$(git rev-parse HEAD)
-```
+pytest -q
 
----
+cd frontend-v2
+npm run build
+```
 
 ## Configuration
 
 | Variable | Required | Description |
-|----------|----------|-------------|
-| `SECRET_KEY` | Yes | JWT signing key (32+ chars) |
-| `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `GITHUB_CLIENT_ID` | No | GitHub OAuth app ID |
-| `GITHUB_CLIENT_SECRET` | No | GitHub OAuth secret |
-| `STRIPE_SECRET_KEY` | No | Stripe billing integration |
-| `MAILGUN_API_KEY` | No | Email alert delivery |
-| `NVD_API_KEY` | No | Higher NVD rate limits |
+| --- | --- | --- |
+| `SECRET_KEY` | Yes | JWT signing key. Use a strong unique value in production. |
+| `DATABASE_URL` | Yes | PostgreSQL or SQLite connection string. |
+| `GITHUB_CLIENT_ID` | No | GitHub OAuth app ID. |
+| `GITHUB_CLIENT_SECRET` | No | GitHub OAuth secret. |
+| `STRIPE_SECRET_KEY` | No | Stripe billing integration. |
+| `MAILGUN_API_KEY` | No | Email alert delivery. |
+| `NVD_API_KEY` | No | Higher NVD API rate limits. |
 
----
+Planned AI configuration:
 
-## Repository Structure
+| Variable | Purpose |
+| --- | --- |
+| `AI_PROVIDER` | `ollama`, `vllm`, `lmstudio`, `llamacpp`, or OpenAI-compatible endpoint |
+| `AI_BASE_URL` | Local or private model server URL |
+| `AI_TRIAGE_MODEL` | Model for alert/case triage |
+| `AI_HUNT_MODEL` | Model for hunt and query generation |
+| `AI_GUARDRAIL_MODEL` | Local prompt/tool safety classifier |
+| `AI_AIRGAPPED` | Refuse outbound model calls when true |
 
-```
-backend/
-  routers/          API endpoints (auth, assets, alerts, OT, compliance, sbom, topology, billing, integrations)
-  services/         Business logic (remediation engine, EPSS, compliance, SBOM parser, billing, integrations)
-  models/           SQLAlchemy models (user, asset, alert, org, remediation, compliance, sbom, topology, subscription)
-  middleware/       Rate limiting, security headers, request ID, metrics
-  database/         DB connection, seeding
-  scheduler/        APScheduler cron jobs (CVE scraping, OT rescoring)
-frontend-v2/
-  src/pages/        React pages (Dashboard, Alerts, Assets, OT, Settings, AuditLog)
-  src/components/   Reusable components (charts, layout, modals)
-  src/stores/       Zustand state management
-  src/api/          Axios client + TypeScript types
-alembic/            Database migrations
-tests/              166 pytest tests
-docker-compose.yml  Full stack (app + PostgreSQL)
-cloudbuild.yaml     Cloud Build deploy pipeline
-Dockerfile          Multi-stage (Node build + Python runtime)
-```
+## Recruiter and Technical Evaluation Notes
 
----
+This project demonstrates:
 
-## Testing
+- Production-style FastAPI architecture with routers, services, models, middleware, migrations, and tests.
+- OT/ICS domain understanding: Purdue zones, industrial protocols, firmware risk, KEV/EPSS prioritization, and compensating controls.
+- Security engineering fundamentals: MFA, rate limits, headers, audit logs, RBAC, tenant isolation, and production secret guards.
+- Product thinking: affordability, self-service deployment, evidence-driven compliance, SIEM/SOAR workflows, and a clear agent roadmap.
+- Frontend capability: a modern TypeScript dashboard for security operations workflows.
 
-```bash
-# Run all 166 tests
-pytest -q
+Best technical discussion topics:
 
-# With coverage
-pytest --cov=backend --cov-report=term-missing
-```
+- How to govern AI tool use in security products.
+- How to make offensive validation safe and auditable.
+- How to normalize telemetry into an entity graph.
+- How to evaluate local models for security triage without leaking sensitive data.
+- How to turn CVE data into OT-safe remediation instead of generic patch advice.
 
----
+## Research Inspiration
 
-## Roadmap (Completed)
+The AI security-agent roadmap was informed by public open-source and research projects:
 
-- [x] Phase 1: Security Hardening (rate limiting, MFA, security headers, Alembic)
-- [x] Phase 2: Modern React Frontend (Vite + TypeScript + Tailwind)
-- [x] Phase 3: Multi-Tenancy & Organizations
-- [x] Phase 4: AI Remediation Engine + EPSS
-- [x] Phase 5: Compliance-as-Code (IEC 62443, NIST CSF)
-- [x] Phase 6: SBOM & Software Composition Analysis
-- [x] Phase 7: Network Topology Mapping
-- [x] Phase 8: Stripe Billing & Subscriptions
-- [x] Phase 9: SIEM/SOAR Integrations (Splunk, Sentinel, ServiceNow, PagerDuty)
-- [x] Phase 10: Observability (structured logging, metrics, health probes)
-
-### Next Up
-- NERC CIP / NIS2 compliance framework expansion
-- Real-time WebSocket alerts
-- Network topology interactive visualization (React Flow)
-- SAML/SSO for enterprise customers
-- Anomaly detection for OT protocol traffic
-
----
+- [Vigil SOC](https://vigilsoc.org/) for open AI SOC workflows, specialized agents, MCP integrations, and confidence-gated response.
+- [AiSOC](https://tryaisoc.com/) for agent ledgers, detect/triage/hunt/respond separation, and self-hosted SOC design.
+- [PentAGI](https://github.com/vxcontrol/pentagi) for sandboxed offensive workflows, specialist agents, graph memory, and observability.
+- [MITRE Caldera](https://github.com/mitre/caldera) for ATT&CK-based adversary emulation and plugin architecture.
+- [Microsoft CyberBattleSim](https://github.com/microsoft/CyberBattleSim) for autonomous cyber-defense simulation concepts.
+- [LogPulse AI](https://philiplykov.github.io/LogPulseAI/) for privacy-first log scoring, PII filtering, MITRE mapping, and local model support.
+- [LanG](https://arxiv.org/abs/2604.05440) for governance-aware agentic security operations, human checkpoints, and rule generation.
 
 ## Author
 
-**Anshaj Kumar**
-Backend & Security Engineer — Industrial Systems | Cloud-Native Architectures
-
----
+**Anshaj Kumar**  
+Backend and Security Engineer focused on industrial systems, cloud-native security, and agentic security automation.
 
 ## License
 

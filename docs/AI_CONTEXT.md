@@ -172,9 +172,38 @@ Optional:
 - `NVD_API_KEY` — higher NVD rate limits
 - `DISABLE_SCHEDULER` — skip APScheduler (used in tests)
 
+## AI Security OS (New in v2.0)
+
+### AI Provider Abstraction (`backend/services/ai/`)
+- Provider-agnostic: Anthropic, OpenAI-compatible, Ollama, vLLM, Groq, llama.cpp
+- Model routing by task: triage, detect, hunt, code, summarize, embed
+- Config: `AI_PROVIDER`, `AI_BASE_URL`, `AI_TRIAGE_MODEL`, etc.
+
+### Agent Layer (`backend/services/agents/`)
+- **BaseAgent**: Run/step ledger logging, token tracking, error handling
+- **DetectAgent**: Rule-based + LLM anomaly detection on event statistics
+- **TriageAgent**: Correlates alerts + events → Cases with MITRE ATT&CK mapping
+- **HuntAgent**: Natural-language → SQL query generation, Sigma rule output
+- **ResponseAgent**: Response plans with policy-governed approval workflow
+- **Orchestrator**: Pipeline: Detect → Triage → Cases
+
+### Policy Engine (`backend/services/policy_engine.py`)
+- 5 autonomy levels: L0 (read-only) → L4 (crisis mode)
+- OT zone hard constraint: Purdue 0-3 always requires human approval
+- Actions like isolate_host/quarantine_vlan always require approval
+
+### Security Events (`backend/models/security_event.py`)
+- OCSF-inspired normalized schema
+- Suricata EVE JSON + Zeek log parsers
+- Webhook receiver + file upload ingestion
+
+### MITRE ATT&CK (`backend/services/mitre/`)
+- Embedded Enterprise + ICS matrix (16 tactics, 30+ techniques)
+- Keyword-to-technique mapping, coverage computation
+
 ## Testing
 
-- **Unit/integration**: `pytest tests/` — 166 tests, SQLite-backed, scheduler disabled
+- **Unit/integration**: `pytest tests/` — 250+ tests, SQLite-backed, scheduler disabled
 - **E2E**: `cd tests/e2e && npx playwright test` — 14 tests against live Cloud Run
 - **CI**: GitHub Actions runs pytest on every push/PR to main
 

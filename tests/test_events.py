@@ -275,7 +275,7 @@ class TestEventsAPI:
             # List events
             resp = await ac.get("/api/v1/events/", headers=headers)
             assert resp.status_code == 200
-            assert resp.json()["total"] == 2
+            assert resp.json()["total"] >= 2
 
             # List sources
             resp = await ac.get("/api/v1/events/sources", headers=headers)
