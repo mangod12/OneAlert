@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const BASE_URL = 'https://cybersec-saas-ebqzvaqu6a-uc.a.run.app';
+const BASE_URL = 'https://cybersec-saas-498310931350.us-central1.run.app';
 
 test.describe('OneAlert Cloud Run Smoke Tests', () => {
   test('health endpoint returns healthy', async ({ request }) => {
