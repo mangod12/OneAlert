@@ -37,6 +37,48 @@
 
 ---
 
+## See It In Action
+
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" alt="Dashboard" width="100%">
+  <br><em>Security posture dashboard with KPIs, severity breakdown, and risk heatmap</em>
+</p>
+
+<table>
+<tr>
+<td width="50%">
+<img src="docs/screenshots/case-detail.png" alt="Case Investigation" width="100%">
+<br><em>AI-generated investigation case with MITRE ATT&CK mapping and attack timeline</em>
+</td>
+<td width="50%">
+<img src="docs/screenshots/mitre-map.png" alt="MITRE ATT&CK Map" width="100%">
+<br><em>MITRE ATT&CK coverage heatmap with technique search</em>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<img src="docs/screenshots/hunt-lab.png" alt="Hunt Lab" width="100%">
+<br><em>Natural-language threat hunting with AI-generated queries</em>
+</td>
+<td width="50%">
+<img src="docs/screenshots/events.png" alt="Security Events" width="100%">
+<br><em>Suricata/Zeek security events with severity filtering</em>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<img src="docs/screenshots/alerts.png" alt="Alerts" width="100%">
+<br><em>CVE vulnerability alerts with AI remediation</em>
+</td>
+<td width="50%">
+<img src="docs/screenshots/assets.png" alt="Assets" width="100%">
+<br><em>OT/IT asset inventory with Purdue model classification</em>
+</td>
+</tr>
+</table>
+
+---
+
 ## Why This Exists
 
 Enterprise SOC tools cost $300K-$800K/yr. SMB manufacturers with PLCs, SCADA systems, and OT networks can't afford them — but they're increasingly targeted. OneAlert gives them an **AI blue team** that:
@@ -292,6 +334,40 @@ tests/                     # 309 pytest tests
 tests/e2e/                 # Playwright E2E against Cloud Run
 docs/                      # AI_CONTEXT, ARCHITECTURE, CODEMAP, VISION
 ```
+
+---
+
+## How OneAlert Compares
+
+| Capability | OneAlert | Wazuh | SecurityOnion | OSSEC | Caldera |
+|------------|:--------:|:-----:|:-------------:|:-----:|:-------:|
+| AI-powered triage | Yes (6 agents) | No | No | No | No |
+| MITRE ATT&CK mapping | Auto-mapped | Manual rules | Manual | No | Yes |
+| OT/ICS protocol support | Modbus, S7, EtherNet/IP | Limited | Zeek-based | No | No |
+| Natural-language threat hunting | Yes | No | No | No | No |
+| Governed response (approval gates) | Yes (L0-L4) | No | No | No | No |
+| Purple-team validation | Built-in | No | No | No | Yes (core) |
+| PII redaction before LLM | Yes | N/A | N/A | N/A | N/A |
+| Suricata + Zeek ingestion | Yes | Yes | Yes | No | No |
+| Compliance (IEC 62443, NIST CSF) | Automated | Manual | No | No | No |
+| SBOM analysis | Yes | No | No | No | No |
+| Self-hostable | Yes | Yes | Yes | Yes | Yes |
+| SaaS billing (Stripe) | Built-in | No | No | No | No |
+
+**OneAlert's differentiator**: AI agents that investigate and respond, not just collect logs. Every action governed by policy with human approval for OT assets.
+
+---
+
+## Built For
+
+| Industry | Use Case |
+|----------|----------|
+| **Water/Wastewater** | Monitor PLCs controlling chemical dosing and pump stations |
+| **Manufacturing** | Protect HMIs and SCADA systems on the factory floor |
+| **Energy/Utilities** | Detect lateral movement from IT to OT control networks |
+| **MSSPs** | Multi-tenant SOC-as-a-Service for industrial clients |
+| **Security Teams** | Purple-team validation of detection coverage |
+| **Compliance** | Automated IEC 62443 and NIST CSF evidence collection |
 
 ---
 
