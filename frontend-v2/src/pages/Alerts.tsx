@@ -124,7 +124,7 @@ export function Alerts() {
       </div>
 
       {/* Table */}
-      <div className="bg-surface-800/50 border border-surface-700 rounded-xl overflow-hidden">
+      <div className="bg-surface-800/50 border border-surface-700 rounded-xl overflow-x-auto">
         {loading ? (
           <div className="flex items-center justify-center h-32">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-400"></div>
@@ -135,10 +135,10 @@ export function Alerts() {
             <p>No alerts found</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[500px]">
             <thead>
               <tr className="border-b border-surface-700 text-surface-400">
-                <th className="px-4 py-3 text-left w-8">
+                <th className="px-4 py-3 text-left w-8 hidden sm:table-cell">
                   <input
                     type="checkbox"
                     onChange={(e) => {
@@ -146,13 +146,14 @@ export function Alerts() {
                       else setSelectedIds(new Set());
                     }}
                     className="rounded border-surface-600"
+                    aria-label="Select all alerts"
                   />
                 </th>
                 <th className="px-4 py-3 text-left">CVE</th>
                 <th className="px-4 py-3 text-left">Severity</th>
                 <th className="px-4 py-3 text-left">Asset</th>
                 <th className="px-4 py-3 text-left">Status</th>
-                <th className="px-4 py-3 text-left">Date</th>
+                <th className="px-4 py-3 text-left hidden md:table-cell">Date</th>
               </tr>
             </thead>
             <tbody>
@@ -162,12 +163,13 @@ export function Alerts() {
                   onClick={() => setSelectedAlert(alert)}
                   className="border-b border-surface-700/50 hover:bg-surface-800 cursor-pointer transition-colors"
                 >
-                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-4 py-3 hidden sm:table-cell" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       checked={selectedIds.has(alert.id)}
                       onChange={() => toggleSelect(alert.id)}
                       className="rounded border-surface-600"
+                      aria-label={`Select alert ${alert.cve_id}`}
                     />
                   </td>
                   <td className="px-4 py-3 font-mono text-primary-300">{alert.cve_id}</td>
@@ -185,7 +187,7 @@ export function Alerts() {
                       {alert.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-surface-500">
+                  <td className="px-4 py-3 text-surface-500 hidden md:table-cell">
                     {new Date(alert.created_at).toLocaleDateString()}
                   </td>
                 </tr>

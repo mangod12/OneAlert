@@ -188,7 +188,7 @@ export function Validation() {
           </h2>
 
           {selectedRun.results_summary && (
-            <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
               <div className="bg-surface-900/50 rounded-lg p-3 text-center">
                 <p className="text-2xl font-bold text-white">{selectedRun.results_summary.tested}</p>
                 <p className="text-xs text-surface-500">Tests Run</p>

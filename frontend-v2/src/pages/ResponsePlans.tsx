@@ -98,7 +98,7 @@ export function ResponsePlans() {
           </h2>
           <div className="space-y-3">
             {pending.map(a => (
-              <div key={a.id} className="bg-surface-900/50 rounded-lg p-4 flex items-start justify-between gap-4">
+              <div key={a.id} className="bg-surface-900/50 rounded-lg p-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div className="flex-1">
                   <p className="text-sm text-white font-medium">Plan #{a.plan_id} — Case #{a.case_id}</p>
                   <p className="text-xs text-surface-400 mt-1">{a.reason}</p>
