@@ -1,3 +1,6 @@
+# Private docs
+posting.md
+
 # Secrets — NEVER commit
 env.yaml
 .env
