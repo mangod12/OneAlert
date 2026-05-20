@@ -16,6 +16,9 @@ import { MitreMap } from './pages/MitreMap';
 import { HuntLab } from './pages/HuntLab';
 import { Settings } from './pages/Settings';
 import { AuditLog } from './pages/AuditLog';
+import { ResponsePlans } from './pages/ResponsePlans';
+import { Validation } from './pages/Validation';
+import { ToastContainer } from './components/Toast';
 
 function App() {
   const { isAuthenticated, fetchUser } = useAuthStore();
@@ -28,6 +31,7 @@ function App() {
 
   return (
     <BrowserRouter basename="/app">
+      <ToastContainer />
       <Routes>
         <Route path="/login" element={isAuthenticated ? <Navigate to="/" /> : <Login />} />
         <Route path="/register" element={isAuthenticated ? <Navigate to="/" /> : <Register />} />
@@ -47,6 +51,8 @@ function App() {
           <Route path="/ot" element={<OTDiscovery />} />
           <Route path="/mitre" element={<MitreMap />} />
           <Route path="/hunt" element={<HuntLab />} />
+          <Route path="/response-plans" element={<ResponsePlans />} />
+          <Route path="/validation" element={<Validation />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/audit-log" element={<AuditLog />} />
         </Route>

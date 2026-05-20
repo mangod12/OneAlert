@@ -61,6 +61,21 @@ async def list_cases(
     return CaseListResponse(cases=case_responses, total=total, page=page, size=size)
 
 
+# --- Semantic Search (MUST be before /{case_id} to avoid route conflict) ---
+
+@router.get("/search")
+async def search_cases_endpoint(
+    q: str = Query(..., min_length=2),
+    max_results: int = Query(10, ge=1, le=50),
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Search cases by natural language query."""
+    from backend.services.semantic_search import search_cases
+    results = await search_cases(db=db, user_id=current_user.id, query=q, max_results=max_results)
+    return {"success": True, "data": results, "query": q}
+
+
 @router.get("/{case_id}", response_model=CaseDetailResponse)
 async def get_case(
     case_id: int,
@@ -198,6 +213,36 @@ async def get_case_events(
     return [{"id": e.id, "timestamp": e.timestamp.isoformat(), "event_type": e.event_type,
              "severity": e.severity, "source_ip": e.source_ip, "dest_ip": e.dest_ip,
              "signature": e.signature, "category": e.category} for e in events]
+
+
+
+@router.get("/{case_id}/similar")
+async def get_similar_cases(
+    case_id: int,
+    max_results: int = Query(5, ge=1, le=20),
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Find cases similar to a given case."""
+    from backend.services.semantic_search import find_similar_cases
+    results = await find_similar_cases(
+        db=db, user_id=current_user.id, target_case_id=case_id, max_results=max_results,
+    )
+    return {"success": True, "data": results}
+
+
+@router.get("/{case_id}/blast-radius")
+async def get_case_blast_radius(
+    case_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Get blast radius graph for a case."""
+    from backend.services.semantic_search import get_blast_radius
+    result = await get_blast_radius(db=db, user_id=current_user.id, case_id=case_id)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return {"success": True, "data": result}
 
 
 # --- Agent Ledger Endpoints ---

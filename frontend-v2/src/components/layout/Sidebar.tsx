@@ -13,6 +13,8 @@ import {
   Activity,
   Target,
   Search,
+  FileCheck,
+  Swords,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -25,6 +27,8 @@ const navItems = [
   { to: '/ot', icon: Network, label: 'OT Discovery' },
   { to: '/mitre', icon: Target, label: 'MITRE ATT&CK' },
   { to: '/hunt', icon: Search, label: 'Hunt Lab' },
+  { to: '/response-plans', icon: FileCheck, label: 'Response Plans' },
+  { to: '/validation', icon: Swords, label: 'Validation' },
   { to: '/audit-log', icon: ClipboardList, label: 'Audit Log' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];
@@ -76,6 +80,7 @@ export function Sidebar() {
         </div>
         <button
           onClick={logout}
+          aria-label="Sign out of your account"
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-surface-400 hover:bg-surface-800 hover:text-danger w-full transition-colors"
         >
           <LogOut className="w-5 h-5" />

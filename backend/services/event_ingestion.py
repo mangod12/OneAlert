@@ -10,6 +10,7 @@ from sqlalchemy import select, func
 from backend.models.security_event import SecurityEvent, EventSource
 from backend.services.parsers.suricata import parse_suricata_eve
 from backend.services.parsers.zeek import parse_zeek_log
+from backend.services.pii_redactor import redact_dict
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ async def ingest_events(
 
     ingested = 0
     skipped = 0
+    redacted_count = 0
 
     for raw in raw_events:
         try:
@@ -47,6 +49,11 @@ async def ingest_events(
             if not parsed:
                 skipped += 1
                 continue
+
+            # Redact PII/secrets from raw_data before storage
+            if "raw_data" in parsed and isinstance(parsed["raw_data"], dict):
+                parsed["raw_data"], n = redact_dict(parsed["raw_data"])
+                redacted_count += n
 
             event = SecurityEvent(
                 user_id=user_id,
@@ -66,8 +73,8 @@ async def ingest_events(
 
     await db.commit()
 
-    logger.info(f"Ingested {ingested} events ({skipped} skipped) from {source_type}")
-    return {"ingested": ingested, "skipped": skipped, "source_id": source.id}
+    logger.info(f"Ingested {ingested} events ({skipped} skipped, {redacted_count} redactions) from {source_type}")
+    return {"ingested": ingested, "skipped": skipped, "redacted": redacted_count, "source_id": source.id}
 
 
 async def _get_or_create_source(
