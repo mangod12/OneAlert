@@ -7,15 +7,15 @@
     AI agents that detect, investigate, hunt, and respond to threats across your OT/ICS infrastructure — with human approval gates and full audit trails.
   </p>
   <p align="center">
-    <a href="https://cybersec-saas-ebqzvaqu6a-uc.a.run.app/app/"><strong>Live Demo</strong></a> &middot;
+    <a href="https://cybersec-saas-498310931350.us-central1.run.app/app/"><strong>Live Demo</strong></a> &middot;
     <a href="#features"><strong>Features</strong></a> &middot;
     <a href="#quickstart"><strong>Quick Start</strong></a> &middot;
     <a href="#architecture"><strong>Architecture</strong></a>
   </p>
   <p align="center">
     <a href="https://github.com/mangod12/OneAlert/actions/workflows/ci.yml"><img src="https://github.com/mangod12/OneAlert/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-    <img src="https://img.shields.io/badge/tests-250%2B%20passing-brightgreen" alt="Tests">
-    <img src="https://img.shields.io/badge/AI%20Agents-5%20active-blueviolet" alt="AI Agents">
+    <img src="https://img.shields.io/badge/tests-330%2B%20passing-brightgreen" alt="Tests">
+    <img src="https://img.shields.io/badge/AI%20Agents-6%20active-blueviolet" alt="AI Agents">
     <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
     <img src="https://img.shields.io/badge/Python-3.11%2B-blue" alt="Python">
     <img src="https://img.shields.io/badge/React-19-61DAFB" alt="React">
@@ -26,7 +26,7 @@
 
 ## Try It Now
 
-**Live demo:** https://cybersec-saas-ebqzvaqu6a-uc.a.run.app/app/
+**Live demo:** https://cybersec-saas-498310931350.us-central1.run.app/app/
 
 | | |
 |---|---|
@@ -54,7 +54,7 @@ Enterprise SOC tools cost $300K-$800K/yr. SMB manufacturers with PLCs, SCADA sys
 
 ### AI Agent Pipeline
 
-Five specialized agents working as a team:
+Six specialized agents working as a team:
 
 | Agent | What It Does |
 |-------|-------------|
@@ -62,6 +62,7 @@ Five specialized agents working as a team:
 | **Triage Agent** | Correlates alerts + events into investigation cases with MITRE ATT&CK mapping |
 | **Hunt Agent** | Takes natural-language hypotheses, generates SQL queries, outputs Sigma rules |
 | **Response Agent** | Generates response plans with ordered containment actions |
+| **Purple Agent** | Simulates ATT&CK techniques to validate detection coverage |
 | **Compliance Agent** | Maps platform data to IEC 62443 and NIST CSF controls |
 
 ### Governed Autonomy
@@ -70,6 +71,27 @@ Five specialized agents working as a team:
 - **OT safety constraint**: Purdue Level 0-3 assets always require human approval for containment
 - **Full agent ledger**: Every AI decision logged with model, tokens, reasoning
 - **Policy engine**: Action approval rules by zone, asset type, and autonomy level
+- **Approval workflow**: Approve/reject response plans via REST API before execution
+- **Action executor**: 12 action types (notify, block IP, isolate host, quarantine VLAN, etc.)
+
+### PII and Secret Redaction
+
+- **8 pattern types**: emails, SSNs, credit cards, API keys, bearer tokens, passwords, private keys, JWTs
+- **Integrated into event ingestion**: secrets stripped before storage and LLM processing
+- **Preserves network observables**: IPs, ports, domains, hostnames kept for security analysis
+
+### Purple-Team Validation
+
+- **Simulated ATT&CK testing**: 8 technique categories with atomic test library
+- **Dry-run/lab/production modes**: production mode requires explicit human approval
+- **Detection coverage metrics**: per-technique detection rates and gap analysis
+- **Control result tracking**: which detection rules fired, which missed
+
+### Semantic Search and Blast Radius
+
+- **Natural-language case search**: TF-IDF ranking with zero external dependencies
+- **Similar incident retrieval**: cosine similarity matching with shared MITRE technique highlighting
+- **Blast radius graph**: entity relationship visualization (assets, IPs, MITRE techniques per case)
 
 ### Security Event Ingestion
 
@@ -116,15 +138,22 @@ Five specialized agents working as a team:
 
 ## Quickstart
 
-### Docker (recommended)
+### One-Command Demo
 
 ```bash
 git clone https://github.com/mangod12/OneAlert.git
 cd OneAlert
-docker compose up --build
+pip install -r requirements.txt
+python -m backend.demo
 ```
 
-Open http://localhost:8000/app/ — demo data auto-loads.
+Open http://localhost:8000/app/ — demo data auto-loads with attack scenario.
+
+### Docker
+
+```bash
+docker compose up --build
+```
 
 ### Local Development
 
@@ -165,7 +194,8 @@ DATABASE_URL=postgresql://user:pass@host/db
  │  Zeek Logs      │  Triage Agent     │  Autonomy Levels       │
  │  Syslog/Auth    │  Hunt Agent       │  Approval Workflow     │
  │  OT Discovery   │  Response Agent   │  Agent Ledger          │
- │                 │  Compliance Agent  │  OT Zone Constraints   │
+ │  PII Redaction  │  Purple Agent     │  OT Zone Constraints   │
+ │                 │  Compliance Agent  │  Action Executor       │
  ├─────────────────┼───────────────────┼───────────────────────┤
  │  Data Layer     │   AI Runtime      │     Frontend           │
  │                 │                   │                        │
@@ -173,7 +203,9 @@ DATABASE_URL=postgresql://user:pass@host/db
  │  SQLite (dev)   │  OpenAI-compat    │  Cases & Investigations│
  │  Event Store    │  Ollama/vLLM      │  Events Viewer         │
  │  Agent Ledger   │  Model Routing    │  MITRE ATT&CK Map     │
- │                 │                   │  Hunt Lab              │
+ │  Semantic Search│                   │  Hunt Lab              │
+ │                 │                   │  Response Plans        │
+ │                 │                   │  Purple-Team Validation│
  └─────────────────┴───────────────────┴───────────────────────┘
 ```
 
@@ -205,7 +237,7 @@ CVE Alerts (NVD/CISA/ICS-CERT) ──► Triage Agent (correlation + MITRE)
 | Database | PostgreSQL (prod), SQLite (dev) |
 | Auth | JWT + GitHub OAuth + TOTP MFA |
 | Deploy | Docker, Google Cloud Run |
-| CI | GitHub Actions, 250+ tests, Playwright E2E |
+| CI | GitHub Actions, 330+ tests (309 pytest + 22 Playwright E2E) |
 
 ---
 
@@ -222,6 +254,15 @@ CVE Alerts (NVD/CISA/ICS-CERT) ──► Triage Agent (correlation + MITRE)
 | `GET /api/v1/cases/` | List investigation cases |
 | `GET /api/v1/alerts/` | List vulnerability alerts |
 | `GET /api/v1/events/stats` | Event ingestion statistics |
+| `GET /api/v1/cases/search?q=` | Semantic case search |
+| `GET /api/v1/cases/{id}/similar` | Find similar incidents |
+| `GET /api/v1/cases/{id}/blast-radius` | Blast radius entity graph |
+| `GET /api/v1/response-plans/` | List response plans |
+| `POST /api/v1/response-plans/{id}/approve` | Approve a response plan |
+| `POST /api/v1/response-plans/{id}/execute` | Execute approved plan |
+| `POST /api/v1/validation/runs` | Create purple-team validation run |
+| `POST /api/v1/validation/runs/{id}/execute` | Run ATT&CK technique tests |
+| `GET /api/v1/validation/coverage` | Detection coverage by technique |
 
 Full API docs at `/docs` when running locally.
 
@@ -232,19 +273,22 @@ Full API docs at `/docs` when running locally.
 ```
 backend/
 ├── services/ai/          # Provider-agnostic LLM runtime
-├── services/agents/       # Detect, Triage, Hunt, Response agents
+├── services/agents/       # Detect, Triage, Hunt, Response, Purple agents
 ├── services/mitre/        # MITRE ATT&CK integration
 ├── services/parsers/      # Suricata + Zeek event parsers
 ├── models/                # SQLAlchemy models + Pydantic schemas
 ├── routers/               # FastAPI route handlers
+├── services/pii_redactor.py    # PII/secret redaction pipeline
+├── services/action_executor.py # Response action execution
+├── services/semantic_search.py # TF-IDF search + blast radius
 └── services/              # CVE, compliance, billing, notifications
 
 frontend-v2/src/
-├── pages/                 # Cases, Events, HuntLab, MitreMap, Dashboard
+├── pages/                 # Dashboard, Cases, Events, HuntLab, MitreMap, ResponsePlans, Validation
 ├── components/            # Charts, layout, shared UI
 └── stores/                # Zustand auth state
 
-tests/                     # 250+ pytest tests
+tests/                     # 309 pytest tests
 tests/e2e/                 # Playwright E2E against Cloud Run
 docs/                      # AI_CONTEXT, ARCHITECTURE, CODEMAP, VISION
 ```
