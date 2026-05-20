@@ -21,9 +21,23 @@ export function RiskHeatmap() {
     { level: 0, label: 'Process', description: 'Sensors, Actuators' },
   ];
 
+  // Map zone names from backend to Purdue levels
+  const ZONE_TO_LEVEL: Record<string, number> = {
+    enterprise: 5, dmz: 5, internet: 5,
+    business: 4, corporate: 4,
+    operations: 3, supervisory: 3, scada: 3,
+    control: 2, hmi: 2,
+    field: 1, basic_control: 1, plc: 1,
+    process: 0, safety_system: 0, sensor: 0,
+  };
+
   const getZoneCount = (level: number) => {
-    const zone = zones.find((z) => z.zone === `level_${level}` || z.zone === String(level));
-    return zone?.count ?? 0;
+    let total = 0;
+    for (const z of zones) {
+      const mappedLevel = ZONE_TO_LEVEL[z.zone] ?? (z.zone === `level_${level}` || z.zone === String(level) ? level : -1);
+      if (mappedLevel === level) total += z.count;
+    }
+    return total;
   };
 
   const getColor = (count: number) => {
@@ -58,7 +72,7 @@ export function RiskHeatmap() {
       })}
       {zones.length === 0 && (
         <p className="text-center text-surface-500 py-4 text-sm">
-          No OT zone data available. Add assets with network zones to see the heatmap.
+          No OT zone data. Add assets with network zones to populate.
         </p>
       )}
     </div>
