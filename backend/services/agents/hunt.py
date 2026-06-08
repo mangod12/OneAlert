@@ -7,13 +7,52 @@ import re
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from sqlalchemy import or_, select
 
 from backend.services.agents.base import BaseAgent
 from backend.services.ai.provider import AIMessage
 from backend.services.ai.router import get_ai_provider, TASK_HUNT
+from backend.models.security_event import SecurityEvent
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_HUNT_COLUMNS = (
+    "id", "timestamp", "event_type", "severity", "source_ip", "dest_ip", "signature",
+)
+
+ALLOWED_HUNT_COLUMNS = {
+    "id": SecurityEvent.id,
+    "timestamp": SecurityEvent.timestamp,
+    "event_type": SecurityEvent.event_type,
+    "severity": SecurityEvent.severity,
+    "signature": SecurityEvent.signature,
+    "signature_id": SecurityEvent.signature_id,
+    "category": SecurityEvent.category,
+    "source_ip": SecurityEvent.source_ip,
+    "source_port": SecurityEvent.source_port,
+    "dest_ip": SecurityEvent.dest_ip,
+    "dest_port": SecurityEvent.dest_port,
+    "protocol": SecurityEvent.protocol,
+    "action": SecurityEvent.action,
+    "hostname": SecurityEvent.hostname,
+    "username": SecurityEvent.username,
+    "domain": SecurityEvent.domain,
+    "url": SecurityEvent.url,
+    "user_agent": SecurityEvent.user_agent,
+    "bytes_in": SecurityEvent.bytes_in,
+    "bytes_out": SecurityEvent.bytes_out,
+    "source_type": SecurityEvent.source_type,
+    "processed": SecurityEvent.processed,
+}
+
+TEXT_FILTER_COLUMNS = {
+    "signature", "category", "hostname", "username", "domain", "url", "user_agent",
+}
+
+EQUALITY_FILTER_COLUMNS = {
+    "event_type", "severity", "source_ip", "dest_ip", "protocol", "action",
+    "source_type", "processed",
+}
 
 HUNT_SYSTEM_PROMPT = """You are a threat hunting specialist for an OT/ICS cybersecurity platform.
 
@@ -112,15 +151,86 @@ class HuntAgent(BaseAgent):
 
     async def _execute_query(self, sql: str, params: dict | None = None) -> list:
         """Execute a read-only SQL query with user_id scoping."""
-        query_params = {"user_id": self.user_id}
-        if params:
-            query_params.update(params)
-        result = await self.db.execute(text(sql), query_params)
+        query = self._build_safe_query(sql, params or {})
+        result = await self.db.execute(query)
         columns = result.keys()
         rows = []
         for row in result.fetchall():
             rows.append(dict(zip(columns, row)))
         return rows
+
+    def _build_safe_query(self, sql: str, params: dict) -> object:
+        """Build a constrained SQLAlchemy query from validated hunt SQL."""
+        selected = self._selected_columns(sql)
+        query = select(*[ALLOWED_HUNT_COLUMNS[name].label(name) for name in selected])
+        query = query.where(SecurityEvent.user_id == self.user_id)
+
+        keyword = params.get("keyword")
+        if keyword:
+            query = query.where(or_(
+                SecurityEvent.signature.like(keyword),
+                SecurityEvent.category.like(keyword),
+            ))
+
+        query = self._apply_literal_filters(query, sql)
+        query = self._apply_ordering(query, sql)
+        return query.limit(self._limit(sql))
+
+    def _selected_columns(self, sql: str) -> list[str]:
+        """Extract simple selected column names, falling back to a safe default."""
+        match = re.search(r"\bSELECT\s+(.*?)\s+FROM\s+security_events\b", sql, re.IGNORECASE | re.DOTALL)
+        if not match:
+            return list(DEFAULT_HUNT_COLUMNS)
+
+        raw_columns = [part.strip() for part in match.group(1).split(",")]
+        if raw_columns == ["*"]:
+            return list(DEFAULT_HUNT_COLUMNS)
+
+        selected = []
+        for raw in raw_columns:
+            name = re.sub(r"\s+AS\s+\w+$", "", raw, flags=re.IGNORECASE).strip().lower()
+            if name in ALLOWED_HUNT_COLUMNS:
+                selected.append(name)
+        return selected or list(DEFAULT_HUNT_COLUMNS)
+
+    def _apply_literal_filters(self, query, sql: str):
+        """Apply supported literal filters from generated SQL."""
+        for name in EQUALITY_FILTER_COLUMNS:
+            pattern = rf"\b{name}\s*=\s*'([^']{{1,128}})'"
+            match = re.search(pattern, sql, re.IGNORECASE)
+            if match:
+                query = query.where(ALLOWED_HUNT_COLUMNS[name] == match.group(1))
+
+        severity_in = re.search(r"\bseverity\s+IN\s*\(([^)]{1,256})\)", sql, re.IGNORECASE)
+        if severity_in:
+            values = re.findall(r"'([^']{1,32})'", severity_in.group(1))
+            if values:
+                query = query.where(SecurityEvent.severity.in_(values[:10]))
+
+        for name in TEXT_FILTER_COLUMNS:
+            pattern = rf"\b{name}\s+LIKE\s+'([^']{{1,128}})'"
+            match = re.search(pattern, sql, re.IGNORECASE)
+            if match:
+                query = query.where(ALLOWED_HUNT_COLUMNS[name].like(match.group(1)))
+        return query
+
+    def _apply_ordering(self, query, sql: str):
+        """Apply supported ordering, defaulting to newest events first."""
+        match = re.search(r"\bORDER\s+BY\s+(\w+)(?:\s+(ASC|DESC))?", sql, re.IGNORECASE)
+        if not match:
+            return query.order_by(SecurityEvent.timestamp.desc())
+
+        column_name = match.group(1).lower()
+        column = ALLOWED_HUNT_COLUMNS.get(column_name, SecurityEvent.timestamp)
+        direction = (match.group(2) or "ASC").upper()
+        return query.order_by(column.desc() if direction == "DESC" else column.asc())
+
+    def _limit(self, sql: str) -> int:
+        """Read a generated LIMIT, capped to the API row limit."""
+        match = re.search(r"\bLIMIT\s+(\d{1,3})\b", sql, re.IGNORECASE)
+        if not match:
+            return 100
+        return max(1, min(int(match.group(1)), 100))
 
     def _is_safe_query(self, sql: str) -> bool:
         """Validate a generated hunt query is a single scoped read-only SELECT."""

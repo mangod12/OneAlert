@@ -14,7 +14,8 @@ from pathlib import Path
 def run_command(command, check=True, sensitive=False):
     """Run a shell command and return the result."""
     command_args = shlex.split(command) if isinstance(command, str) else command
-    print("Running: [redacted sensitive command]" if sensitive else f"Running: {' '.join(command_args)}")
+    command_name = command_args[0] if command_args else "command"
+    print("Running: [redacted sensitive command]" if sensitive else f"Running: {command_name}")
     try:
         result = subprocess.run(command_args, check=check, capture_output=True, text=True)
         if result.stdout and not sensitive:

@@ -68,3 +68,33 @@ class TestFallbackQueries:
         a = HuntAgent.__new__(HuntAgent)
         result = a._fallback_queries("")
         assert len(result["queries"]) == 2
+
+
+class TestSafeQueryBuilder:
+    def _agent(self):
+        agent = HuntAgent.__new__(HuntAgent)
+        agent.user_id = 123
+        return agent
+
+    def test_safe_query_builder_applies_limit_cap(self):
+        a = self._agent()
+        query = a._build_safe_query(
+            "SELECT id, severity FROM security_events WHERE user_id = :user_id "
+            "AND severity = 'high' ORDER BY timestamp DESC LIMIT 500",
+            {},
+        )
+        compiled = str(query.compile(compile_kwargs={"literal_binds": True}))
+        assert "security_events.user_id = 123" in compiled
+        assert "security_events.severity = 'high'" in compiled
+        assert "LIMIT 100" in compiled
+
+    def test_safe_query_builder_applies_keyword_param(self):
+        a = self._agent()
+        query = a._build_safe_query(
+            "SELECT id FROM security_events WHERE user_id = :user_id "
+            "AND (signature LIKE :keyword OR category LIKE :keyword)",
+            {"keyword": "%scan%"},
+        )
+        compiled = str(query.compile(compile_kwargs={"literal_binds": True}))
+        assert "security_events.signature LIKE '%scan%'" in compiled
+        assert "security_events.category LIKE '%scan%'" in compiled

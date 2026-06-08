@@ -2,6 +2,7 @@
 
 import pytest
 from fastapi import HTTPException
+from httpx import ASGITransport, AsyncClient
 
 
 def test_cookie_max_age_is_reasonable():
@@ -47,3 +48,25 @@ async def test_github_token_exchange_rejects_state_mismatch_before_network():
         await service.exchange_code_for_token("code", "expected-state", "received-state")
 
     assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_github_login_sets_secure_httponly_state_cookie(monkeypatch):
+    """Backend should set OAuth state cookie without exposing it to JavaScript."""
+    from backend.main import app
+    from backend.services.github_auth_service import github_auth_service
+
+    monkeypatch.setattr(github_auth_service, "client_id", "client-id")
+    monkeypatch.setattr(github_auth_service, "client_secret", "client-secret")
+    monkeypatch.setattr(github_auth_service, "redirect_uri", "https://example.test/callback")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="https://test") as client:
+        response = await client.get("/api/v1/auth/github/login", params={"state": "state-123"})
+
+    assert response.status_code == 200
+    set_cookie = response.headers["set-cookie"]
+    assert "github_oauth_state=state-123" in set_cookie
+    assert "HttpOnly" in set_cookie
+    assert "Secure" in set_cookie
+    assert "SameSite=lax" in set_cookie
