@@ -692,11 +692,9 @@ function renderLogin(showRegister = false) {
 
 async function githubLogin() {
     try {
-        // Generate a secure random state value
-        const state = crypto.randomUUID();
-        // Get the GitHub auth URL from the backend, passing the state
+        // Get the GitHub auth URL from the backend.
         // The backend stores the state in a secure HttpOnly cookie for CSRF protection.
-        const response = await axios.get(`${API_BASE}/auth/github/login`, { params: { state } });
+        const response = await axios.get(`${API_BASE}/auth/github/login`);
         // Redirect to GitHub
         window.location.href = response.data.auth_url;
     } catch (error) {

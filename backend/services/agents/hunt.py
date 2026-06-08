@@ -178,17 +178,21 @@ class HuntAgent(BaseAgent):
 
     def _selected_columns(self, sql: str) -> list[str]:
         """Extract simple selected column names, falling back to a safe default."""
-        match = re.search(r"\bSELECT\s+(.*?)\s+FROM\s+security_events\b", sql, re.IGNORECASE | re.DOTALL)
-        if not match:
+        upper_sql = sql.upper()
+        select_idx = upper_sql.find("SELECT ")
+        from_idx = upper_sql.find(" FROM SECURITY_EVENTS")
+        if select_idx != 0 or from_idx <= len("SELECT "):
             return list(DEFAULT_HUNT_COLUMNS)
 
-        raw_columns = [part.strip() for part in match.group(1).split(",")]
+        raw_columns = [part.strip() for part in sql[len("SELECT "):from_idx].split(",")]
         if raw_columns == ["*"]:
             return list(DEFAULT_HUNT_COLUMNS)
 
         selected = []
         for raw in raw_columns:
-            name = re.sub(r"\s+AS\s+\w+$", "", raw, flags=re.IGNORECASE).strip().lower()
+            upper_raw = raw.upper()
+            alias_idx = upper_raw.rfind(" AS ")
+            name = (raw[:alias_idx] if alias_idx >= 0 else raw).strip().lower()
             if name in ALLOWED_HUNT_COLUMNS:
                 selected.append(name)
         return selected or list(DEFAULT_HUNT_COLUMNS)

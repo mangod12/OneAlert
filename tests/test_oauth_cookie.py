@@ -3,6 +3,7 @@
 import pytest
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
+from urllib.parse import parse_qs, urlparse
 
 
 def test_cookie_max_age_is_reasonable():
@@ -62,11 +63,15 @@ async def test_github_login_sets_secure_httponly_state_cookie(monkeypatch):
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="https://test") as client:
-        response = await client.get("/api/v1/auth/github/login", params={"state": "state-123"})
+        response = await client.get("/api/v1/auth/github/login", params={"state": "client-state"})
 
     assert response.status_code == 200
     set_cookie = response.headers["set-cookie"]
-    assert "github_oauth_state=state-123" in set_cookie
+    cookie_state = set_cookie.split("github_oauth_state=", 1)[1].split(";", 1)[0]
+    auth_state = parse_qs(urlparse(response.json()["auth_url"]).query)["state"][0]
+    assert cookie_state
+    assert cookie_state == auth_state
+    assert cookie_state != "client-state"
     assert "HttpOnly" in set_cookie
     assert "Secure" in set_cookie
     assert "SameSite=lax" in set_cookie

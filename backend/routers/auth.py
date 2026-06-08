@@ -4,6 +4,7 @@ Handles user authentication, password hashing, and JWT token creation/validation
 """
 
 from datetime import timedelta
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -168,21 +169,21 @@ async def verify_user_token(current_user: User = Depends(get_active_user)):
 
 
 @router.get("/github/login")
-async def github_login(response: Response, state: Optional[str] = None):
+async def github_login(response: Response):
     """Get GitHub OAuth authorization URL."""
     try:
-        if state:
-            response.set_cookie(
-                key="github_oauth_state",
-                value=state,
-                httponly=True,
-                secure=True,
-                samesite="lax",
-                max_age=600,
-                path="/",
-            )
-        # Pass the state from the frontend to the service
-        auth_url = github_auth_service.get_authorization_url(state)
+        oauth_state = secrets.token_urlsafe(32)
+        response.set_cookie(
+            key="github_oauth_state",
+            value=oauth_state,
+            httponly=True,
+            secure=True,
+            samesite="lax",
+            max_age=600,
+            path="/",
+        )
+        # Use a server-generated state value so the cookie cannot be injected by user input.
+        auth_url = github_auth_service.get_authorization_url(oauth_state)
         return {"auth_url": auth_url}
     except ValueError as e:
         raise HTTPException(
