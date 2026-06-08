@@ -138,19 +138,20 @@ async def execute_validation_run(
 
     from backend.services.agents.purple import PurpleAgent
     agent = PurpleAgent(db=db, user_id=current_user.id)
-    result = await agent.execute(
+    await agent.execute(
         run_id=run_id,
         techniques=vrun.mitre_techniques or [],
         mode=vrun.mode,
     )
+    await db.refresh(vrun)
 
     return {
         "success": True,
         "data": {
-            "run_id": result.get("run_id", run_id),
-            "status": result.get("status", "completed"),
-            "results": result.get("results", {}),
-            "summary": result.get("summary", ""),
+            "run_id": run_id,
+            "status": vrun.status,
+            "results": vrun.results_summary or {},
+            "summary": "Validation run completed",
         },
     }
 
