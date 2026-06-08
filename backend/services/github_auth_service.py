@@ -6,6 +6,9 @@ It handles the OAuth flow including authorization URL generation,
 token exchange, and user information retrieval.
 """
 
+import hmac
+from urllib.parse import urlencode
+
 import httpx
 from typing import Optional, Dict, Any
 from fastapi import HTTPException, Request
@@ -55,7 +58,7 @@ class GitHubAuthService:
         if state:
             params["state"] = state
             
-        query_string = "&".join([f"{k}={v}" for k, v in params.items()])
+        query_string = urlencode(params)
         return f"https://github.com/login/oauth/authorize?{query_string}"
     
     async def exchange_code_for_token(self, code: str, session_state: str, state: str) -> Optional[str]:
@@ -70,16 +73,16 @@ class GitHubAuthService:
         Returns:
             Access token or None if exchange failed
         """
-        print(f"GitHub callback initiated. Received state: {state}, session state: {session_state}")
+        logger.info("GitHub OAuth callback initiated")
 
-        if not state or state != session_state:
-            print("Error: State mismatch in GitHub callback.")
+        if not state or not session_state or not hmac.compare_digest(state, session_state):
+            logger.warning("GitHub OAuth state mismatch")
             raise HTTPException(status_code=400, detail="Invalid state")
 
         if not self.client_id or not self.client_secret:
             raise ValueError("GitHub OAuth credentials not configured")
         
-        print(f"Requesting access token from GitHub with code: {code}")
+        logger.info("Requesting GitHub OAuth access token")
         async with httpx.AsyncClient() as client:
             headers = {"Accept": "application/json"}
             data = {
@@ -88,25 +91,22 @@ class GitHubAuthService:
                 "code": code,
                 "redirect_uri": self.redirect_uri,
             }
-            print(f"Sending data to GitHub: {data}")
             response = await client.post(
                 "https://github.com/login/oauth/access_token",
                 headers=headers,
                 json=data,
             )
-            print(f"GitHub response status code: {response.status_code}")
-            print(f"GitHub response content: {response.text}")
+            logger.info("GitHub OAuth token endpoint returned status %s", response.status_code)
 
             if response.status_code != 200:
-                print(f"Error fetching access token from GitHub: {response.text}")
+                logger.warning("GitHub OAuth token exchange failed")
                 raise HTTPException(status_code=400, detail="Could not fetch access token from GitHub")
 
             response_data = response.json()
-            print(f"GitHub response data: {response_data}")
             access_token = response_data.get("access_token")
 
             if not access_token:
-                print("Error: No access token received from GitHub.")
+                logger.warning("GitHub OAuth token exchange returned no access token")
                 raise HTTPException(status_code=400, detail="No access token received from GitHub")
             
             return access_token
@@ -129,8 +129,7 @@ class GitHubAuthService:
             # Get user profile
             response = await client.get("https://api.github.com/user", headers=headers)
             if response.status_code != 200:
-                logger.error(f"Failed to get user info: {response.text}")
-                print(f"Failed to get user info: {response.text}")
+                logger.warning("Failed to get GitHub user info: status=%s", response.status_code)
                 return None
             user_data = response.json()
             # Get user emails
@@ -158,18 +157,18 @@ class GitHubAuthService:
             # Exchange code for token
             access_token = await self.exchange_code_for_token(code, session_state, state)
             if not access_token:
-                print("No access token received from GitHub.")
+                logger.warning("No access token received from GitHub")
                 return None
             # Get user information
             user_info = await self.get_user_info(access_token)
             if not user_info:
-                print("No user info received from GitHub.")
+                logger.warning("No user info received from GitHub")
                 return None
             # Get or create user
             async with AsyncSessionLocal() as session:
                 user = await self._get_or_create_user(session, user_info)
                 if not user:
-                    print("Failed to get or create user from GitHub info.")
+                    logger.warning("Failed to get or create user from GitHub info")
                     return None
                 
                 # Generate JWT token
@@ -192,8 +191,7 @@ class GitHubAuthService:
                 }
                 
         except Exception as e:
-            logger.error(f"GitHub authentication failed: {e}")
-            print(f"GitHub authentication failed: {e}")
+            logger.warning("GitHub authentication failed: %s", type(e).__name__)
             return None
     
     async def _get_or_create_user(self, session: AsyncSession, user_info: Dict[str, Any]) -> Optional[User]:
@@ -210,7 +208,6 @@ class GitHubAuthService:
         email = user_info.get("email")
         if not email:
             logger.error("No email found in GitHub user info")
-            print("No email found in GitHub user info")
             return None
         
         # Check if user exists
@@ -237,8 +234,7 @@ class GitHubAuthService:
             await session.refresh(user)
             return user
         except Exception as e:
-            logger.error(f"Failed to create user: {e}")
-            print(f"Failed to create user: {e}")
+            logger.error("Failed to create GitHub user: %s", type(e).__name__)
             await session.rollback()
             return None
 
@@ -257,68 +253,7 @@ async def github_callback(code: str, state: str, session_state: str) -> Dict[str
     Returns:
         Redirect response or error message
     """
-    print(f"GitHub callback initiated. Received state: {state}, session state: {session_state}")
-
-    if not state or state != session_state:
-        print("Error: State mismatch in GitHub callback.")
-        raise HTTPException(status_code=400, detail="Invalid state")
-
-    print(f"Requesting access token from GitHub with code: {code}")
-    async with httpx.AsyncClient() as client:
-        headers = {"Accept": "application/json"}
-        data = {
-            "client_id": settings.github_client_id,
-            "client_secret": settings.github_client_secret,
-            "code": code,
-            "redirect_uri": settings.github_redirect_uri,
-        }
-        print(f"Sending data to GitHub: {data}")
-        response = await client.post(
-            "https://github.com/login/oauth/access_token",
-            headers=headers,
-            json=data,
-        )
-        print(f"GitHub response status code: {response.status_code}")
-        print(f"GitHub response content: {response.text}")
-
-        if response.status_code != 200:
-            print(f"Error fetching access token from GitHub: {response.text}")
-            raise HTTPException(status_code=400, detail="Could not fetch access token from GitHub")
-
-        response_data = response.json()
-        print(f"GitHub response data: {response_data}")
-        access_token = response_data.get("access_token")
-
-        if not access_token:
-            print("Error: No access token received from GitHub.")
-            raise HTTPException(status_code=400, detail="No access token received from GitHub")
-
-        # Get user information
-        user_info = await github_auth_service.get_user_info(access_token)
-        if not user_info:
-            print("No user info received from GitHub.")
-            raise HTTPException(status_code=400, detail="No user info received from GitHub")
-    # Get or create user
-    async with AsyncSessionLocal() as session:
-        user = await github_auth_service._get_or_create_user(session, user_info)
-        if not user:
-            print("Failed to get or create user from GitHub info.")
-            raise HTTPException(status_code=400, detail="User authentication failed")
-        # Generate JWT token
-        token_data = {
-            "sub": user.email,
-            "is_active": user.is_active
-        }
-        jwt_token = create_access_token(token_data)
-        result = {
-            "access_token": jwt_token,
-            "token_type": "bearer",
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "name": user.full_name,
-                "is_active": user.is_active
-            }
-        }
-    print("GitHub authentication successful")
+    result = await github_auth_service.authenticate_user(code, session_state, state)
+    if not result:
+        raise HTTPException(status_code=400, detail="GitHub authentication failed")
     return result

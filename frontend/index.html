@@ -695,14 +695,8 @@ async function githubLogin() {
         // Generate a secure random state value
         const state = crypto.randomUUID();
         // Set the state in a secure cookie for CSRF protection
-        // For local dev, use SameSite=Lax; for production/cross-site, use SameSite=None; Secure
-        let cookieOptions = 'path=/;';
-        if (location.protocol === 'https:') {
-            cookieOptions += ' SameSite=None; Secure;';
-        } else {
-            cookieOptions += ' SameSite=Lax;';
-        }
-        document.cookie = `github_oauth_state=${state}; ${cookieOptions}`;
+        const cookieOptions = 'path=/; SameSite=Lax; Secure;';
+        document.cookie = `github_oauth_state=${encodeURIComponent(state)}; ${cookieOptions}`;
         // Get the GitHub auth URL from the backend, passing the state
         const response = await axios.get(`${API_BASE}/auth/github/login`, { params: { state } });
         // Redirect to GitHub

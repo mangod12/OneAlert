@@ -8,19 +8,21 @@ import os
 import sys
 import subprocess
 import argparse
+import shlex
 from pathlib import Path
 
-def run_command(command, check=True):
+def run_command(command, check=True, sensitive=False):
     """Run a shell command and return the result."""
-    print(f"Running: {command}")
+    command_args = shlex.split(command) if isinstance(command, str) else command
+    print("Running: [redacted sensitive command]" if sensitive else f"Running: {' '.join(command_args)}")
     try:
-        result = subprocess.run(command, shell=True, check=check, capture_output=True, text=True)
-        if result.stdout:
+        result = subprocess.run(command_args, check=check, capture_output=True, text=True)
+        if result.stdout and not sensitive:
             print(result.stdout)
         return result
     except subprocess.CalledProcessError as e:
         print(f"Command failed: {e}")
-        if e.stderr:
+        if e.stderr and not sensitive:
             print(f"Error: {e.stderr}")
         if check:
             sys.exit(1)
@@ -55,8 +57,8 @@ def deploy_docker():
         sys.exit(1)
     
     # Build and start services
-    run_command("docker-compose build")
-    run_command("docker-compose up -d")
+    run_command(["docker-compose", "build"])
+    run_command(["docker-compose", "up", "-d"])
     
     print("Docker deployment completed!")
     print("Application is running at:")
@@ -89,26 +91,26 @@ def deploy_heroku():
     
     # Create Heroku app if it doesn't exist
     try:
-        run_command("heroku apps:info", check=False)
+        run_command(["heroku", "apps:info"], check=False)
     except:
         app_name = input("Enter Heroku app name (or press Enter for auto-generated): ").strip()
         if app_name:
-            run_command(f"heroku create {app_name}")
+            run_command(["heroku", "create", app_name])
         else:
-            run_command("heroku create")
+            run_command(["heroku", "create"])
     
     # Set environment variables
     secret_key = os.urandom(32).hex()
-    run_command(f"heroku config:set SECRET_KEY={secret_key}")
-    run_command("heroku config:set DATABASE_URL=sqlite:///cybersec_alerts.db")
+    run_command(["heroku", "config:set", f"SECRET_KEY={secret_key}"], sensitive=True)
+    run_command(["heroku", "config:set", "DATABASE_URL=sqlite:///cybersec_alerts.db"], sensitive=True)
     
     # Deploy
-    run_command("git add .")
-    run_command("git commit -m 'Deploy to Heroku'")
-    run_command("git push heroku main")
+    run_command(["git", "add", "."])
+    run_command(["git", "commit", "-m", "Deploy to Heroku"])
+    run_command(["git", "push", "heroku", "main"])
     
     # Open the app
-    run_command("heroku open")
+    run_command(["heroku", "open"])
     
     print("Heroku deployment completed!")
 
@@ -121,14 +123,14 @@ def deploy_local_production():
     os.environ["DATABASE_URL"] = "sqlite:///cybersec_alerts.db"
     
     # Install dependencies
-    run_command("pip install -r requirements.txt")
+    run_command(["pip", "install", "-r", "requirements.txt"])
     
     # Initialize database
-    run_command("python scripts/setup_database.py")
+    run_command(["python", "scripts/setup_database.py"])
     
     # Start production server
     print("Starting production server...")
-    run_command("uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 4")
+    run_command(["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"])
     
     print("Local production deployment completed!")
     print("Application is running at:")
@@ -173,4 +175,4 @@ def main():
         sys.exit(1)
 
 if __name__ == "__main__":
-    main() 
+    main()

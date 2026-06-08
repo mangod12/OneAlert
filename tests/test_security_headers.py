@@ -33,3 +33,13 @@ async def test_security_headers_on_error_responses():
         response = await client.get("/nonexistent-path-12345")
         assert response.headers.get("X-Content-Type-Options") == "nosniff"
         assert response.headers.get("X-Frame-Options") == "DENY"
+
+
+@pytest.mark.asyncio
+async def test_spa_route_does_not_serve_files_outside_dist():
+    """SPA catch-all should not serve path traversal targets outside dist."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/app/../../backend/config.py")
+        assert response.status_code in (200, 404)
+        assert "class Settings" not in response.text

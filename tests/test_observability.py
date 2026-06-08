@@ -38,6 +38,22 @@ def test_health_ready_returns_status():
     assert data["database"] == "connected"
 
 
+def test_health_ready_does_not_expose_database_exception():
+    """Readiness failures should not expose raw exception details."""
+    class FailingEngine:
+        def connect(self):
+            raise RuntimeError("sensitive database path")
+
+    with patch("backend.database.db.get_async_engine", return_value=FailingEngine()):
+        response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    data = response.json()
+    assert data["status"] == "not_ready"
+    assert data["database"] == "unavailable"
+    assert "sensitive database path" not in response.text
+
+
 def test_metrics_endpoint_returns_data():
     """GET /metrics returns metrics data structure."""
     # Make a request first so there is data

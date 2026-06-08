@@ -35,13 +35,34 @@ class TestQuerySafety:
         a = self._agent()
         assert a._is_safe_query("select id from security_events where user_id = :user_id") is True
 
+    def test_multiple_statements_rejected(self):
+        a = self._agent()
+        assert a._is_safe_query(
+            "SELECT * FROM security_events WHERE user_id = :user_id; DROP TABLE users"
+        ) is False
+
+    def test_comments_rejected(self):
+        a = self._agent()
+        assert a._is_safe_query(
+            "SELECT * FROM security_events WHERE user_id = :user_id -- bypass"
+        ) is False
+
+    def test_other_table_rejected(self):
+        a = self._agent()
+        assert a._is_safe_query("SELECT * FROM users WHERE user_id = :user_id") is False
+
+    def test_unparameterized_user_scope_rejected(self):
+        a = self._agent()
+        assert a._is_safe_query("SELECT * FROM security_events WHERE user_id = 1") is False
+
 
 class TestFallbackQueries:
     def test_fallback_generates_queries(self):
         a = HuntAgent.__new__(HuntAgent)
         result = a._fallback_queries("port scan from 10.0.0.5")
         assert len(result["queries"]) == 2
-        assert "port" in result["queries"][0]["sql"]
+        assert result["queries"][0]["params"]["keyword"] == "%port%"
+        assert ":keyword" in result["queries"][0]["sql"]
 
     def test_fallback_empty_hypothesis(self):
         a = HuntAgent.__new__(HuntAgent)

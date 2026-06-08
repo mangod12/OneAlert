@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import logging
 import os
+from pathlib import Path
 
 from backend.config import settings
 from backend.routers import auth, assets, alerts, ot, organizations, compliance, sbom, topology, billing
@@ -200,9 +201,10 @@ async def health_ready():
             )
         return {"status": "ready", "database": "connected"}
     except Exception as e:
+        logger.warning("Readiness check failed: %s", type(e).__name__)
         return JSONResponse(
             status_code=503,
-            content={"status": "not_ready", "database": str(e)},
+            content={"status": "not_ready", "database": "unavailable"},
         )
 
 
@@ -228,6 +230,7 @@ legacy_frontend_dir = os.path.join(project_root, "frontend")
 
 if os.path.isdir(react_dist_dir):
     from fastapi.responses import FileResponse
+    react_dist_path = Path(react_dist_dir).resolve()
 
     # Serve static assets (JS, CSS, images)
     app.mount("/app/assets", StaticFiles(directory=os.path.join(react_dist_dir, "assets")), name="frontend-assets")
@@ -236,10 +239,15 @@ if os.path.isdir(react_dist_dir):
     @app.get("/app/{full_path:path}")
     async def serve_spa(full_path: str):
         """Serve React SPA — all non-asset routes return index.html."""
-        file_path = os.path.join(react_dist_dir, full_path)
-        if os.path.isfile(file_path):
-            return FileResponse(file_path)
-        return FileResponse(os.path.join(react_dist_dir, "index.html"))
+        requested_path = (react_dist_path / full_path).resolve()
+        try:
+            requested_path.relative_to(react_dist_path)
+        except ValueError:
+            requested_path = react_dist_path / "index.html"
+
+        if requested_path.is_file():
+            return FileResponse(str(requested_path))
+        return FileResponse(str(react_dist_path / "index.html"))
 
     logger.info(f"Serving React frontend from {react_dist_dir}")
 elif os.path.isdir(legacy_frontend_dir):

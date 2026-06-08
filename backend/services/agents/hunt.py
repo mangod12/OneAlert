@@ -3,6 +3,7 @@
 import logging
 import time
 import json
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,7 +85,7 @@ class HuntAgent(BaseAgent):
 
             start = time.time()
             try:
-                query_results = await self._execute_query(sql)
+                query_results = await self._execute_query(sql, q.get("params"))
                 results.append({
                     "query": q,
                     "rows": query_results[:100],  # Cap at 100 rows
@@ -109,9 +110,12 @@ class HuntAgent(BaseAgent):
             "summary": f"Executed {len(results)} queries for hypothesis: {hypothesis}",
         }
 
-    async def _execute_query(self, sql: str) -> list:
+    async def _execute_query(self, sql: str, params: dict | None = None) -> list:
         """Execute a read-only SQL query with user_id scoping."""
-        result = await self.db.execute(text(sql), {"user_id": self.user_id})
+        query_params = {"user_id": self.user_id}
+        if params:
+            query_params.update(params)
+        result = await self.db.execute(text(sql), query_params)
         columns = result.keys()
         rows = []
         for row in result.fetchall():
@@ -119,29 +123,41 @@ class HuntAgent(BaseAgent):
         return rows
 
     def _is_safe_query(self, sql: str) -> bool:
-        """Validate query is read-only SELECT."""
-        normalized = sql.strip().upper()
-        if not normalized.startswith("SELECT"):
+        """Validate a generated hunt query is a single scoped read-only SELECT."""
+        normalized = " ".join(sql.strip().split())
+        upper = normalized.upper()
+        if not upper.startswith("SELECT "):
             return False
-        dangerous = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "TRUNCATE", "EXEC", "GRANT"]
-        for keyword in dangerous:
-            if f" {keyword} " in f" {normalized} " or normalized.startswith(keyword):
-                return False
-        if ":user_id" not in sql.lower() and "user_id" not in sql.lower():
+        if not normalized or ";" in normalized or "--" in normalized or "/*" in normalized or "*/" in normalized:
+            return False
+
+        dangerous = (
+            "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "TRUNCATE",
+            "EXEC", "EXECUTE", "GRANT", "REVOKE", "MERGE", "CALL", "COPY",
+            "ATTACH", "DETACH", "PRAGMA", "VACUUM",
+        )
+        if re.search(rf"\b({'|'.join(dangerous)})\b", upper):
+            return False
+        if not re.search(r"\bFROM\s+security_events\b", normalized, re.IGNORECASE):
+            return False
+        if not re.search(r"\buser_id\s*=\s*:user_id\b", normalized, re.IGNORECASE):
             return False
         return True
 
     def _fallback_queries(self, hypothesis: str) -> dict:
         """Generate basic queries when LLM is unavailable."""
-        keyword = hypothesis.split()[0] if hypothesis else "alert"
+        raw_keyword = hypothesis.split()[0] if hypothesis else "alert"
+        keyword = re.sub(r"[^a-zA-Z0-9_.:-]", "", raw_keyword)[:64] or "alert"
+        keyword_pattern = f"%{keyword}%"
         return {
             "queries": [
                 {
                     "description": f"Search events matching '{keyword}'",
-                    "sql": f"SELECT id, timestamp, event_type, severity, source_ip, dest_ip, signature "
-                           f"FROM security_events WHERE user_id = :user_id "
-                           f"AND (signature LIKE '%{keyword}%' OR category LIKE '%{keyword}%') "
-                           f"ORDER BY timestamp DESC LIMIT 50",
+                    "sql": "SELECT id, timestamp, event_type, severity, source_ip, dest_ip, signature "
+                           "FROM security_events WHERE user_id = :user_id "
+                           "AND (signature LIKE :keyword OR category LIKE :keyword) "
+                           "ORDER BY timestamp DESC LIMIT 50",
+                    "params": {"keyword": keyword_pattern},
                 },
                 {
                     "description": "High severity events in last 24h",
