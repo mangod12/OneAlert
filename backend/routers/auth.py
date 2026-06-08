@@ -5,7 +5,8 @@ Handles user authentication, password hashing, and JWT token creation/validation
 
 from datetime import timedelta
 import secrets
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
+import time
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -27,6 +28,23 @@ from backend.middleware.rate_limiter import limiter
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+GITHUB_STATE_TTL_SECONDS = 600
+_pending_github_states: dict[str, float] = {}
+
+
+def _store_github_state(state: str) -> None:
+    """Store a short-lived OAuth state server-side for CSRF validation."""
+    now = time.time()
+    expired = [key for key, expires_at in _pending_github_states.items() if expires_at <= now]
+    for key in expired:
+        _pending_github_states.pop(key, None)
+    _pending_github_states[state] = now + GITHUB_STATE_TTL_SECONDS
+
+
+def _consume_github_state(state: str) -> bool:
+    """Consume a pending OAuth state value exactly once."""
+    expires_at = _pending_github_states.pop(state, None)
+    return expires_at is not None and expires_at > time.time()
 
 
 async def get_current_user(
@@ -169,20 +187,11 @@ async def verify_user_token(current_user: User = Depends(get_active_user)):
 
 
 @router.get("/github/login")
-async def github_login(response: Response):
+async def github_login():
     """Get GitHub OAuth authorization URL."""
     try:
         oauth_state = secrets.token_urlsafe(32)
-        response.set_cookie(
-            key="github_oauth_state",
-            value=oauth_state,
-            httponly=True,
-            secure=True,
-            samesite="lax",
-            max_age=600,
-            path="/",
-        )
-        # Use a server-generated state value so the cookie cannot be injected by user input.
+        _store_github_state(oauth_state)
         auth_url = github_auth_service.get_authorization_url(oauth_state)
         return {"auth_url": auth_url}
     except ValueError as e:
@@ -198,18 +207,16 @@ async def github_login(response: Response):
 
 
 @router.get("/github/callback")
-async def github_callback(request: Request, code: str, state: Optional[str] = None):
+async def github_callback(code: str, state: Optional[str] = None):
     """Handle GitHub OAuth callback and authenticate user."""
     from fastapi.responses import RedirectResponse
     try:
-        # Retrieve session_state from secure cookie/session (example: signed cookie)
-        session_state = request.cookies.get("github_oauth_state")
-        if not session_state:
-            raise HTTPException(status_code=400, detail="Session state missing for CSRF protection")
         if not state:
             raise HTTPException(status_code=400, detail="State parameter missing from GitHub callback")
+        if not _consume_github_state(state):
+            raise HTTPException(status_code=400, detail="Invalid state")
         # Complete GitHub OAuth flow with CSRF protection
-        result = await github_auth_service.authenticate_user(code, session_state, state)
+        result = await github_auth_service.authenticate_user(code, state, state)
         if not result:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

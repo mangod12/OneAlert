@@ -52,11 +52,13 @@ async def test_github_token_exchange_rejects_state_mismatch_before_network():
 
 
 @pytest.mark.asyncio
-async def test_github_login_sets_secure_httponly_state_cookie(monkeypatch):
-    """Backend should set OAuth state cookie without exposing it to JavaScript."""
+async def test_github_login_uses_server_side_state(monkeypatch):
+    """Backend should generate OAuth state without storing it in a cookie."""
     from backend.main import app
+    from backend.routers.auth import _pending_github_states
     from backend.services.github_auth_service import github_auth_service
 
+    _pending_github_states.clear()
     monkeypatch.setattr(github_auth_service, "client_id", "client-id")
     monkeypatch.setattr(github_auth_service, "client_secret", "client-secret")
     monkeypatch.setattr(github_auth_service, "redirect_uri", "https://example.test/callback")
@@ -66,12 +68,8 @@ async def test_github_login_sets_secure_httponly_state_cookie(monkeypatch):
         response = await client.get("/api/v1/auth/github/login", params={"state": "client-state"})
 
     assert response.status_code == 200
-    set_cookie = response.headers["set-cookie"]
-    cookie_state = set_cookie.split("github_oauth_state=", 1)[1].split(";", 1)[0]
     auth_state = parse_qs(urlparse(response.json()["auth_url"]).query)["state"][0]
-    assert cookie_state
-    assert cookie_state == auth_state
-    assert cookie_state != "client-state"
-    assert "HttpOnly" in set_cookie
-    assert "Secure" in set_cookie
-    assert "SameSite=lax" in set_cookie
+    assert auth_state
+    assert auth_state != "client-state"
+    assert auth_state in _pending_github_states
+    assert "set-cookie" not in response.headers
