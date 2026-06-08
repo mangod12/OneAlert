@@ -1,5 +1,6 @@
 """Tests for AI provider abstraction layer."""
 import pytest
+from urllib.parse import urlparse
 import json
 from unittest.mock import AsyncMock, patch, MagicMock
 
@@ -83,7 +84,9 @@ class TestAnthropicProvider:
 class TestOpenAIProvider:
     def test_init_default_url(self):
         p = OpenAICompatibleProvider(model="gpt-4o")
-        assert "openai.com" in p.base_url
+        parsed = urlparse(p.base_url)
+        assert parsed.scheme == "https"
+        assert parsed.hostname == "api.openai.com"
 
     def test_init_custom_url(self):
         p = OpenAICompatibleProvider(model="llama", base_url="http://localhost:11434/v1")

@@ -224,4 +224,24 @@ async def execute_plan(
     from backend.services.action_executor import execute_response_plan
     result = await execute_response_plan(db=db, plan=plan)
 
-    return {"success": True, "data": result}
+    public_results = []
+    for action_result in result.get("results", []):
+        public_results.append({
+            "action": action_result.get("action", "unknown"),
+            "target": action_result.get("target", "unknown"),
+            "status": action_result.get("status", "unknown"),
+            "detail": action_result.get("detail", ""),
+            "executed_at": action_result.get("executed_at"),
+        })
+
+    return {
+        "success": True,
+        "data": {
+            "plan_id": result.get("plan_id", plan_id),
+            "status": result.get("status", "unknown"),
+            "total_actions": result.get("total_actions", 0),
+            "succeeded": result.get("succeeded", 0),
+            "failed": result.get("failed", 0),
+            "results": public_results,
+        },
+    }

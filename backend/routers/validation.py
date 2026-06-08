@@ -144,7 +144,15 @@ async def execute_validation_run(
         mode=vrun.mode,
     )
 
-    return {"success": True, "data": result}
+    return {
+        "success": True,
+        "data": {
+            "run_id": result.get("run_id", run_id),
+            "status": result.get("status", "completed"),
+            "results": result.get("results", {}),
+            "summary": result.get("summary", ""),
+        },
+    }
 
 
 @router.get("/coverage")

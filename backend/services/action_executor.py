@@ -66,8 +66,8 @@ async def execute_response_plan(db: AsyncSession, plan: ResponsePlan) -> dict:
             logger.info(f"Action {action_type} on {target}: {status} — {detail}")
         except Exception as e:
             failed += 1
-            result = {"action": action_type, "target": target, "status": "error", "detail": str(e)}
-            logger.error(f"Action {action_type} on {target} raised: {e}")
+            result = {"action": action_type, "target": target, "status": "error", "detail": "Action failed"}
+            logger.error("Action %s on %s failed: %s", action_type, target, type(e).__name__)
 
         result["executed_at"] = datetime.now(timezone.utc).isoformat()
         results.append(result)

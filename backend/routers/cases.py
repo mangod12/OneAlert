@@ -161,7 +161,15 @@ async def auto_triage(
     agent = TriageAgent(db=db, user_id=current_user.id)
     result = await agent.execute(hours_back=hours_back)
 
-    return {"success": True, "data": result}
+    return {
+        "success": True,
+        "data": {
+            "cases_created": result.get("cases_created", 0),
+            "alerts_triaged": result.get("alerts_triaged", 0),
+            "events_triaged": result.get("events_triaged", 0),
+            "summary": result.get("summary", ""),
+        },
+    }
 
 
 @router.get("/{case_id}/alerts")
