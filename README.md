@@ -26,7 +26,7 @@
 
 ## Try It Now
 
-**Live demo:** The Azure Container Apps demo is deployed from `.github/workflows/deploy-azure.yml` after `AZURE_CREDENTIALS` is configured.
+**Live demo:** https://onealert-demo.mangoglacier-b3ad215d.southeastasia.azurecontainerapps.io/app/
 
 | | |
 |---|---|
@@ -278,7 +278,7 @@ CVE Alerts (NVD/CISA/ICS-CERT) ──► Triage Agent (correlation + MITRE)
 | AI Runtime | Provider-agnostic (Claude, GPT-4o, Ollama, vLLM, Groq) |
 | Database | PostgreSQL (prod), SQLite (dev) |
 | Auth | JWT + GitHub OAuth + TOTP MFA |
-| Deploy | Docker, Google Cloud Run |
+| Deploy | Docker, Azure Container Apps |
 | CI | GitHub Actions, 330+ tests (309 pytest + 22 Playwright E2E) |
 
 ---
@@ -331,7 +331,7 @@ frontend-v2/src/
 └── stores/                # Zustand auth state
 
 tests/                     # 309 pytest tests
-tests/e2e/                 # Playwright E2E against Cloud Run
+tests/e2e/                 # Playwright E2E against the deployed app
 docs/                      # AI_CONTEXT, ARCHITECTURE, CODEMAP, VISION
 ```
 
