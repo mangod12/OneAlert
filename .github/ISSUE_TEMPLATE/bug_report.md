@@ -18,4 +18,4 @@ What you expected to happen.
 - OS:
 - Python version:
 - Browser (if frontend):
-- Deploy method (Docker/local/Cloud Run):
+- Deploy method (Docker/local/Azure Container Apps):
