@@ -37,4 +37,4 @@ USER appuser
 EXPOSE 8080
 ENV PORT=8080
 
-CMD ["bash", "start-app.sh"]
+CMD ["sh", "start-app.sh"]

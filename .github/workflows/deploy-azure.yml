@@ -1,0 +1,136 @@
+name: Deploy demo to Azure Container Apps
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/onealert
+  RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP || 'rg-onealert-demo' }}
+  LOCATION: ${{ vars.AZURE_LOCATION || 'southeastasia' }}
+  CONTAINERAPPS_ENV: ${{ vars.AZURE_CONTAINERAPPS_ENV || 'cae-demo-shelf' }}
+  CONTAINERAPP_NAME: ${{ vars.AZURE_CONTAINERAPP_NAME || 'onealert-demo' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        run: echo "image=${IMAGE_NAME}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}
+            ${{ env.IMAGE_NAME }}:latest
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - id: azure_secret
+        env:
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+        run: |
+          if [ -z "$AZURE_CREDENTIALS" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "AZURE_CREDENTIALS is not configured; skipping Azure deployment."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: azure/login@v2
+        if: steps.azure_secret.outputs.configured == 'true'
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Create or update Container App
+        if: steps.azure_secret.outputs.configured == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          az extension add --name containerapp --upgrade --yes
+          az group create --name "$RESOURCE_GROUP" --location "$LOCATION"
+          az containerapp env create \
+            --name "$CONTAINERAPPS_ENV" \
+            --resource-group "$RESOURCE_GROUP" \
+            --location "$LOCATION" \
+            --logs-destination none \
+            --only-show-errors || true
+
+          DEMO_SECRET="$(openssl rand -hex 32)"
+          ENV_VARS=(
+            "PORT=8080"
+            "HOST=0.0.0.0"
+            "WEB_CONCURRENCY=1"
+            "DATABASE_URL=sqlite:////tmp/onealert-demo.db"
+            "SECRET_KEY=$DEMO_SECRET"
+            "ENVIRONMENT=demo"
+            "DEMO_MODE=true"
+            "DISABLE_SCHEDULER=true"
+            "AI_PROVIDER=demo"
+          )
+
+          if az containerapp show --name "$CONTAINERAPP_NAME" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
+            az containerapp update \
+              --name "$CONTAINERAPP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --image "${{ needs.build.outputs.image }}" \
+              --min-replicas 0 \
+              --max-replicas 1 \
+              --cpu 0.5 \
+              --memory 1.0Gi \
+              --set-env-vars "${ENV_VARS[@]}" \
+              --only-show-errors
+          else
+            az containerapp create \
+              --name "$CONTAINERAPP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --environment "$CONTAINERAPPS_ENV" \
+              --image "${{ needs.build.outputs.image }}" \
+              --target-port 8080 \
+              --ingress external \
+              --min-replicas 0 \
+              --max-replicas 1 \
+              --cpu 0.5 \
+              --memory 1.0Gi \
+              --env-vars "${ENV_VARS[@]}" \
+              --only-show-errors
+          fi
+
+      - name: Verify deployment
+        if: steps.azure_secret.outputs.configured == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL=$(az containerapp show \
+            --name "$CONTAINERAPP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.configuration.ingress.fqdn \
+            -o tsv)
+          echo "OneAlert URL: https://$URL/app/"
+          for i in {1..18}; do
+            if curl -fsS "https://$URL/health/ready"; then
+              exit 0
+            fi
+            sleep 10
+          done
+          curl -fsS "https://$URL/health" || true
+          exit 1
