@@ -7,7 +7,7 @@
     AI agents that detect, investigate, hunt, and respond to threats across your OT/ICS infrastructure — with human approval gates and full audit trails.
   </p>
   <p align="center">
-    <a href="https://cybersec-saas-498310931350.us-central1.run.app/app/"><strong>Live Demo</strong></a> &middot;
+    <a href="#quickstart"><strong>Demo Setup</strong></a> &middot;
     <a href="#features"><strong>Features</strong></a> &middot;
     <a href="#quickstart"><strong>Quick Start</strong></a> &middot;
     <a href="#architecture"><strong>Architecture</strong></a>
@@ -26,7 +26,7 @@
 
 ## Try It Now
 
-**Live demo:** https://cybersec-saas-498310931350.us-central1.run.app/app/
+**Live demo:** The Azure Container Apps demo is deployed from `.github/workflows/deploy-azure.yml` after `AZURE_CREDENTIALS` is configured.
 
 | | |
 |---|---|
