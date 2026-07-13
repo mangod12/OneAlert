@@ -102,6 +102,7 @@ dmypy.json
 # Playwright
 tests/e2e/playwright-report/
 tests/e2e/test-results/
+tests/e2e/.auth/
 
 # Misc local files
 logs.txt

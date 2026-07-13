@@ -8,5 +8,5 @@ class SlackAlertSender(AlertSenderBase):
     def send_alert(self, alert):
         message = f"*{alert['title']}* ({alert['cve_id']})\n<{alert['url']}|View Details>"
         payload = {"text": message}
-        response = requests.post(self.webhook_url, json=payload)
-        response.raise_for_status() 
+        response = requests.post(self.webhook_url, json=payload, timeout=10, allow_redirects=False)
+        response.raise_for_status()

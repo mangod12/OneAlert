@@ -12,28 +12,33 @@ from backend.config import settings
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+MIN_PASSWORD_LENGTH = 8
+MAX_BCRYPT_PASSWORD_BYTES = 72
 
 
-def _truncate_password(password: str) -> str:
-    """Truncate password to 72 bytes (bcrypt limit) to avoid ValueError.
-
-    Encodes to UTF-8, slices at 72 bytes, then decodes safely so that no
-    multi-byte character is split at the boundary.
-    """
-    encoded = password.encode("utf-8")
-    if len(encoded) <= 72:
-        return password
-    return encoded[:72].decode("utf-8", errors="ignore")
+def validate_new_password(password: str) -> str:
+    """Validate a new password without silently changing its credential bytes."""
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(
+            f"Password must be at least {MIN_PASSWORD_LENGTH} characters long"
+        )
+    if len(password.encode("utf-8")) > MAX_BCRYPT_PASSWORD_BYTES:
+        raise ValueError(
+            f"Password must not exceed {MAX_BCRYPT_PASSWORD_BYTES} UTF-8 bytes"
+        )
+    return password
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a plain password against its hash."""
-    return pwd_context.verify(_truncate_password(plain_password), hashed_password)
+    if len(plain_password.encode("utf-8")) > MAX_BCRYPT_PASSWORD_BYTES:
+        return False
+    return pwd_context.verify(plain_password, hashed_password)
 
 
 def get_password_hash(password: str) -> str:
     """Generate password hash."""
-    return pwd_context.hash(_truncate_password(password))
+    return pwd_context.hash(validate_new_password(password))
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:

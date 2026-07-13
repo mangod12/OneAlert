@@ -8,7 +8,7 @@ from sqlalchemy import select, func
 from backend.database.db import get_async_db
 from backend.models.user import User
 from backend.models.security_event import (
-    SecurityEvent, EventSource, SecurityEventResponse,
+    SecurityEvent, EventSource,
     EventBatchIngest, EventListResponse, EventSourceResponse,
 )
 from backend.routers.auth import get_active_user
@@ -19,6 +19,29 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+MAX_EVENT_UPLOAD_BYTES = 10 * 1024 * 1024
+UPLOAD_READ_CHUNK_BYTES = 64 * 1024
+
+
+async def _read_upload_with_limit(
+    file: UploadFile,
+    *,
+    max_bytes: int = MAX_EVENT_UPLOAD_BYTES,
+    chunk_size: int = UPLOAD_READ_CHUNK_BYTES,
+) -> bytes:
+    """Read an upload without ever buffering more than the configured cap."""
+    chunks = []
+    total = 0
+    while chunk := await file.read(chunk_size):
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail="Uploaded file is too large",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 @router.post("/ingest", status_code=status.HTTP_201_CREATED)
@@ -60,7 +83,7 @@ async def upload_events_file(
     """
     from backend.services.event_ingestion import ingest_events
 
-    content = await file.read()
+    content = await _read_upload_with_limit(file)
     text = content.decode("utf-8", errors="replace")
 
     # Parse as JSON array or newline-delimited JSON

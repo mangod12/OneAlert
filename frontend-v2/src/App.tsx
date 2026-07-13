@@ -1,37 +1,39 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { useAuthStore } from './stores/authStore';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './components/layout/AppLayout';
-import { Login } from './pages/Login';
-import { Register } from './pages/Register';
-import { Dashboard } from './pages/Dashboard';
-import { Cases } from './pages/Cases';
-import { CaseDetail } from './pages/CaseDetail';
-import { Alerts } from './pages/Alerts';
-import { Events } from './pages/Events';
-import { Assets } from './pages/Assets';
-import { OTDiscovery } from './pages/OTDiscovery';
-import { MitreMap } from './pages/MitreMap';
-import { HuntLab } from './pages/HuntLab';
-import { Settings } from './pages/Settings';
-import { AuditLog } from './pages/AuditLog';
-import { ResponsePlans } from './pages/ResponsePlans';
-import { Validation } from './pages/Validation';
 import { ToastContainer } from './components/Toast';
 
+const Login = lazy(() => import('./pages/Login').then(module => ({ default: module.Login })));
+const Register = lazy(() => import('./pages/Register').then(module => ({ default: module.Register })));
+const Dashboard = lazy(() => import('./pages/Dashboard').then(module => ({ default: module.Dashboard })));
+const Cases = lazy(() => import('./pages/Cases').then(module => ({ default: module.Cases })));
+const CaseDetail = lazy(() => import('./pages/CaseDetail').then(module => ({ default: module.CaseDetail })));
+const Alerts = lazy(() => import('./pages/Alerts').then(module => ({ default: module.Alerts })));
+const Events = lazy(() => import('./pages/Events').then(module => ({ default: module.Events })));
+const Assets = lazy(() => import('./pages/Assets').then(module => ({ default: module.Assets })));
+const OTDiscovery = lazy(() => import('./pages/OTDiscovery').then(module => ({ default: module.OTDiscovery })));
+const MitreMap = lazy(() => import('./pages/MitreMap').then(module => ({ default: module.MitreMap })));
+const HuntLab = lazy(() => import('./pages/HuntLab').then(module => ({ default: module.HuntLab })));
+const Settings = lazy(() => import('./pages/Settings').then(module => ({ default: module.Settings })));
+const AuditLog = lazy(() => import('./pages/AuditLog').then(module => ({ default: module.AuditLog })));
+const ResponsePlans = lazy(() => import('./pages/ResponsePlans').then(module => ({ default: module.ResponsePlans })));
+const Validation = lazy(() => import('./pages/Validation').then(module => ({ default: module.Validation })));
+
 function App() {
-  const { isAuthenticated, fetchUser } = useAuthStore();
+  const { isAuthenticated, hasCheckedSession, fetchUser } = useAuthStore();
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (!hasCheckedSession) {
       fetchUser();
     }
-  }, [isAuthenticated, fetchUser]);
+  }, [hasCheckedSession, fetchUser]);
 
   return (
     <BrowserRouter basename="/app">
       <ToastContainer />
+      <Suspense fallback={<div className="grid min-h-screen place-items-center bg-surface-950 text-sm text-surface-400" role="status">Loading OneAlert…</div>}>
       <Routes>
         <Route path="/login" element={isAuthenticated ? <Navigate to="/" /> : <Login />} />
         <Route path="/register" element={isAuthenticated ? <Navigate to="/" /> : <Register />} />
@@ -58,6 +60,7 @@ function App() {
         </Route>
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

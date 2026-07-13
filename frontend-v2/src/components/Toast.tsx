@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- imperative toast API is shared by route actions */
 import { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 import clsx from 'clsx';

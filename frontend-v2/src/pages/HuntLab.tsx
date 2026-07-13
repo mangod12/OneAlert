@@ -2,6 +2,10 @@ import { useState, useEffect } from 'react';
 import apiClient from '../api/client';
 import { Play, FileCode, Clock } from 'lucide-react';
 import clsx from 'clsx';
+import { getApiErrorMessage } from '../api/errors';
+import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { PageHeader } from '../components/ui/PageHeader';
+import { toast } from '../components/Toast';
 
 interface HuntSession {
   id: number;
@@ -13,18 +17,34 @@ interface HuntSession {
   created_at: string;
 }
 
+type HuntRow = Record<string, unknown>;
+interface HuntQueryResult {
+  query?: { description?: string; sql?: string };
+  row_count?: number;
+  rows?: HuntRow[];
+  error?: string;
+}
+interface HuntResult {
+  explanation?: string;
+  query_results?: HuntQueryResult[];
+  sigma_rule?: string;
+}
+
 export function HuntLab() {
   const [hypothesis, setHypothesis] = useState('');
   const [sessions, setSessions] = useState<HuntSession[]>([]);
-  const [activeResult, setActiveResult] = useState<any>(null);
+  const [activeResult, setActiveResult] = useState<HuntResult | null>(null);
   const [hunting, setHunting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const fetchSessions = async () => {
     try {
       const res = await apiClient.get('/hunt/');
       setSessions(res.data);
+      setError('');
     } catch (err) {
-      console.error(err);
-    }
+      setError(getApiErrorMessage(err, 'Hunt history could not be loaded.'));
+    } finally { setLoading(false); }
   };
 
   const startHunt = async () => {
@@ -36,7 +56,7 @@ export function HuntLab() {
       setActiveResult(res.data.data);
       await fetchSessions();
     } catch (err) {
-      console.error(err);
+      toast(getApiErrorMessage(err, 'The hunt could not be completed.'), 'error');
     } finally {
       setHunting(false);
     }
@@ -46,17 +66,15 @@ export function HuntLab() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Threat Hunt Lab</h1>
-        <p className="text-surface-400 text-sm mt-1">Natural-language threat hunting with AI-generated queries</p>
-      </div>
+      <PageHeader eyebrow="Analyze" title="Threat Hunt Lab" description="Turn an investigation hypothesis into reviewable queries, evidence, and detection content." />
 
       {/* Hunt Input */}
       <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
-        <label className="block text-sm font-medium text-surface-300 mb-2">Hunting Hypothesis</label>
+        <label htmlFor="hunt-hypothesis" className="block text-sm font-medium text-surface-300 mb-2">Hunting Hypothesis</label>
         <div className="flex gap-3">
           <input
             type="text"
+            id="hunt-hypothesis"
             value={hypothesis}
             onChange={e => setHypothesis(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && startHunt()}
@@ -72,7 +90,7 @@ export function HuntLab() {
             {hunting ? 'Hunting...' : 'Hunt'}
           </button>
         </div>
-        <div className="flex gap-2 mt-3">
+        <div className="flex flex-wrap gap-2 mt-3">
           {['Port scan from 10.0.0.0/24', 'DNS tunneling to external domains', 'Modbus write commands to PLCs',
             'Failed auth attempts across multiple hosts'].map(example => (
             <button
@@ -95,7 +113,7 @@ export function HuntLab() {
               <p className="text-surface-300 text-sm mb-4">{activeResult.explanation}</p>
             )}
 
-            {activeResult.query_results?.map((qr: any, i: number) => (
+            {activeResult.query_results?.map((qr, i) => (
               <div key={i} className="mb-4 last:mb-0">
                 <div className="flex items-center gap-2 mb-2">
                   <FileCode className="w-4 h-4 text-primary-400" />
@@ -105,20 +123,20 @@ export function HuntLab() {
                 <pre className="bg-surface-900 p-3 rounded-lg text-xs text-surface-400 overflow-x-auto mb-2">
                   {qr.query?.sql}
                 </pre>
-                {qr.rows?.length > 0 && (
+                {(qr.rows?.length ?? 0) > 0 && (
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="border-b border-surface-700">
-                          {Object.keys(qr.rows[0]).map(key => (
+                          {Object.keys(qr.rows?.[0] ?? {}).map(key => (
                             <th key={key} className="text-left p-2 text-surface-500">{key}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {qr.rows.slice(0, 20).map((row: any, j: number) => (
+                        {(qr.rows ?? []).slice(0, 20).map((row, j) => (
                           <tr key={j} className="border-b border-surface-800">
-                            {Object.values(row).map((val: any, k: number) => (
+                            {Object.values(row).map((val, k) => (
                               <td key={k} className="p-2 text-surface-300 truncate max-w-xs">{String(val ?? '—')}</td>
                             ))}
                           </tr>
@@ -147,10 +165,12 @@ export function HuntLab() {
       )}
 
       {/* Past Sessions */}
-      <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
+      {loading ? <LoadingSurface label="Loading hunt history" /> : error ? (
+        <ErrorState title="Hunt history unavailable" description={error} action={<RetryButton onClick={fetchSessions} />} />
+      ) : <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
         <h2 className="text-lg font-semibold text-white mb-4">Hunt History</h2>
         {sessions.length === 0 ? (
-          <p className="text-surface-500 text-sm">No hunt sessions yet. Enter a hypothesis above to start.</p>
+          <EmptyState title="No hunts yet" description="Enter a hypothesis above to start the first investigation." />
         ) : (
           <div className="space-y-2">
             {sessions.map(s => (
@@ -170,7 +190,7 @@ export function HuntLab() {
             ))}
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

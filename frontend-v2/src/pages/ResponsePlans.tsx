@@ -3,11 +3,23 @@ import apiClient from '../api/client';
 import { CheckCircle, XCircle, Play, Clock, Shield } from 'lucide-react';
 import clsx from 'clsx';
 import { toast } from '../components/Toast';
+import { getApiErrorMessage } from '../api/errors';
+import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { PageHeader } from '../components/ui/PageHeader';
+
+interface ResponseAction {
+  priority?: number;
+  action_type: string;
+  target: string;
+  reason: string;
+  policy_check?: { approved?: boolean };
+  execution_result?: { status?: string };
+}
 
 interface ResponsePlan {
   id: number;
   case_id: number;
-  actions: any[];
+  actions: ResponseAction[];
   status: string;
   autonomy_level: string;
   created_by: string;
@@ -22,7 +34,7 @@ interface PendingApproval {
   case_id: number;
   status: string;
   reason: string;
-  actions: any[];
+  actions: ResponseAction[];
   autonomy_level: string;
   created_at: string;
 }
@@ -41,53 +53,67 @@ export function ResponsePlans() {
   const [plans, setPlans] = useState<ResponsePlan[]>([]);
   const [pending, setPending] = useState<PendingApproval[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<ResponsePlan | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [workingPlan, setWorkingPlan] = useState<number | null>(null);
 
   const fetchPlans = async () => {
     try {
       const res = await apiClient.get('/response-plans/');
       setPlans(res.data.data || []);
-    } catch (err) { console.error(err); }
+      setError('');
+    } catch (err) { setError(getApiErrorMessage(err, 'Response plans could not be loaded.')); }
+    finally { setLoading(false); }
   };
 
   const fetchPending = async () => {
     try {
       const res = await apiClient.get('/response-plans/pending-approvals');
       setPending(res.data.data || []);
-    } catch (err) { console.error(err); }
+    } catch (err) { setError(getApiErrorMessage(err, 'Pending approvals could not be loaded.')); }
   };
 
   const approvePlan = async (planId: number) => {
+    if (workingPlan !== null) return;
+    setWorkingPlan(planId);
     try {
       await apiClient.post(`/response-plans/${planId}/approve`);
       toast('Plan approved', 'success');
       await Promise.all([fetchPlans(), fetchPending()]);
-    } catch (err) { console.error(err); toast('Failed to approve plan', 'error'); }
+    } catch (err) { toast(getApiErrorMessage(err, 'Failed to approve plan.'), 'error'); }
+    finally { setWorkingPlan(null); }
   };
 
   const rejectPlan = async (planId: number) => {
+    if (workingPlan !== null || !window.confirm('Reject this response plan?')) return;
+    setWorkingPlan(planId);
     try {
       await apiClient.post(`/response-plans/${planId}/reject`, { reason: 'Manual rejection' });
       toast('Plan rejected', 'warning');
       await Promise.all([fetchPlans(), fetchPending()]);
-    } catch (err) { console.error(err); toast('Failed to reject plan', 'error'); }
+    } catch (err) { toast(getApiErrorMessage(err, 'Failed to reject plan.'), 'error'); }
+    finally { setWorkingPlan(null); }
   };
 
   const executePlan = async (planId: number) => {
+    if (workingPlan !== null || !window.confirm('Execute this approved response plan now?')) return;
+    setWorkingPlan(planId);
     try {
       await apiClient.post(`/response-plans/${planId}/execute`);
       toast('Plan executed successfully', 'success');
       await fetchPlans();
-    } catch (err) { console.error(err); toast('Execution failed', 'error'); }
+    } catch (err) { toast(getApiErrorMessage(err, 'Execution failed.'), 'error'); }
+    finally { setWorkingPlan(null); }
   };
 
   useEffect(() => { fetchPlans(); fetchPending(); }, []);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Response Plans</h1>
-        <p className="text-surface-400 text-sm mt-1">AI-generated response plans with human approval workflow</p>
-      </div>
+      <PageHeader eyebrow="Act" title="Response Plans" description="Review, approve, and execute guarded response actions with a durable human decision trail." />
+
+      {error && plans.length === 0 ? <ErrorState title="Response plans unavailable" description={error} action={<RetryButton onClick={() => { fetchPlans(); fetchPending(); }} />} /> : null}
+      {loading && <LoadingSurface label="Loading response plans" />}
 
       {/* Pending Approvals */}
       {pending.length > 0 && (
@@ -107,11 +133,11 @@ export function ResponsePlans() {
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => approvePlan(a.plan_id)}
+                  <button disabled={workingPlan === a.plan_id} onClick={() => approvePlan(a.plan_id)}
                     className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-medium transition-colors">
                     <CheckCircle className="w-3.5 h-3.5" /> Approve
                   </button>
-                  <button onClick={() => rejectPlan(a.plan_id)}
+                  <button disabled={workingPlan === a.plan_id} onClick={() => rejectPlan(a.plan_id)}
                     className="flex items-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-medium transition-colors">
                     <XCircle className="w-3.5 h-3.5" /> Reject
                   </button>
@@ -126,7 +152,7 @@ export function ResponsePlans() {
       <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
         <h2 className="text-lg font-semibold text-white mb-4">All Response Plans</h2>
         {plans.length === 0 ? (
-          <p className="text-surface-500 text-sm">No response plans yet. Run the agent pipeline to generate plans.</p>
+          <EmptyState title="No response plans" description="Run the agent pipeline to generate a guarded response plan." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -143,7 +169,8 @@ export function ResponsePlans() {
               </thead>
               <tbody>
                 {plans.map(p => (
-                  <tr key={p.id} className="border-b border-surface-800 hover:bg-surface-800/50 cursor-pointer"
+                  <tr key={p.id} tabIndex={0} className="border-b border-surface-800 hover:bg-surface-800/50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500"
+                    onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedPlan(selectedPlan?.id === p.id ? null : p); } }}
                     onClick={() => setSelectedPlan(selectedPlan?.id === p.id ? null : p)}>
                     <td className="p-3 text-surface-300">#{p.id}</td>
                     <td className="p-3 text-surface-300">Case #{p.case_id}</td>
@@ -157,7 +184,7 @@ export function ResponsePlans() {
                     <td className="p-3 text-surface-500 text-xs">{new Date(p.created_at).toLocaleString()}</td>
                     <td className="p-3">
                       {p.status === 'approved' && (
-                        <button onClick={e => { e.stopPropagation(); executePlan(p.id); }}
+                        <button disabled={workingPlan === p.id} onClick={e => { e.stopPropagation(); executePlan(p.id); }}
                           className="flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs transition-colors">
                           <Play className="w-3 h-3" /> Execute
                         </button>
@@ -179,7 +206,7 @@ export function ResponsePlans() {
             Plan #{selectedPlan.id} Actions
           </h2>
           <div className="space-y-2">
-            {selectedPlan.actions?.map((action: any, i: number) => (
+            {selectedPlan.actions?.map((action, i) => (
               <div key={i} className="flex items-center gap-4 p-3 bg-surface-900/50 rounded-lg">
                 <span className="text-xs font-mono text-surface-500 w-6">#{action.priority || i + 1}</span>
                 <span className={clsx('text-xs px-2 py-0.5 rounded font-medium',

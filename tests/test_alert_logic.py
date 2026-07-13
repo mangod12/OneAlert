@@ -7,8 +7,8 @@ import pytest
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from backend.services.alert_checker import AlertChecker
 from backend.models.user import User
+from backend.models.organization import Organization  # noqa: F401 - registers SQLAlchemy relationship target
 from backend.models.asset import Asset, AssetType
-from backend.models.alert import Alert, Severity, AlertStatus
 
 
 class TestAlertChecker:
@@ -182,6 +182,7 @@ class TestAlertChecker:
                                         alert_checker, mock_user, mock_asset):
         """Test creating an alert from CVE data."""
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()
         mock_session_local.return_value.__aenter__.return_value = mock_db
         mock_enrich.return_value = {}
 
@@ -217,6 +218,7 @@ class TestAlertChecker:
                                              alert_checker, mock_user, mock_asset):
         """Test creating an alert from vendor advisory."""
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()
         mock_session_local.return_value.__aenter__.return_value = mock_db
 
         # Mock the result of db.execute()

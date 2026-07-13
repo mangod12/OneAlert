@@ -12,13 +12,14 @@ from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from backend.database.db import Base
-from pydantic import BaseModel, Field, EmailStr  # Ensure compatibility with Pydantic v2
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional, List
 from datetime import datetime
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends
 from backend.database.db import get_async_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from backend.services.auth_service import validate_new_password
 
 
 class User(Base):
@@ -78,6 +79,11 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """Schema for user creation."""
     password: str
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return validate_new_password(value)
     
     model_config = {"from_attributes": True}
 
@@ -105,20 +111,26 @@ class UserUpdate(BaseModel):
     webhook_url: Optional[str] = None
     mfa_enabled: Optional[bool] = False
     mfa_secret: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: Optional[str]) -> Optional[str]:
+        return validate_new_password(value) if value is not None else value
     
     model_config = {"from_attributes": True}
 
 
-class UserResponse(UserBase):
+class UserResponse(BaseModel):
     """Schema for user response."""
     id: int
+    email: EmailStr
+    full_name: Optional[str] = None
+    company: Optional[str] = None
     is_active: bool
     is_verified: bool
     created_at: datetime
     updated_at: Optional[datetime] = None
     org_id: Optional[int] = None
-    slack_webhook_url: Optional[str] = None
-    webhook_url: Optional[str] = None
     mfa_enabled: Optional[bool] = False
 
     model_config = {"from_attributes": True}

@@ -13,6 +13,17 @@ from backend.main import app
 from backend.database.db import get_db, get_async_db, Base
 
 
+@pytest.fixture(autouse=True)
+def mock_public_integration_dns():
+    """Keep integration tests offline while exercising public-address validation."""
+    resolved = [(2, 1, 6, "", ("93.184.216.34", 443))]
+    with patch(
+        "backend.services.integrations.base.socket.getaddrinfo",
+        return_value=resolved,
+    ):
+        yield
+
+
 # Test database setup
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test_integrations.db"
 engine = create_engine(
@@ -131,6 +142,31 @@ class TestIntegrationCRUD:
             "/api/v1/integrations/", json=payload, headers=auth_headers
         )
         assert response.status_code == 400
+
+    def test_create_rejects_private_integration_endpoint(self, client, auth_headers):
+        """User-controlled endpoints must not resolve to internal networks."""
+        private_result = [(2, 1, 6, "", ("169.254.169.254", 443))]
+        payload = {
+            "integration_type": "splunk",
+            "name": "Metadata probe",
+            "config": {
+                "hec_url": "https://metadata.example.test",
+                "hec_token": "test-token",
+            },
+        }
+
+        with patch(
+            "backend.services.integrations.base.socket.getaddrinfo",
+            return_value=private_result,
+        ):
+            response = client.post(
+                "/api/v1/integrations/", json=payload, headers=auth_headers
+            )
+
+        assert response.status_code == 400
+        assert response.json()["error"]["message"] == (
+            "Integration endpoint must be a public HTTPS URL"
+        )
 
     def test_list_user_integrations(self, client, auth_headers):
         """Test listing user's integration configurations."""

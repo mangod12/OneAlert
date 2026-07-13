@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import apiClient from '../api/client';
 import { Search } from 'lucide-react';
 import clsx from 'clsx';
+import { getApiErrorMessage } from '../api/errors';
+import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { PageHeader } from '../components/ui/PageHeader';
 
 interface TacticCoverage {
   name: string;
@@ -27,23 +30,26 @@ export function MitreMap() {
   const [techniques, setTechniques] = useState<Technique[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [errors, setErrors] = useState<string[]>([]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    setErrors([]);
+    const [coverageResult, techniquesResult] = await Promise.allSettled([
+      apiClient.get('/mitre/coverage'),
+      apiClient.get('/mitre/techniques'),
+    ]);
+    const nextErrors: string[] = [];
+    if (coverageResult.status === 'fulfilled') setCoverage(coverageResult.value.data.data);
+    else nextErrors.push(getApiErrorMessage(coverageResult.reason, 'Coverage data is unavailable'));
+    if (techniquesResult.status === 'fulfilled') setTechniques(techniquesResult.value.data);
+    else nextErrors.push(getApiErrorMessage(techniquesResult.reason, 'Technique catalog is unavailable'));
+    setErrors(nextErrors);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [covRes, techRes] = await Promise.all([
-          apiClient.get('/mitre/coverage'),
-          apiClient.get('/mitre/techniques'),
-        ]);
-        setCoverage(covRes.data.data);
-        setTechniques(techRes.data);
-      } catch (err) {
-        console.error('Failed to load MITRE data', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+    void fetchData();
   }, []);
 
   const filteredTechniques = search
@@ -51,18 +57,15 @@ export function MitreMap() {
     : techniques;
 
   if (loading) {
-    return <div className="animate-pulse space-y-4">
-      <div className="h-8 bg-surface-800 rounded w-1/3" />
-      <div className="grid grid-cols-4 gap-4">{[1,2,3,4].map(i => <div key={i} className="h-24 bg-surface-800 rounded" />)}</div>
-    </div>;
+    return <LoadingSurface rows={6} label="Loading MITRE ATT&CK coverage" />;
   }
+
+  if (!coverage && techniques.length === 0 && errors.length > 0) return <ErrorState title="ATT&CK coverage unavailable" description={errors.join(' · ')} action={<RetryButton onClick={() => void fetchData()} />} />;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white">MITRE ATT&CK Coverage</h1>
-        <p className="text-surface-400 text-sm mt-1">Detection coverage mapped to the MITRE ATT&CK framework</p>
-      </div>
+      <PageHeader eyebrow="Analyze" title="MITRE ATT&CK Coverage" description="Detection coverage mapped to enterprise and industrial ATT&CK techniques." />
+      {errors.length > 0 && <DegradedBanner messages={errors} onRetry={() => void fetchData()} />}
 
       {/* Overall Coverage */}
       {coverage && (

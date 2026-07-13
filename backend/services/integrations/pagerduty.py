@@ -1,6 +1,12 @@
 """PagerDuty integration for incident triggering."""
+import logging
+
 import httpx
-from .base import BaseIntegration
+from .base import BaseIntegration, INTEGRATION_REQUEST_ERROR, validate_outbound_url
+
+
+logger = logging.getLogger(__name__)
+PAGERDUTY_EVENTS_URL = "https://events.pagerduty.com/v2/enqueue"
 
 
 class PagerDutyIntegration(BaseIntegration):
@@ -30,14 +36,18 @@ class PagerDutyIntegration(BaseIntegration):
         }
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            url = await validate_outbound_url(PAGERDUTY_EVENTS_URL)
+            async with httpx.AsyncClient(
+                timeout=10.0, verify=True, follow_redirects=False
+            ) as client:
                 response = await client.post(
-                    "https://events.pagerduty.com/v2/enqueue",
+                    url,
                     json=event
                 )
                 return {"success": response.status_code == 202, "status_code": response.status_code}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        except Exception:
+            logger.exception("PagerDuty alert delivery failed")
+            return {"success": False, "error": INTEGRATION_REQUEST_ERROR}
 
     async def test_connection(self) -> dict:
         if not self.routing_key:

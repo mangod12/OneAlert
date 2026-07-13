@@ -32,7 +32,7 @@ export function Register() {
 
         <div className="bg-surface-800/50 backdrop-blur border border-surface-700 rounded-2xl p-8">
           {error && (
-            <div className="mb-4 p-3 rounded-lg bg-danger/10 border border-danger/20 text-danger text-sm">
+            <div id="register-error" role="alert" className="mb-4 p-3 rounded-lg bg-danger/10 border border-danger/20 text-danger text-sm">
               {error}
               <button onClick={clearError} className="float-right text-danger/70 hover:text-danger">&times;</button>
             </div>
@@ -40,9 +40,11 @@ export function Register() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-surface-300 mb-1.5">Full Name</label>
+              <label htmlFor="register-name" className="block text-sm font-medium text-surface-300 mb-1.5">Full Name</label>
               <input
+                id="register-name"
                 type="text"
+                autoComplete="name"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 className="w-full px-4 py-2.5 bg-surface-900 border border-surface-600 rounded-lg text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
@@ -52,9 +54,11 @@ export function Register() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-surface-300 mb-1.5">Email</label>
+              <label htmlFor="register-email" className="block text-sm font-medium text-surface-300 mb-1.5">Email</label>
               <input
+                id="register-email"
                 type="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-4 py-2.5 bg-surface-900 border border-surface-600 rounded-lg text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
@@ -64,9 +68,11 @@ export function Register() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-surface-300 mb-1.5">Company</label>
+              <label htmlFor="register-company" className="block text-sm font-medium text-surface-300 mb-1.5">Company</label>
               <input
+                id="register-company"
                 type="text"
+                autoComplete="organization"
                 value={company}
                 onChange={(e) => setCompany(e.target.value)}
                 className="w-full px-4 py-2.5 bg-surface-900 border border-surface-600 rounded-lg text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
@@ -75,9 +81,11 @@ export function Register() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-surface-300 mb-1.5">Password</label>
+              <label htmlFor="register-password" className="block text-sm font-medium text-surface-300 mb-1.5">Password</label>
               <input
+                id="register-password"
                 type="password"
+                autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-4 py-2.5 bg-surface-900 border border-surface-600 rounded-lg text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"

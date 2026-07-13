@@ -1,6 +1,11 @@
 """ServiceNow integration for incident creation."""
+import logging
+
 import httpx
-from .base import BaseIntegration
+from .base import BaseIntegration, INTEGRATION_REQUEST_ERROR, validate_outbound_url
+
+
+logger = logging.getLogger(__name__)
 
 
 class ServiceNowIntegration(BaseIntegration):
@@ -26,28 +31,40 @@ class ServiceNowIntegration(BaseIntegration):
         }
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            base_url = self.instance_url.rstrip("/")
+            url = await validate_outbound_url(f"{base_url}/api/now/table/incident")
+            async with httpx.AsyncClient(
+                timeout=10.0, verify=True, follow_redirects=False
+            ) as client:
                 response = await client.post(
-                    f"{self.instance_url}/api/now/table/incident",
+                    url,
                     json=incident,
                     auth=(self.username, self.password),
                     headers={"Accept": "application/json"}
                 )
                 return {"success": response.status_code == 201, "status_code": response.status_code}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        except Exception:
+            logger.exception("ServiceNow incident creation failed")
+            return {"success": False, "error": INTEGRATION_REQUEST_ERROR}
 
     async def test_connection(self) -> dict:
         if not self.instance_url or not self.username:
             return {"success": False, "error": "ServiceNow not configured"}
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            base_url = self.instance_url.rstrip("/")
+            url = await validate_outbound_url(
+                f"{base_url}/api/now/table/sys_user?sysparm_limit=1"
+            )
+            async with httpx.AsyncClient(
+                timeout=10.0, verify=True, follow_redirects=False
+            ) as client:
                 response = await client.get(
-                    f"{self.instance_url}/api/now/table/sys_user?sysparm_limit=1",
+                    url,
                     auth=(self.username, self.password),
                     headers={"Accept": "application/json"}
                 )
                 return {"success": response.status_code == 200}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        except Exception:
+            logger.exception("ServiceNow connection test failed")
+            return {"success": False, "error": INTEGRATION_REQUEST_ERROR}

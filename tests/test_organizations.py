@@ -51,14 +51,13 @@ def client():
     app.dependency_overrides[get_db] = _override_get_db
     app.dependency_overrides[get_async_db] = _override_get_async_db
 
+    # Recreate the schema atomically for each test. Iterating global metadata in
+    # teardown is brittle because later-imported model modules can add tables
+    # that were not present when this fixture created the database.
+    Base.metadata.drop_all(bind=_engine)
     Base.metadata.create_all(bind=_engine)
     with TestClient(app) as test_client:
         yield test_client
-    with _engine.connect() as connection:
-        transaction = connection.begin()
-        for table in reversed(Base.metadata.sorted_tables):
-            connection.execute(table.delete())
-        transaction.commit()
     Base.metadata.drop_all(bind=_engine)
 
 
@@ -97,18 +96,29 @@ class TestOrganizationCreation:
         resp = client.post("/api/v1/orgs/", json={
             "name": "Acme Corp",
             "slug": "acme-corp",
-            "plan": "starter",
         }, headers=headers)
 
         assert resp.status_code == 201
         data = resp.json()
         assert data["name"] == "Acme Corp"
         assert data["slug"] == "acme-corp"
-        assert data["plan"] == "starter"
+        assert data["plan"] == "free"
         assert data["max_assets"] == 50
         assert data["max_users"] == 3
         assert "id" in data
         assert "created_at" in data
+
+    def test_create_org_cannot_self_select_paid_plan(self, client):
+        """Paid entitlements can only be assigned by the billing system."""
+        headers = register_and_login(client, "admin@example.com")
+
+        resp = client.post("/api/v1/orgs/", json={
+            "name": "Enterprise For Free",
+            "slug": "enterprise-for-free",
+            "plan": "enterprise",
+        }, headers=headers)
+
+        assert resp.status_code == 422
 
     def test_create_org_default_plan(self, client):
         """Default plan should be 'free'."""
@@ -187,16 +197,48 @@ class TestOrganizationReadUpdate:
             "name": "New Name", "max_assets": 200,
         }, headers=headers)
 
+        assert resp.status_code == 422
+
+        read_resp = client.get("/api/v1/orgs/me", headers=headers)
+        data = read_resp.json()
+        assert data["name"] == "Old Name"
+        assert data["max_assets"] == 50
+
+    def test_update_org_name_only(self, client):
+        """Admins may still update non-billing organization metadata."""
+        headers = register_and_login(client, "admin@example.com")
+        client.post("/api/v1/orgs/", json={
+            "name": "Old Name", "slug": "rename-org",
+        }, headers=headers)
+
+        resp = client.patch("/api/v1/orgs/me", json={
+            "name": "New Name",
+        }, headers=headers)
+
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["name"] == "New Name"
-        assert data["max_assets"] == 200
+        assert resp.json()["name"] == "New Name"
+
+    @pytest.mark.parametrize("field,value", [
+        ("plan", "enterprise"),
+        ("max_assets", 999999),
+        ("max_users", 999999),
+    ])
+    def test_update_org_rejects_billing_entitlements(self, client, field, value):
+        """Organization updates cannot mutate billing-owned entitlements."""
+        headers = register_and_login(client, f"{field}@example.com")
+        client.post("/api/v1/orgs/", json={
+            "name": "Secure Org", "slug": f"secure-{field}",
+        }, headers=headers)
+
+        resp = client.patch("/api/v1/orgs/me", json={field: value}, headers=headers)
+
+        assert resp.status_code == 422
 
     def test_update_org_non_admin_forbidden(self, client):
         """Non-admin member cannot update org."""
         admin_h = register_and_login(client, "admin@example.com")
         client.post("/api/v1/orgs/", json={
-            "name": "Org", "slug": "my-org", "plan": "pro",
+            "name": "Org", "slug": "my-org",
         }, headers=admin_h)
 
         # Register a second user and invite them
@@ -293,6 +335,27 @@ class TestOrganizationMembers:
         assert "admin@example.com" in emails
         assert "alice@example.com" in emails
         assert len(members) == 2
+
+    def test_list_members_does_not_expose_webhook_secrets(self, client):
+        """Member directory responses never contain notification credentials."""
+        admin_h = register_and_login(client, "admin@example.com")
+        client.patch(
+            "/api/v1/auth/me/integrations",
+            json={
+                "slack_webhook_url": "https://hooks.slack.com/services/secret",
+                "webhook_url": "https://example.com/hook?token=secret",
+            },
+            headers=admin_h,
+        )
+        client.post("/api/v1/orgs/", json={
+            "name": "Members Org", "slug": "secret-members-org",
+        }, headers=admin_h)
+
+        resp = client.get("/api/v1/orgs/me/members", headers=admin_h)
+
+        assert resp.status_code == 200
+        assert "slack_webhook_url" not in resp.json()[0]
+        assert "webhook_url" not in resp.json()[0]
 
 
 # ---------------------------------------------------------------------------

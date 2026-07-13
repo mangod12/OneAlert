@@ -1,14 +1,18 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
-import { BriefcaseMedical, Play, Shield, ChevronRight } from 'lucide-react';
+import { Play, Shield, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
+import { getApiErrorMessage } from '../api/errors';
+import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { PageHeader } from '../components/ui/PageHeader';
+import { toast } from '../components/Toast';
 
 const severityColors: Record<string, string> = {
-  critical: 'bg-red-500/20 text-red-400 border-red-500/30',
-  high: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  medium: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  low: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  critical: 'bg-danger/10 text-danger border-danger/30',
+  high: 'bg-warning/10 text-warning border-warning/30',
+  medium: 'bg-info/10 text-info border-info/30',
+  low: 'bg-success/10 text-success border-success/30',
   info: 'bg-surface-500/20 text-surface-400 border-surface-500/30',
 };
 
@@ -39,14 +43,16 @@ export function Cases() {
   const [loading, setLoading] = useState(true);
   const [triaging, setTriaging] = useState(false);
   const [total, setTotal] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchCases = async () => {
+    setError(null);
     try {
       const res = await apiClient.get('/cases/', { params: { size: 50 } });
       setCases(res.data.cases);
       setTotal(res.data.total);
-    } catch (err) {
-      console.error('Failed to load cases', err);
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Investigations could not be loaded.'));
     } finally {
       setLoading(false);
     }
@@ -57,8 +63,8 @@ export function Cases() {
     try {
       await apiClient.post('/cases/auto-triage', null, { params: { hours_back: 72 } });
       await fetchCases();
-    } catch (err) {
-      console.error('Triage failed', err);
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'AI triage could not be started.'), 'error');
     } finally {
       setTriaging(false);
     }
@@ -68,42 +74,30 @@ export function Cases() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Investigations</h1>
-          <p className="text-surface-400 text-sm mt-1">{total} cases — AI-correlated from alerts and events</p>
-        </div>
+      <PageHeader eyebrow="Command" title="Investigations" description={`${total} cases correlated from alerts, security events, and agent analysis.`} actions={
         <button
           onClick={runTriage}
           disabled={triaging}
-          className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+          className="flex min-h-9 items-center gap-2 rounded-md bg-primary-500 px-3.5 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50"
         >
           <Play className="w-4 h-4" />
-          {triaging ? 'Running Triage...' : 'Run AI Triage'}
+          {triaging ? 'Running triage…' : 'Run AI triage'}
         </button>
-      </div>
+      } />
 
       {loading ? (
-        <div className="grid gap-4">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="bg-surface-800/50 rounded-xl p-6 animate-pulse h-32" />
-          ))}
-        </div>
+        <LoadingSurface rows={3} label="Loading investigations" />
+      ) : error ? (
+        <ErrorState title="Investigations unavailable" description={error} action={<RetryButton onClick={() => void fetchCases()} />} />
       ) : cases.length === 0 ? (
-        <div className="text-center py-20">
-          <BriefcaseMedical className="w-16 h-16 text-surface-600 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-surface-300">No cases yet</h3>
-          <p className="text-surface-500 mt-2 max-w-md mx-auto">
-            Run AI Triage to automatically correlate your alerts and security events into investigation cases.
-          </p>
-        </div>
+        <EmptyState title="No investigations yet" description="Run AI triage to correlate alerts and security events into investigation cases." action={<button type="button" onClick={() => void runTriage()} className="text-sm font-semibold text-primary-300">Run AI triage</button>} />
       ) : (
         <div className="grid gap-4">
           {cases.map(c => (
             <Link
               key={c.id}
               to={`/cases/${c.id}`}
-              className="block bg-surface-800/50 border border-surface-700 rounded-xl p-5 hover:border-primary-500/30 transition-colors group"
+              className="oa-panel group block p-5 transition hover:border-primary-500/40 hover:bg-surface-800/55"
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">

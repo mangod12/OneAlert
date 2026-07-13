@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import apiClient from '../api/client';
 import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target } from 'lucide-react';
 import clsx from 'clsx';
+import { getApiErrorMessage } from '../api/errors';
+import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500/20 text-red-400 border-red-500/30',
@@ -45,47 +47,52 @@ interface CaseData {
   event_count: number;
   timeline: TimelineEntry[];
 }
+interface RelatedAlert { id: number; severity: string; cve_id?: string | null; title: string; }
+interface RelatedEvent { id: number; severity: string; event_type: string; source_ip?: string | null; dest_ip?: string | null; signature?: string | null; }
 
 export function CaseDetail() {
   const { caseId } = useParams<{ caseId: string }>();
   const [caseData, setCaseData] = useState<CaseData | null>(null);
-  const [alerts, setAlerts] = useState<any[]>([]);
-  const [events, setEvents] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<RelatedAlert[]>([]);
+  const [events, setEvents] = useState<RelatedEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [degraded, setDegraded] = useState<string[]>([]);
 
-  useEffect(() => {
-    const fetchAll = async () => {
-      try {
-        const [caseRes, alertsRes, eventsRes] = await Promise.all([
-          apiClient.get(`/cases/${caseId}`),
-          apiClient.get(`/cases/${caseId}/alerts`),
-          apiClient.get(`/cases/${caseId}/events`),
-        ]);
-        setCaseData(caseRes.data);
-        setAlerts(alertsRes.data);
-        setEvents(eventsRes.data);
-      } catch (err) {
-        console.error('Failed to load case', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchAll();
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    const [caseResult, alertsResult, eventsResult] = await Promise.allSettled([
+      apiClient.get(`/cases/${caseId}`), apiClient.get(`/cases/${caseId}/alerts`), apiClient.get(`/cases/${caseId}/events`),
+    ]);
+    if (caseResult.status === 'rejected') {
+      setError(getApiErrorMessage(caseResult.reason, 'This case could not be loaded.'));
+      setCaseData(null);
+    } else {
+      setCaseData(caseResult.value.data);
+      setError('');
+    }
+    const partial: string[] = [];
+    if (alertsResult.status === 'fulfilled') setAlerts(alertsResult.value.data);
+    else { setAlerts([]); partial.push('Linked alerts unavailable'); }
+    if (eventsResult.status === 'fulfilled') setEvents(eventsResult.value.data);
+    else { setEvents([]); partial.push('Linked events unavailable'); }
+    setDegraded(partial);
+    setLoading(false);
   }, [caseId]);
 
+  useEffect(() => { void fetchAll(); }, [fetchAll]);
+
   if (loading) {
-    return <div className="animate-pulse space-y-4">
-      <div className="h-8 bg-surface-800 rounded w-1/3" />
-      <div className="h-40 bg-surface-800 rounded" />
-    </div>;
+    return <LoadingSurface rows={6} label="Loading case investigation" />;
   }
 
   if (!caseData) {
-    return <div className="text-center py-20 text-surface-400">Case not found</div>;
+    return <ErrorState title="Case unavailable" description={error || 'The case may have been removed or you may not have access.'} action={<RetryButton onClick={fetchAll} />} />;
   }
 
   return (
     <div className="space-y-6">
+      {degraded.length > 0 && <DegradedBanner messages={degraded} onRetry={fetchAll} />}
       {/* Header */}
       <div>
         <Link to="/cases" className="flex items-center gap-2 text-surface-400 hover:text-white text-sm mb-4 transition-colors">
@@ -203,7 +210,7 @@ export function CaseDetail() {
               <p className="text-surface-500 text-sm">No linked alerts.</p>
             ) : (
               <div className="space-y-2">
-                {alerts.map((a: any) => (
+                {alerts.map(a => (
                   <div key={a.id} className="p-3 bg-surface-900/50 rounded-lg">
                     <div className="flex items-center gap-2 mb-1">
                       <span className={clsx('px-1.5 py-0.5 text-xs rounded', severityColors[a.severity])}>{a.severity}</span>
@@ -222,7 +229,7 @@ export function CaseDetail() {
               <p className="text-surface-500 text-sm">No linked events.</p>
             ) : (
               <div className="space-y-2 max-h-80 overflow-y-auto">
-                {events.map((e: any) => (
+                {events.map(e => (
                   <div key={e.id} className="p-3 bg-surface-900/50 rounded-lg">
                     <div className="flex items-center gap-2 mb-1">
                       <span className={clsx('px-1.5 py-0.5 text-xs rounded', severityColors[e.severity])}>{e.severity}</span>

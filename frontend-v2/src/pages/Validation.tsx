@@ -3,6 +3,18 @@ import apiClient from '../api/client';
 import { Play, Plus, ShieldCheck, Target, CheckCircle, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import { toast } from '../components/Toast';
+import { getApiErrorMessage } from '../api/errors';
+import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { PageHeader } from '../components/ui/PageHeader';
+
+interface ValidationStep {
+  id: number;
+  technique_id: string;
+  test_name: string;
+  actual_result: string;
+  duration_ms: number;
+}
+interface ValidationRunDetail extends ValidationRun { steps: ValidationStep[]; }
 
 interface ValidationRun {
   id: number;
@@ -36,15 +48,20 @@ const STATUS_STYLES: Record<string, string> = {
 export function Validation() {
   const [runs, setRuns] = useState<ValidationRun[]>([]);
   const [showCreate, setShowCreate] = useState(false);
-  const [selectedRun, setSelectedRun] = useState<any>(null);
+  const [selectedRun, setSelectedRun] = useState<ValidationRunDetail | null>(null);
   const [newRun, setNewRun] = useState({ name: '', description: '', techniques: [] as string[] });
   const [creating, setCreating] = useState(false);
+  const [executing, setExecuting] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const fetchRuns = async () => {
     try {
       const res = await apiClient.get('/validation/runs');
       setRuns(res.data.data || []);
-    } catch (err) { console.error(err); }
+      setError('');
+    } catch (err) { setError(getApiErrorMessage(err, 'Validation runs could not be loaded.')); }
+    finally { setLoading(false); }
   };
 
   const createRun = async () => {
@@ -61,24 +78,27 @@ export function Validation() {
       setNewRun({ name: '', description: '', techniques: [] });
       toast('Validation run created', 'success');
       await fetchRuns();
-    } catch (err) { console.error(err); toast('Failed to create run', 'error'); }
+    } catch (err) { toast(getApiErrorMessage(err, 'Failed to create run.'), 'error'); }
     finally { setCreating(false); }
   };
 
   const executeRun = async (runId: number) => {
+    if (executing !== null || !window.confirm('Run this detection validation now?')) return;
+    setExecuting(runId);
     try {
       await apiClient.post(`/validation/runs/${runId}/execute`);
       toast('Validation complete', 'success');
       await fetchRuns();
       await viewRun(runId);
-    } catch (err) { console.error(err); toast('Execution failed', 'error'); }
+    } catch (err) { toast(getApiErrorMessage(err, 'Execution failed.'), 'error'); }
+    finally { setExecuting(null); }
   };
 
   const viewRun = async (runId: number) => {
     try {
       const res = await apiClient.get(`/validation/runs/${runId}`);
       setSelectedRun(res.data.data);
-    } catch (err) { console.error(err); }
+    } catch (err) { toast(getApiErrorMessage(err, 'Run details could not be loaded.'), 'error'); }
   };
 
   const toggleTechnique = (techId: string) => {
@@ -94,16 +114,12 @@ export function Validation() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Purple-Team Validation</h1>
-          <p className="text-surface-400 text-sm mt-1">Test detection controls against simulated ATT&CK techniques</p>
-        </div>
+      <PageHeader eyebrow="Analyze" title="Purple-Team Validation" description="Test detection controls against simulated ATT&CK techniques and expose measurable coverage gaps." actions={
         <button onClick={() => setShowCreate(!showCreate)}
           className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors">
           <Plus className="w-4 h-4" /> New Validation
         </button>
-      </div>
+      } />
 
       {/* Create Form */}
       {showCreate && (
@@ -111,8 +127,8 @@ export function Validation() {
           <h2 className="text-lg font-semibold text-white mb-4">Create Validation Run</h2>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-surface-300 mb-1">Name</label>
-              <input type="text" value={newRun.name} onChange={e => setNewRun({ ...newRun, name: e.target.value })}
+              <label htmlFor="validation-name" className="block text-sm font-medium text-surface-300 mb-1">Name</label>
+              <input id="validation-name" type="text" value={newRun.name} onChange={e => setNewRun({ ...newRun, name: e.target.value })}
                 placeholder="e.g. Weekly Detection Coverage Test"
                 className="w-full px-4 py-2 bg-surface-900 border border-surface-600 rounded-lg text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500" />
             </div>
@@ -140,14 +156,15 @@ export function Validation() {
       )}
 
       {/* Runs List */}
-      <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
+      {loading ? <LoadingSurface label="Loading validation runs" /> : error ? <ErrorState title="Validation unavailable" description={error} action={<RetryButton onClick={fetchRuns} />} /> : <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
         <h2 className="text-lg font-semibold text-white mb-4">Validation Runs</h2>
         {runs.length === 0 ? (
-          <p className="text-surface-500 text-sm">No validation runs yet. Create one to test your detection coverage.</p>
+          <EmptyState title="No validation runs" description="Create one to test current detection coverage." />
         ) : (
           <div className="space-y-3">
             {runs.map(r => (
-              <div key={r.id} className="flex items-center gap-4 p-4 bg-surface-900/50 rounded-lg cursor-pointer hover:bg-surface-900/80 transition-colors"
+              <div key={r.id} role="button" tabIndex={0} className="flex items-center gap-4 p-4 bg-surface-900/50 rounded-lg cursor-pointer hover:bg-surface-900/80 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500"
+                onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); viewRun(r.id); } }}
                 onClick={() => viewRun(r.id)}>
                 <ShieldCheck className="w-5 h-5 text-primary-400 shrink-0" />
                 <div className="flex-1 min-w-0">
@@ -168,7 +185,7 @@ export function Validation() {
                   {r.status}
                 </span>
                 {r.status === 'pending' && (
-                  <button onClick={e => { e.stopPropagation(); executeRun(r.id); }}
+                  <button disabled={executing === r.id} onClick={e => { e.stopPropagation(); executeRun(r.id); }}
                     className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-colors">
                     <Play className="w-3 h-3" /> Run
                   </button>
@@ -177,7 +194,7 @@ export function Validation() {
             ))}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Run Detail */}
       {selectedRun && (
@@ -212,7 +229,7 @@ export function Validation() {
 
           {selectedRun.steps?.length > 0 && (
             <div className="space-y-2">
-              {selectedRun.steps.map((step: any) => (
+              {selectedRun.steps.map(step => (
                 <div key={step.id} className="flex items-center gap-4 p-3 bg-surface-900/30 rounded-lg">
                   {step.actual_result === 'detected' ? (
                     <CheckCircle className="w-4 h-4 text-green-400 shrink-0" />

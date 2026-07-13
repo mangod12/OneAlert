@@ -1,7 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import apiClient from '../api/client';
 import { Activity } from 'lucide-react';
 import clsx from 'clsx';
+import { getApiErrorMessage } from '../api/errors';
+import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const severityColors: Record<string, string> = {
   critical: 'text-red-400',
@@ -40,37 +43,38 @@ export function Events() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [severityFilter, setSeverityFilter] = useState('');
+  const [errors, setErrors] = useState<string[]>([]);
 
-  const fetchEvents = async () => {
+  const fetchEvents = useCallback(async () => {
+    setLoading(true);
+    setErrors([]);
     try {
-      const params: Record<string, any> = { page, size: 50 };
+      const params: Record<string, string | number> = { page, size: 50 };
       if (severityFilter) params.severity = severityFilter;
-      const [evtRes, statsRes] = await Promise.all([
+      const [evtResult, statsResult] = await Promise.allSettled([
         apiClient.get('/events/', { params }),
         apiClient.get('/events/stats'),
       ]);
-      setEvents(evtRes.data.events);
-      setTotal(evtRes.data.total);
-      setStats(statsRes.data.data);
-    } catch (err) {
-      console.error('Failed to load events', err);
+      const nextErrors: string[] = [];
+      if (evtResult.status === 'fulfilled') { setEvents(evtResult.value.data.events); setTotal(evtResult.value.data.total); }
+      else nextErrors.push(getApiErrorMessage(evtResult.reason, 'Event stream is unavailable'));
+      if (statsResult.status === 'fulfilled') setStats(statsResult.value.data.data);
+      else nextErrors.push(getApiErrorMessage(statsResult.reason, 'Event statistics are unavailable'));
+      setErrors(nextErrors);
+    } catch (err: unknown) {
+      setErrors([getApiErrorMessage(err, 'Security events could not be loaded.')]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, severityFilter]);
 
-  useEffect(() => { fetchEvents(); }, [page, severityFilter]);
+  useEffect(() => { void fetchEvents(); }, [fetchEvents]);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Security Events</h1>
-          <p className="text-surface-400 text-sm mt-1">
-            {total} events from {stats?.source_count || 0} sources
-          </p>
-        </div>
-      </div>
+      <PageHeader eyebrow="Observe" title="Security Events" description={`${total} events${stats ? ` from ${stats.source_count} telemetry sources` : ''}.`} />
+
+      {errors.length > 0 && (events.length > 0 || stats) && <DegradedBanner messages={errors} onRetry={() => void fetchEvents()} />}
 
       {/* Stats */}
       {stats && (
@@ -93,9 +97,9 @@ export function Events() {
 
       {/* Event Table */}
       {loading ? (
-        <div className="animate-pulse space-y-2">
-          {[1, 2, 3, 4, 5].map(i => <div key={i} className="h-12 bg-surface-800 rounded" />)}
-        </div>
+        <LoadingSurface rows={5} label="Loading security events" />
+      ) : errors.length > 0 && events.length === 0 ? (
+        <ErrorState title="Event stream unavailable" description={errors.join(' · ')} action={<RetryButton onClick={() => void fetchEvents()} />} />
       ) : events.length === 0 ? (
         <div className="text-center py-20">
           <Activity className="w-16 h-16 text-surface-600 mx-auto mb-4" />
@@ -105,7 +109,7 @@ export function Events() {
           </p>
         </div>
       ) : (
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl overflow-hidden">
+        <div className="oa-panel overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>

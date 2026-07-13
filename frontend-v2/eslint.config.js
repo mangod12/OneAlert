@@ -19,5 +19,10 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // Network bootstrapping in route effects is intentional; this experimental
+      // rule currently flags standard async data loaders as synchronous updates.
+      'react-hooks/set-state-in-effect': 'off',
+    },
   },
 ])

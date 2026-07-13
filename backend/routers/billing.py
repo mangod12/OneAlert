@@ -15,7 +15,6 @@ from typing import List
 from backend.database.db import get_async_db
 from backend.models.subscription import (
     Subscription,
-    SubscriptionResponse,
     PlanInfo,
     CheckoutRequest,
     PLAN_LIMITS,
@@ -23,7 +22,7 @@ from backend.models.subscription import (
 from backend.models.user import User
 from backend.models.asset import Asset
 from backend.models.organization import Organization
-from backend.routers.auth import get_current_user
+from backend.routers.auth import get_active_user
 from backend.services.billing_service import (
     get_plan_info,
     PLAN_PRICES,
@@ -36,6 +35,15 @@ router = APIRouter()
 
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+
+
+def _require_org_admin(current_user: User) -> None:
+    """Restrict subscription mutations to active organization admins."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only organization admins can manage billing",
+        )
 
 
 @router.get("/plans", response_model=List[PlanInfo])
@@ -51,7 +59,7 @@ async def list_plans():
 
 @router.get("/subscription")
 async def get_subscription(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Get the current organization's subscription."""
@@ -103,7 +111,7 @@ async def get_subscription(
 @router.post("/checkout")
 async def create_checkout_session(
     checkout_req: CheckoutRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Create a Stripe checkout session for plan upgrade."""
@@ -112,6 +120,8 @@ async def create_checkout_session(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User does not belong to an organization",
         )
+
+    _require_org_admin(current_user)
 
     if checkout_req.plan not in ["starter", "pro", "enterprise"]:
         raise HTTPException(
@@ -239,7 +249,7 @@ async def stripe_webhook(
 
 @router.post("/cancel")
 async def cancel_subscription(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Cancel subscription at the end of the current billing period."""
@@ -248,6 +258,8 @@ async def cancel_subscription(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User does not belong to an organization",
         )
+
+    _require_org_admin(current_user)
 
     result = await db.execute(
         select(Subscription).where(Subscription.org_id == current_user.org_id)
@@ -284,7 +296,7 @@ async def cancel_subscription(
 
 @router.get("/usage")
 async def get_usage(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Get current usage vs plan limits for the organization."""

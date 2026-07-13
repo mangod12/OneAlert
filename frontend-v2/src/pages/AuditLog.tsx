@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import apiClient from '../api/client';
-import { ClipboardList, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
+import { getApiErrorMessage } from '../api/errors';
+import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { PageHeader } from '../components/ui/PageHeader';
 
 interface AuditEntry {
   id: number;
@@ -18,22 +21,21 @@ export function AuditLog() {
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    async function fetchLogs() {
-      try {
-        const res = await apiClient.get('/auth/audit-logs');
-        setLogs(res.data);
-      } catch (err: any) {
-        if (err.response?.status === 403) {
-          setError('Admin access required to view audit logs.');
-        } else {
-          setError('Failed to load audit logs.');
-        }
-      } finally {
-        setLoading(false);
-      }
+  const fetchLogs = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await apiClient.get('/auth/audit-logs');
+      setLogs(res.data);
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Audit activity could not be loaded.'));
+    } finally {
+      setLoading(false);
     }
-    fetchLogs();
+  };
+
+  useEffect(() => {
+    void fetchLogs();
   }, []);
 
   const filteredLogs = logs.filter((log) =>
@@ -42,25 +44,15 @@ export function AuditLog() {
   );
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-400"></div>
-      </div>
-    );
+    return <LoadingSurface rows={6} label="Loading audit activity" />;
   }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Audit Log</h1>
-        <p className="text-surface-400 mt-1">Track all user actions</p>
-      </div>
+      <PageHeader eyebrow="Govern" title="Audit Log" description="Immutable operator, agent, approval, and configuration activity." />
 
       {error ? (
-        <div className="p-6 bg-surface-800/50 border border-surface-700 rounded-xl text-center">
-          <ClipboardList className="w-8 h-8 mx-auto mb-3 text-surface-500" />
-          <p className="text-surface-400">{error}</p>
-        </div>
+        <ErrorState title="Audit log unavailable" description={error} action={<RetryButton onClick={() => void fetchLogs()} />} />
       ) : (
         <>
           <div className="relative max-w-sm">
