@@ -19,10 +19,10 @@ const ICONS = {
 };
 
 const STYLES = {
-  success: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400',
-  error: 'bg-red-500/10 border-red-500/30 text-red-400',
-  warning: 'bg-amber-500/10 border-amber-500/30 text-amber-400',
-  info: 'bg-blue-500/10 border-blue-500/30 text-blue-400',
+  success: 'bg-success/10 border-success/30 text-success',
+  error: 'bg-danger/10 border-danger/30 text-danger',
+  warning: 'bg-warning/10 border-warning/30 text-warning',
+  info: 'bg-info/10 border-info/30 text-info',
 };
 
 let toastId = 0;
