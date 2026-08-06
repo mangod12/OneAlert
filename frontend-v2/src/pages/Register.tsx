@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Activity, LockKeyhole, Shield, ShieldCheck } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
-import { Shield } from 'lucide-react';
 
 export function Register() {
   const [email, setEmail] = useState('');
@@ -22,96 +22,76 @@ export function Register() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-surface-950 via-surface-900 to-primary-900/20 px-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <Shield className="w-12 h-12 text-primary-400 mx-auto mb-4" />
-          <h1 className="text-3xl font-bold text-white">Create account</h1>
-          <p className="text-surface-400 mt-2">Start monitoring your OT assets</p>
+    <main className="grid min-h-screen bg-surface-950 lg:grid-cols-[minmax(0,1fr)_minmax(28rem,0.72fr)]">
+      <section className="relative hidden overflow-hidden border-r border-surface-800 p-12 lg:flex lg:flex-col lg:justify-between">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_20%,oklch(68.5%_0.126_210/0.13),transparent_32%)]" />
+        <div className="relative flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-md border border-primary-500/30 bg-primary-500/10 text-primary-300">
+            <Shield className="h-6 w-6" aria-hidden="true" />
+          </span>
+          <div><p className="font-bold text-surface-50">OneAlert</p><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-surface-500">AI Security OS</p></div>
         </div>
+        <div className="relative max-w-2xl">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary-300">Start securing industrial networks</p>
+          <h1 className="mt-4 text-4xl font-bold leading-tight tracking-tight text-surface-50 xl:text-5xl">Defend what<br />matters.</h1>
+          <p className="mt-5 max-w-xl text-base leading-7 text-surface-400">Register your operator account to begin monitoring OT assets, investigating threats, and governing automated response.</p>
+          <div className="mt-10 grid max-w-xl grid-cols-3 gap-px overflow-hidden rounded-md border border-surface-800 bg-surface-800">
+            {[['Open Source', 'Self-hosted'], ['AI Agents', 'Governed'], ['Compliance', 'Built-in']].map(([value, label]) => (
+              <div key={value} className="bg-surface-900 p-4"><p className="text-sm font-bold text-primary-200">{value}</p><p className="mt-1 text-xs text-surface-500">{label}</p></div>
+            ))}
+          </div>
+        </div>
+        <div className="relative flex items-center gap-2 text-xs text-surface-500"><Activity className="h-4 w-4 text-success" aria-hidden="true" /> Secure operator workspace</div>
+      </section>
 
-        <div className="bg-surface-800/50 backdrop-blur border border-surface-700 rounded-2xl p-8">
-          {error && (
-            <div id="register-error" role="alert" className="mb-4 p-3 rounded-lg bg-danger/10 border border-danger/20 text-danger text-sm">
-              {error}
-              <button onClick={clearError} className="float-right text-danger/70 hover:text-danger">&times;</button>
-            </div>
-          )}
+      <section className="flex items-center justify-center px-5 py-10 sm:px-10">
+        <div className="w-full max-w-md">
+          <Shield className="mb-5 h-9 w-9 text-primary-300 lg:hidden" aria-hidden="true" />
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary-300">Create account</p>
+          <h2 className="mt-2 text-3xl font-bold tracking-tight text-surface-50">Get started</h2>
+          <p className="mt-2 text-sm text-surface-400">Register for OneAlert</p>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label htmlFor="register-name" className="block text-sm font-medium text-surface-300 mb-1.5">Full Name</label>
-              <input
-                id="register-name"
-                type="text"
-                autoComplete="name"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className="w-full px-4 py-2.5 bg-surface-900 border border-surface-600 rounded-lg text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                placeholder="Jane Doe"
-                required
-              />
-            </div>
+          <div className="oa-panel mt-7 p-5 sm:p-6">
+            {error && (
+              <div id="register-error" className="mb-4 flex items-start gap-3 rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger" role="alert">
+                <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <span className="flex-1">{error}</span>
+                <button type="button" onClick={clearError} aria-label="Dismiss registration error" className="text-danger/70 hover:text-danger">&times;</button>
+              </div>
+            )}
 
-            <div>
-              <label htmlFor="register-email" className="block text-sm font-medium text-surface-300 mb-1.5">Email</label>
-              <input
-                id="register-email"
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-2.5 bg-surface-900 border border-surface-600 rounded-lg text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                placeholder="you@company.com"
-                required
-              />
-            </div>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="register-fullname" className="mb-1.5 block text-sm font-medium text-surface-300">Full Name</label>
+                <input id="register-fullname" type="text" autoComplete="name" value={fullName} onChange={(e) => setFullName(e.target.value)} aria-describedby={error ? 'register-error' : undefined} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3.5 py-2.5 text-surface-50 placeholder-surface-500 transition focus:border-primary-500 focus:outline-none" placeholder="Jane Doe" required />
+              </div>
+              <div>
+                <label htmlFor="register-email" className="mb-1.5 block text-sm font-medium text-surface-300">Email</label>
+                <input id="register-email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} aria-describedby={error ? 'register-error' : undefined} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3.5 py-2.5 text-surface-50 placeholder-surface-500 transition focus:border-primary-500 focus:outline-none" placeholder="you@company.com" required />
+              </div>
+              <div>
+                <label htmlFor="register-company" className="mb-1.5 block text-sm font-medium text-surface-300">Company</label>
+                <input id="register-company" type="text" autoComplete="organization" value={company} onChange={(e) => setCompany(e.target.value)} aria-describedby={error ? 'register-error' : undefined} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3.5 py-2.5 text-surface-50 placeholder-surface-500 transition focus:border-primary-500 focus:outline-none" placeholder="Acme Manufacturing" />
+              </div>
+              <div>
+                <label htmlFor="register-password" className="mb-1.5 block text-sm font-medium text-surface-300">Password</label>
+                <input id="register-password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} aria-describedby={error ? 'register-error' : undefined} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3.5 py-2.5 text-surface-50 placeholder-surface-500 transition focus:border-primary-500 focus:outline-none" placeholder="Minimum 8 characters" minLength={8} required />
+              </div>
+              <button type="submit" disabled={isLoading} className="w-full rounded-md bg-primary-500 px-4 py-2.5 font-semibold text-surface-950 transition-colors hover:bg-primary-400 disabled:opacity-50">
+                {isLoading ? 'Creating account...' : 'Create Account'}
+              </button>
+            </form>
 
-            <div>
-              <label htmlFor="register-company" className="block text-sm font-medium text-surface-300 mb-1.5">Company</label>
-              <input
-                id="register-company"
-                type="text"
-                autoComplete="organization"
-                value={company}
-                onChange={(e) => setCompany(e.target.value)}
-                className="w-full px-4 py-2.5 bg-surface-900 border border-surface-600 rounded-lg text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                placeholder="Acme Manufacturing"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="register-password" className="block text-sm font-medium text-surface-300 mb-1.5">Password</label>
-              <input
-                id="register-password"
-                type="password"
-                autoComplete="new-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-2.5 bg-surface-900 border border-surface-600 rounded-lg text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                placeholder="Minimum 8 characters"
-                minLength={8}
-                required
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full py-2.5 px-4 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
-            >
-              {isLoading ? 'Creating account...' : 'Create Account'}
+            <div className="my-5 flex items-center gap-3 text-xs text-surface-500"><span className="h-px flex-1 bg-surface-700" />or<span className="h-px flex-1 bg-surface-700" /></div>
+            <button type="button" onClick={() => { window.location.href = '/api/v1/auth/github/login'; }} className="flex w-full items-center justify-center gap-2 rounded-md border border-surface-600 bg-surface-800 px-4 py-2.5 font-semibold text-surface-100 hover:border-surface-500 hover:bg-surface-700">
+              <svg className="h-5 w-5" aria-hidden="true" fill="currentColor" viewBox="0 0 24 24"><path d="M12 .5a12 12 0 0 0-3.79 23.38c.6.11.82-.26.82-.58v-2.1c-3.34.73-4.04-1.42-4.04-1.42-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75.08-.73.08-.73 1.2.09 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.5.99.11-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.11-3.18 0 0 1.01-.32 3.3 1.23A11.5 11.5 0 0 1 12 6.4c1.02 0 2.05.14 3.01.4 2.29-1.55 3.3-1.23 3.3-1.23.65 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.81 5.62-5.49 5.92.43.37.82 1.1.82 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .5Z" /></svg> Continue with GitHub
             </button>
-          </form>
 
-          <p className="mt-6 text-center text-sm text-surface-400">
-            Already have an account?{' '}
-            <Link to="/login" className="text-primary-400 hover:text-primary-300 font-medium">
-              Sign in
-            </Link>
-          </p>
+            <p className="mt-6 text-center text-sm text-surface-400">Already have an account? <Link to="/login" className="font-semibold text-primary-300 hover:text-primary-200">Sign in</Link></p>
+          </div>
+          <div className="mt-5 flex items-center justify-center gap-2 text-[11px] text-surface-500"><ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" /> Account secured with encryption at rest</div>
         </div>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }

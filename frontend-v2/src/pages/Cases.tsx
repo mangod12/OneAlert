@@ -17,9 +17,9 @@ const severityColors: Record<string, string> = {
 };
 
 const statusColors: Record<string, string> = {
-  open: 'bg-red-500/20 text-red-400',
-  investigating: 'bg-yellow-500/20 text-yellow-400',
-  resolved: 'bg-green-500/20 text-green-400',
+  open: 'bg-danger/10 text-danger',
+  investigating: 'bg-warning/10 text-warning',
+  resolved: 'bg-success/10 text-success',
   closed: 'bg-surface-500/20 text-surface-400',
   false_positive: 'bg-surface-500/20 text-surface-500',
 };
@@ -114,7 +114,7 @@ export function Cases() {
                       </span>
                     )}
                   </div>
-                  <h3 className="text-white font-medium truncate">{c.title}</h3>
+                  <h3 className="text-surface-50 font-medium truncate">{c.title}</h3>
                   {c.summary && <p className="text-surface-400 text-sm mt-1 line-clamp-2">{c.summary}</p>}
                   <div className="flex items-center gap-4 mt-3 text-xs text-surface-500">
                     <span>{c.alert_count} alerts</span>

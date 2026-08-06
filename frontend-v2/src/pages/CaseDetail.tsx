@@ -7,10 +7,10 @@ import { getApiErrorMessage } from '../api/errors';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 
 const severityColors: Record<string, string> = {
-  critical: 'bg-red-500/20 text-red-400 border-red-500/30',
-  high: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  medium: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  low: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  critical: 'bg-danger/10 text-danger border-danger/30',
+  high: 'bg-warning/10 text-warning border-warning/30',
+  medium: 'bg-warning/10 text-warning border-warning/30',
+  low: 'bg-info/10 text-info border-info/30',
   info: 'bg-surface-500/20 text-surface-400 border-surface-500/30',
 };
 
@@ -95,7 +95,7 @@ export function CaseDetail() {
       {degraded.length > 0 && <DegradedBanner messages={degraded} onRetry={fetchAll} />}
       {/* Header */}
       <div>
-        <Link to="/cases" className="flex items-center gap-2 text-surface-400 hover:text-white text-sm mb-4 transition-colors">
+        <Link to="/cases" className="flex items-center gap-2 text-surface-400 hover:text-surface-50 text-sm mb-4 transition-colors">
           <ArrowLeft className="w-4 h-4" /> Back to Cases
         </Link>
         <div className="flex items-start justify-between">
@@ -113,7 +113,7 @@ export function CaseDetail() {
                 </span>
               )}
             </div>
-            <h1 className="text-2xl font-bold text-white">{caseData.title}</h1>
+            <h1 className="text-2xl font-bold text-surface-50">{caseData.title}</h1>
             {caseData.summary && <p className="text-surface-400 mt-2">{caseData.summary}</p>}
           </div>
         </div>
@@ -121,19 +121,19 @@ export function CaseDetail() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-4">
+        <div className="oa-panel p-4">
           <p className="text-xs text-surface-500 uppercase">Alerts</p>
-          <p className="text-2xl font-bold text-white mt-1">{caseData.alert_count}</p>
+          <p className="text-2xl font-bold text-surface-50 mt-1">{caseData.alert_count}</p>
         </div>
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-4">
+        <div className="oa-panel p-4">
           <p className="text-xs text-surface-500 uppercase">Events</p>
-          <p className="text-2xl font-bold text-white mt-1">{caseData.event_count}</p>
+          <p className="text-2xl font-bold text-surface-50 mt-1">{caseData.event_count}</p>
         </div>
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-4">
+        <div className="oa-panel p-4">
           <p className="text-xs text-surface-500 uppercase">MITRE Tactics</p>
-          <p className="text-2xl font-bold text-white mt-1">{caseData.mitre_tactics?.length || 0}</p>
+          <p className="text-2xl font-bold text-surface-50 mt-1">{caseData.mitre_tactics?.length || 0}</p>
         </div>
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-4">
+        <div className="oa-panel p-4">
           <p className="text-xs text-surface-500 uppercase">Created By</p>
           <p className="text-lg font-medium text-primary-400 mt-1 capitalize">{caseData.created_by}</p>
         </div>
@@ -141,8 +141,8 @@ export function CaseDetail() {
 
       {/* Attack Narrative */}
       {caseData.attack_narrative && (
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-white mb-3">
+        <div className="oa-panel p-6">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-surface-50 mb-3">
             <Brain className="w-5 h-5 text-primary-400" /> AI Analysis
           </h2>
           <p className="text-surface-300 leading-relaxed whitespace-pre-wrap">{caseData.attack_narrative}</p>
@@ -151,8 +151,8 @@ export function CaseDetail() {
 
       {/* MITRE Techniques */}
       {caseData.mitre_techniques && caseData.mitre_techniques.length > 0 && (
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-white mb-3">
+        <div className="oa-panel p-6">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-surface-50 mb-3">
             <Target className="w-5 h-5 text-primary-400" /> MITRE ATT&CK Techniques
           </h2>
           <div className="flex flex-wrap gap-2">
@@ -170,8 +170,8 @@ export function CaseDetail() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Timeline */}
         <div className="lg:col-span-2">
-          <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Investigation Timeline</h2>
+          <div className="oa-panel p-6">
+            <h2 className="text-lg font-semibold text-surface-50 mb-4">Investigation Timeline</h2>
             {caseData.timeline.length === 0 ? (
               <p className="text-surface-500">No timeline entries yet.</p>
             ) : (
@@ -204,8 +204,8 @@ export function CaseDetail() {
 
         {/* Related Alerts & Events */}
         <div className="space-y-6">
-          <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-3">Related Alerts</h2>
+          <div className="oa-panel p-6">
+            <h2 className="text-lg font-semibold text-surface-50 mb-3">Related Alerts</h2>
             {alerts.length === 0 ? (
               <p className="text-surface-500 text-sm">No linked alerts.</p>
             ) : (
@@ -223,8 +223,8 @@ export function CaseDetail() {
             )}
           </div>
 
-          <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-3">Related Events</h2>
+          <div className="oa-panel p-6">
+            <h2 className="text-lg font-semibold text-surface-50 mb-3">Related Events</h2>
             {events.length === 0 ? (
               <p className="text-surface-500 text-sm">No linked events.</p>
             ) : (

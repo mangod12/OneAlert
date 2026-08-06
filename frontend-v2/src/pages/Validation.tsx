@@ -40,9 +40,9 @@ const AVAILABLE_TECHNIQUES = [
 
 const STATUS_STYLES: Record<string, string> = {
   pending: 'bg-surface-600/20 text-surface-400',
-  running: 'bg-blue-500/20 text-blue-400',
-  completed: 'bg-green-500/20 text-green-400',
-  failed: 'bg-red-500/20 text-red-400',
+  running: 'bg-info/10 text-info',
+  completed: 'bg-success/10 text-success',
+  failed: 'bg-danger/10 text-danger',
 };
 
 export function Validation() {
@@ -116,21 +116,21 @@ export function Validation() {
     <div className="space-y-6">
       <PageHeader eyebrow="Analyze" title="Purple-Team Validation" description="Test detection controls against simulated ATT&CK techniques and expose measurable coverage gaps." actions={
         <button onClick={() => setShowCreate(!showCreate)}
-          className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors">
+          className="flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-400 text-surface-950 rounded-lg text-sm font-medium transition-colors">
           <Plus className="w-4 h-4" /> New Validation
         </button>
       } />
 
       {/* Create Form */}
       {showCreate && (
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
-          <h2 className="text-lg font-semibold text-white mb-4">Create Validation Run</h2>
+        <div className="oa-panel p-6">
+          <h2 className="text-lg font-semibold text-surface-50 mb-4">Create Validation Run</h2>
           <div className="space-y-4">
             <div>
               <label htmlFor="validation-name" className="block text-sm font-medium text-surface-300 mb-1">Name</label>
               <input id="validation-name" type="text" value={newRun.name} onChange={e => setNewRun({ ...newRun, name: e.target.value })}
                 placeholder="e.g. Weekly Detection Coverage Test"
-                className="w-full px-4 py-2 bg-surface-900 border border-surface-600 rounded-lg text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                className="w-full px-4 py-2 bg-surface-900 border border-surface-600 rounded-lg text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500" />
             </div>
             <div>
               <label className="block text-sm font-medium text-surface-300 mb-2">ATT&CK Techniques</label>
@@ -148,7 +148,7 @@ export function Validation() {
               </div>
             </div>
             <button onClick={createRun} disabled={creating || !newRun.name.trim() || newRun.techniques.length === 0}
-              className="px-6 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors">
+              className="px-6 py-2 bg-primary-500 hover:bg-primary-400 disabled:opacity-50 text-surface-950 rounded-lg text-sm font-medium transition-colors">
               {creating ? 'Creating...' : 'Create Run'}
             </button>
           </div>
@@ -156,8 +156,8 @@ export function Validation() {
       )}
 
       {/* Runs List */}
-      {loading ? <LoadingSurface label="Loading validation runs" /> : error ? <ErrorState title="Validation unavailable" description={error} action={<RetryButton onClick={fetchRuns} />} /> : <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">Validation Runs</h2>
+      {loading ? <LoadingSurface label="Loading validation runs" /> : error ? <ErrorState title="Validation unavailable" description={error} action={<RetryButton onClick={fetchRuns} />} /> : <div className="oa-panel p-6">
+        <h2 className="text-lg font-semibold text-surface-50 mb-4">Validation Runs</h2>
         {runs.length === 0 ? (
           <EmptyState title="No validation runs" description="Create one to test current detection coverage." />
         ) : (
@@ -168,14 +168,14 @@ export function Validation() {
                 onClick={() => viewRun(r.id)}>
                 <ShieldCheck className="w-5 h-5 text-primary-400 shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white font-medium">{r.name}</p>
+                  <p className="text-sm text-surface-50 font-medium">{r.name}</p>
                   <p className="text-xs text-surface-500">
                     {r.mitre_techniques?.length || 0} techniques · {r.mode} · {new Date(r.created_at).toLocaleDateString()}
                   </p>
                 </div>
                 {r.results_summary && (
                   <div className="text-right">
-                    <p className={clsx('text-lg font-bold', r.results_summary.detection_rate >= 70 ? 'text-green-400' : r.results_summary.detection_rate >= 40 ? 'text-amber-400' : 'text-red-400')}>
+                    <p className={clsx('text-lg font-bold', r.results_summary.detection_rate >= 70 ? 'text-success' : r.results_summary.detection_rate >= 40 ? 'text-warning' : 'text-danger')}>
                       {r.results_summary.detection_rate}%
                     </p>
                     <p className="text-xs text-surface-500">{r.results_summary.detected}/{r.results_summary.tested} detected</p>
@@ -186,7 +186,7 @@ export function Validation() {
                 </span>
                 {r.status === 'pending' && (
                   <button disabled={executing === r.id} onClick={e => { e.stopPropagation(); executeRun(r.id); }}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-colors">
+                    className="flex items-center gap-1 px-3 py-1.5 bg-primary-500 hover:bg-primary-400 text-surface-950 rounded text-xs font-medium transition-colors">
                     <Play className="w-3 h-3" /> Run
                   </button>
                 )}
@@ -198,8 +198,8 @@ export function Validation() {
 
       {/* Run Detail */}
       {selectedRun && (
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
-          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+        <div className="oa-panel p-6">
+          <h2 className="text-lg font-semibold text-surface-50 mb-4 flex items-center gap-2">
             <Target className="w-5 h-5 text-primary-400" />
             {selectedRun.name} — Results
           </h2>
@@ -207,19 +207,19 @@ export function Validation() {
           {selectedRun.results_summary && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
               <div className="bg-surface-900/50 rounded-lg p-3 text-center">
-                <p className="text-2xl font-bold text-white">{selectedRun.results_summary.tested}</p>
+                <p className="text-2xl font-bold text-surface-50">{selectedRun.results_summary.tested}</p>
                 <p className="text-xs text-surface-500">Tests Run</p>
               </div>
               <div className="bg-surface-900/50 rounded-lg p-3 text-center">
-                <p className="text-2xl font-bold text-green-400">{selectedRun.results_summary.detected}</p>
+                <p className="text-2xl font-bold text-success">{selectedRun.results_summary.detected}</p>
                 <p className="text-xs text-surface-500">Detected</p>
               </div>
               <div className="bg-surface-900/50 rounded-lg p-3 text-center">
-                <p className="text-2xl font-bold text-red-400">{selectedRun.results_summary.missed}</p>
+                <p className="text-2xl font-bold text-danger">{selectedRun.results_summary.missed}</p>
                 <p className="text-xs text-surface-500">Missed</p>
               </div>
               <div className="bg-surface-900/50 rounded-lg p-3 text-center">
-                <p className={clsx('text-2xl font-bold', selectedRun.results_summary.detection_rate >= 70 ? 'text-green-400' : 'text-amber-400')}>
+                <p className={clsx('text-2xl font-bold', selectedRun.results_summary.detection_rate >= 70 ? 'text-success' : 'text-warning')}>
                   {selectedRun.results_summary.detection_rate}%
                 </p>
                 <p className="text-xs text-surface-500">Detection Rate</p>
@@ -232,14 +232,14 @@ export function Validation() {
               {selectedRun.steps.map(step => (
                 <div key={step.id} className="flex items-center gap-4 p-3 bg-surface-900/30 rounded-lg">
                   {step.actual_result === 'detected' ? (
-                    <CheckCircle className="w-4 h-4 text-green-400 shrink-0" />
+                    <CheckCircle className="w-4 h-4 text-success shrink-0" />
                   ) : (
-                    <XCircle className="w-4 h-4 text-red-400 shrink-0" />
+                    <XCircle className="w-4 h-4 text-danger shrink-0" />
                   )}
                   <span className="font-mono text-xs text-primary-400 w-12">{step.technique_id}</span>
                   <span className="text-sm text-surface-300 flex-1">{step.test_name}</span>
                   <span className={clsx('text-xs px-2 py-0.5 rounded',
-                    step.actual_result === 'detected' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400')}>
+                    step.actual_result === 'detected' ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger')}>
                     {step.actual_result}
                   </span>
                   <span className="text-xs text-surface-500">{step.duration_ms}ms</span>

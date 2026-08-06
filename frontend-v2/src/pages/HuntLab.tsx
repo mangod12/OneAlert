@@ -69,7 +69,7 @@ export function HuntLab() {
       <PageHeader eyebrow="Analyze" title="Threat Hunt Lab" description="Turn an investigation hypothesis into reviewable queries, evidence, and detection content." />
 
       {/* Hunt Input */}
-      <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
+      <div className="oa-panel p-6">
         <label htmlFor="hunt-hypothesis" className="block text-sm font-medium text-surface-300 mb-2">Hunting Hypothesis</label>
         <div className="flex gap-3">
           <input
@@ -79,12 +79,12 @@ export function HuntLab() {
             onChange={e => setHypothesis(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && startHunt()}
             placeholder="e.g. Look for lateral movement from engineering workstation to PLC subnet"
-            className="flex-1 px-4 py-3 bg-surface-900 border border-surface-600 rounded-lg text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="flex-1 px-4 py-3 bg-surface-900 border border-surface-600 rounded-lg text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
           <button
             onClick={startHunt}
             disabled={hunting || !hypothesis.trim()}
-            className="flex items-center gap-2 px-6 py-3 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
+            className="flex items-center gap-2 px-6 py-3 bg-primary-500 hover:bg-primary-400 disabled:opacity-50 text-surface-950 rounded-lg font-medium transition-colors"
           >
             <Play className="w-4 h-4" />
             {hunting ? 'Hunting...' : 'Hunt'}
@@ -107,8 +107,8 @@ export function HuntLab() {
       {/* Active Result */}
       {activeResult && (
         <div className="space-y-4">
-          <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-3">Hunt Results</h2>
+          <div className="oa-panel p-6">
+            <h2 className="text-lg font-semibold text-surface-50 mb-3">Hunt Results</h2>
             {activeResult.explanation && (
               <p className="text-surface-300 text-sm mb-4">{activeResult.explanation}</p>
             )}
@@ -117,7 +117,7 @@ export function HuntLab() {
               <div key={i} className="mb-4 last:mb-0">
                 <div className="flex items-center gap-2 mb-2">
                   <FileCode className="w-4 h-4 text-primary-400" />
-                  <span className="text-sm font-medium text-white">{qr.query?.description}</span>
+                  <span className="text-sm font-medium text-surface-50">{qr.query?.description}</span>
                   <span className="text-xs text-surface-500">{qr.row_count} results</span>
                 </div>
                 <pre className="bg-surface-900 p-3 rounded-lg text-xs text-surface-400 overflow-x-auto mb-2">
@@ -145,18 +145,18 @@ export function HuntLab() {
                     </table>
                   </div>
                 )}
-                {qr.error && <p className="text-red-400 text-xs mt-1">{qr.error}</p>}
+                {qr.error && <p className="text-danger text-xs mt-1">{qr.error}</p>}
               </div>
             ))}
           </div>
 
           {activeResult.sigma_rule && (
-            <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
-              <h3 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
+            <div className="oa-panel p-6">
+              <h3 className="text-sm font-semibold text-surface-50 mb-2 flex items-center gap-2">
                 <FileCode className="w-4 h-4 text-primary-400" />
                 Generated Sigma Rule
               </h3>
-              <pre className="bg-surface-900 p-4 rounded-lg text-xs text-green-400 overflow-x-auto whitespace-pre-wrap">
+              <pre className="bg-surface-900 p-4 rounded-lg text-xs text-success overflow-x-auto whitespace-pre-wrap">
                 {activeResult.sigma_rule}
               </pre>
             </div>
@@ -167,8 +167,8 @@ export function HuntLab() {
       {/* Past Sessions */}
       {loading ? <LoadingSurface label="Loading hunt history" /> : error ? (
         <ErrorState title="Hunt history unavailable" description={error} action={<RetryButton onClick={fetchSessions} />} />
-      ) : <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">Hunt History</h2>
+      ) : <div className="oa-panel p-6">
+        <h2 className="text-lg font-semibold text-surface-50 mb-4">Hunt History</h2>
         {sessions.length === 0 ? (
           <EmptyState title="No hunts yet" description="Enter a hypothesis above to start the first investigation." />
         ) : (
@@ -177,13 +177,13 @@ export function HuntLab() {
               <div key={s.id} className="flex items-center gap-4 p-3 bg-surface-900/50 rounded-lg">
                 <Clock className="w-4 h-4 text-surface-500 shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white truncate">{s.hypothesis}</p>
+                  <p className="text-sm text-surface-50 truncate">{s.hypothesis}</p>
                   <p className="text-xs text-surface-500">
                     {s.queries_run} queries · {s.findings_count} findings · {new Date(s.created_at).toLocaleDateString()}
                   </p>
                 </div>
                 <span className={clsx('text-xs px-2 py-0.5 rounded',
-                  s.status === 'completed' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400')}>
+                  s.status === 'completed' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning')}>
                   {s.status}
                 </span>
               </div>

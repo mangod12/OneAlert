@@ -7,10 +7,10 @@ import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../comp
 import { PageHeader } from '../components/ui/PageHeader';
 
 const severityColors: Record<string, string> = {
-  critical: 'text-red-400',
-  high: 'text-orange-400',
-  medium: 'text-yellow-400',
-  low: 'text-blue-400',
+  critical: 'text-danger',
+  high: 'text-warning',
+  medium: 'text-warning',
+  low: 'text-info',
   info: 'text-surface-500',
 };
 
@@ -84,12 +84,12 @@ export function Events() {
               key={sev}
               onClick={() => setSeverityFilter(severityFilter === sev ? '' : sev)}
               className={clsx(
-                'bg-surface-800/50 border rounded-xl p-4 text-left transition-colors',
+                'oa-panel p-4 text-left transition-colors rounded-md',
                 severityFilter === sev ? 'border-primary-500' : 'border-surface-700 hover:border-surface-600',
               )}
             >
               <p className={clsx('text-xs uppercase', severityColors[sev])}>{sev}</p>
-              <p className="text-xl font-bold text-white mt-1">{stats.by_severity[sev] || 0}</p>
+              <p className="text-xl font-bold text-surface-50 mt-1">{stats.by_severity[sev] || 0}</p>
             </button>
           ))}
         </div>

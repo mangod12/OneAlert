@@ -67,36 +67,36 @@ export function OTDiscovery() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-4">
+        <div className="oa-panel rounded-md p-4">
           <Network className="w-5 h-5 text-primary-400 mb-2" />
-          <p className="text-2xl font-bold text-white">{summary?.managed_ot_assets ?? 0}</p>
+          <p className="text-2xl font-bold text-surface-50">{summary?.managed_ot_assets ?? 0}</p>
           <p className="text-xs text-surface-400">Managed OT Assets</p>
         </div>
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-4">
+        <div className="oa-panel rounded-md p-4">
           <Wifi className="w-5 h-5 text-info mb-2" />
-          <p className="text-2xl font-bold text-white">{summary?.discovered_ot_devices ?? 0}</p>
+          <p className="text-2xl font-bold text-surface-50">{summary?.discovered_ot_devices ?? 0}</p>
           <p className="text-xs text-surface-400">Discovered Devices</p>
         </div>
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-4">
+        <div className="oa-panel rounded-md p-4">
           <AlertTriangle className="w-5 h-5 text-danger mb-2" />
-          <p className="text-2xl font-bold text-white">{summary?.high_risk_devices ?? 0}</p>
+          <p className="text-2xl font-bold text-surface-50">{summary?.high_risk_devices ?? 0}</p>
           <p className="text-xs text-surface-400">High Risk</p>
         </div>
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-4">
+        <div className="oa-panel rounded-md p-4">
           <Link2 className="w-5 h-5 text-warning mb-2" />
-          <p className="text-2xl font-bold text-white">{summary?.uncorrelated_devices ?? 0}</p>
+          <p className="text-2xl font-bold text-surface-50">{summary?.uncorrelated_devices ?? 0}</p>
           <p className="text-xs text-surface-400">Uncorrelated</p>
         </div>
       </div>
 
       {/* Protocol Breakdown */}
       {protocols.length > 0 && (
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Protocols Detected</h3>
+        <div className="oa-panel rounded-md p-6">
+          <h3 className="text-lg font-semibold text-surface-50 mb-4">Protocols Detected</h3>
           <div className="flex flex-wrap gap-3">
             {protocols.map((p) => (
               <div key={p.protocol} className="px-3 py-2 bg-surface-700/50 border border-surface-600 rounded-lg">
-                <span className="text-sm font-medium text-white">{p.protocol}</span>
+                <span className="text-sm font-medium text-surface-50">{p.protocol}</span>
                 <span className="ml-2 text-xs text-surface-400">({p.count})</span>
               </div>
             ))}
@@ -107,7 +107,7 @@ export function OTDiscovery() {
       {/* Discovered Devices Table */}
       <div className="oa-panel overflow-hidden">
         <div className="px-6 py-4 border-b border-surface-700">
-          <h3 className="text-lg font-semibold text-white">Discovered Devices</h3>
+          <h3 className="text-lg font-semibold text-surface-50">Discovered Devices</h3>
         </div>
         {devices.length === 0 ? (
           <div className="p-8 text-center text-surface-500">

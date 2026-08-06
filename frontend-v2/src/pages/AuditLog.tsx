@@ -62,11 +62,11 @@ export function AuditLog() {
               placeholder="Search actions..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full pl-9 pr-4 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
 
-          <div className="bg-surface-800/50 border border-surface-700 rounded-xl overflow-hidden">
+          <div className="oa-panel overflow-hidden rounded-md">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-surface-700 text-surface-400">

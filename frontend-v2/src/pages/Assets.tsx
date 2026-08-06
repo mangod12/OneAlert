@@ -90,7 +90,7 @@ export function Assets() {
           placeholder="Search assets..."
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          className="w-full pl-9 pr-4 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          className="w-full pl-9 pr-4 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
         />
       </div>
 
@@ -108,11 +108,11 @@ export function Assets() {
           assets.map((asset) => (
             <div
               key={asset.id}
-              className="bg-surface-800/50 border border-surface-700 rounded-xl p-4 hover:border-surface-600 transition-colors"
+              className="oa-panel rounded-md p-4 hover:border-surface-600 transition-colors"
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-semibold text-white truncate">{asset.name}</h3>
+                  <h3 className="text-sm font-semibold text-surface-50 truncate">{asset.name}</h3>
                   <p className="text-xs text-surface-400 mt-1">{asset.vendor} {asset.product}</p>
                 </div>
                 <div className="flex gap-1 ml-2">
@@ -199,39 +199,39 @@ function AssetModal({ asset, onClose, onSave, saving }: { asset: Asset | null; o
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose}></div>
-      <div role="dialog" aria-modal="true" aria-labelledby="asset-dialog-title" className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]">
-        <h2 id="asset-dialog-title" className="text-lg font-semibold text-white mb-4">{asset ? 'Edit Asset' : 'Add Asset'}</h2>
+      <div className="absolute inset-0 bg-surface-950/75 backdrop-blur-sm" onClick={onClose}></div>
+      <div role="dialog" aria-modal="true" aria-labelledby="asset-dialog-title" className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg border border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]">
+        <h2 id="asset-dialog-title" className="text-lg font-semibold text-surface-50 mb-4">{asset ? 'Edit Asset' : 'Add Asset'}</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <input
             type="text" placeholder="Name" value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
             required
           />
           <div className="grid grid-cols-2 gap-3">
             <input
               type="text" placeholder="Vendor" value={form.vendor}
               onChange={(e) => setForm({ ...form, vendor: e.target.value })}
-              className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
               required
             />
             <input
               type="text" placeholder="Product" value={form.product}
               onChange={(e) => setForm({ ...form, product: e.target.value })}
-              className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
               required
             />
           </div>
           <input
             type="text" placeholder="Version" value={form.version || ''}
             onChange={(e) => setForm({ ...form, version: e.target.value })}
-            className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
           <select
             value={form.asset_type}
             onChange={(e) => setForm({ ...form, asset_type: e.target.value })}
-            className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
             <option value="hardware">Hardware</option>
             <option value="software">Software</option>
@@ -246,7 +246,7 @@ function AssetModal({ asset, onClose, onSave, saving }: { asset: Asset | null; o
           <select
             value={form.criticality || 'medium'}
             onChange={(e) => setForm({ ...form, criticality: e.target.value })}
-            className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
             <option value="low">Low Criticality</option>
             <option value="medium">Medium Criticality</option>
@@ -264,7 +264,7 @@ function AssetModal({ asset, onClose, onSave, saving }: { asset: Asset | null; o
             <button type="button" onClick={onClose} className="flex-1 py-2 bg-surface-700 hover:bg-surface-600 text-surface-300 rounded-lg text-sm transition-colors">
               Cancel
             </button>
-            <button type="submit" disabled={saving} className="flex-1 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors">
+            <button type="submit" disabled={saving} className="flex-1 py-2 bg-primary-500 hover:bg-primary-400 disabled:opacity-50 text-surface-950 rounded-lg text-sm font-medium transition-colors">
               {saving ? 'Saving…' : asset ? 'Update' : 'Create'}
             </button>
           </div>
