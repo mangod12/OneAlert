@@ -17,9 +17,6 @@ from backend.routers.auth import get_current_user
 
 router = APIRouter()
 
-VALID_PLANS = {"free", "starter", "pro", "enterprise"}
-
-
 @router.post("/", response_model=OrgResponse, status_code=status.HTTP_201_CREATED)
 async def create_organization(
     org_data: OrgCreate,
@@ -27,13 +24,6 @@ async def create_organization(
     db: AsyncSession = Depends(get_async_db),
 ):
     """Create a new organization and assign the creator as admin."""
-    # Validate plan
-    if org_data.plan not in VALID_PLANS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid plan. Must be one of: {', '.join(sorted(VALID_PLANS))}",
-        )
-
     # Check if user already belongs to an organization
     if current_user.org_id is not None:
         raise HTTPException(
@@ -55,7 +45,7 @@ async def create_organization(
     org = Organization(
         name=org_data.name,
         slug=org_data.slug,
-        plan=org_data.plan,
+        plan="free",
     )
     db.add(org)
     await db.flush()  # Get org.id before assigning to user
@@ -125,12 +115,6 @@ async def update_my_organization(
 
     # Apply updates
     update_data = org_update.model_dump(exclude_unset=True)
-    if "plan" in update_data and update_data["plan"] not in VALID_PLANS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid plan. Must be one of: {', '.join(sorted(VALID_PLANS))}",
-        )
-
     for field, value in update_data.items():
         setattr(org, field, value)
 

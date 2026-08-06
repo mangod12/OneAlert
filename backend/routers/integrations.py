@@ -2,7 +2,6 @@
 Integrations router for managing SIEM/SOAR integration configurations.
 Provides CRUD endpoints for integration configs plus connection testing.
 """
-from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -20,6 +19,7 @@ from backend.services.integrations.splunk import SplunkIntegration
 from backend.services.integrations.sentinel import SentinelIntegration
 from backend.services.integrations.servicenow import ServiceNowIntegration
 from backend.services.integrations.pagerduty import PagerDutyIntegration
+from backend.services.integrations.base import validate_outbound_url
 
 router = APIRouter()
 
@@ -36,6 +36,30 @@ INTEGRATION_CLASSES = {
     "servicenow": ServiceNowIntegration,
     "pagerduty": PagerDutyIntegration,
 }
+
+INTEGRATION_URL_FIELDS = {
+    "splunk": "hec_url",
+    "servicenow": "instance_url",
+}
+
+
+async def validate_integration_config(integration_type: str, config: dict) -> None:
+    """Validate any user-controlled outbound endpoint before persistence."""
+    url_field = INTEGRATION_URL_FIELDS.get(integration_type)
+    if url_field and config.get(url_field):
+        await validate_outbound_url(config[url_field])
+
+
+async def _require_safe_integration_config(
+    integration_type: str, config: dict
+) -> None:
+    try:
+        await validate_integration_config(integration_type, config)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Integration endpoint must be a public HTTPS URL",
+        ) from exc
 
 
 @router.get("/types")
@@ -78,6 +102,8 @@ async def create_integration(
             detail=f"Invalid integration type. Must be one of: {valid_types}",
         )
 
+    await _require_safe_integration_config(payload.integration_type, payload.config)
+
     config = IntegrationConfig(
         user_id=current_user.id,
         integration_type=payload.integration_type,
@@ -113,6 +139,10 @@ async def update_integration(
         raise HTTPException(status_code=404, detail="Integration not found")
 
     update_data = payload.model_dump(exclude_unset=True)
+    if "config" in update_data:
+        await _require_safe_integration_config(
+            config.integration_type, update_data["config"]
+        )
     for key, value in update_data.items():
         setattr(config, key, value)
 

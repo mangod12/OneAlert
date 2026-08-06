@@ -1,14 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import apiClient from '../api/client';
 import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target } from 'lucide-react';
 import clsx from 'clsx';
+import { getApiErrorMessage } from '../api/errors';
+import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 
 const severityColors: Record<string, string> = {
-  critical: 'bg-red-500/20 text-red-400 border-red-500/30',
-  high: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  medium: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  low: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  critical: 'bg-danger/10 text-danger border-danger/30',
+  high: 'bg-warning/10 text-warning border-warning/30',
+  medium: 'bg-warning/10 text-warning border-warning/30',
+  low: 'bg-info/10 text-info border-info/30',
   info: 'bg-surface-500/20 text-surface-400 border-surface-500/30',
 };
 
@@ -45,50 +47,55 @@ interface CaseData {
   event_count: number;
   timeline: TimelineEntry[];
 }
+interface RelatedAlert { id: number; severity: string; cve_id?: string | null; title: string; }
+interface RelatedEvent { id: number; severity: string; event_type: string; source_ip?: string | null; dest_ip?: string | null; signature?: string | null; }
 
 export function CaseDetail() {
   const { caseId } = useParams<{ caseId: string }>();
   const [caseData, setCaseData] = useState<CaseData | null>(null);
-  const [alerts, setAlerts] = useState<any[]>([]);
-  const [events, setEvents] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<RelatedAlert[]>([]);
+  const [events, setEvents] = useState<RelatedEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [degraded, setDegraded] = useState<string[]>([]);
 
-  useEffect(() => {
-    const fetchAll = async () => {
-      try {
-        const [caseRes, alertsRes, eventsRes] = await Promise.all([
-          apiClient.get(`/cases/${caseId}`),
-          apiClient.get(`/cases/${caseId}/alerts`),
-          apiClient.get(`/cases/${caseId}/events`),
-        ]);
-        setCaseData(caseRes.data);
-        setAlerts(alertsRes.data);
-        setEvents(eventsRes.data);
-      } catch (err) {
-        console.error('Failed to load case', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchAll();
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    const [caseResult, alertsResult, eventsResult] = await Promise.allSettled([
+      apiClient.get(`/cases/${caseId}`), apiClient.get(`/cases/${caseId}/alerts`), apiClient.get(`/cases/${caseId}/events`),
+    ]);
+    if (caseResult.status === 'rejected') {
+      setError(getApiErrorMessage(caseResult.reason, 'This case could not be loaded.'));
+      setCaseData(null);
+    } else {
+      setCaseData(caseResult.value.data);
+      setError('');
+    }
+    const partial: string[] = [];
+    if (alertsResult.status === 'fulfilled') setAlerts(alertsResult.value.data);
+    else { setAlerts([]); partial.push('Linked alerts unavailable'); }
+    if (eventsResult.status === 'fulfilled') setEvents(eventsResult.value.data);
+    else { setEvents([]); partial.push('Linked events unavailable'); }
+    setDegraded(partial);
+    setLoading(false);
   }, [caseId]);
 
+  useEffect(() => { void fetchAll(); }, [fetchAll]);
+
   if (loading) {
-    return <div className="animate-pulse space-y-4">
-      <div className="h-8 bg-surface-800 rounded w-1/3" />
-      <div className="h-40 bg-surface-800 rounded" />
-    </div>;
+    return <LoadingSurface rows={6} label="Loading case investigation" />;
   }
 
   if (!caseData) {
-    return <div className="text-center py-20 text-surface-400">Case not found</div>;
+    return <ErrorState title="Case unavailable" description={error || 'The case may have been removed or you may not have access.'} action={<RetryButton onClick={fetchAll} />} />;
   }
 
   return (
     <div className="space-y-6">
+      {degraded.length > 0 && <DegradedBanner messages={degraded} onRetry={fetchAll} />}
       {/* Header */}
       <div>
-        <Link to="/cases" className="flex items-center gap-2 text-surface-400 hover:text-white text-sm mb-4 transition-colors">
+        <Link to="/cases" className="flex items-center gap-2 text-surface-400 hover:text-surface-50 text-sm mb-4 transition-colors">
           <ArrowLeft className="w-4 h-4" /> Back to Cases
         </Link>
         <div className="flex items-start justify-between">
@@ -106,7 +113,7 @@ export function CaseDetail() {
                 </span>
               )}
             </div>
-            <h1 className="text-2xl font-bold text-white">{caseData.title}</h1>
+            <h1 className="text-2xl font-bold text-surface-50">{caseData.title}</h1>
             {caseData.summary && <p className="text-surface-400 mt-2">{caseData.summary}</p>}
           </div>
         </div>
@@ -114,19 +121,19 @@ export function CaseDetail() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-4">
+        <div className="oa-panel p-4">
           <p className="text-xs text-surface-500 uppercase">Alerts</p>
-          <p className="text-2xl font-bold text-white mt-1">{caseData.alert_count}</p>
+          <p className="text-2xl font-bold text-surface-50 mt-1">{caseData.alert_count}</p>
         </div>
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-4">
+        <div className="oa-panel p-4">
           <p className="text-xs text-surface-500 uppercase">Events</p>
-          <p className="text-2xl font-bold text-white mt-1">{caseData.event_count}</p>
+          <p className="text-2xl font-bold text-surface-50 mt-1">{caseData.event_count}</p>
         </div>
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-4">
+        <div className="oa-panel p-4">
           <p className="text-xs text-surface-500 uppercase">MITRE Tactics</p>
-          <p className="text-2xl font-bold text-white mt-1">{caseData.mitre_tactics?.length || 0}</p>
+          <p className="text-2xl font-bold text-surface-50 mt-1">{caseData.mitre_tactics?.length || 0}</p>
         </div>
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-4">
+        <div className="oa-panel p-4">
           <p className="text-xs text-surface-500 uppercase">Created By</p>
           <p className="text-lg font-medium text-primary-400 mt-1 capitalize">{caseData.created_by}</p>
         </div>
@@ -134,8 +141,8 @@ export function CaseDetail() {
 
       {/* Attack Narrative */}
       {caseData.attack_narrative && (
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-white mb-3">
+        <div className="oa-panel p-6">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-surface-50 mb-3">
             <Brain className="w-5 h-5 text-primary-400" /> AI Analysis
           </h2>
           <p className="text-surface-300 leading-relaxed whitespace-pre-wrap">{caseData.attack_narrative}</p>
@@ -144,8 +151,8 @@ export function CaseDetail() {
 
       {/* MITRE Techniques */}
       {caseData.mitre_techniques && caseData.mitre_techniques.length > 0 && (
-        <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-white mb-3">
+        <div className="oa-panel p-6">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-surface-50 mb-3">
             <Target className="w-5 h-5 text-primary-400" /> MITRE ATT&CK Techniques
           </h2>
           <div className="flex flex-wrap gap-2">
@@ -163,8 +170,8 @@ export function CaseDetail() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Timeline */}
         <div className="lg:col-span-2">
-          <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Investigation Timeline</h2>
+          <div className="oa-panel p-6">
+            <h2 className="text-lg font-semibold text-surface-50 mb-4">Investigation Timeline</h2>
             {caseData.timeline.length === 0 ? (
               <p className="text-surface-500">No timeline entries yet.</p>
             ) : (
@@ -197,13 +204,13 @@ export function CaseDetail() {
 
         {/* Related Alerts & Events */}
         <div className="space-y-6">
-          <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-3">Related Alerts</h2>
+          <div className="oa-panel p-6">
+            <h2 className="text-lg font-semibold text-surface-50 mb-3">Related Alerts</h2>
             {alerts.length === 0 ? (
               <p className="text-surface-500 text-sm">No linked alerts.</p>
             ) : (
               <div className="space-y-2">
-                {alerts.map((a: any) => (
+                {alerts.map(a => (
                   <div key={a.id} className="p-3 bg-surface-900/50 rounded-lg">
                     <div className="flex items-center gap-2 mb-1">
                       <span className={clsx('px-1.5 py-0.5 text-xs rounded', severityColors[a.severity])}>{a.severity}</span>
@@ -216,13 +223,13 @@ export function CaseDetail() {
             )}
           </div>
 
-          <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-3">Related Events</h2>
+          <div className="oa-panel p-6">
+            <h2 className="text-lg font-semibold text-surface-50 mb-3">Related Events</h2>
             {events.length === 0 ? (
               <p className="text-surface-500 text-sm">No linked events.</p>
             ) : (
               <div className="space-y-2 max-h-80 overflow-y-auto">
-                {events.map((e: any) => (
+                {events.map(e => (
                   <div key={e.id} className="p-3 bg-surface-900/50 rounded-lg">
                     <div className="flex items-center gap-2 mb-1">
                       <span className={clsx('px-1.5 py-0.5 text-xs rounded', severityColors[e.severity])}>{e.severity}</span>

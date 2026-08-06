@@ -3,9 +3,10 @@ import clsx from 'clsx';
 
 interface KPICardProps {
   title: string;
-  value: number;
+  value: number | string;
   icon: LucideIcon;
   color: 'info' | 'danger' | 'success' | 'warning';
+  detail?: string;
 }
 
 const colorMap = {
@@ -15,16 +16,17 @@ const colorMap = {
   warning: 'text-warning bg-warning/10 border-warning/20',
 };
 
-export function KPICard({ title, value, icon: Icon, color }: KPICardProps) {
+export function KPICard({ title, value, icon: Icon, color, detail }: KPICardProps) {
   return (
-    <div className="bg-surface-800/50 border border-surface-700 rounded-xl p-5">
+    <div className="oa-panel p-4 sm:p-5">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-surface-400">{title}</p>
-          <p className="text-3xl font-bold text-white mt-1">{value}</p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-surface-50 sm:text-3xl">{value}</p>
+          {detail && <p className="mt-1 text-[11px] text-surface-500">{detail}</p>}
         </div>
-        <div className={clsx('p-3 rounded-lg border', colorMap[color])}>
-          <Icon className="w-6 h-6" />
+        <div className={clsx('rounded-md border p-2.5', colorMap[color])}>
+          <Icon className="h-5 w-5" aria-hidden="true" />
         </div>
       </div>
     </div>

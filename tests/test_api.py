@@ -109,6 +109,86 @@ class TestAuthenticationAPI:
         assert data["full_name"] == test_user_data["full_name"]
         assert "id" in data
         assert "hashed_password" not in data  # Should not expose password
+
+    def test_register_rejects_short_password(self, client, test_user_data):
+        """Registration enforces the compatible eight-character minimum."""
+        test_user_data["password"] = "short"
+
+        response = client.post("/api/v1/auth/register", json=test_user_data)
+
+        assert response.status_code == 422
+
+    @pytest.mark.parametrize("password", [
+        "A" * 73,
+        "🙂" * 19,
+    ])
+    def test_register_rejects_password_over_72_utf8_bytes(
+        self, client, test_user_data, password
+    ):
+        """bcrypt's byte limit is rejected instead of silently truncating."""
+        test_user_data["password"] = password
+
+        response = client.post("/api/v1/auth/register", json=test_user_data)
+
+        assert response.status_code == 422
+
+    def test_user_response_does_not_expose_webhook_secrets(self, client, test_user_data):
+        """Profile DTOs do not serialize notification credentials."""
+        test_user_data.update({
+            "slack_webhook_url": "https://hooks.slack.com/services/secret",
+            "webhook_url": "https://example.com/hook?token=secret",
+        })
+
+        response = client.post("/api/v1/auth/register", json=test_user_data)
+
+        assert response.status_code == 201
+        assert "slack_webhook_url" not in response.json()
+        assert "webhook_url" not in response.json()
+
+    def test_integration_update_requires_json_and_hides_secrets(self, client, test_user_data):
+        """Webhook credentials are accepted only in a validated JSON body."""
+        client.post("/api/v1/auth/register", json=test_user_data)
+        login_response = client.post("/api/v1/auth/login", data={
+            "username": test_user_data["email"],
+            "password": test_user_data["password"],
+        })
+        headers = {
+            "Authorization": f"Bearer {login_response.json()['access_token']}"
+        }
+
+        query_response = client.patch(
+            "/api/v1/auth/me/integrations",
+            params={"webhook_url": "https://example.com/hook?token=secret"},
+            headers=headers,
+        )
+        json_response = client.patch(
+            "/api/v1/auth/me/integrations",
+            json={"webhook_url": "https://example.com/hook?token=secret"},
+            headers=headers,
+        )
+
+        assert query_response.status_code == 422
+        assert json_response.status_code == 200
+        assert "webhook_url" not in json_response.json()
+
+    def test_integration_update_rejects_non_https_url(self, client, test_user_data):
+        """Notification credentials cannot be sent over plaintext HTTP."""
+        client.post("/api/v1/auth/register", json=test_user_data)
+        login_response = client.post("/api/v1/auth/login", data={
+            "username": test_user_data["email"],
+            "password": test_user_data["password"],
+        })
+        headers = {
+            "Authorization": f"Bearer {login_response.json()['access_token']}"
+        }
+
+        response = client.patch(
+            "/api/v1/auth/me/integrations",
+            json={"webhook_url": "http://example.com/hook"},
+            headers=headers,
+        )
+
+        assert response.status_code == 422
     
     def test_register_duplicate_email(self, client, test_user_data):
         """Test registration with duplicate email."""
@@ -139,6 +219,41 @@ class TestAuthenticationAPI:
         data = response.json()
         assert "access_token" in data
         assert data["token_type"] == "bearer"
+
+        cookie = response.headers["set-cookie"]
+        assert "access_token=" in cookie
+        assert "HttpOnly" in cookie
+        assert "SameSite=lax" in cookie
+
+    def test_login_cookie_authenticates_without_bearer_header(self, client, test_user_data):
+        """Browser sessions can bootstrap authentication from the HttpOnly cookie."""
+        client.post("/api/v1/auth/register", json=test_user_data)
+        login_response = client.post("/api/v1/auth/login", data={
+            "username": test_user_data["email"],
+            "password": test_user_data["password"],
+        })
+        assert login_response.status_code == 200
+
+        response = client.get("/api/v1/auth/me")
+
+        assert response.status_code == 200
+        assert response.json()["email"] == test_user_data["email"]
+
+    def test_logout_clears_cookie_session(self, client, test_user_data):
+        """Logout expires the session cookie and makes cookie-only auth fail."""
+        client.post("/api/v1/auth/register", json=test_user_data)
+        client.post("/api/v1/auth/login", data={
+            "username": test_user_data["email"],
+            "password": test_user_data["password"],
+        })
+
+        logout_response = client.post("/api/v1/auth/logout")
+        me_response = client.get("/api/v1/auth/me")
+
+        assert logout_response.status_code == 200
+        assert "access_token=" in logout_response.headers["set-cookie"]
+        assert "Max-Age=0" in logout_response.headers["set-cookie"]
+        assert me_response.status_code == 401
     
     def test_login_invalid_credentials(self, client, test_user_data):
         """Test login with invalid credentials."""
@@ -172,6 +287,25 @@ class TestAuthenticationAPI:
         data = response.json()
         assert data["email"] == test_user_data["email"]
         assert data["full_name"] == test_user_data["full_name"]
+
+    def test_inactive_user_token_is_rejected(self, client, test_user_data):
+        """Deactivation invalidates existing access tokens at the auth boundary."""
+        client.post("/api/v1/auth/register", json=test_user_data)
+        login_response = client.post("/api/v1/auth/login", data={
+            "username": test_user_data["email"],
+            "password": test_user_data["password"],
+        })
+        headers = {
+            "Authorization": f"Bearer {login_response.json()['access_token']}"
+        }
+        with TestingSessionLocal() as db:
+            user = db.query(User).filter(User.email == test_user_data["email"]).one()
+            user.is_active = False
+            db.commit()
+
+        response = client.get("/api/v1/auth/me", headers=headers)
+
+        assert response.status_code == 403
     
     def test_unauthorized_access(self, client):
         """Test accessing protected endpoint without token."""

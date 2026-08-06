@@ -1,82 +1,80 @@
 import { create } from 'zustand';
-import apiClient from '../api/client';
+import apiClient, { SESSION_EXPIRED_EVENT } from '../api/client';
+import { getApiErrorMessage } from '../api/errors';
 import type { User } from '../api/types';
 
 interface AuthState {
   user: User | null;
-  token: string | null;
   isAuthenticated: boolean;
+  hasCheckedSession: boolean;
   isLoading: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, fullName: string, company?: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
   clearError: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+const anonymousState = {
   user: null,
-  token: localStorage.getItem('access_token'),
-  isAuthenticated: !!localStorage.getItem('access_token'),
+  isAuthenticated: false,
+  hasCheckedSession: true,
   isLoading: false,
+};
+
+export const useAuthStore = create<AuthState>((set) => ({
+  ...anonymousState,
+  hasCheckedSession: false,
   error: null,
 
-  login: async (email: string, password: string) => {
+  login: async (email, password) => {
     set({ isLoading: true, error: null });
     try {
-      const formData = new URLSearchParams();
-      formData.append('username', email);
-      formData.append('password', password);
-
-      const response = await apiClient.post('/auth/login', formData, {
+      const formData = new URLSearchParams({ username: email, password });
+      await apiClient.post('/auth/login', formData, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
-
-      const { access_token } = response.data;
-      localStorage.setItem('access_token', access_token);
-      set({ token: access_token, isAuthenticated: true, isLoading: false });
-
-      const userResponse = await apiClient.get('/auth/me');
-      set({ user: userResponse.data });
-    } catch (error: any) {
-      const message = error.response?.data?.detail || 'Login failed';
-      set({ error: message, isLoading: false });
+      const userResponse = await apiClient.get<User>('/auth/me');
+      set({ user: userResponse.data, isAuthenticated: true, hasCheckedSession: true, isLoading: false });
+    } catch (error: unknown) {
+      set({ ...anonymousState, error: getApiErrorMessage(error, 'Sign-in failed. Check your credentials and try again.') });
       throw error;
     }
   },
 
-  register: async (email: string, password: string, fullName: string, company?: string) => {
+  register: async (email, password, fullName, company) => {
     set({ isLoading: true, error: null });
     try {
-      await apiClient.post('/auth/register', {
-        email,
-        password,
-        full_name: fullName,
-        company: company || null,
-      });
+      await apiClient.post('/auth/register', { email, password, full_name: fullName, company: company || null });
       set({ isLoading: false });
-    } catch (error: any) {
-      const message = error.response?.data?.detail || 'Registration failed';
-      set({ error: message, isLoading: false });
+    } catch (error: unknown) {
+      set({ error: getApiErrorMessage(error, 'Registration failed. Review your details and try again.'), isLoading: false });
       throw error;
     }
   },
 
-  logout: () => {
-    localStorage.removeItem('access_token');
-    set({ user: null, token: null, isAuthenticated: false });
+  logout: async () => {
+    set({ ...anonymousState, error: null });
+    try {
+      await apiClient.post('/auth/logout');
+    } catch {
+      // Keep local session cleared if the service is unavailable.
+    }
   },
 
   fetchUser: async () => {
     try {
-      const response = await apiClient.get('/auth/me');
-      set({ user: response.data, isAuthenticated: true });
+      const response = await apiClient.get<User>('/auth/me');
+      set({ user: response.data, isAuthenticated: true, hasCheckedSession: true, error: null });
     } catch {
-      localStorage.removeItem('access_token');
-      set({ user: null, token: null, isAuthenticated: false });
+      set({ ...anonymousState });
     }
   },
 
   clearError: () => set({ error: null }),
 }));
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(SESSION_EXPIRED_EVENT, () => useAuthStore.setState({ ...anonymousState }));
+}

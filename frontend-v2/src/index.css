@@ -1,38 +1,94 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary-50: #ecfeff;
-  --color-primary-100: #cffafe;
-  --color-primary-200: #a5f3fc;
-  --color-primary-300: #67e8f9;
-  --color-primary-400: #22d3ee;
-  --color-primary-500: #06b6d4;
-  --color-primary-600: #0891b2;
-  --color-primary-700: #0e7490;
-  --color-primary-800: #155e75;
-  --color-primary-900: #164e63;
-  --color-surface-50: #fafafa;
-  --color-surface-100: #f4f4f5;
-  --color-surface-200: #e4e4e7;
-  --color-surface-300: #d4d4d8;
-  --color-surface-400: #a1a1aa;
-  --color-surface-500: #71717a;
-  --color-surface-600: #52525b;
-  --color-surface-700: #3f3f46;
-  --color-surface-800: #27272a;
-  --color-surface-900: #18181b;
-  --color-surface-950: #09090b;
-  --color-danger: #f43f5e;
-  --color-warning: #f59e0b;
-  --color-success: #10b981;
-  --color-info: #38bdf8;
+  --color-primary-50: oklch(97.8% 0.018 205);
+  --color-primary-100: oklch(94.5% 0.045 205);
+  --color-primary-200: oklch(89.5% 0.08 205);
+  --color-primary-300: oklch(83.2% 0.112 205);
+  --color-primary-400: oklch(76.5% 0.13 205);
+  --color-primary-500: oklch(68.5% 0.126 210);
+  --color-primary-600: oklch(58.5% 0.109 214);
+  --color-primary-700: oklch(49% 0.088 216);
+  --color-primary-800: oklch(39% 0.067 218);
+  --color-primary-900: oklch(30% 0.05 220);
+  --color-surface-50: oklch(97% 0.006 235);
+  --color-surface-100: oklch(93.5% 0.007 235);
+  --color-surface-200: oklch(86.5% 0.009 235);
+  --color-surface-300: oklch(77% 0.011 235);
+  --color-surface-400: oklch(67% 0.014 235);
+  --color-surface-500: oklch(57% 0.016 235);
+  --color-surface-600: oklch(45% 0.018 235);
+  --color-surface-700: oklch(34% 0.021 235);
+  --color-surface-800: oklch(24% 0.022 235);
+  --color-surface-850: oklch(20% 0.021 235);
+  --color-surface-900: oklch(17% 0.02 235);
+  --color-surface-950: oklch(12.5% 0.018 235);
+  --color-danger: oklch(65% 0.205 22);
+  --color-warning: oklch(78% 0.165 77);
+  --color-success: oklch(72% 0.145 160);
+  --color-info: oklch(74% 0.13 225);
+  --color-white: oklch(97% 0.006 235);
+  --color-black: oklch(12.5% 0.018 235);
 }
+
+:root {
+  color-scheme: dark;
+  --oa-command-height: 3.5rem;
+  --oa-sidebar-width: 15.5rem;
+  --oa-radius-sm: 0.25rem;
+  --oa-radius-md: 0.5rem;
+  --oa-radius-lg: 0.75rem;
+  --oa-shadow-float: 0 18px 50px oklch(5% 0.02 235 / 0.5);
+}
+
+* { box-sizing: border-box; }
+
+html { background: var(--color-surface-950); }
 
 body {
   @apply bg-surface-950 text-surface-100 antialiased;
   margin: 0;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  min-width: 320px;
+  background-image:
+    linear-gradient(oklch(70% 0.06 215 / 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(70% 0.06 215 / 0.025) 1px, transparent 1px);
+  background-size: 32px 32px;
 }
+
+::selection { background: oklch(68.5% 0.126 210 / 0.3); }
+
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+button:not(:disabled), [role="button"]:not([aria-disabled="true"]) { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+
+table { border-collapse: collapse; }
+thead { background: oklch(17% 0.02 235 / 0.88); }
+th { font-size: 0.6875rem; letter-spacing: 0.055em; text-transform: uppercase; }
+tbody tr { transition: background-color 150ms ease, border-color 150ms ease; }
+
+code, pre, kbd, .font-mono { font-variant-ligatures: none; }
+
+.oa-panel {
+  border: 1px solid var(--color-surface-700);
+  border-radius: var(--oa-radius-md);
+  background: oklch(17% 0.02 235 / 0.86);
+  box-shadow: inset 0 1px oklch(90% 0.02 220 / 0.025);
+}
+
+.oa-panel-muted {
+  border: 1px solid oklch(34% 0.021 235 / 0.75);
+  border-radius: var(--oa-radius-md);
+  background: oklch(12.5% 0.018 235 / 0.52);
+}
+
+.oa-skeleton {
+  background: linear-gradient(90deg, var(--color-surface-800), var(--color-surface-700), var(--color-surface-800));
+  background-size: 200% 100%;
+  animation: oa-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes oa-shimmer { to { background-position-x: -200%; } }
 
 @keyframes slide-in-from-right {
   from { transform: translateX(100%); opacity: 0; }
@@ -51,4 +107,13 @@ body {
 *:focus-visible {
   outline: 2px solid var(--color-primary-500);
   outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -14,7 +14,7 @@ Typical workflow:
 """
 
 from typing import List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import logging
@@ -22,7 +22,7 @@ from datetime import datetime
 
 from backend.database.db import get_async_db
 from backend.models.user import User
-from backend.models.discovered_device import DiscoveredDevice, DiscoveryMethod
+from backend.models.discovered_device import DiscoveredDevice
 from backend.routers.auth import get_active_user
 
 logger = logging.getLogger(__name__)
@@ -158,11 +158,11 @@ async def ingest_sensor_batch(
         
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Sensor ingestion error: {e}")
+    except Exception:
+        logger.exception("Sensor ingestion failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Ingestion error: {str(e)}"
+            detail="Unable to ingest sensor batch"
         )
 
 
@@ -186,11 +186,11 @@ async def ingest_single_device(
             "action": result.get("status")
         }
         
-    except Exception as e:
-        logger.error(f"Single device ingestion error: {e}")
+    except Exception:
+        logger.exception("Single device ingestion failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Unable to ingest device"
         )
 
 
@@ -347,7 +347,7 @@ async def _calculate_risk_score(device_data: Dict[str, Any]) -> float:
             version_parts = firmware.split(".")
             if int(version_parts[0]) < 2:
                 score += 20
-        except:
+        except (ValueError, IndexError):
             pass
     
     # Factor 4: Missing critical protocol (if OT but no security/encr)

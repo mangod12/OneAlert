@@ -6,15 +6,15 @@ Handles user authentication, password hashing, and JWT token creation/validation
 from datetime import timedelta
 import secrets
 import time
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional, List
 
 from backend.database.db import get_async_db
-from pydantic import BaseModel
-from backend.models.user import User, UserCreate, UserResponse, Token, GitHubUserCreate
+from pydantic import BaseModel, ConfigDict, HttpUrl, field_validator
+from backend.models.user import User, UserCreate, UserResponse, Token
 from backend.models.audit_log import AuditLog
 from backend.services.auth_service import (
     create_access_token,
@@ -76,6 +76,12 @@ async def get_current_user(
     
     if user is None:
         raise credentials_exception
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Inactive user",
+        )
     
     return user
 
@@ -127,6 +133,7 @@ async def register_user(
 @limiter.limit("5/minute")
 async def login_user(
     request: Request,
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -171,7 +178,30 @@ async def login_user(
         data={"sub": user.email}, expires_delta=access_token_expires
     )
 
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=settings.environment == "production",
+        samesite="lax",
+        max_age=settings.access_token_expire_minutes * 60,
+        path="/",
+    )
+
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.post("/logout")
+async def logout_user(response: Response):
+    """Expire the browser session cookie; safe to call even when logged out."""
+    response.delete_cookie(
+        key="access_token",
+        path="/",
+        secure=settings.environment == "production",
+        httponly=True,
+        samesite="lax",
+    )
+    return {"success": True}
 
 
 @router.get("/me", response_model=UserResponse)
@@ -246,18 +276,30 @@ async def github_callback(code: str, state: Optional[str] = None):
         )
 
 
+class WebhookIntegrationsUpdate(BaseModel):
+    """Write-only notification endpoints; credentials are never serialized back."""
+
+    slack_webhook_url: Optional[HttpUrl] = None
+    webhook_url: Optional[HttpUrl] = None
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("slack_webhook_url", "webhook_url")
+    @classmethod
+    def require_https(cls, value: Optional[HttpUrl]) -> Optional[HttpUrl]:
+        if value is not None and value.scheme != "https":
+            raise ValueError("Webhook URLs must use HTTPS")
+        return value
+
+
 @router.patch("/me/integrations", response_model=UserResponse)
 async def update_my_integrations(
-    slack_webhook_url: Optional[str] = None,
-    webhook_url: Optional[str] = None,
+    payload: WebhookIntegrationsUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
     """Update Slack/Webhook integration URLs for the current user."""
-    if slack_webhook_url is not None:
-        current_user.slack_webhook_url = slack_webhook_url
-    if webhook_url is not None:
-        current_user.webhook_url = webhook_url
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(current_user, field, str(value) if value is not None else None)
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)

@@ -1,6 +1,7 @@
 import type { Alert } from '../api/types';
 import { X, ExternalLink } from 'lucide-react';
 import clsx from 'clsx';
+import { useEffect, useRef } from 'react';
 
 interface Props {
   alert: Alert;
@@ -16,14 +17,23 @@ const severityColors: Record<string, string> = {
 };
 
 export function AlertDetail({ alert, onClose, onAcknowledge }: Props) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeButtonRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKeyDown);
+    return () => { document.removeEventListener('keydown', onKeyDown); previous?.focus(); };
+  }, [onClose]);
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-black/50" onClick={onClose}></div>
-      <div className="relative w-full max-w-lg bg-surface-900 border-l border-surface-700 h-full overflow-y-auto p-6">
+      <div role="dialog" aria-modal="true" aria-labelledby="alert-detail-title" className="relative h-full w-full max-w-lg overflow-y-auto border-l border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-white">{alert.cve_id}</h2>
-          <button onClick={onClose} className="text-surface-400 hover:text-white">
-            <X className="w-5 h-5" />
+          <h2 id="alert-detail-title" className="text-lg font-semibold text-white">{alert.cve_id}</h2>
+          <button ref={closeButtonRef} onClick={onClose} aria-label="Close alert details" className="grid h-9 w-9 place-items-center rounded-md text-surface-400 hover:bg-surface-800 hover:text-white">
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 

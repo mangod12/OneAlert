@@ -3,19 +3,12 @@ import { test, expect, type Page } from '@playwright/test';
 const BASE_URL = 'http://127.0.0.1:8765';
 
 async function loginAsAdmin(page: Page) {
-  await page.goto(`${BASE_URL}/app/login`);
-  await page.waitForLoadState('networkidle', { timeout: 15000 });
-  await page.getByPlaceholder('you@company.com').fill('admin@example.com');
-  await page.getByPlaceholder('Enter your password').fill('password123');
-  await page.getByRole('button', { name: 'Sign In' }).click();
-  // Wait for redirect — login field disappears OR URL changes
-  await page.waitForFunction(() => !document.querySelector('input[placeholder="you@company.com"]'), { timeout: 15000 })
-    .catch(() => page.waitForTimeout(3000));
-  // Extra settle time for SPA routing
-  await page.waitForTimeout(1000);
+  await page.goto(`${BASE_URL}/app/`);
+  await expect(page).toHaveURL(/\/app\/?$/, { timeout: 15000 });
 }
 
 test.describe('Auth Flow', () => {
+  test.beforeEach(async ({ context }) => { await context.clearCookies(); });
   test('login page has all elements', async ({ page }) => {
     await page.goto(`${BASE_URL}/app/login`);
     await page.waitForLoadState('networkidle', { timeout: 15000 });
@@ -38,7 +31,11 @@ test.describe('Auth Flow', () => {
   });
 
   test('login succeeds and redirects', async ({ page }) => {
-    await loginAsAdmin(page);
+    await page.goto(`${BASE_URL}/app/login`);
+    await page.getByLabel('Email').fill('admin@example.com');
+    await page.getByLabel('Password').fill('password123');
+    await page.getByRole('button', { name: 'Sign In' }).click();
+    await expect(page).toHaveURL(/\/app\/?$/, { timeout: 15000 });
     await expect(page.getByPlaceholder('you@company.com')).not.toBeVisible();
   });
 });
@@ -47,8 +44,8 @@ test.describe('Sidebar', () => {
   test.beforeEach(async ({ page }) => { await loginAsAdmin(page); });
 
   test('all nav items visible', async ({ page }) => {
-    for (const item of ['Dashboard', 'Cases', 'Alerts', 'Events', 'Assets', 'OT Discovery', 'MITRE', 'Hunt Lab', 'Response Plans', 'Validation', 'Settings']) {
-      await expect(page.getByRole('link', { name: new RegExp(item, 'i') })).toBeVisible({ timeout: 5000 });
+    for (const item of ['Overview', 'Investigations', 'Alerts', 'Events', 'Assets', 'OT Discovery', 'MITRE ATT&CK', 'Hunt Lab', 'Response Plans', 'Validation', 'Settings']) {
+      await expect(page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: item, exact: true })).toBeVisible({ timeout: 5000 });
     }
   });
 });
@@ -67,19 +64,19 @@ test.describe('Cases', () => {
   test.beforeEach(async ({ page }) => { await loginAsAdmin(page); });
 
   test('page loads with header', async ({ page }) => {
-    await page.getByRole('link', { name: 'Cases' }).click();
-    await expect(page.getByText('Investigations')).toBeVisible({ timeout: 10000 });
+    await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Investigations', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Investigations' })).toBeVisible({ timeout: 10000 });
   });
 
   test('Run AI Triage or Pipeline button exists', async ({ page }) => {
-    await page.getByRole('link', { name: 'Cases' }).click();
+    await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Investigations', exact: true }).click();
     await page.waitForTimeout(3000);
     const text = await page.textContent('body');
     expect(text).toMatch(/Triage|Pipeline|Run/i);
   });
 
   test('seeded case visible', async ({ page }) => {
-    await page.getByRole('link', { name: 'Cases' }).click();
+    await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Investigations', exact: true }).click();
     await page.waitForTimeout(3000);
     const text = await page.textContent('body');
     // Should have the seeded attack case OR empty state
@@ -103,7 +100,7 @@ test.describe('Events', () => {
 
   test('page loads with header', async ({ page }) => {
     await page.getByRole('link', { name: 'Events' }).click();
-    await expect(page.getByText('Security Events')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: 'Security Events' })).toBeVisible({ timeout: 10000 });
   });
 
   test('severity filter cards visible', async ({ page }) => {
@@ -197,7 +194,7 @@ test.describe('Full Journey', () => {
     await loginAsAdmin(page);
 
     const pages = [
-      { link: 'Cases', expect: 'Investigations', exact: true },
+      { link: 'Investigations', expect: 'Investigations', exact: true },
       { link: 'Alerts', expect: '', exact: true },
       { link: 'Events', expect: 'Security Events', exact: true },
       { link: 'MITRE ATT&CK', expect: 'MITRE ATT&CK Coverage', exact: true },
@@ -207,14 +204,14 @@ test.describe('Full Journey', () => {
       { link: 'Assets', expect: '', exact: true },
       { link: 'OT Discovery', expect: '', exact: true },
       { link: 'Settings', expect: '', exact: true },
-      { link: 'Dashboard', expect: '', exact: true },
+      { link: 'Overview', expect: '', exact: true },
     ];
 
     for (const p of pages) {
-      await page.getByRole('link', { name: p.link, exact: p.exact }).click();
+      await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: p.link, exact: p.exact }).click();
       await page.waitForTimeout(1500);
       if (p.expect) {
-        await expect(page.getByText(p.expect)).toBeVisible({ timeout: 10000 });
+        await expect(page.getByRole('heading', { name: p.expect, exact: true })).toBeVisible({ timeout: 10000 });
       }
       // No console errors (basic check)
       const text = await page.textContent('body');

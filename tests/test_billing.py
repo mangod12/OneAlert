@@ -96,7 +96,6 @@ def create_org(client: TestClient, headers: dict, slug: str = "test-org"):
     resp = client.post("/api/v1/orgs/", json={
         "name": "Test Org",
         "slug": slug,
-        "plan": "starter",
     }, headers=headers)
     assert resp.status_code == 201, f"Org creation failed: {resp.text}"
     return resp.json()
@@ -209,6 +208,25 @@ class TestCheckout:
         }, headers=headers)
         assert resp.status_code == 404
 
+    def test_checkout_requires_org_admin(self, client):
+        """A viewer cannot initiate checkout for the organization."""
+        admin_h = register_and_login(client, "admin@example.com")
+        create_org(client, admin_h)
+        member_h = register_and_login(client, "member@example.com")
+        client.post(
+            "/api/v1/orgs/me/invite",
+            params={"email": "member@example.com"},
+            headers=admin_h,
+        )
+
+        resp = client.post(
+            "/api/v1/billing/checkout",
+            json={"plan": "pro"},
+            headers=member_h,
+        )
+
+        assert resp.status_code == 403
+
 
 # ---------------------------------------------------------------------------
 # Usage
@@ -225,13 +243,13 @@ class TestUsage:
         resp = client.get("/api/v1/billing/usage", headers=headers)
         assert resp.status_code == 200
         data = resp.json()["data"]
-        assert data["plan"] == "starter"
+        assert data["plan"] == "free"
         assert "assets" in data
         assert "users" in data
         assert data["assets"]["current"] >= 0
-        assert data["assets"]["limit"] == 100  # starter plan
+        assert data["assets"]["limit"] == 10  # free plan
         assert data["users"]["current"] >= 1  # at least the admin
-        assert data["users"]["limit"] == 5  # starter plan
+        assert data["users"]["limit"] == 1  # free plan
         assert "features" in data
 
     def test_usage_no_org_returns_404(self, client):
@@ -337,3 +355,27 @@ class TestCancelSubscription:
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["cancel_at_period_end"] is True
+
+    def test_cancel_subscription_requires_org_admin(self, client):
+        """A viewer cannot cancel the organization's subscription."""
+        admin_h = register_and_login(client, "admin@example.com")
+        org_data = create_org(client, admin_h)
+        member_h = register_and_login(client, "member@example.com")
+        client.post(
+            "/api/v1/orgs/me/invite",
+            params={"email": "member@example.com"},
+            headers=admin_h,
+        )
+        with _TestingSessionLocal() as db:
+            db.add(Subscription(
+                org_id=org_data["id"],
+                plan="pro",
+                status="active",
+                stripe_subscription_id="sub_test_viewer",
+                cancel_at_period_end=False,
+            ))
+            db.commit()
+
+        resp = client.post("/api/v1/billing/cancel", headers=member_h)
+
+        assert resp.status_code == 403

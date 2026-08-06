@@ -4,6 +4,10 @@ import type { Alert, AlertListResponse } from '../api/types';
 import { AlertDetail } from '../components/AlertDetail';
 import clsx from 'clsx';
 import { Search, Filter, CheckCircle } from 'lucide-react';
+import { getApiErrorMessage } from '../api/errors';
+import { PageHeader } from '../components/ui/PageHeader';
+import { ErrorState, RetryButton } from '../components/ui/AsyncState';
+import { toast } from '../components/Toast';
 
 const severityColors: Record<string, string> = {
   critical: 'bg-danger/10 text-danger border-danger/20',
@@ -23,11 +27,14 @@ export function Alerts() {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [cveSearch, setCveSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [error, setError] = useState<string | null>(null);
+  const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
 
   const fetchAlerts = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const params: Record<string, any> = { page, size: 15 };
+      const params: Record<string, string | number> = { page, size: 15 };
       if (severityFilter) params.severity = severityFilter;
       if (statusFilter) params.status = statusFilter;
       if (cveSearch) params.cve_id = cveSearch;
@@ -36,8 +43,8 @@ export function Alerts() {
       setAlerts(res.data.alerts);
       setTotal(res.data.total);
       setPages(res.data.pages);
-    } catch (err) {
-      console.error('Failed to fetch alerts:', err);
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Alerts could not be loaded.'));
     } finally {
       setLoading(false);
     }
@@ -48,17 +55,30 @@ export function Alerts() {
   }, [fetchAlerts]);
 
   const handleAcknowledge = async (alertId: number) => {
-    await apiClient.post(`/alerts/${alertId}/acknowledge`);
-    fetchAlerts();
-    setSelectedAlert(null);
+    if (pendingIds.has(alertId)) return;
+    setPendingIds(current => new Set(current).add(alertId));
+    try {
+      await apiClient.post(`/alerts/${alertId}/acknowledge`);
+      await fetchAlerts();
+      setSelectedAlert(null);
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'Alert could not be acknowledged.'), 'error');
+    } finally {
+      setPendingIds(current => { const next = new Set(current); next.delete(alertId); return next; });
+    }
   };
 
   const handleBulkAcknowledge = async () => {
-    await Promise.all(
-      Array.from(selectedIds).map((id) => apiClient.post(`/alerts/${id}/acknowledge`))
-    );
-    setSelectedIds(new Set());
-    fetchAlerts();
+    const ids = Array.from(selectedIds).filter(id => !pendingIds.has(id));
+    if (ids.length === 0) return;
+    setPendingIds(current => new Set([...current, ...ids]));
+    const results = await Promise.allSettled(ids.map(id => apiClient.post(`/alerts/${id}/acknowledge`)));
+    const failedIds = ids.filter((_, index) => results[index].status === 'rejected');
+    setSelectedIds(new Set(failedIds));
+    setPendingIds(current => { const next = new Set(current); ids.forEach(id => next.delete(id)); return next; });
+    await fetchAlerts();
+    if (failedIds.length > 0) toast(`${failedIds.length} alerts could not be acknowledged and remain selected.`, 'error');
+    else toast(`${ids.length} alerts acknowledged.`, 'success');
   };
 
   const toggleSelect = (id: number) => {
@@ -72,21 +92,18 @@ export function Alerts() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Alerts</h1>
-          <p className="text-surface-400 mt-1">{total} total alerts</p>
-        </div>
-        {selectedIds.size > 0 && (
+      <PageHeader eyebrow="Observe" title="Alerts" description={`${total} vulnerability and threat alerts across the monitored estate.`} actions={
+        selectedIds.size > 0 ? (
           <button
             onClick={handleBulkAcknowledge}
-            className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors"
+            disabled={Array.from(selectedIds).some(id => pendingIds.has(id))}
+            className="flex min-h-9 items-center gap-2 rounded-md bg-primary-500 px-3.5 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50"
           >
             <CheckCircle className="w-4 h-4" />
             Acknowledge ({selectedIds.size})
           </button>
-        )}
-      </div>
+        ) : undefined
+      } />
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
@@ -124,7 +141,7 @@ export function Alerts() {
       </div>
 
       {/* Table */}
-      <div className="bg-surface-800/50 border border-surface-700 rounded-xl overflow-x-auto">
+      {error ? <ErrorState title="Alerts unavailable" description={error} action={<RetryButton onClick={() => void fetchAlerts()} />} /> : <div className="oa-panel overflow-x-auto">
         {loading ? (
           <div className="flex items-center justify-center h-32">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-400"></div>
@@ -195,7 +212,7 @@ export function Alerts() {
             </tbody>
           </table>
         )}
-      </div>
+      </div>}
 
       {/* Pagination */}
       {pages > 1 && (

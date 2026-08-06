@@ -4,8 +4,14 @@ import json
 import hashlib
 import hmac
 import base64
+import logging
+import re
 from datetime import datetime, timezone
-from .base import BaseIntegration
+from .base import BaseIntegration, INTEGRATION_REQUEST_ERROR, validate_outbound_url
+
+
+logger = logging.getLogger(__name__)
+WORKSPACE_ID_PATTERN = re.compile(r"^[0-9a-fA-F-]{1,64}$")
 
 
 class SentinelIntegration(BaseIntegration):
@@ -36,10 +42,15 @@ class SentinelIntegration(BaseIntegration):
         rfc1123_date = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
 
         try:
+            if not WORKSPACE_ID_PATTERN.fullmatch(self.workspace_id):
+                raise ValueError("Invalid Sentinel workspace ID")
             signature = self._build_signature(rfc1123_date, len(body))
             url = f"https://{self.workspace_id}.ods.opinsights.azure.com/api/logs?api-version=2016-04-01"
+            url = await validate_outbound_url(url)
 
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(
+                timeout=10.0, verify=True, follow_redirects=False
+            ) as client:
                 response = await client.post(
                     url,
                     content=body,
@@ -51,8 +62,9 @@ class SentinelIntegration(BaseIntegration):
                     }
                 )
                 return {"success": response.status_code in (200, 202), "status_code": response.status_code}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        except Exception:
+            logger.exception("Sentinel alert delivery failed")
+            return {"success": False, "error": INTEGRATION_REQUEST_ERROR}
 
     async def test_connection(self) -> dict:
         if not self.workspace_id or not self.shared_key:

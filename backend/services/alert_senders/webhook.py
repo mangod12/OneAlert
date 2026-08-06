@@ -6,5 +6,5 @@ class WebhookAlertSender(AlertSenderBase):
         self.url = url
 
     def send_alert(self, alert):
-        response = requests.post(self.url, json=alert)
-        response.raise_for_status() 
+        response = requests.post(self.url, json=alert, timeout=10, allow_redirects=False)
+        response.raise_for_status()

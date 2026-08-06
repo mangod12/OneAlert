@@ -3,6 +3,10 @@ import apiClient from '../api/client';
 import type { Asset, AssetCreate, AssetListResponse } from '../api/types';
 import { Plus, Search, Server, Trash2, Edit2 } from 'lucide-react';
 import clsx from 'clsx';
+import { getApiErrorMessage } from '../api/errors';
+import { ErrorState, RetryButton } from '../components/ui/AsyncState';
+import { PageHeader } from '../components/ui/PageHeader';
+import { toast } from '../components/Toast';
 
 export function Assets() {
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -12,17 +16,21 @@ export function Assets() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editAsset, setEditAsset] = useState<Asset | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
 
   const fetchAssets = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const params: Record<string, any> = { page, size: 15 };
+      const params: Record<string, string | number> = { page, size: 15 };
       if (search) params.search = search;
       const res = await apiClient.get<AssetListResponse>('/assets/', { params });
       setAssets(res.data.assets);
       setTotal(res.data.total);
-    } catch (err) {
-      console.error('Failed to fetch assets:', err);
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Asset inventory could not be loaded.'));
     } finally {
       setLoading(false);
     }
@@ -33,37 +41,47 @@ export function Assets() {
   }, [fetchAssets]);
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Delete this asset?')) return;
-    await apiClient.delete(`/assets/${id}`);
-    fetchAssets();
+    if (deletingIds.has(id) || !confirm('Delete this asset from the managed inventory?')) return;
+    setDeletingIds(current => new Set(current).add(id));
+    try {
+      await apiClient.delete(`/assets/${id}`);
+      await fetchAssets();
+      toast('Asset deleted.', 'success');
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'Asset could not be deleted.'), 'error');
+    } finally {
+      setDeletingIds(current => { const next = new Set(current); next.delete(id); return next; });
+    }
   };
 
   const handleSave = async (data: AssetCreate) => {
-    if (editAsset) {
-      await apiClient.put(`/assets/${editAsset.id}`, data);
-    } else {
-      await apiClient.post('/assets/', data);
+    if (saving) return;
+    setSaving(true);
+    try {
+      if (editAsset) await apiClient.put(`/assets/${editAsset.id}`, data);
+      else await apiClient.post('/assets/', data);
+      setShowModal(false);
+      setEditAsset(null);
+      await fetchAssets();
+      toast(editAsset ? 'Asset updated.' : 'Asset created.', 'success');
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'Asset could not be saved.'), 'error');
+    } finally {
+      setSaving(false);
     }
-    setShowModal(false);
-    setEditAsset(null);
-    fetchAssets();
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Assets</h1>
-          <p className="text-surface-400 mt-1">{total} monitored assets</p>
-        </div>
+      <PageHeader eyebrow="Observe" title="Asset Inventory" description={`${total} managed IT, IoT, and OT assets with operational context.`} actions={
         <button
           onClick={() => { setEditAsset(null); setShowModal(true); }}
-          className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors"
+          className="flex min-h-9 items-center gap-2 rounded-md bg-primary-500 px-3.5 text-sm font-semibold text-surface-950 hover:bg-primary-400"
         >
           <Plus className="w-4 h-4" />
           Add Asset
         </button>
-      </div>
+      } />
 
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
@@ -72,11 +90,11 @@ export function Assets() {
           placeholder="Search assets..."
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          className="w-full pl-9 pr-4 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          className="w-full pl-9 pr-4 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
         />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {error ? <ErrorState title="Asset inventory unavailable" description={error} action={<RetryButton onClick={() => void fetchAssets()} />} /> : <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {loading ? (
           <div className="col-span-full flex items-center justify-center h-32">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-400"></div>
@@ -90,23 +108,26 @@ export function Assets() {
           assets.map((asset) => (
             <div
               key={asset.id}
-              className="bg-surface-800/50 border border-surface-700 rounded-xl p-4 hover:border-surface-600 transition-colors"
+              className="oa-panel rounded-md p-4 hover:border-surface-600 transition-colors"
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-semibold text-white truncate">{asset.name}</h3>
+                  <h3 className="text-sm font-semibold text-surface-50 truncate">{asset.name}</h3>
                   <p className="text-xs text-surface-400 mt-1">{asset.vendor} {asset.product}</p>
                 </div>
                 <div className="flex gap-1 ml-2">
                   <button
                     onClick={() => { setEditAsset(asset); setShowModal(true); }}
                     className="p-1.5 text-surface-500 hover:text-primary-400 transition-colors"
+                    aria-label={`Edit ${asset.name}`}
                   >
                     <Edit2 className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => handleDelete(asset.id)}
+                    disabled={deletingIds.has(asset.id)}
                     className="p-1.5 text-surface-500 hover:text-danger transition-colors"
+                    aria-label={`Delete ${asset.name}`}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -138,20 +159,21 @@ export function Assets() {
             </div>
           ))
         )}
-      </div>
+      </div>}
 
       {showModal && (
         <AssetModal
           asset={editAsset}
           onClose={() => { setShowModal(false); setEditAsset(null); }}
           onSave={handleSave}
+          saving={saving}
         />
       )}
     </div>
   );
 }
 
-function AssetModal({ asset, onClose, onSave }: { asset: Asset | null; onClose: () => void; onSave: (data: AssetCreate) => void }) {
+function AssetModal({ asset, onClose, onSave, saving }: { asset: Asset | null; onClose: () => void; onSave: (data: AssetCreate) => void; saving: boolean }) {
   const [form, setForm] = useState<AssetCreate>({
     name: asset?.name || '',
     asset_type: asset?.asset_type || 'hardware',
@@ -169,41 +191,47 @@ function AssetModal({ asset, onClose, onSave }: { asset: Asset | null; onClose: 
     onSave(form);
   };
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape' && !saving) onClose(); };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [onClose, saving]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose}></div>
-      <div className="relative bg-surface-900 border border-surface-700 rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <h2 className="text-lg font-semibold text-white mb-4">{asset ? 'Edit Asset' : 'Add Asset'}</h2>
+      <div className="absolute inset-0 bg-surface-950/75 backdrop-blur-sm" onClick={onClose}></div>
+      <div role="dialog" aria-modal="true" aria-labelledby="asset-dialog-title" className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg border border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]">
+        <h2 id="asset-dialog-title" className="text-lg font-semibold text-surface-50 mb-4">{asset ? 'Edit Asset' : 'Add Asset'}</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <input
             type="text" placeholder="Name" value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
             required
           />
           <div className="grid grid-cols-2 gap-3">
             <input
               type="text" placeholder="Vendor" value={form.vendor}
               onChange={(e) => setForm({ ...form, vendor: e.target.value })}
-              className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
               required
             />
             <input
               type="text" placeholder="Product" value={form.product}
               onChange={(e) => setForm({ ...form, product: e.target.value })}
-              className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
               required
             />
           </div>
           <input
             type="text" placeholder="Version" value={form.version || ''}
             onChange={(e) => setForm({ ...form, version: e.target.value })}
-            className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
           <select
             value={form.asset_type}
             onChange={(e) => setForm({ ...form, asset_type: e.target.value })}
-            className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
             <option value="hardware">Hardware</option>
             <option value="software">Software</option>
@@ -218,7 +246,7 @@ function AssetModal({ asset, onClose, onSave }: { asset: Asset | null; onClose: 
           <select
             value={form.criticality || 'medium'}
             onChange={(e) => setForm({ ...form, criticality: e.target.value })}
-            className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
             <option value="low">Low Criticality</option>
             <option value="medium">Medium Criticality</option>
@@ -236,8 +264,8 @@ function AssetModal({ asset, onClose, onSave }: { asset: Asset | null; onClose: 
             <button type="button" onClick={onClose} className="flex-1 py-2 bg-surface-700 hover:bg-surface-600 text-surface-300 rounded-lg text-sm transition-colors">
               Cancel
             </button>
-            <button type="submit" className="flex-1 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors">
-              {asset ? 'Update' : 'Create'}
+            <button type="submit" disabled={saving} className="flex-1 py-2 bg-primary-500 hover:bg-primary-400 disabled:opacity-50 text-surface-950 rounded-lg text-sm font-medium transition-colors">
+              {saving ? 'Saving…' : asset ? 'Update' : 'Create'}
             </button>
           </div>
         </form>
