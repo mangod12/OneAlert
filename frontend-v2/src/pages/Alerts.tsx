@@ -114,13 +114,13 @@ export function Alerts() {
             placeholder="Search CVE..."
             value={cveSearch}
             onChange={(e) => { setCveSearch(e.target.value); setPage(1); }}
-            className="pl-9 pr-4 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="pl-9 pr-4 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
         </div>
         <select
           value={severityFilter}
           onChange={(e) => { setSeverityFilter(e.target.value); setPage(1); }}
-          className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+          className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
         >
           <option value="">All Severities</option>
           <option value="critical">Critical</option>
@@ -131,7 +131,7 @@ export function Alerts() {
         <select
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-          className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+          className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
         >
           <option value="">All Statuses</option>
           <option value="pending">Pending</option>

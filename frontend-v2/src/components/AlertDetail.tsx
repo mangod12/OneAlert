@@ -28,11 +28,11 @@ export function AlertDetail({ alert, onClose, onAcknowledge }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose}></div>
+      <div className="absolute inset-0 bg-surface-950/75 backdrop-blur-sm" onClick={onClose}></div>
       <div role="dialog" aria-modal="true" aria-labelledby="alert-detail-title" className="relative h-full w-full max-w-lg overflow-y-auto border-l border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]">
         <div className="flex items-center justify-between mb-6">
-          <h2 id="alert-detail-title" className="text-lg font-semibold text-white">{alert.cve_id}</h2>
-          <button ref={closeButtonRef} onClick={onClose} aria-label="Close alert details" className="grid h-9 w-9 place-items-center rounded-md text-surface-400 hover:bg-surface-800 hover:text-white">
+          <h2 id="alert-detail-title" className="text-lg font-semibold text-surface-50">{alert.cve_id}</h2>
+          <button ref={closeButtonRef} onClick={onClose} aria-label="Close alert details" className="grid h-9 w-9 place-items-center rounded-md text-surface-400 hover:bg-surface-800 hover:text-surface-50">
             <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
@@ -82,7 +82,7 @@ export function AlertDetail({ alert, onClose, onAcknowledge }: Props) {
             {alert.status === 'pending' && (
               <button
                 onClick={() => onAcknowledge(alert.id)}
-                className="w-full py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition-colors"
+                className="w-full py-2.5 bg-primary-500 hover:bg-primary-400 text-surface-950 rounded-lg font-medium transition-colors"
               >
                 Acknowledge Alert
               </button>

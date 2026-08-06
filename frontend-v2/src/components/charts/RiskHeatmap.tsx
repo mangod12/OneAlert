@@ -62,7 +62,7 @@ export function RiskHeatmap() {
             <div className="flex items-center gap-4">
               <span className="text-xs font-mono text-surface-400 w-8">L{zone.level}</span>
               <div>
-                <p className="text-sm font-medium text-white">{zone.label}</p>
+                <p className="text-sm font-medium text-surface-50">{zone.label}</p>
                 <p className="text-xs text-surface-500">{zone.description}</p>
               </div>
             </div>
