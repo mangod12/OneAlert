@@ -19,7 +19,7 @@ aiosqlite==0.20.0       # Async SQLite driver
 psycopg2-binary
 
 # Authentication
-PyJWT[crypto]==2.12.1
+PyJWT[crypto]==2.13.0
 passlib[bcrypt]==1.7.4
 bcrypt<=4.0.1
 python-multipart==0.0.27
@@ -27,7 +27,7 @@ pyotp==2.9.0
 
 # HTTP client for API calls
 httpx==0.27.0
-aiohttp==3.14.0
+aiohttp==3.14.3
 
 # Email
 requests==2.33.0  # For Mailgun API and GitHub OAuth
