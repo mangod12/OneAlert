@@ -36,6 +36,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Lint backend
+        run: pip install ruff && ruff check backend/
+
       - name: Compile backend
         run: python -m compileall backend/
 
@@ -50,3 +53,31 @@ jobs:
           MAILGUN_API_KEY: dummy
           MAILGUN_DOMAIN: dummy.com
         run: pytest -v
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend-v2/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend-v2
+        run: npm ci
+
+      - name: Lint frontend
+        working-directory: frontend-v2
+        run: npx eslint .
+
+      - name: Type check and build
+        working-directory: frontend-v2
+        run: npm run build
