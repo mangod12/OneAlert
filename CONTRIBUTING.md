@@ -16,16 +16,32 @@ python -m uvicorn backend.main:app --reload
 1. Fork the repo and create a feature branch
 2. Write tests first (TDD encouraged)
 3. Implement the feature
-4. Run `pytest tests/` — all tests must pass
-5. Run `python -m compileall backend/ -q` — no compile errors
-6. Submit a PR with a clear description
+4. Verify everything passes before submitting:
+
+```bash
+# Backend
+pip install ruff
+ruff check backend/                        # Lint — must pass with zero errors
+python -m compileall backend/ -q           # Compile check
+pytest tests/ -v                           # All tests must pass
+
+# Frontend
+cd frontend-v2
+npx eslint .                               # Lint — must pass
+npm run build                              # TypeScript + Vite build — must succeed
+```
+
+5. Submit a PR with a clear description
+
+CI runs all of the above automatically on every PR.
 
 ## Code Standards
 
-- **Python**: Follow existing patterns. Pydantic v2 schemas co-located with SQLAlchemy models.
-- **TypeScript/React**: Functional components, Zustand for state, Tailwind for styling.
+- **Python**: Follow existing patterns. Pydantic v2 schemas co-located with SQLAlchemy models. Linted with ruff.
+- **TypeScript/React**: Functional components, Zustand for state, Tailwind v4 with semantic design tokens (see `DESIGN.md`). Linted with ESLint.
 - **Tests**: pytest for backend, Playwright for E2E. Aim for 80%+ coverage on new code.
 - **Commits**: `<type>: <description>` (feat, fix, refactor, docs, test, chore)
+- **Design system**: Use semantic color tokens (`text-danger`, `bg-success/10`) not raw Tailwind colors (`text-red-400`). Use `text-surface-50` not `text-white`. See `DESIGN.md` and `PRODUCT.md`.
 
 ## Areas We Need Help
 
