@@ -180,7 +180,7 @@ async def get_alert_remediations(
     db: AsyncSession = Depends(get_async_db)
 ):
     """Get remediation actions for an alert. Generates on-demand if none exist."""
-    from backend.models.remediation import RemediationAction, RemediationResponse
+    from backend.models.remediation import RemediationAction
     from backend.services.remediation_engine import generate_remediations
 
     # Get alert

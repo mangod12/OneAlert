@@ -5,12 +5,10 @@ import time
 import random
 from datetime import datetime, timezone
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from backend.models.validation import ValidationRun, ValidationStep, ControlResult
 from backend.services.agents.base import BaseAgent
-from backend.services.mitre.attack_data import TECHNIQUES
 
 logger = logging.getLogger(__name__)
 

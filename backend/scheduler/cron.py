@@ -132,7 +132,7 @@ class VulnerabilityScheduler:
                 result = await db.execute(
                     select(User, Asset)\
                     .join(Asset, User.id == Asset.user_id, isouter=True)\
-                    .where(User.is_active == True, Asset.is_ot_asset == True)
+                    .where(User.is_active.is_(True), Asset.is_ot_asset.is_(True))
                 )
                 
                 user_assets = result.all()

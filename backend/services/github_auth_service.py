@@ -11,9 +11,7 @@ from urllib.parse import urlencode
 
 import httpx
 from typing import Optional, Dict, Any
-from fastapi import HTTPException, Request
-from fastapi.responses import JSONResponse
-from starlette.responses import Response
+from fastapi import HTTPException
 from backend.config import settings
 from backend.services.auth_service import create_access_token
 from backend.models.user import User

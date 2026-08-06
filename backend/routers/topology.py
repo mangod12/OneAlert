@@ -9,7 +9,7 @@ Provides endpoints for:
 """
 
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -115,7 +115,7 @@ async def get_topology_stats(
         select(func.count(NetworkConnection.id))
         .where(
             NetworkConnection.user_id == current_user.id,
-            NetworkConnection.is_encrypted == True,
+            NetworkConnection.is_encrypted.is_(True),
         )
     )
     encrypted_count = encrypted_result.scalar_one()

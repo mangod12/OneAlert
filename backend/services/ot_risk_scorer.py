@@ -20,10 +20,9 @@ Scoring designed for industrial environments where:
 """
 
 import logging
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Tuple
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from backend.models.asset import Asset
 from backend.models.discovered_device import DiscoveredDevice
@@ -337,12 +336,12 @@ class OTRiskScorer:
             # Assume 10.0-10.19 = production OT, 10.20+ = corporate/edge
             if first_octet == 10 and second_octet >= 20:
                 return True
-            
+
             # 172.16-172.31 corporate, other subnets less likely
             if first_octet == 172 and 16 <= second_octet <= 31:
                 return True
-            
-        except:
+
+        except Exception:
             pass
         
         return False

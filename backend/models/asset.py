@@ -9,11 +9,11 @@ schemas for asset-related API operations (create, update, list, etc).
 - The Pydantic models (`AssetBase`, `AssetCreate`, `AssetUpdate`, `AssetResponse`, `AssetListResponse`) are used for request/response validation and serialization.
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean, Float
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from backend.database.db import Base
-from pydantic import BaseModel, Field  # Ensure compatibility with Pydantic v2
+from pydantic import BaseModel  # Ensure compatibility with Pydantic v2
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum

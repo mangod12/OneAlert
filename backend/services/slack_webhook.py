@@ -1,7 +1,6 @@
 """
 Slack and Webhook notification services for alert delivery.
 """
-import os
 import httpx
 import logging
 

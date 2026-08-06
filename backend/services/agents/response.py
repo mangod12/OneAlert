@@ -2,10 +2,7 @@
 
 import logging
 import time
-import json
-from datetime import datetime, timezone
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from backend.models.case import Case, CaseAlert
@@ -185,7 +182,7 @@ class ResponseAgent(BaseAgent):
         if case.severity in ("critical", "high"):
             actions.append({
                 "action_type": "block_ip", "target": "suspicious-source",
-                "reason": f"High severity case — block potential attacker", "priority": 3,
+                "reason": "High severity case — block potential attacker", "priority": 3,
             })
 
         return {

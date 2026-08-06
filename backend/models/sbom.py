@@ -8,12 +8,12 @@ along with Pydantic schemas for API request/response validation.
 - The `SBOMComponent` class tracks individual software components within an SBOM.
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from backend.database.db import Base
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
 
 

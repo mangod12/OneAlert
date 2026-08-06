@@ -1,11 +1,11 @@
 """Security event models for ingested telemetry (Suricata, Zeek, syslog, etc.)."""
 
-from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Text, Index
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.types import JSON
 from backend.database.db import Base
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum

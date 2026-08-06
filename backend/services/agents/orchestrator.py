@@ -2,7 +2,6 @@
 
 import logging
 import time
-from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 

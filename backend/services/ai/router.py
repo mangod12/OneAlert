@@ -2,7 +2,6 @@
 
 import logging
 import os
-from functools import lru_cache
 
 from backend.services.ai.provider import AIProvider
 from backend.services.ai.anthropic_provider import AnthropicProvider

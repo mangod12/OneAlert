@@ -1,6 +1,6 @@
 """Purple-team validation models — test runs, steps, and control results."""
 
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean, Float
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.types import JSON

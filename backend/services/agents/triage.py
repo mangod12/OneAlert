@@ -4,13 +4,10 @@ import logging
 import time
 import json
 from datetime import datetime, timezone, timedelta
-from typing import List
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from backend.models.alert import Alert
-from backend.models.asset import Asset
 from backend.models.security_event import SecurityEvent
 from backend.models.case import Case, CaseAlert, CaseEvent, CaseTimeline
 from backend.services.agents.base import BaseAgent
@@ -200,7 +197,7 @@ class TriageAgent(BaseAgent):
             response = self._rule_based_fallback(alerts, events)
             await self.log_step(
                 "rule_based_fallback",
-                f"LLM unavailable, used rule-based analysis",
+                "LLM unavailable, used rule-based analysis",
                 duration_ms=int((time.time() - start) * 1000),
             )
 

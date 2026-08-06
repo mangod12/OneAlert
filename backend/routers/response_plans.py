@@ -1,7 +1,7 @@
 """Response plans router — approval workflow, plan lifecycle, action execution."""
 
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, Body, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from datetime import datetime, timezone

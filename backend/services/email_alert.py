@@ -5,9 +5,8 @@ Handles email composition and delivery for security alerts.
 
 import logging
 import requests
-import time
 from requests.adapters import HTTPAdapter, Retry
-from typing import Dict, Optional
+from typing import Dict
 from datetime import datetime
 
 from backend.config import settings

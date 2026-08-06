@@ -9,10 +9,11 @@ import re
 import math
 import logging
 from collections import Counter
-from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+
+from backend.models.case import Case
 
 logger = logging.getLogger(__name__)
 

@@ -6,7 +6,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.types import JSON
 from backend.database.db import Base
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
 
 

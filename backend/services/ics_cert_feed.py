@@ -20,9 +20,7 @@ Periodically fetches and indexes advisories for:
 
 import httpx
 import logging
-from typing import List, Dict, Optional, Any
-from datetime import datetime, timedelta
-import json
+from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +89,7 @@ class ICSCertFeedService:
                         "published_date": vuln.get("dateAdded"),
                         "updated_date": vuln.get("dateAdded"),
                         "source": "cisa",
-                        "source_url": f"https://www.cisa.gov/known-exploited-vulnerabilities-catalog",
+                        "source_url": "https://www.cisa.gov/known-exploited-vulnerabilities-catalog",
                         "remediation": vuln.get("requiredAction", "")
                     })
                     advisories.append(advisory)
@@ -174,19 +172,13 @@ class ICSCertFeedService:
         Fetch recent CVEs from NVD that match OT-related keywords.
         This acts as a filter for relevant CVEs in general feed.
         """
-        
+
         advisories = []
-        
-        # Keywords that indicate OT relevance
-        ot_keywords = [
-            "scada", "plc", "hmi", "rtu", "ied",
-            "modbus", "profinet", "profibus", "dnp3",
-            "industrial", "ics", "operational technology",
-            "control system", "critical infrastructure"
-        ]
-        
+
         try:
-            # In production, would query NVD API with these keywords
+            # In production, would query NVD API with OT-related keywords:
+            # scada, plc, hmi, rtu, ied, modbus, profinet, profibus, dnp3,
+            # industrial, ics, operational technology, control system, critical infrastructure
             # For now, return empty or cached results
             logger.info("Sampled NVD for OT-related CVEs")
             

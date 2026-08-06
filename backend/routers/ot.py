@@ -11,7 +11,7 @@ Provides endpoints for:
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, and_
+from sqlalchemy import select, func
 import json
 
 from backend.database.db import get_async_db
@@ -20,8 +20,7 @@ from backend.models.asset import Asset
 from backend.models.discovered_device import (
     NetworkSensor, DiscoveredDevice, 
     NetworkSensorCreate, NetworkSensorUpdate, NetworkSensorResponse,
-    DiscoveredDeviceCreate, DiscoveredDeviceUpdate, DiscoveredDeviceResponse, DiscoveredDeviceListResponse,
-    DeviceConfidence, DiscoveryMethod
+    DiscoveredDeviceCreate, DiscoveredDeviceUpdate, DiscoveredDeviceResponse, DiscoveredDeviceListResponse
 )
 from backend.routers.auth import get_active_user
 
@@ -180,8 +179,8 @@ async def list_discovered_devices(
         count_query = count_query.filter(DiscoveredDevice.ip_address.ilike(f"%{ip_address}%"))
     
     if ot_only:
-        query = query.filter(DiscoveredDevice.is_ot_device == True)
-        count_query = count_query.filter(DiscoveredDevice.is_ot_device == True)
+        query = query.filter(DiscoveredDevice.is_ot_device.is_(True))
+        count_query = count_query.filter(DiscoveredDevice.is_ot_device.is_(True))
     
     if risk_min is not None:
         query = query.filter(DiscoveredDevice.risk_score >= risk_min)
@@ -370,7 +369,7 @@ async def get_ot_summary(
     managed_result = await db.execute(
         select(func.count(Asset.id)).where(
             Asset.user_id == current_user.id,
-            Asset.is_ot_asset == True
+            Asset.is_ot_asset.is_(True)
         )
     )
     managed_ot_count = managed_result.scalar_one()
@@ -379,7 +378,7 @@ async def get_ot_summary(
     discovered_result = await db.execute(
         select(func.count(DiscoveredDevice.id)).where(
             DiscoveredDevice.user_id == current_user.id,
-            DiscoveredDevice.is_ot_device == True
+            DiscoveredDevice.is_ot_device.is_(True)
         )
     )
     discovered_ot_count = discovered_result.scalar_one()
@@ -397,7 +396,7 @@ async def get_ot_summary(
     uncorrelated_result = await db.execute(
         select(func.count(DiscoveredDevice.id)).where(
             DiscoveredDevice.user_id == current_user.id,
-            DiscoveredDevice.is_correlated == False
+            DiscoveredDevice.is_correlated.is_(False)
         )
     )
     uncorrelated_count = uncorrelated_result.scalar_one()
@@ -420,7 +419,7 @@ async def get_devices_by_zone(
     result = await db.execute(
         select(Asset.network_zone, func.count(Asset.id)).where(
             Asset.user_id == current_user.id,
-            Asset.is_ot_asset == True
+            Asset.is_ot_asset.is_(True)
         ).group_by(Asset.network_zone)
     )
     zones = result.all()
@@ -436,8 +435,8 @@ async def get_devices_by_protocol(
     result = await db.execute(
         select(Asset.primary_protocol, func.count(Asset.id)).where(
             Asset.user_id == current_user.id,
-            Asset.is_ot_asset == True,
-            Asset.primary_protocol != None
+            Asset.is_ot_asset.is_(True),
+            Asset.primary_protocol.isnot(None)
         ).group_by(Asset.primary_protocol)
     )
     protocols = result.all()

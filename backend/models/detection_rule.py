@@ -1,12 +1,11 @@
 """Detection rule and hunt session models."""
 
 from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, ForeignKey
-from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.types import JSON
 from backend.database.db import Base
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
 
 
