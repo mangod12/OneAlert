@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import List
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from backend.models.security_event import SecurityEvent, EventSource
 from backend.services.parsers.suricata import parse_suricata_eve

@@ -15,7 +15,6 @@ Key Features:
 
 from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
-import os # Standard library for OS-related functionalities, not directly used for settings loading here but often useful.
 
 class Settings(BaseSettings):
     """

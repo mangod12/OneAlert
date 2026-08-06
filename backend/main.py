@@ -19,7 +19,7 @@ from backend.middleware.security_headers import SecurityHeadersMiddleware
 from backend.middleware.rate_limiter import limiter, SlowAPIMiddleware, RateLimitExceeded, rate_limit_exceeded_handler
 from backend.middleware.request_id import RequestIDMiddleware
 from backend.middleware.metrics import MetricsMiddleware, get_metrics_summary
-from backend.logging_config import setup_logging, get_logger as get_struct_logger
+from backend.logging_config import setup_logging
 
 
 # Configure logging

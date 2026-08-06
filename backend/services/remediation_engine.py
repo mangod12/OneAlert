@@ -18,7 +18,6 @@ def generate_remediations(alert, asset) -> List[dict]:
     remediations = []
     priority = 1
 
-    is_ot = getattr(asset, 'is_ot_asset', False) if asset else False
     zone = (getattr(asset, 'network_zone', None) or '') if asset else ''
     protocol = (getattr(asset, 'primary_protocol', None) or '') if asset else ''
     source = (getattr(alert, 'source_url', None) or '')

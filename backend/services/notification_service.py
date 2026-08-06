@@ -4,8 +4,7 @@ Includes factory and unified notification dispatch for extensibility and Celery 
 """
 import httpx
 import logging
-import json
-from typing import List, Dict, Any, Optional
+from typing import List
 import os
 
 logger = logging.getLogger(__name__)

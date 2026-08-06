@@ -3,9 +3,7 @@
 import logging
 import time
 from datetime import datetime, timezone, timedelta
-from collections import Counter
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from backend.models.security_event import SecurityEvent
@@ -98,11 +96,6 @@ class DetectAgent(BaseAgent):
 
     async def _aggregate_events(self, cutoff: datetime) -> dict:
         """Build statistical summary of recent events."""
-        base = select(SecurityEvent).where(
-            SecurityEvent.user_id == self.user_id,
-            SecurityEvent.timestamp >= cutoff,
-        )
-
         total = (await self.db.execute(
             select(func.count(SecurityEvent.id)).where(
                 SecurityEvent.user_id == self.user_id, SecurityEvent.timestamp >= cutoff)
@@ -121,7 +114,7 @@ class DetectAgent(BaseAgent):
         src_ip_result = await self.db.execute(
             select(SecurityEvent.source_ip, func.count(SecurityEvent.id).label("cnt"))
             .where(SecurityEvent.user_id == self.user_id, SecurityEvent.timestamp >= cutoff,
-                   SecurityEvent.source_ip != None)
+                   SecurityEvent.source_ip.isnot(None))
             .group_by(SecurityEvent.source_ip)
             .order_by(func.count(SecurityEvent.id).desc())
             .limit(20)
@@ -132,7 +125,7 @@ class DetectAgent(BaseAgent):
         dst_port_result = await self.db.execute(
             select(SecurityEvent.dest_port, func.count(SecurityEvent.id).label("cnt"))
             .where(SecurityEvent.user_id == self.user_id, SecurityEvent.timestamp >= cutoff,
-                   SecurityEvent.dest_port != None)
+                   SecurityEvent.dest_port.isnot(None))
             .group_by(SecurityEvent.dest_port)
             .order_by(func.count(SecurityEvent.id).desc())
             .limit(20)
@@ -151,7 +144,7 @@ class DetectAgent(BaseAgent):
         sig_result = await self.db.execute(
             select(SecurityEvent.signature, func.count(SecurityEvent.id))
             .where(SecurityEvent.user_id == self.user_id, SecurityEvent.timestamp >= cutoff,
-                   SecurityEvent.signature != None)
+                   SecurityEvent.signature.isnot(None))
             .group_by(SecurityEvent.signature)
             .order_by(func.count(SecurityEvent.id).desc())
             .limit(10)
@@ -203,7 +196,7 @@ class DetectAgent(BaseAgent):
             findings.append({
                 "title": f"Elevated threat level: {critical} critical + {high} high severity events",
                 "severity": "high",
-                "description": f"Unusual concentration of high-severity events detected.",
+                "description": "Unusual concentration of high-severity events detected.",
                 "affected_ips": list(stats["top_source_ips"].keys())[:5],
                 "indicators": ["elevated_severity"],
                 "recommended_actions": ["Review critical/high events immediately", "Consider running full triage"],

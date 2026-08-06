@@ -8,8 +8,6 @@ import logging
 from typing import List, Dict, Optional
 import httpx
 from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
-import re
 
 logger = logging.getLogger(__name__)
 

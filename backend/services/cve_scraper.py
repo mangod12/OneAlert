@@ -3,7 +3,6 @@ CVE scraper service for fetching vulnerability data from NVD (NIST).
 Retrieves CVE data and processes it for matching against user assets.
 """
 
-import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional

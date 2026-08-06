@@ -2,14 +2,14 @@
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from backend.database.db import get_async_db
 from backend.models.user import User
 from backend.models.case import Case
 from backend.routers.auth import get_active_user
 from backend.services.mitre.attack_data import (
-    TACTICS, TECHNIQUES, get_tactic, get_technique, search_techniques, compute_coverage,
+    TACTICS, TECHNIQUES, search_techniques, compute_coverage,
 )
 
 router = APIRouter()
@@ -46,7 +46,7 @@ async def get_coverage(
     """Get MITRE ATT&CK detection coverage based on user's cases."""
     result = await db.execute(
         select(Case.mitre_techniques)
-        .where(Case.user_id == current_user.id, Case.mitre_techniques != None)
+        .where(Case.user_id == current_user.id, Case.mitre_techniques.isnot(None))
     )
     all_techniques = result.scalars().all()
 

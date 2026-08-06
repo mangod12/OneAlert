@@ -1,7 +1,6 @@
 """Base agent with run/step ledger logging."""
 
 import logging
-import time
 from datetime import datetime, timezone
 from abc import ABC, abstractmethod
 

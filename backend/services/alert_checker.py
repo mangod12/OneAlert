@@ -16,13 +16,11 @@ from backend.models.user import User
 from backend.models.asset import Asset
 from backend.models.alert import Alert, Severity, AlertStatus
 from backend.models.audit_log import AuditLog
-from backend.models.discovered_device import DiscoveredDevice
 from backend.services.cve_scraper import cve_scraper
 from backend.services.vendor_scraper import vendor_scraper
 from backend.services.ics_cert_feed import ics_cert_feed_service
 from backend.services.email_alert import email_service
 from backend.services.cve_enrichment import CVEEnrichmentService
-from backend.services.ot_risk_scorer import ot_risk_scorer
 from backend.services.slack_webhook import SlackNotificationService, WebhookNotificationService
 
 logger = logging.getLogger(__name__)
@@ -100,12 +98,12 @@ class AlertChecker:
             return
         
         logger.info(f"Processing {len(new_cves)} new CVEs")
-        
+
         async with AsyncSessionLocal() as db:
             # Get all users and their assets
             result = await db.execute(
                 select(User, Asset).join(Asset, User.id == Asset.user_id)
-                .where(User.is_active == True)
+                .where(User.is_active.is_(True))
             )
             user_assets = result.all()
             
@@ -132,12 +130,12 @@ class AlertChecker:
             return
         
         logger.info(f"Processing {len(new_advisories)} new vendor advisories")
-        
+
         async with AsyncSessionLocal() as db:
             # Get all users and their assets
             result = await db.execute(
                 select(User, Asset).join(Asset, User.id == Asset.user_id)
-                .where(User.is_active == True)
+                .where(User.is_active.is_(True))
             )
             user_assets = result.all()
             
@@ -171,8 +169,7 @@ class AlertChecker:
     async def _find_affected_assets_by_vendor(self, advisory: Dict, user_assets: List) -> List:
         """Find user assets affected by a vendor advisory."""
         affected = []
-        vendor = advisory.get('vendor', '').lower()
-        
+
         for user, asset in user_assets:
             if await self._is_asset_affected_by_vendor_advisory(asset, advisory):
                 affected.append((user, asset))
@@ -227,7 +224,8 @@ class AlertChecker:
     def _fuzzy_match(self, text1: str, text2: str) -> bool:
         """Simple fuzzy matching for vendor/product names."""
         # Remove common variations and normalize
-        normalize = lambda x: re.sub(r'[^a-z0-9]', '', x.lower())
+        def normalize(x: str) -> str:
+            return re.sub(r'[^a-z0-9]', '', x.lower())
         norm1, norm2 = normalize(text1), normalize(text2)
         
         # Exact match
@@ -374,7 +372,7 @@ class AlertChecker:
             result = await db.execute(
                 select(User, Asset)\
                 .join(Asset, User.id == Asset.user_id, isouter=True)\
-                .where(User.is_active == True, Asset.is_ot_asset == True)
+                .where(User.is_active.is_(True), Asset.is_ot_asset.is_(True))
             )
             user_assets = result.all()
             
