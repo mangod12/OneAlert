@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import apiClient from '../api/client';
 import type { Asset, AssetCreate, AssetListResponse } from '../api/types';
-import { Plus, Search, Server, Trash2, Edit2 } from 'lucide-react';
+import { Plus, Search, Server, Trash2, Edit2, Download } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -35,6 +35,31 @@ export function Assets() {
   const [criticalityFilter, setCriticalityFilter] = useState('');
   const [otFilter, setOtFilter] = useState('');
   const [sort, setSort] = useState('created_at_desc');
+  const [exporting, setExporting] = useState(false);
+
+  const exportCsv = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const params: Record<string, string> = {};
+      if (typeFilter) params.asset_type = typeFilter;
+      if (vendorFilter) params.vendor = vendorFilter;
+      if (criticalityFilter) params.criticality = criticalityFilter;
+      if (otFilter) params.is_ot = otFilter;
+      if (search.trim()) params.search = search.trim();
+      const res = await apiClient.get('/assets/export', { params, responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'assets.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'The export could not be downloaded.'), 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const fetchAssets = useCallback(async () => {
     setLoading(true);
@@ -189,6 +214,15 @@ export function Assets() {
           <option value="criticality_desc">Highest criticality</option>
           <option value="criticality_asc">Lowest criticality</option>
         </select>
+        <button
+          type="button"
+          onClick={() => { void exportCsv(); }}
+          disabled={exporting}
+          className="ml-auto flex items-center gap-2 px-3 py-2 bg-surface-800 hover:bg-surface-700 border border-surface-600 rounded-lg text-sm text-surface-200 transition-colors disabled:opacity-50"
+        >
+          <Download className="w-4 h-4" aria-hidden="true" />
+          {exporting ? 'Exporting...' : 'Export CSV'}
+        </button>
       </div>
 
       {error ? <ErrorState title="Asset inventory unavailable" description={error} action={<RetryButton onClick={() => void fetchAssets()} />} /> : <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

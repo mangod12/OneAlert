@@ -175,3 +175,26 @@ describe('Asset type options', () => {
     expect(options).not.toContain('scada');
   });
 });
+
+describe('Assets CSV export', () => {
+  it('downloads the CSV with the active filters', async () => {
+    URL.createObjectURL = vi.fn(() => 'blob:assets');
+    URL.revokeObjectURL = vi.fn();
+    const clicks: string[] = [];
+    const origCreate = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string, options?: ElementCreationOptions) => {
+      const el = origCreate(tag, options);
+      if (tag === 'a') {
+        Object.defineProperty(el, 'download', { set: (v: string) => clicks.push(v), configurable: true });
+        el.click = () => clicks.push('clicked');
+      }
+      return el;
+    });
+    render(<Assets />);
+    await screen.findByRole('button', { name: /export csv/i });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter by criticality' }), { target: { value: 'high' } });
+    fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/assets/export', { params: { criticality: 'high' }, responseType: 'blob' }));
+    await waitFor(() => expect(clicks).toContain('assets.csv'));
+  });
+});
