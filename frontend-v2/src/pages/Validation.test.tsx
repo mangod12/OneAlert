@@ -90,3 +90,39 @@ describe('Validation run confirmation', () => {
     expect(vi.mocked(apiClient.post)).not.toHaveBeenCalled();
   });
 });
+
+describe('Validation coverage panel', () => {
+  const coverage = [
+    { technique_id: 'T1110', technique_name: 'Brute Force', total_tests: 4, detections: 3, detection_rate: 75 },
+    { technique_id: 'T1046', technique_name: 'Network Service Discovery', total_tests: 3, detections: 1, detection_rate: 33.3 },
+  ];
+
+  const mockWithCoverage = (coverageResult: 'ok' | 'fail') => {
+    vi.mocked(apiClient.get).mockImplementation(url => {
+      if (url.endsWith('/coverage')) {
+        return coverageResult === 'ok'
+          ? Promise.resolve({ data: { data: coverage } })
+          : Promise.reject(new Error('Coverage unavailable'));
+      }
+      return Promise.resolve({ data: { data: [run] } });
+    });
+  };
+
+  it('renders per-technique detection rates', async () => {
+    mockWithCoverage('ok');
+    render(<Validation />);
+    expect(await screen.findByText('Detection Coverage by Technique')).toBeTruthy();
+    expect(screen.getByText('Brute Force')).toBeTruthy();
+    expect(screen.getByText('3/4 detected')).toBeTruthy();
+    expect(screen.getByText('75%')).toBeTruthy();
+    expect(screen.getByText('33.3%')).toBeTruthy();
+  });
+
+  it('keeps the runs list and flags the coverage failure when coverage fails', async () => {
+    mockWithCoverage('fail');
+    render(<Validation />);
+    expect(await screen.findByText('Perimeter check')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toContain('Coverage unavailable');
+    expect(screen.queryByText('Validation unavailable')).toBeNull();
+  });
+});

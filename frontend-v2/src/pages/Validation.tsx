@@ -29,6 +29,17 @@ interface ValidationRun {
   created_at: string;
 }
 
+interface TechniqueCoverage {
+  technique_id: string;
+  technique_name: string;
+  total_tests: number;
+  detections: number;
+  detection_rate: number;
+}
+
+const coverageTone = (rate: number) =>
+  rate >= 70 ? 'text-success' : rate >= 40 ? 'text-warning' : 'text-danger';
+
 const AVAILABLE_TECHNIQUES = [
   { id: 'T1059', name: 'Command and Scripting Interpreter' },
   { id: 'T1071', name: 'Application Layer Protocol' },
@@ -49,6 +60,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 export function Validation() {
   const [runs, setRuns] = useState<ValidationRun[]>([]);
+  const [coverage, setCoverage] = useState<TechniqueCoverage[] | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [selectedRun, setSelectedRun] = useState<ValidationRunDetail | null>(null);
   const [newRun, setNewRun] = useState({ name: '', description: '', techniques: [] as string[] });
@@ -58,14 +70,18 @@ export function Validation() {
   const [confirmRunId, setConfirmRunId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [coverageError, setCoverageError] = useState('');
 
   const fetchRuns = async () => {
-    try {
-      const res = await apiClient.get('/validation/runs');
-      setRuns(res.data.data || []);
-      setError('');
-    } catch (err) { setError(getApiErrorMessage(err, 'Validation runs could not be loaded.')); }
-    finally { setLoading(false); }
+    const [runsResult, coverageResult] = await Promise.allSettled([
+      apiClient.get('/validation/runs'),
+      apiClient.get('/validation/coverage'),
+    ]);
+    if (runsResult.status === 'fulfilled') { setRuns(runsResult.value.data.data || []); setError(''); }
+    else setError(getApiErrorMessage(runsResult.reason, 'Validation runs could not be loaded.'));
+    if (coverageResult.status === 'fulfilled') { setCoverage(coverageResult.value.data.data || []); setCoverageError(''); }
+    else { setCoverage(null); setCoverageError(getApiErrorMessage(coverageResult.reason, 'Coverage data could not be loaded.')); }
+    setLoading(false);
   };
 
   const createRun = async () => {
@@ -158,6 +174,28 @@ export function Validation() {
               {creating ? 'Creating...' : 'Create Run'}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Coverage by technique */}
+      {!loading && coverageError && (
+        <p role="alert" className="rounded-md border border-warning/30 bg-warning/5 p-3 text-sm text-warning">{coverageError}</p>
+      )}
+      {!loading && !coverageError && coverage && coverage.length > 0 && (
+        <div className="oa-panel p-6">
+          <h2 className="text-lg font-semibold text-surface-50 mb-4">Detection Coverage by Technique</h2>
+          <ul className="space-y-2">
+            {coverage.map(c => (
+              <li key={c.technique_id} className="flex items-center gap-4 rounded-lg border border-surface-800 bg-surface-900/30 p-3">
+                <span className="font-mono text-xs text-primary-400 w-16 shrink-0">{c.technique_id}</span>
+                <span className="min-w-0 flex-1 truncate text-sm text-surface-300">{c.technique_name}</span>
+                <span className="text-xs text-surface-500 shrink-0">{c.detections}/{c.total_tests} detected</span>
+                <span className={clsx('w-12 text-right text-sm font-bold shrink-0', coverageTone(c.detection_rate))}>
+                  {c.detection_rate}%
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
