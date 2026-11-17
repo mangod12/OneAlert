@@ -61,6 +61,7 @@ export function Events() {
   const [eventTypeFilter, setEventTypeFilter] = useState('');
   const [eventTypes, setEventTypes] = useState<string[]>([]);
   const [ipSearch, setIpSearch] = useState('');
+  const [signatureSearch, setSignatureSearch] = useState('');
   const [sourceTypeFilter, setSourceTypeFilter] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [sources, setSources] = useState<EventSource[]>([]);
@@ -75,6 +76,7 @@ export function Events() {
       if (severityFilter) params.severity = severityFilter;
       if (eventTypeFilter) params.event_type = eventTypeFilter;
       if (ipSearch.trim()) params.ip = ipSearch.trim();
+      if (signatureSearch.trim()) params.signature = signatureSearch.trim();
       if (sourceTypeFilter) params.source_type = sourceTypeFilter;
       params.sort = sort;
       const [evtResult, statsResult, sourcesResult] = await Promise.allSettled([
@@ -94,7 +96,7 @@ export function Events() {
     } finally {
       setLoading(false);
     }
-  }, [page, severityFilter, eventTypeFilter, ipSearch, sourceTypeFilter, sort]);
+  }, [page, severityFilter, eventTypeFilter, ipSearch, signatureSearch, sourceTypeFilter, sort]);
 
   useEffect(() => { void fetchEvents(); }, [fetchEvents]);
 
@@ -195,6 +197,18 @@ export function Events() {
           placeholder="Source or destination IP"
           value={ipSearch}
           onChange={e => { setPage(1); setIpSearch(e.target.value); }}
+          className="bg-surface-800 border border-surface-700 text-surface-200 text-xs rounded px-2 py-1.5 w-44 placeholder:text-surface-500"
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <label htmlFor="event-signature-filter" className="text-xs text-surface-400">Signature</label>
+        <input
+          id="event-signature-filter"
+          aria-label="Search by signature"
+          type="text"
+          placeholder="Rule or notice name"
+          value={signatureSearch}
+          onChange={e => { setPage(1); setSignatureSearch(e.target.value); }}
           className="bg-surface-800 border border-surface-700 text-surface-200 text-xs rounded px-2 py-1.5 w-44 placeholder:text-surface-500"
         />
       </div>
