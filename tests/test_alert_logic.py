@@ -317,3 +317,37 @@ async def test_alert_checker_integration():
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+class TestAlertAuditDetail:
+    """Audit detail strings recorded when alerts are created."""
+
+    @pytest.fixture
+    def mock_asset(self):
+        asset = Mock(spec=Asset)
+        asset.id = 1
+        asset.name = "edge-router-01"
+        return asset
+
+    def _mock_alert(self, severity):
+        alert = Mock()
+        alert.id = 42
+        alert.title = "RouterOS remote code execution"
+        alert.severity = severity
+        return alert
+
+    def test_detail_is_readable_with_enum_severity(self, mock_asset):
+        from backend.models.alert import Severity
+        alert = self._mock_alert(Severity.HIGH)
+        detail = AlertChecker._alert_audit_detail(alert, mock_asset)
+        assert detail == "Alert #42 (high) on edge-router-01: RouterOS remote code execution"
+
+    def test_detail_is_readable_with_plain_string_severity(self, mock_asset):
+        alert = self._mock_alert("critical")
+        detail = AlertChecker._alert_audit_detail(alert, mock_asset)
+        assert detail == "Alert #42 (critical) on edge-router-01: RouterOS remote code execution"
+
+    def test_detail_is_not_an_object_repr(self, mock_asset):
+        alert = self._mock_alert("low")
+        detail = AlertChecker._alert_audit_detail(alert, mock_asset)
+        assert "object at 0x" not in detail
