@@ -7,6 +7,7 @@ vi.mock('../api/client', () => ({
   default: {
     get: vi.fn(),
     post: vi.fn(),
+    patch: vi.fn(),
   },
 }));
 
@@ -14,6 +15,7 @@ import apiClient from '../api/client';
 
 const mockGet = vi.mocked(apiClient.get);
 const mockPost = vi.mocked(apiClient.post);
+const mockPatch = vi.mocked(apiClient.patch);
 
 function makeAlert(overrides: Partial<Alert> = {}): Alert {
   return {
@@ -48,6 +50,7 @@ afterEach(() => {
 beforeEach(() => {
   mockGet.mockResolvedValue(listResponse([makeAlert()]));
   mockPost.mockResolvedValue({ data: {} });
+  mockPatch.mockResolvedValue({ data: {} });
 });
 
 describe('Alerts page', () => {
@@ -65,6 +68,7 @@ describe('Alerts page', () => {
     mockGet.mockImplementation(async (url: string) => {
       if (url === '/assets/') return { data: { assets: [], total: 0 } };
       if (url === '/alerts/epss-batch') return { data: { scores: {} } };
+      if (url === '/orgs/me/members') return { data: [] };
       alertCalls += 1;
       if (alertCalls === 1) throw { isAxiosError: true, response: { status: 500, data: {} } };
       return listResponse([makeAlert()]);
@@ -253,5 +257,47 @@ describe('EPSS badges', () => {
     expect(await screen.findByText('CVE-2026-0001')).toBeTruthy();
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/alerts/epss-batch', { params: { cve_ids: 'CVE-2026-0001' } }));
     expect(screen.queryByText(/EPSS/)).toBeNull();
+  });
+});
+
+describe('Bulk assign', () => {
+  function mockWithMembers() {
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/orgs/me/members') return Promise.resolve({ data: [
+        { id: 2, email: 'sam@example.com', full_name: 'Sam', is_active: true },
+        { id: 3, email: 'inactive@example.com', full_name: null, is_active: false },
+      ] });
+      if (url === '/alerts/epss-batch') return Promise.resolve({ data: { scores: {} } });
+      if (url === '/assets/') return Promise.resolve({ data: { assets: [] } });
+      return Promise.resolve(listResponse([makeAlert()]));
+    });
+  }
+
+  it('assigns all selected alerts to the chosen member', async () => {
+    mockWithMembers();
+    render(<Alerts />);
+    await screen.findByText('CVE-2026-0001');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select alert CVE-2026-0001' }));
+    const select = await screen.findByRole('combobox', { name: 'Assign selected alerts' });
+    expect(screen.queryByRole('option', { name: 'inactive@example.com' })).toBeNull();
+    fireEvent.change(select, { target: { value: '2' } });
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/alerts/1', { assigned_to_id: 2 }));
+  });
+
+  it('unassigns selected alerts via the Unassign option', async () => {
+    mockWithMembers();
+    render(<Alerts />);
+    await screen.findByText('CVE-2026-0001');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select alert CVE-2026-0001' }));
+    const select = await screen.findByRole('combobox', { name: 'Assign selected alerts' });
+    fireEvent.change(select, { target: { value: 'none' } });
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/alerts/1', { assigned_to_id: null }));
+  });
+
+  it('hides the assign control when no alerts are selected', async () => {
+    mockWithMembers();
+    render(<Alerts />);
+    await screen.findByText('CVE-2026-0001');
+    expect(screen.queryByRole('combobox', { name: 'Assign selected alerts' })).toBeNull();
   });
 });
