@@ -172,8 +172,16 @@ export function Alerts() {
               {alerts.map((alert) => (
                 <tr
                   key={alert.id}
+                  tabIndex={0}
                   onClick={() => setSelectedAlert(alert)}
-                  className="group border-b border-surface-700/50 hover:bg-surface-800 cursor-pointer transition-colors"
+                  onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return;
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setSelectedAlert(alert);
+                    }
+                  }}
+                  className="group border-b border-surface-700/50 hover:bg-surface-800 cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500"
                 >
                   <td className="px-4 py-3 hidden sm:table-cell" onClick={(e) => e.stopPropagation()}>
                     <input
