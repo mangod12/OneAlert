@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import apiClient from '../api/client';
-import { Search } from 'lucide-react';
+import { Bot, Search } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
+import { StatusBadge } from '../components/ui/StatusBadge';
 
 interface AuditEntry {
   id: number;
@@ -15,8 +16,28 @@ interface AuditEntry {
   timestamp: string | null;
 }
 
+interface AgentRun {
+  id: number;
+  agent_type: string;
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+  model_used: string | null;
+  prompt_tokens: number;
+  completion_tokens: number;
+  result_summary: string | null;
+}
+
+const runStatusTones: Record<string, 'success' | 'danger' | 'warning' | 'neutral'> = {
+  completed: 'success',
+  failed: 'danger',
+  cancelled: 'warning',
+  running: 'neutral',
+};
+
 export function AuditLog() {
   const [logs, setLogs] = useState<AuditEntry[]>([]);
+  const [agentRuns, setAgentRuns] = useState<AgentRun[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
@@ -34,8 +55,18 @@ export function AuditLog() {
     }
   };
 
+  const fetchAgentRuns = async () => {
+    try {
+      const res = await apiClient.get('/cases/agents/runs');
+      setAgentRuns(res.data);
+    } catch {
+      setAgentRuns(null);
+    }
+  };
+
   useEffect(() => {
     void fetchLogs();
+    void fetchAgentRuns();
   }, []);
 
   const filteredLogs = logs.filter((log) =>
@@ -102,6 +133,47 @@ export function AuditLog() {
               </tbody>
             </table>
           </div>
+
+          {agentRuns && agentRuns.length > 0 && (
+            <div className="oa-panel overflow-hidden rounded-md">
+              <h2 className="flex items-center gap-2 border-b border-surface-700 px-4 py-3 text-sm font-semibold text-surface-50">
+                <Bot className="w-4 h-4 text-primary-400" aria-hidden="true" />
+                Agent activity
+              </h2>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-surface-700 text-surface-400">
+                    <th className="px-4 py-3 text-left">Started</th>
+                    <th className="px-4 py-3 text-left">Agent</th>
+                    <th className="px-4 py-3 text-left">Status</th>
+                    <th className="px-4 py-3 text-left">Model</th>
+                    <th className="px-4 py-3 text-left">Tokens</th>
+                    <th className="px-4 py-3 text-left">Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {agentRuns.map((run) => (
+                    <tr key={run.id} className="border-b border-surface-700/50 hover:bg-surface-800 transition-colors">
+                      <td className="px-4 py-3 text-surface-400 text-xs">
+                        {new Date(run.started_at).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-surface-200 font-medium capitalize">{run.agent_type}</td>
+                      <td className="px-4 py-3">
+                        <StatusBadge tone={runStatusTones[run.status] ?? 'neutral'}>{run.status}</StatusBadge>
+                      </td>
+                      <td className="px-4 py-3 text-surface-400 text-xs">{run.model_used ?? '-'}</td>
+                      <td className="px-4 py-3 text-surface-400 text-xs">
+                        {(run.prompt_tokens + run.completion_tokens).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-surface-500 text-xs max-w-xs truncate">
+                        {run.result_summary || '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
     </div>
