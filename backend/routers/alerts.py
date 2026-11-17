@@ -37,6 +37,9 @@ async def list_alerts(
     asset_id: int | None = Query(None, description="Filter by asset ID"),
     cve_id: str | None = Query(None, description="Filter by CVE ID"),
     search: str | None = Query(None, description="Case-insensitive substring match against CVE ID or title"),
+    assigned: str | None = Query(
+        None, pattern="^(me|unassigned)$", description="Filter by assignment: 'me' or 'unassigned'"
+    ),
     sort: str = Query(
         "created_at_desc",
         pattern="^(created_at_desc|created_at_asc|cvss_desc|cvss_asc)$",
@@ -83,6 +86,12 @@ async def list_alerts(
         )
         query = query.filter(search_match)
         count_base_query = count_base_query.filter(search_match)
+    if assigned == "me":
+        query = query.filter(Alert.assigned_to_id == current_user.id)
+        count_base_query = count_base_query.filter(Alert.assigned_to_id == current_user.id)
+    elif assigned == "unassigned":
+        query = query.filter(Alert.assigned_to_id.is_(None))
+        count_base_query = count_base_query.filter(Alert.assigned_to_id.is_(None))
 
     # Finalize count query using a subquery for explicitness and to avoid deprecation warnings
     final_count_query = select(func.count()).select_from(count_base_query.subquery())

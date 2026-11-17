@@ -190,3 +190,16 @@ describe('Alerts page', () => {
     });
   });
 });
+
+describe('Assignee filter', () => {
+  it('sends assigned=me when "Assigned to me" is selected', async () => {
+    render(<Alerts />);
+    await screen.findByRole('combobox', { name: 'Filter by status' });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter by assignee' }), { target: { value: 'me' } });
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith('/alerts/', {
+        params: { page: 1, size: 15, assigned: 'me', sort: 'created_at_desc' },
+      });
+    });
+  });
+});
