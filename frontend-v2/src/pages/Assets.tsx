@@ -112,6 +112,7 @@ export function Assets() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
         <input
           type="text"
+          aria-label="Search assets"
           placeholder="Search assets..."
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
@@ -226,27 +227,27 @@ function AssetModal({ asset, assetTypes, onClose, onSave, saving }: { asset: Ass
         <h2 id="asset-dialog-title" className="text-lg font-semibold text-surface-50 mb-4">{asset ? 'Edit Asset' : 'Add Asset'}</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <input
-            type="text" placeholder="Name" value={form.name}
+            type="text" aria-label="Asset name" placeholder="Name" value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
             required
           />
           <div className="grid grid-cols-2 gap-3">
             <input
-              type="text" placeholder="Vendor" value={form.vendor}
+              type="text" aria-label="Vendor" placeholder="Vendor" value={form.vendor}
               onChange={(e) => setForm({ ...form, vendor: e.target.value })}
               className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
               required
             />
             <input
-              type="text" placeholder="Product" value={form.product}
+              type="text" aria-label="Product" placeholder="Product" value={form.product}
               onChange={(e) => setForm({ ...form, product: e.target.value })}
               className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
               required
             />
           </div>
           <input
-            type="text" placeholder="Version" value={form.version || ''}
+            type="text" aria-label="Version" placeholder="Version" value={form.version || ''}
             onChange={(e) => setForm({ ...form, version: e.target.value })}
             className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
@@ -261,6 +262,7 @@ function AssetModal({ asset, assetTypes, onClose, onSave, saving }: { asset: Ass
             ))}
           </select>
           <select
+            aria-label="Criticality"
             value={form.criticality || 'medium'}
             onChange={(e) => setForm({ ...form, criticality: e.target.value })}
             className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"

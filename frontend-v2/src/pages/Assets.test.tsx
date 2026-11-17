@@ -67,6 +67,16 @@ describe('Assets page', () => {
     });
   });
 
+  it('labels the search input and the asset form fields for assistive tech', async () => {
+    render(<Assets />);
+    expect(await screen.findByRole('textbox', { name: 'Search assets' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /add asset/i }));
+    const dialog = await screen.findByRole('dialog');
+    for (const label of ['Asset name', 'Vendor', 'Product', 'Version', 'Asset type', 'Criticality']) {
+      expect(within(dialog).getByLabelText(label)).toBeTruthy();
+    }
+  });
+
   it('prefills the edit dialog and saves the changed name', async () => {
     render(<Assets />);
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Plant gateway' }));
