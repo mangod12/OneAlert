@@ -72,7 +72,7 @@ describe('AlertDetail', () => {
     get.mockRejectedValue(new Error('offline'));
     render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onAssigned={() => {}} />);
     expect(screen.getByText('RouterOS RCE')).toBeTruthy();
-    await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(4));
     expect(screen.queryByText(/Exploit probability/)).toBeNull();
     expect(screen.queryByText('Remediation plan')).toBeNull();
   });
@@ -180,5 +180,34 @@ describe('Resolve action', () => {
     render(<AlertDetail alert={{ ...alert, status: 'resolved' }} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onAssigned={() => {}} />);
     await waitFor(() => expect(screen.getByText('RouterOS RCE')).toBeTruthy());
     expect(screen.queryByRole('button', { name: /resolve alert/i })).toBeNull();
+  });
+});
+
+describe('KEV panel', () => {
+  it('shows KEV details when the CVE is catalogued', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null, message: 'EPSS data not available' } };
+      if (url === '/alerts/1/remediations') return { data: [] };
+      if (url === '/alerts/kev-batch') return { data: { entries: { 'CVE-2026-0001': { date_added: '2026-05-01', due_date: '2026-05-22', known_ransomware_campaign_use: 'Known', required_action: 'Apply updates per vendor.' } } } };
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onAssigned={() => {}} />);
+    await screen.findByText('CISA Known Exploited Vulnerability');
+    expect(screen.getByText(/active exploitation reported/)).toBeTruthy();
+    expect(screen.getByText(/remediation due 2026-05-22/)).toBeTruthy();
+    expect(screen.getByText('Used in ransomware campaigns')).toBeTruthy();
+    expect(screen.getByText('Apply updates per vendor.')).toBeTruthy();
+  });
+
+  it('shows no KEV panel when the CVE is not catalogued', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null, message: 'EPSS data not available' } };
+      if (url === '/alerts/1/remediations') return { data: [] };
+      if (url === '/alerts/kev-batch') return { data: { entries: {} } };
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onAssigned={() => {}} />);
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/alerts/kev-batch', { params: { cve_ids: 'CVE-2026-0001' } }));
+    expect(screen.queryByText('CISA Known Exploited Vulnerability')).toBeNull();
   });
 });

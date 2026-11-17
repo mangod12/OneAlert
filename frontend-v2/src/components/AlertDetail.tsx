@@ -35,6 +35,7 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onAssign
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus(dialogRef, onClose);
   const [epss, setEpss] = useState<EpssScore | null>(null);
+  const [kev, setKev] = useState<{ date_added: string | null; due_date: string | null; known_ransomware_campaign_use: string | null; required_action: string | null } | null>(null);
   const [remediations, setRemediations] = useState<RemediationAction[] | null>(null);
   const [showEscalate, setShowEscalate] = useState(false);
   const [members, setMembers] = useState<OrgMember[]>([]);
@@ -66,13 +67,18 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onAssign
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const [epssResult, remediationResult] = await Promise.allSettled([
+      const kevRequest = alert.cve_id
+        ? apiClient.get<{ entries: Record<string, { date_added: string | null; due_date: string | null; known_ransomware_campaign_use: string | null; required_action: string | null }> }>('/alerts/kev-batch', { params: { cve_ids: alert.cve_id } })
+        : Promise.reject(new Error('no cve'));
+      const [epssResult, remediationResult, kevResult] = await Promise.allSettled([
         apiClient.get<EpssScore>(`/alerts/${alert.id}/epss`),
         apiClient.get<RemediationAction[]>(`/alerts/${alert.id}/remediations`),
+        kevRequest,
       ]);
       if (cancelled) return;
       if (epssResult.status === 'fulfilled') setEpss(epssResult.value.data);
       if (remediationResult.status === 'fulfilled') setRemediations(remediationResult.value.data);
+      if (kevResult.status === 'fulfilled' && alert.cve_id) setKev(kevResult.value.data.entries?.[alert.cve_id] ?? null);
     };
     void load();
     return () => { cancelled = true; };
@@ -127,6 +133,20 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onAssign
               ) : (
                 <p className="text-surface-400 mt-1 text-sm">{epss.message ?? 'EPSS data not available'}</p>
               )}
+            </div>
+          )}
+
+          {kev && (
+            <div>
+              <label className="text-xs text-surface-500 uppercase tracking-wide">CISA Known Exploited Vulnerability</label>
+              <div className="mt-1 rounded-md border border-danger/30 bg-danger/10 p-3 space-y-1.5">
+                <p className="text-sm font-semibold text-danger">Listed in the KEV catalog — active exploitation reported</p>
+                {kev.date_added && <p className="text-xs text-surface-300">Added {kev.date_added}{kev.due_date ? ` · remediation due ${kev.due_date}` : ''}</p>}
+                {kev.known_ransomware_campaign_use === 'Known' && (
+                  <p className="text-xs font-medium text-danger">Used in ransomware campaigns</p>
+                )}
+                {kev.required_action && <p className="text-xs text-surface-400">{kev.required_action}</p>}
+              </div>
             </div>
           )}
 
