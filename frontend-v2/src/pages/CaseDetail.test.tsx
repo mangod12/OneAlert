@@ -302,3 +302,24 @@ describe('Unlinking related items', () => {
     await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2));
   });
 });
+
+describe('Case severity editing', () => {
+  it('changes severity via the select and refetches', async () => {
+    mockLoad();
+    mockPatch.mockResolvedValue({ data: { success: true } });
+    renderDetail();
+    const select = await screen.findByRole('combobox', { name: 'Change case severity' });
+    fireEvent.change(select, { target: { value: 'critical' } });
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith(
+      '/cases/7', null, { params: { severity: 'critical' } },
+    ));
+  });
+
+  it('does not patch when the same severity is reselected', async () => {
+    mockLoad();
+    renderDetail();
+    const select = await screen.findByRole('combobox', { name: 'Change case severity' });
+    fireEvent.change(select, { target: { value: 'high' } });
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+});

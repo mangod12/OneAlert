@@ -91,6 +91,7 @@ export function CaseDetail() {
   const [eventOptions, setEventOptions] = useState<RelatedEvent[]>([]);
   const [linkingEvent, setLinkingEvent] = useState(false);
   const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
+  const [changingSeverity, setChangingSeverity] = useState(false);
 
   const changeStatus = async (status: string) => {
     if (updatingStatus) return;
@@ -101,6 +102,17 @@ export function CaseDetail() {
       await fetchAll();
     } catch (err) { toast(getApiErrorMessage(err, 'Case status could not be updated.'), 'error'); }
     finally { setUpdatingStatus(false); }
+  };
+
+  const changeSeverity = async (severity: string) => {
+    if (changingSeverity || severity === caseData?.severity) return;
+    setChangingSeverity(true);
+    try {
+      await apiClient.patch(`/cases/${caseId}`, null, { params: { severity } });
+      toast(`Severity set to ${severity}`, 'success');
+      await fetchAll();
+    } catch (err) { toast(getApiErrorMessage(err, 'Case severity could not be updated.'), 'error'); }
+    finally { setChangingSeverity(false); }
   };
 
   const openLinkAlert = async () => {
@@ -219,6 +231,15 @@ export function CaseDetail() {
             <div className="flex items-center gap-3 mb-2">
               <StatusBadge tone={alertSeverityTones[caseData.severity] ?? 'neutral'}>{caseData.severity}</StatusBadge>
               <StatusBadge tone={caseStatusTones[caseData.status] ?? 'neutral'}>{caseData.status}</StatusBadge>
+              <select
+                aria-label="Change case severity"
+                value={caseData.severity}
+                disabled={changingSeverity}
+                onChange={e => void changeSeverity(e.target.value)}
+                className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200 disabled:opacity-40"
+              >
+                {['info', 'low', 'medium', 'high', 'critical'].map(sev => <option key={sev} value={sev}>{sev}</option>)}
+              </select>
               {caseData.confidence_score && (
                 <span className="text-sm text-surface-400">
                   {Math.round(caseData.confidence_score * 100)}% confidence
