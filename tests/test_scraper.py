@@ -3,6 +3,7 @@ Tests for CVE and vendor scraper services.
 Tests the functionality of vulnerability data fetching and parsing.
 """
 
+import httpx
 import pytest
 import asyncio
 from unittest.mock import Mock, patch, AsyncMock
@@ -114,7 +115,7 @@ class TestCVEScraper:
     async def test_fetch_cves_api_error(self, mock_get, scraper):
         """Test handling of API errors when fetching CVEs."""
         # Mock API error
-        mock_get.side_effect = Exception("API Error")
+        mock_get.side_effect = httpx.ConnectError("API Error")
         
         cves = await scraper.fetch_recent_cves(24)
         

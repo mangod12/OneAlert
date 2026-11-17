@@ -57,7 +57,7 @@ class CVEScraper:
 
                 return [self._parse_cve(cve) for cve in cves]
 
-        except Exception as e:
+        except (httpx.HTTPError, ValueError) as e:
             logger.error(f"Error fetching CVEs: {e}")
             return []
 
@@ -80,7 +80,7 @@ class CVEScraper:
 
                 return None
 
-        except Exception as e:
+        except (httpx.HTTPError, ValueError) as e:
             logger.error(f"Error fetching CVE {cve_id}: {e}")
             return None
 
@@ -145,7 +145,7 @@ class CVEScraper:
                 "source_url": f"https://nvd.nist.gov/vuln/detail/{cve_id}"
             }
 
-        except Exception as e:
+        except (httpx.HTTPError, ValueError, TypeError, IndexError) as e:
             logger.error(f"Error parsing CVE data: {e}")
             return {}
 
@@ -186,7 +186,7 @@ class CVEScraper:
 
                 return [self._parse_cve(cve) for cve in cves]
 
-        except Exception as e:
+        except (httpx.HTTPError, ValueError) as e:
             logger.error(f"Error searching CVEs for keyword '{keyword}': {e}")
             return []
 
