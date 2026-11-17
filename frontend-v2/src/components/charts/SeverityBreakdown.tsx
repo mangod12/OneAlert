@@ -1,11 +1,12 @@
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import type { AlertStats } from '../../api/types';
+import { chartColors, tooltipStyle } from './theme';
 
 const COLORS = {
-  Critical: '#ef4444',
-  High: '#f59e0b',
-  Medium: '#3b82f6',
-  Low: '#10b981',
+  Critical: chartColors.critical,
+  High: chartColors.high,
+  Medium: chartColors.medium,
+  Low: chartColors.low,
 };
 
 interface Props {
@@ -26,13 +27,15 @@ export function SeverityBreakdown({ stats }: Props) {
     return <p className="text-surface-500 text-center py-8">No alerts yet</p>;
   }
 
+  const total = data.reduce((sum, d) => sum + d.value, 0);
+
   return (
     <ResponsiveContainer width="100%" height={250}>
       <PieChart>
         <Pie
           data={data}
           cx="50%"
-          cy="50%"
+          cy="44%"
           innerRadius={60}
           outerRadius={90}
           paddingAngle={4}
@@ -45,9 +48,15 @@ export function SeverityBreakdown({ stats }: Props) {
             />
           ))}
         </Pie>
+        <text x="50%" y="41%" textAnchor="middle" dominantBaseline="middle" className="fill-surface-50" fontSize="26" fontWeight="700">
+          {total}
+        </text>
+        <text x="50%" y="52%" textAnchor="middle" dominantBaseline="middle" className="fill-surface-500" fontSize="11">
+          {total === 1 ? 'alert' : 'alerts'}
+        </text>
         <Tooltip
-          contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
-          labelStyle={{ color: '#f1f5f9' }}
+          contentStyle={tooltipStyle}
+          labelStyle={{ color: chartColors.tooltipText }}
         />
         <Legend
           formatter={(value) => <span className="text-surface-300 text-sm">{value}</span>}
