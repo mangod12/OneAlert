@@ -1,9 +1,18 @@
-import type { Alert } from '../api/types';
-import { X, ExternalLink } from 'lucide-react';
-import { useRef } from 'react';
+import type { Alert, EpssScore, RemediationAction } from '../api/types';
+import apiClient from '../api/client';
+import { X, ExternalLink, Wrench } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { StatusBadge } from './ui/StatusBadge';
 import { alertSeverityTones, alertStatusTones } from './ui/tones';
 import { useDialogFocus } from './ui/useDialogFocus';
+
+const actionTypeLabels: Record<string, string> = {
+  patch: 'Patch',
+  compensating_control: 'Compensating control',
+  network_segmentation: 'Network segmentation',
+  firmware_upgrade: 'Firmware upgrade',
+  accept_risk: 'Accept risk',
+};
 
 interface Props {
   alert: Alert;
@@ -14,6 +23,23 @@ interface Props {
 export function AlertDetail({ alert, onClose, onAcknowledge }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus(dialogRef, onClose);
+  const [epss, setEpss] = useState<EpssScore | null>(null);
+  const [remediations, setRemediations] = useState<RemediationAction[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const [epssResult, remediationResult] = await Promise.allSettled([
+        apiClient.get<EpssScore>(`/alerts/${alert.id}/epss`),
+        apiClient.get<RemediationAction[]>(`/alerts/${alert.id}/remediations`),
+      ]);
+      if (cancelled) return;
+      if (epssResult.status === 'fulfilled') setEpss(epssResult.value.data);
+      if (remediationResult.status === 'fulfilled') setRemediations(remediationResult.value.data);
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [alert.id]);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -51,10 +77,53 @@ export function AlertDetail({ alert, onClose, onAcknowledge }: Props) {
             <p className="text-surface-300 mt-1 text-sm leading-relaxed">{alert.description}</p>
           </div>
 
+          {epss && (
+            <div>
+              <label className="text-xs text-surface-500 uppercase tracking-wide">Exploit probability (EPSS)</label>
+              {epss.epss_score != null ? (
+                <p className="text-surface-200 mt-1 text-sm">
+                  {(epss.epss_score * 100).toFixed(1)}%
+                  {epss.epss_percentile != null && (
+                    <span className="text-surface-400"> · higher than {(epss.epss_percentile * 100).toFixed(0)}% of CVEs</span>
+                  )}
+                </p>
+              ) : (
+                <p className="text-surface-400 mt-1 text-sm">{epss.message ?? 'EPSS data not available'}</p>
+              )}
+            </div>
+          )}
+
           {alert.remediation && (
             <div>
               <label className="text-xs text-surface-500 uppercase tracking-wide">Remediation</label>
               <p className="text-surface-300 mt-1 text-sm">{alert.remediation}</p>
+            </div>
+          )}
+
+          {remediations && remediations.length > 0 && (
+            <div>
+              <label className="flex items-center gap-1.5 text-xs text-surface-500 uppercase tracking-wide">
+                <Wrench className="w-3.5 h-3.5" aria-hidden="true" />
+                Remediation plan
+              </label>
+              <ol className="mt-2 space-y-2">
+                {[...remediations].sort((a, b) => a.priority - b.priority).map((action) => (
+                  <li key={action.id} className="rounded-md border border-surface-700 bg-surface-800/50 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-primary-300">
+                        {actionTypeLabels[action.action_type] ?? action.action_type}
+                      </span>
+                      <StatusBadge tone="neutral">{action.status}</StatusBadge>
+                    </div>
+                    <p className="mt-1 text-sm text-surface-300">{action.description}</p>
+                    <p className="mt-1 text-xs text-surface-500">
+                      {action.estimated_downtime_minutes != null && `${action.estimated_downtime_minutes} min downtime`}
+                      {action.estimated_downtime_minutes != null && action.requires_maintenance_window && ' · '}
+                      {action.requires_maintenance_window && 'Needs a maintenance window'}
+                    </p>
+                  </li>
+                ))}
+              </ol>
             </div>
           )}
 

@@ -121,7 +121,8 @@ describe('Alerts page', () => {
       expect(mockPost).toHaveBeenCalledWith('/alerts/1/acknowledge');
     });
     await waitFor(() => {
-      expect(mockGet).toHaveBeenCalledTimes(2);
+      const listCalls = mockGet.mock.calls.filter(([url]) => url === '/alerts/');
+      expect(listCalls).toHaveLength(2);
       expect(screen.queryByRole('dialog')).toBeNull();
     });
   });
