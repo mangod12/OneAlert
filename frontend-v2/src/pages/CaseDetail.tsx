@@ -1,7 +1,7 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import apiClient from '../api/client';
-import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2 } from 'lucide-react';
+import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { toast } from '../components/Toast';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -90,6 +90,7 @@ export function CaseDetail() {
   const [showLinkEvent, setShowLinkEvent] = useState(false);
   const [eventOptions, setEventOptions] = useState<RelatedEvent[]>([]);
   const [linkingEvent, setLinkingEvent] = useState(false);
+  const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
 
   const changeStatus = async (status: string) => {
     if (updatingStatus) return;
@@ -142,6 +143,18 @@ export function CaseDetail() {
       await fetchAll();
     } catch (err) { toast(getApiErrorMessage(err, 'The event could not be linked.'), 'error'); }
     finally { setLinkingEvent(false); }
+  };
+
+  const unlinkItem = async (kind: 'alerts' | 'events', id: number) => {
+    const key = `${kind}-${id}`;
+    if (unlinkingId) return;
+    setUnlinkingId(key);
+    try {
+      await apiClient.delete(`/cases/${caseId}/${kind}/${id}`);
+      toast(`${kind === 'alerts' ? 'Alert' : 'Event'} unlinked from the case.`, 'success');
+      await fetchAll();
+    } catch (err) { toast(getApiErrorMessage(err, 'The link could not be removed.'), 'error'); }
+    finally { setUnlinkingId(null); }
   };
 
   const addNote = async () => {
@@ -404,6 +417,15 @@ export function CaseDetail() {
                     <div className="flex items-center gap-2 mb-1">
                       <StatusBadge tone={alertSeverityTones[a.severity] ?? 'neutral'}>{a.severity}</StatusBadge>
                       {a.cve_id && <span className="text-xs text-primary-400">{a.cve_id}</span>}
+                      <button
+                        type="button"
+                        aria-label={`Unlink alert ${a.title}`}
+                        disabled={unlinkingId !== null}
+                        onClick={() => void unlinkItem('alerts', a.id)}
+                        className="ml-auto text-surface-500 hover:text-danger disabled:opacity-50"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                     <p className="text-sm text-surface-300 truncate">{a.title}</p>
                   </div>
@@ -428,6 +450,15 @@ export function CaseDetail() {
                     <div className="flex items-center gap-2 mb-1">
                       <StatusBadge tone={eventSeverityTones[e.severity] ?? 'neutral'}>{e.severity}</StatusBadge>
                       <span className="text-xs text-surface-500">{e.event_type}</span>
+                      <button
+                        type="button"
+                        aria-label={`Unlink event ${e.signature ?? e.event_type}`}
+                        disabled={unlinkingId !== null}
+                        onClick={() => void unlinkItem('events', e.id)}
+                        className="ml-auto text-surface-500 hover:text-danger disabled:opacity-50"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                     <p className="text-xs text-surface-400">
                       {e.source_ip} → {e.dest_ip} {e.signature && `| ${e.signature}`}

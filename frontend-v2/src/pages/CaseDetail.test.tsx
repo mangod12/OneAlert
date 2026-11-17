@@ -8,6 +8,7 @@ vi.mock('../api/client', () => ({
     get: vi.fn(),
     patch: vi.fn(),
     post: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
@@ -16,6 +17,7 @@ import apiClient from '../api/client';
 const mockGet = vi.mocked(apiClient.get);
 const mockPatch = vi.mocked(apiClient.patch);
 const mockPost = vi.mocked(apiClient.post);
+const mockDelete = vi.mocked(apiClient.delete);
 
 const caseData = {
   id: 7,
@@ -193,7 +195,7 @@ describe('Linking alerts to the case', () => {
     mockPost.mockResolvedValue({ data: { success: true, data: { linked: true } } });
     renderDetail();
     await screen.findByText('Suspicious lateral movement');
-    fireEvent.click(screen.getByRole('button', { name: /link alert/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Link alert' }));
     const select = await screen.findByLabelText('Alert to link');
     // Alert 11 is already linked, so only alert 12 is offered.
     expect(screen.queryByRole('option', { name: /Suspicious login burst/ })).toBeNull();
@@ -215,7 +217,7 @@ describe('Linking alerts to the case', () => {
     });
     renderDetail();
     await screen.findByText('Suspicious lateral movement');
-    fireEvent.click(screen.getByRole('button', { name: /link alert/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Link alert' }));
     expect(await screen.findByText('Every recent alert is already linked.')).toBeTruthy();
   });
 });
@@ -242,7 +244,7 @@ describe('Linking events to the case', () => {
     mockPost.mockResolvedValue({ data: { success: true, data: { linked: true } } });
     renderDetail();
     await screen.findByText('Suspicious lateral movement');
-    fireEvent.click(screen.getByRole('button', { name: /link event/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Link event' }));
     const select = await screen.findByLabelText('Event to link');
     // Event 21 is already linked, so only event 22 is offered.
     expect(screen.queryByRole('option', { name: /ET SCAN Nmap/ })).toBeNull();
@@ -264,7 +266,39 @@ describe('Linking events to the case', () => {
     });
     renderDetail();
     await screen.findByText('Suspicious lateral movement');
-    fireEvent.click(screen.getByRole('button', { name: /link event/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Link event' }));
     expect(await screen.findByText('Every recent event is already linked.')).toBeTruthy();
+  });
+});
+
+describe('Unlinking related items', () => {
+  function mockLoadWithLinked() {
+    mockGet.mockImplementation(url => {
+      if (url.endsWith('/alerts')) return Promise.resolve({ data: [{ id: 11, severity: 'high', title: 'Suspicious login burst' }] });
+      if (url.endsWith('/events')) return Promise.resolve({ data: [{ id: 21, event_type: 'alert', severity: 'high', signature: 'ET SCAN Nmap', source_ip: '10.0.4.9', dest_ip: '10.0.4.20' }] });
+      if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: null } });
+      if (url.endsWith('/similar')) return Promise.resolve({ data: { success: true, data: [] } });
+      return Promise.resolve({ data: caseData });
+    });
+  }
+
+  it('unlinks an alert and refreshes the case', async () => {
+    mockLoadWithLinked();
+    mockDelete.mockResolvedValue({ data: { success: true, data: { unlinked: true } } });
+    renderDetail();
+    await screen.findByText('Suspicious login burst');
+    fireEvent.click(screen.getByRole('button', { name: 'Unlink alert Suspicious login burst' }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/7/alerts/11'));
+    await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2));
+  });
+
+  it('unlinks an event and refreshes the case', async () => {
+    mockLoadWithLinked();
+    mockDelete.mockResolvedValue({ data: { success: true, data: { unlinked: true } } });
+    renderDetail();
+    await screen.findByText(/ET SCAN Nmap/);
+    fireEvent.click(screen.getByRole('button', { name: 'Unlink event ET SCAN Nmap' }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/7/events/21'));
+    await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2));
   });
 });
