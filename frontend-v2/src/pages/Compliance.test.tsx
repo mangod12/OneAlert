@@ -71,6 +71,30 @@ describe('Compliance page', () => {
     await screen.findByText('Compliance unavailable');
   });
 });
+describe('Control search and status filter', () => {
+  it('filters controls by ID or title substring', async () => {
+    render(<Compliance />);
+    fireEvent.click(await screen.findByText('NIST CSF'));
+    await screen.findByText('PR.AC-1');
+    fireEvent.change(screen.getByLabelText('Search controls'), { target: { value: 'networks' } });
+    expect(screen.queryByText('PR.AC-1')).toBeNull();
+    expect(screen.getByText('DE.CM-1')).toBeTruthy();
+    expect(screen.getByText('1 of 2 controls')).toBeTruthy();
+  });
+
+  it('filters controls by effective assessment status', async () => {
+    render(<Compliance />);
+    fireEvent.click(await screen.findByText('NIST CSF'));
+    await screen.findByText('PR.AC-1');
+    fireEvent.change(screen.getByLabelText('Filter controls by status'), { target: { value: 'not_assessed' } });
+    expect(screen.queryByText('PR.AC-1')).toBeNull();
+    expect(screen.getByText('DE.CM-1')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Filter controls by status'), { target: { value: 'compliant' } });
+    expect(screen.getByText('PR.AC-1')).toBeTruthy();
+    expect(screen.queryByText('DE.CM-1')).toBeNull();
+  });
+});
+
 describe('Assessment status updates', () => {
   it('updates an assessment status and saves it to the API', async () => {
     render(<Compliance />);
