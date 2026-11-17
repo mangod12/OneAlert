@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import type { Alert } from '../../api/types';
+import { chartColors, tooltipStyle } from './theme';
 
 interface Props {
   alerts: Alert[];
@@ -44,17 +45,18 @@ export function AlertTrend({ alerts }: Props) {
   return (
     <ResponsiveContainer width="100%" height={250}>
       <BarChart data={data}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-        <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} />
-        <YAxis stroke="#94a3b8" fontSize={12} allowDecimals={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
+        <XAxis dataKey="date" stroke={chartColors.axis} fontSize={11} tickLine={false} axisLine={false} />
+        <YAxis stroke={chartColors.axis} fontSize={12} allowDecimals={false} tickLine={false} axisLine={false} width={28} />
         <Tooltip
-          contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
-          labelStyle={{ color: '#f1f5f9' }}
+          contentStyle={tooltipStyle}
+          labelStyle={{ color: chartColors.tooltipText }}
+          cursor={{ fill: 'oklch(90% 0.02 220 / 0.05)' }}
         />
-        <Bar dataKey="critical" stackId="a" fill="#ef4444" name="Critical" />
-        <Bar dataKey="high" stackId="a" fill="#f59e0b" name="High" />
-        <Bar dataKey="medium" stackId="a" fill="#3b82f6" name="Medium" />
-        <Bar dataKey="low" stackId="a" fill="#10b981" name="Low" />
+        <Bar dataKey="critical" stackId="a" fill={chartColors.critical} name="Critical" />
+        <Bar dataKey="high" stackId="a" fill={chartColors.high} name="High" />
+        <Bar dataKey="medium" stackId="a" fill={chartColors.medium} name="Medium" />
+        <Bar dataKey="low" stackId="a" fill={chartColors.low} name="Low" />
       </BarChart>
     </ResponsiveContainer>
   );
