@@ -57,11 +57,19 @@ export function Cases() {
   const [pipelineResult, setPipelineResult] = useState<PipelineResult | null>(null);
   const [showNewCase, setShowNewCase] = useState(false);
   const [creatingCase, setCreatingCase] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [severityFilter, setSeverityFilter] = useState('');
 
   const fetchCases = async () => {
     setError(null);
     try {
-      const res = await apiClient.get('/cases/', { params: { size: 50 } });
+      const res = await apiClient.get('/cases/', {
+        params: {
+          size: 50,
+          ...(statusFilter ? { status: statusFilter } : {}),
+          ...(severityFilter ? { severity: severityFilter } : {}),
+        },
+      });
       setCases(res.data.cases);
       setTotal(res.data.total);
     } catch (err: unknown) {
@@ -112,7 +120,7 @@ export function Cases() {
     }
   };
 
-  useEffect(() => { fetchCases(); }, []);
+  useEffect(() => { fetchCases(); }, [statusFilter, severityFilter]);
 
   const runSearch = async () => {
     const q = searchQuery.trim();
@@ -189,6 +197,29 @@ export function Cases() {
               <X className="w-4 h-4" />
             </button>
           </div>
+        </div>
+      )}
+
+      {!loading && !error && (
+        <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="case-status-filter" className="sr-only">Filter by status</label>
+          <select id="case-status-filter" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200">
+            <option value="">All statuses</option>
+            <option value="open">Open</option>
+            <option value="investigating">Investigating</option>
+            <option value="resolved">Resolved</option>
+            <option value="closed">Closed</option>
+            <option value="false_positive">False positive</option>
+          </select>
+          <label htmlFor="case-severity-filter" className="sr-only">Filter by severity</label>
+          <select id="case-severity-filter" value={severityFilter} onChange={e => setSeverityFilter(e.target.value)} className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200">
+            <option value="">All severities</option>
+            <option value="info">Info</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
         </div>
       )}
 
