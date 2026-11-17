@@ -59,6 +59,7 @@ export function Events() {
   const [severityFilter, setSeverityFilter] = useState('');
   const [eventTypeFilter, setEventTypeFilter] = useState('');
   const [eventTypes, setEventTypes] = useState<string[]>([]);
+  const [ipSearch, setIpSearch] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [sources, setSources] = useState<EventSource[]>([]);
   const [showUpload, setShowUpload] = useState(false);
@@ -71,6 +72,7 @@ export function Events() {
       const params: Record<string, string | number> = { page, size: 50 };
       if (severityFilter) params.severity = severityFilter;
       if (eventTypeFilter) params.event_type = eventTypeFilter;
+      if (ipSearch.trim()) params.ip = ipSearch.trim();
       const [evtResult, statsResult, sourcesResult] = await Promise.allSettled([
         apiClient.get('/events/', { params }),
         apiClient.get('/events/stats'),
@@ -88,7 +90,7 @@ export function Events() {
     } finally {
       setLoading(false);
     }
-  }, [page, severityFilter, eventTypeFilter]);
+  }, [page, severityFilter, eventTypeFilter, ipSearch]);
 
   useEffect(() => { void fetchEvents(); }, [fetchEvents]);
 
@@ -177,7 +179,20 @@ export function Events() {
         </div>
       )}
 
-      {/* Event type filter */}
+      {/* Event filters */}
+      <div className="flex items-center gap-4 flex-wrap">
+      <div className="flex items-center gap-2">
+        <label htmlFor="event-ip-filter" className="text-xs text-surface-400">IP</label>
+        <input
+          id="event-ip-filter"
+          aria-label="Search by IP address"
+          type="text"
+          placeholder="Source or destination IP"
+          value={ipSearch}
+          onChange={e => { setPage(1); setIpSearch(e.target.value); }}
+          className="bg-surface-800 border border-surface-700 text-surface-200 text-xs rounded px-2 py-1.5 w-44 placeholder:text-surface-500"
+        />
+      </div>
       {eventTypes.length > 0 && (
         <div className="flex items-center gap-2">
           <label htmlFor="event-type-filter" className="text-xs text-surface-400">Type</label>
@@ -193,6 +208,7 @@ export function Events() {
           </select>
         </div>
       )}
+      </div>
 
       {/* Event Table */}
       {loading ? (

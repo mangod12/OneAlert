@@ -181,6 +181,17 @@ describe('Event type filter', () => {
   });
 });
 
+describe('IP search', () => {
+  it('sends the ip param and resets pagination', async () => {
+    render(<Events />);
+    await screen.findByText('ET SCAN SSH brute force');
+    fireEvent.change(screen.getByLabelText('Search by IP address'), { target: { value: '10.0.0' } });
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith('/events/', { params: { page: 1, size: 50, ip: '10.0.0' } });
+    });
+  });
+});
+
 describe('Telemetry sources', () => {
   it('lists sources with counts, last-seen and status', async () => {
     mockGet.mockImplementation(async (url: string) => {

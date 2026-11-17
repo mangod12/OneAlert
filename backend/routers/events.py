@@ -4,7 +4,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -133,6 +133,7 @@ async def list_events(
     source_ip: str | None = Query(None),
     dest_ip: str | None = Query(None),
     source_type: str | None = Query(None),
+    ip: str | None = Query(None, description="Substring match against source or destination IP"),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -157,6 +158,13 @@ async def list_events(
     if source_type:
         query = query.filter(SecurityEvent.source_type == source_type)
         count_q = count_q.filter(SecurityEvent.source_type == source_type)
+    if ip:
+        ip_match = or_(
+            SecurityEvent.source_ip.ilike(f"%{ip}%"),
+            SecurityEvent.dest_ip.ilike(f"%{ip}%"),
+        )
+        query = query.filter(ip_match)
+        count_q = count_q.filter(ip_match)
 
     total = (await db.execute(count_q)).scalar_one()
     query = query.order_by(SecurityEvent.timestamp.desc()).offset(skip).limit(size)
