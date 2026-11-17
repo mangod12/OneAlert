@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
 import apiClient from '../api/client';
-import { Activity, Upload } from 'lucide-react';
+import { Activity, Radio, Upload } from 'lucide-react';
 import clsx from 'clsx';
 import { getApiErrorMessage } from '../api/errors';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -40,6 +40,16 @@ interface EventStats {
   source_count: number;
 }
 
+interface EventSource {
+  id: number;
+  name: string;
+  source_type: string;
+  status: string;
+  event_count: number;
+  last_event_at: string | null;
+  created_at: string;
+}
+
 export function Events() {
   const [events, setEvents] = useState<SecurityEvent[]>([]);
   const [stats, setStats] = useState<EventStats | null>(null);
@@ -48,6 +58,7 @@ export function Events() {
   const [total, setTotal] = useState(0);
   const [severityFilter, setSeverityFilter] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
+  const [sources, setSources] = useState<EventSource[]>([]);
   const [showUpload, setShowUpload] = useState(false);
   const [uploading, setUploading] = useState(false);
 
@@ -57,15 +68,17 @@ export function Events() {
     try {
       const params: Record<string, string | number> = { page, size: 50 };
       if (severityFilter) params.severity = severityFilter;
-      const [evtResult, statsResult] = await Promise.allSettled([
+      const [evtResult, statsResult, sourcesResult] = await Promise.allSettled([
         apiClient.get('/events/', { params }),
         apiClient.get('/events/stats'),
+        apiClient.get('/events/sources'),
       ]);
       const nextErrors: string[] = [];
       if (evtResult.status === 'fulfilled') { setEvents(evtResult.value.data.events); setTotal(evtResult.value.data.total); }
       else nextErrors.push(getApiErrorMessage(evtResult.reason, 'Event stream is unavailable'));
       if (statsResult.status === 'fulfilled') setStats(statsResult.value.data.data);
       else nextErrors.push(getApiErrorMessage(statsResult.reason, 'Event statistics are unavailable'));
+      if (sourcesResult.status === 'fulfilled') setSources(sourcesResult.value.data);
       setErrors(nextErrors);
     } catch (err: unknown) {
       setErrors([getApiErrorMessage(err, 'Security events could not be loaded.')]);
@@ -134,6 +147,26 @@ export function Events() {
               <p className="text-xl font-bold text-surface-50 mt-1">{stats.by_severity[sev] || 0}</p>
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Telemetry Sources */}
+      {sources.length > 0 && (
+        <div className="oa-panel p-5">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-surface-100"><Radio className="h-4 w-4 text-primary-300" /> Telemetry sources</h2>
+          <ul className="divide-y divide-surface-800">
+            {sources.map(source => (
+              <li key={source.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-surface-200">{source.name}</p>
+                  <p className="text-xs text-surface-500">
+                    {source.source_type} · {source.event_count} events · {source.last_event_at ? `last seen ${new Date(source.last_event_at).toLocaleString()}` : 'no events yet'}
+                  </p>
+                </div>
+                <StatusBadge tone={source.status === 'active' ? 'success' : 'neutral'}>{source.status}</StatusBadge>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

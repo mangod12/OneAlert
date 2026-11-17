@@ -89,8 +89,8 @@ describe('Events page', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /^high/i }));
     await waitFor(() => {
-      expect(mockGet).toHaveBeenCalledTimes(6);
-      expect(mockGet).toHaveBeenNthCalledWith(5, '/events/', { params: { page: 1, size: 50 } });
+      expect(mockGet).toHaveBeenCalledTimes(9);
+      expect(mockGet).toHaveBeenNthCalledWith(7, '/events/', { params: { page: 1, size: 50 } });
     });
   });
 
@@ -160,5 +160,26 @@ describe('Event upload', () => {
     expect(await screen.findByText('Choose a file to upload.')).toBeTruthy();
     expect(mockPost).not.toHaveBeenCalled();
     expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+});
+
+describe('Telemetry sources', () => {
+  it('lists sources with counts, last-seen and status', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/events/') return { data: { events: [], total: 0 } };
+      if (url === '/events/stats') return { data: { data: { total_events: 2, by_severity: {}, by_type: {}, source_count: 2 } } };
+      if (url === '/events/sources') return { data: [
+        { id: 1, name: 'dmz-suricata', source_type: 'suricata', status: 'active', event_count: 1200, last_event_at: '2026-11-17T07:55:00Z', created_at: '2026-11-01T00:00:00Z' },
+        { id: 2, name: 'zeek-default', source_type: 'zeek', status: 'paused', event_count: 40, last_event_at: null, created_at: '2026-11-02T00:00:00Z' },
+      ] };
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<Events />);
+    await screen.findByText('dmz-suricata');
+    expect(screen.getByText('zeek-default')).toBeTruthy();
+    expect(screen.getByText(/suricata · 1200 events · last seen/)).toBeTruthy();
+    expect(screen.getByText(/zeek · 40 events · no events yet/)).toBeTruthy();
+    expect(screen.getByText('active')).toBeTruthy();
+    expect(screen.getByText('paused')).toBeTruthy();
   });
 });
