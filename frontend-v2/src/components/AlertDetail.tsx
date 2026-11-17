@@ -22,6 +22,7 @@ interface Props {
   onAcknowledge: (id: number) => void;
   onResolve: (id: number) => void;
   onReopen: (id: number) => void;
+  onSnooze: (id: number, hours: number | null) => void;
   onAssigned: (id: number, assigneeId: number | null, assigneeEmail: string | null) => void;
 }
 
@@ -32,7 +33,12 @@ interface OrgMember {
   is_active: boolean;
 }
 
-export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen, onAssigned }: Props) {
+export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen, onSnooze, onAssigned }: Props) {
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    setNow(Date.now());
+  }, [alert.snoozed_until]);
+  const isSnoozed = !!alert.snoozed_until && now !== null && new Date(alert.snoozed_until).getTime() > now;
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus(dialogRef, onClose);
   const [epss, setEpss] = useState<EpssScore | null>(null);
@@ -211,6 +217,37 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
             </div>
           )}
           <div className="pt-4 border-t border-surface-700 space-y-3">
+            {isSnoozed ? (
+              <div className="rounded-lg border border-surface-700 bg-surface-800/60 p-3 space-y-2">
+                <p className="text-xs text-surface-400">
+                  Snoozed until {new Date(alert.snoozed_until as string).toLocaleString()}
+                </p>
+                <button
+                  onClick={() => onSnooze(alert.id, null)}
+                  className="w-full py-2 bg-surface-800 hover:bg-surface-700 text-surface-300 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Clear snooze
+                </button>
+              </div>
+            ) : (
+              alert.status !== 'resolved' && (
+                <div className="space-y-1.5">
+                  <p className="text-xs text-surface-500">Snooze this alert</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[{ label: '24h', hours: 24 }, { label: '7d', hours: 168 }, { label: '30d', hours: 720 }].map(option => (
+                      <button
+                        key={option.hours}
+                        onClick={() => onSnooze(alert.id, option.hours)}
+                        aria-label={`Snooze alert for ${option.label}`}
+                        className="py-2 bg-surface-800 hover:bg-surface-700 text-surface-300 rounded-lg text-sm font-medium transition-colors"
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )
+            )}
             <button
               onClick={() => setShowEscalate(true)}
               className="flex items-center justify-center gap-2 w-full py-2.5 bg-surface-800 hover:bg-surface-700 text-surface-300 rounded-lg font-medium transition-colors"

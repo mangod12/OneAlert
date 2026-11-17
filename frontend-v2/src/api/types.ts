@@ -33,6 +33,7 @@ export interface Alert {
   assigned_to_email: string | null;
   created_at: string;
   acknowledged_at: string | null;
+  snoozed_until?: string | null;
 }
 
 export interface AlertListResponse {
