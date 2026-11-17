@@ -1,0 +1,82 @@
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { HuntLab } from './HuntLab';
+
+vi.mock('../api/client', () => ({
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+  },
+}));
+
+import apiClient from '../api/client';
+
+const mockGet = vi.mocked(apiClient.get);
+const mockPost = vi.mocked(apiClient.post);
+
+const session = {
+  id: 5,
+  hypothesis: 'DNS tunneling to external domains',
+  status: 'completed',
+  queries_run: 2,
+  findings_count: 3,
+  sigma_rule: null,
+  created_at: '2026-11-16T08:00:00Z',
+};
+
+const sessionDetail = {
+  ...session,
+  result_data: {
+    explanation: 'Found periodic TXT lookups consistent with tunneling.',
+    query_results: [{
+      query: { description: 'TXT lookups by host', sql: 'SELECT host, count(*) FROM dns' },
+      row_count: 1,
+      rows: [{ host: 'plc-02', lookups: 412 }],
+    }],
+  },
+  sigma_rule: 'title: DNS tunneling\nlogsource:\n  category: dns',
+};
+
+beforeEach(() => { vi.resetAllMocks(); });
+afterEach(cleanup);
+
+describe('Hunt session reopening', () => {
+  it('reloads a past session\'s results when its history row is activated', async () => {
+    mockGet.mockImplementation(url => Promise.resolve({
+      data: url.endsWith('/5') ? sessionDetail : [session],
+    }));
+    render(<HuntLab />);
+    fireEvent.click(await screen.findByRole('button', { name: /reopen hunt: dns tunneling/i }));
+    expect(await screen.findByText('Found periodic TXT lookups consistent with tunneling.')).toBeTruthy();
+    expect(screen.getByText(/title: DNS tunneling/)).toBeTruthy();
+    expect(screen.getByText('plc-02')).toBeTruthy();
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/hunt/5'));
+  });
+
+  it('restores the hypothesis text into the hunt input', async () => {
+    mockGet.mockImplementation(url => Promise.resolve({
+      data: url.endsWith('/5') ? sessionDetail : [session],
+    }));
+    render(<HuntLab />);
+    fireEvent.click(await screen.findByRole('button', { name: /reopen hunt: dns tunneling/i }));
+    await screen.findByText('Found periodic TXT lookups consistent with tunneling.');
+    expect((screen.getByLabelText('Hunting Hypothesis') as HTMLInputElement).value)
+      .toBe('DNS tunneling to external domains');
+  });
+
+  it('reports a failed load without clearing existing results', async () => {
+    mockGet.mockImplementation(url => {
+      if (url.endsWith('/5')) return Promise.reject(new Error('Not found'));
+      return Promise.resolve({ data: [session] });
+    });
+    mockPost.mockResolvedValue({ data: { data: { explanation: 'Fresh hunt result' } } });
+    render(<HuntLab />);
+    fireEvent.change(await screen.findByLabelText('Hunting Hypothesis'), { target: { value: 'new hypothesis' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Hunt' }));
+    expect(await screen.findByText('Fresh hunt result')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /reopen hunt: dns tunneling/i }));
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/hunt/5'));
+    // The previous result stays visible after the failed reopen.
+    expect(screen.getByText('Fresh hunt result')).toBeTruthy();
+  });
+});
