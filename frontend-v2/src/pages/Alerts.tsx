@@ -1,19 +1,27 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, type ComponentProps } from 'react';
 import apiClient from '../api/client';
 import type { Alert, AlertListResponse } from '../api/types';
 import { AlertDetail } from '../components/AlertDetail';
-import clsx from 'clsx';
-import { Search, Filter, CheckCircle } from 'lucide-react';
+import { Search, Filter, CheckCircle, ChevronRight } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { PageHeader } from '../components/ui/PageHeader';
+import { StatusBadge } from '../components/ui/StatusBadge';
 import { ErrorState, RetryButton } from '../components/ui/AsyncState';
 import { toast } from '../components/Toast';
 
-const severityColors: Record<string, string> = {
-  critical: 'bg-danger/10 text-danger border-danger/20',
-  high: 'bg-warning/10 text-warning border-warning/20',
-  medium: 'bg-info/10 text-info border-info/20',
-  low: 'bg-success/10 text-success border-success/20',
+type BadgeTone = ComponentProps<typeof StatusBadge>['tone'];
+
+const severityTones: Record<string, BadgeTone> = {
+  critical: 'danger',
+  high: 'warning',
+  medium: 'info',
+  low: 'success',
+};
+
+const statusTones: Record<string, BadgeTone> = {
+  pending: 'warning',
+  acknowledged: 'info',
+  resolved: 'success',
 };
 
 export function Alerts() {
@@ -171,6 +179,7 @@ export function Alerts() {
                 <th className="px-4 py-3 text-left">Asset</th>
                 <th className="px-4 py-3 text-left">Status</th>
                 <th className="px-4 py-3 text-left hidden md:table-cell">Date</th>
+                <th className="px-4 py-3 w-10" aria-label="Open alert" />
               </tr>
             </thead>
             <tbody>
@@ -178,7 +187,7 @@ export function Alerts() {
                 <tr
                   key={alert.id}
                   onClick={() => setSelectedAlert(alert)}
-                  className="border-b border-surface-700/50 hover:bg-surface-800 cursor-pointer transition-colors"
+                  className="group border-b border-surface-700/50 hover:bg-surface-800 cursor-pointer transition-colors"
                 >
                   <td className="px-4 py-3 hidden sm:table-cell" onClick={(e) => e.stopPropagation()}>
                     <input
@@ -191,21 +200,17 @@ export function Alerts() {
                   </td>
                   <td className="px-4 py-3 font-mono text-primary-300">{alert.cve_id}</td>
                   <td className="px-4 py-3">
-                    <span className={clsx('px-2 py-0.5 rounded-full text-xs font-medium border', severityColors[alert.severity])}>
-                      {alert.severity}
-                    </span>
+                    <StatusBadge tone={severityTones[alert.severity] ?? 'neutral'}>{alert.severity}</StatusBadge>
                   </td>
                   <td className="px-4 py-3 text-surface-300">{alert.asset_name}</td>
                   <td className="px-4 py-3">
-                    <span className={clsx(
-                      'text-xs',
-                      alert.status === 'pending' ? 'text-warning' : 'text-success'
-                    )}>
-                      {alert.status}
-                    </span>
+                    <StatusBadge tone={statusTones[alert.status] ?? 'neutral'}>{alert.status}</StatusBadge>
                   </td>
                   <td className="px-4 py-3 text-surface-500 hidden md:table-cell">
                     {new Date(alert.created_at).toLocaleDateString()}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <ChevronRight className="ml-auto w-4 h-4 text-surface-500 opacity-0 transition-opacity group-hover:opacity-100" />
                   </td>
                 </tr>
               ))}
