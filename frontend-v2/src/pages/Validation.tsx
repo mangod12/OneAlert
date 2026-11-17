@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import apiClient from '../api/client';
 import { Play, Plus, ShieldCheck, Target, CheckCircle, XCircle } from 'lucide-react';
 import clsx from 'clsx';
@@ -65,6 +65,7 @@ export function Validation() {
   const [selectedRun, setSelectedRun] = useState<ValidationRunDetail | null>(null);
   const [newRun, setNewRun] = useState({ name: '', description: '', techniques: [] as string[] });
   const [resultFilter, setResultFilter] = useState<'all' | 'attention' | 'detected'>('all');
+  const [runStatusFilter, setRunStatusFilter] = useState('');
   const [creating, setCreating] = useState(false);
   const [executing, setExecuting] = useState<number | null>(null);
   const [confirmRunId, setConfirmRunId] = useState<number | null>(null);
@@ -72,9 +73,9 @@ export function Validation() {
   const [error, setError] = useState('');
   const [coverageError, setCoverageError] = useState('');
 
-  const fetchRuns = async () => {
+  const fetchRuns = useCallback(async () => {
     const [runsResult, coverageResult] = await Promise.allSettled([
-      apiClient.get('/validation/runs'),
+      apiClient.get('/validation/runs', { params: runStatusFilter ? { status: runStatusFilter } : {} }),
       apiClient.get('/validation/coverage'),
     ]);
     if (runsResult.status === 'fulfilled') { setRuns(runsResult.value.data.data || []); setError(''); }
@@ -82,7 +83,7 @@ export function Validation() {
     if (coverageResult.status === 'fulfilled') { setCoverage(coverageResult.value.data.data || []); setCoverageError(''); }
     else { setCoverage(null); setCoverageError(getApiErrorMessage(coverageResult.reason, 'Coverage data could not be loaded.')); }
     setLoading(false);
-  };
+  }, [runStatusFilter]);
 
   const createRun = async () => {
     if (!newRun.name.trim() || newRun.techniques.length === 0) return;
@@ -132,7 +133,7 @@ export function Validation() {
     }));
   };
 
-  useEffect(() => { fetchRuns(); }, []);
+  useEffect(() => { void fetchRuns(); }, [fetchRuns]);
 
   return (
     <div className="space-y-6">
@@ -201,7 +202,25 @@ export function Validation() {
 
       {/* Runs List */}
       {loading ? <LoadingSurface label="Loading validation runs" /> : error ? <ErrorState title="Validation unavailable" description={error} action={<RetryButton onClick={fetchRuns} />} /> : <div className="oa-panel p-6">
-        <h2 className="text-lg font-semibold text-surface-50 mb-4">Validation Runs</h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-surface-50">Validation Runs</h2>
+          <label className="flex items-center gap-2 text-xs text-surface-400">
+            Status
+            <select
+              aria-label="Filter runs by status"
+              value={runStatusFilter}
+              onChange={(e) => setRunStatusFilter(e.target.value)}
+              className="rounded-md border border-surface-600 bg-surface-950 px-2 py-1.5 text-sm text-surface-100"
+            >
+              <option value="">All statuses</option>
+              <option value="pending">Pending</option>
+              <option value="running">Running</option>
+              <option value="completed">Completed</option>
+              <option value="failed">Failed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </label>
+        </div>
         {runs.length === 0 ? (
           <EmptyState title="No validation runs" description="Create one to test current detection coverage." />
         ) : (
