@@ -62,6 +62,28 @@ export function HuntLab() {
     }
   };
 
+  const [loadingSessionId, setLoadingSessionId] = useState<number | null>(null);
+
+  const viewSession = async (sessionId: number) => {
+    if (loadingSessionId !== null || hunting) return;
+    setLoadingSessionId(sessionId);
+    try {
+      const res = await apiClient.get(`/hunt/${sessionId}`);
+      const detail = res.data;
+      const resultData = detail.result_data ?? {};
+      setHypothesis(detail.hypothesis ?? '');
+      setActiveResult({
+        explanation: resultData.explanation,
+        query_results: resultData.query_results,
+        sigma_rule: detail.sigma_rule ?? resultData.sigma_rule,
+      });
+    } catch (err) {
+      toast(getApiErrorMessage(err, 'That hunt session could not be loaded.'), 'error');
+    } finally {
+      setLoadingSessionId(null);
+    }
+  };
+
   useEffect(() => { fetchSessions(); }, []);
 
   return (
@@ -174,7 +196,14 @@ export function HuntLab() {
         ) : (
           <div className="space-y-2">
             {sessions.map(s => (
-              <div key={s.id} className="flex items-center gap-4 p-3 bg-surface-900/50 rounded-lg">
+              <button
+                key={s.id}
+                type="button"
+                disabled={loadingSessionId !== null || hunting}
+                onClick={() => void viewSession(s.id)}
+                aria-label={`Reopen hunt: ${s.hypothesis}`}
+                className="flex w-full items-center gap-4 rounded-lg bg-surface-900/50 p-3 text-left transition-colors hover:bg-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-40"
+              >
                 <Clock className="w-4 h-4 text-surface-500 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-surface-50 truncate">{s.hypothesis}</p>
@@ -186,7 +215,7 @@ export function HuntLab() {
                   s.status === 'completed' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning')}>
                   {s.status}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
         )}
