@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import apiClient from '../api/client';
 import { Bot, Search } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
@@ -37,23 +37,29 @@ const runStatusTones: Record<string, 'success' | 'danger' | 'warning' | 'neutral
 
 export function AuditLog() {
   const [logs, setLogs] = useState<AuditEntry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [agentRuns, setAgentRuns] = useState<AgentRun[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
+  const SIZE = 50;
+  const pages = Math.max(1, Math.ceil(total / SIZE));
 
-  const fetchLogs = async () => {
-    setLoading(true);
+  const fetchLogs = useCallback(async (targetPage: number, action: string) => {
     setError('');
     try {
-      const res = await apiClient.get('/auth/audit-logs');
-      setLogs(res.data);
+      const params: Record<string, string | number> = { page: targetPage, size: SIZE };
+      if (action.trim()) params.action = action.trim();
+      const res = await apiClient.get('/auth/audit-logs', { params });
+      setLogs(res.data.logs);
+      setTotal(res.data.total);
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Audit activity could not be loaded.'));
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const fetchAgentRuns = async () => {
     try {
@@ -65,14 +71,12 @@ export function AuditLog() {
   };
 
   useEffect(() => {
-    void fetchLogs();
+    void fetchLogs(page, search);
+  }, [page, search, fetchLogs]);
+
+  useEffect(() => {
     void fetchAgentRuns();
   }, []);
-
-  const filteredLogs = logs.filter((log) =>
-    !search || log.action.toLowerCase().includes(search.toLowerCase()) ||
-    log.detail?.toLowerCase().includes(search.toLowerCase())
-  );
 
   if (loading) {
     return <LoadingSurface rows={6} label="Loading audit activity" />;
@@ -83,16 +87,17 @@ export function AuditLog() {
       <PageHeader eyebrow="Govern" title="Audit Log" description="Immutable operator, agent, approval, and configuration activity." />
 
       {error ? (
-        <ErrorState title="Audit log unavailable" description={error} action={<RetryButton onClick={() => void fetchLogs()} />} />
+        <ErrorState title="Audit log unavailable" description={error} action={<RetryButton onClick={() => void fetchLogs(page, search)} />} />
       ) : (
         <>
           <div className="relative max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
             <input
               type="text"
+              aria-label="Search audit actions"
               placeholder="Search actions..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               className="w-full pl-9 pr-4 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
@@ -108,14 +113,14 @@ export function AuditLog() {
                 </tr>
               </thead>
               <tbody>
-                {filteredLogs.length === 0 ? (
+                {logs.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-4 py-8 text-center text-surface-500">
                       No audit log entries found
                     </td>
                   </tr>
                 ) : (
-                  filteredLogs.map((log) => (
+                  logs.map((log) => (
                     <tr key={log.id} className="border-b border-surface-700/50 hover:bg-surface-800 transition-colors">
                       <td className="px-4 py-3 text-surface-400 text-xs">
                         {log.timestamp ? new Date(log.timestamp).toLocaleString() : '-'}
@@ -132,6 +137,30 @@ export function AuditLog() {
                 )}
               </tbody>
             </table>
+            {total > 0 && (
+              <div className="flex items-center justify-between border-t border-surface-700 px-4 py-3">
+                <span className="text-xs text-surface-500">{total} entries</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="min-h-8 rounded-md border border-surface-600 px-2.5 text-xs text-surface-300 hover:bg-surface-800 disabled:opacity-50"
+                  >
+                    Prev
+                  </button>
+                  <span className="text-xs text-surface-400">Page {page} of {pages}</span>
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.min(pages, p + 1))}
+                    disabled={page === pages}
+                    className="min-h-8 rounded-md border border-surface-600 px-2.5 text-xs text-surface-300 hover:bg-surface-800 disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {agentRuns && agentRuns.length > 0 && (
