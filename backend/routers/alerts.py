@@ -10,7 +10,7 @@ from datetime import UTC
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -45,7 +45,7 @@ async def list_alerts(
     ),
     sort: str = Query(
         "created_at_desc",
-        pattern="^(created_at_desc|created_at_asc|cvss_desc|cvss_asc)$",
+        pattern="^(created_at_desc|created_at_asc|cvss_desc|cvss_asc|severity_desc|severity_asc)$",
         description="Sort order"
     ),
     current_user: User = Depends(get_active_user),
@@ -101,11 +101,20 @@ async def list_alerts(
     total = (await db.execute(final_count_query)).scalar_one()
 
     # Apply ordering and pagination to the main data query
+    severity_rank = case(
+        (func.lower(Alert.severity) == "critical", 4),
+        (func.lower(Alert.severity) == "high", 3),
+        (func.lower(Alert.severity) == "medium", 2),
+        (func.lower(Alert.severity) == "low", 1),
+        else_=0,
+    )
     order_columns = {
         "created_at_desc": [Alert.created_at.desc()],
         "created_at_asc": [Alert.created_at.asc()],
         "cvss_desc": [Alert.cvss_score.desc().nulls_last(), Alert.created_at.desc()],
         "cvss_asc": [Alert.cvss_score.asc().nulls_last(), Alert.created_at.desc()],
+        "severity_desc": [severity_rank.desc(), Alert.created_at.desc()],
+        "severity_asc": [severity_rank.asc(), Alert.created_at.desc()],
     }
     query = query.order_by(*order_columns[sort]).offset(skip).limit(size)
 
