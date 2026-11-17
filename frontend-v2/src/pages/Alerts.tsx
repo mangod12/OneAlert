@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import apiClient from '../api/client';
 import type { Alert, AlertListResponse } from '../api/types';
 import { AlertDetail } from '../components/AlertDetail';
-import { Search, Filter, CheckCircle, ChevronRight } from 'lucide-react';
+import { Search, Filter, CheckCircle, ChevronRight, Download } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
@@ -27,6 +27,31 @@ export function Alerts() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
+  const [exporting, setExporting] = useState(false);
+
+  const exportCsv = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const params: Record<string, string | number> = {};
+      if (severityFilter) params.severity = severityFilter;
+      if (statusFilter) params.status = statusFilter;
+      if (cveSearch) params.search = cveSearch;
+      if (assetFilter) params.asset_id = Number(assetFilter);
+      if (assignedFilter) params.assigned = assignedFilter;
+      const res = await apiClient.get('/alerts/export', { params, responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'alerts.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'The export could not be downloaded.'), 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const fetchAlerts = useCallback(async () => {
     setLoading(true);
@@ -186,6 +211,15 @@ export function Alerts() {
           <option value="cvss_desc">Highest CVSS</option>
           <option value="cvss_asc">Lowest CVSS</option>
         </select>
+        <button
+          type="button"
+          onClick={() => { void exportCsv(); }}
+          disabled={exporting}
+          className="ml-auto flex items-center gap-2 px-3 py-2 bg-surface-800 hover:bg-surface-700 border border-surface-600 rounded-lg text-sm text-surface-200 transition-colors disabled:opacity-50"
+        >
+          <Download className="w-4 h-4" aria-hidden="true" />
+          {exporting ? 'Exporting...' : 'Export CSV'}
+        </button>
       </div>
 
       {/* Table */}

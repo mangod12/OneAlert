@@ -203,3 +203,29 @@ describe('Assignee filter', () => {
     });
   });
 });
+
+describe('Alerts CSV export', () => {
+  it('downloads the CSV with the active filters', async () => {
+    URL.createObjectURL = vi.fn(() => 'blob:alerts');
+    URL.revokeObjectURL = vi.fn();
+    const clicks: string[] = [];
+    const origCreate = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string, options?: ElementCreationOptions) => {
+      const el = origCreate(tag, options);
+      if (tag === 'a') {
+        Object.defineProperty(el, 'download', { set: (v: string) => clicks.push(v), configurable: true });
+        el.click = () => clicks.push('clicked');
+      }
+      return el;
+    });
+    render(<Alerts />);
+    await screen.findByRole('combobox', { name: 'Filter by status' });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter by assignee' }), { target: { value: 'me' } });
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/alerts/', {
+      params: { page: 1, size: 15, assigned: 'me', sort: 'created_at_desc' },
+    }));
+    fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/alerts/export', { params: { assigned: 'me' }, responseType: 'blob' }));
+    await waitFor(() => expect(clicks).toContain('alerts.csv'));
+  });
+});
