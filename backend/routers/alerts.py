@@ -36,6 +36,11 @@ async def list_alerts(
     status: AlertStatus | None = Query(None, description="Filter by status"),
     asset_id: int | None = Query(None, description="Filter by asset ID"),
     cve_id: str | None = Query(None, description="Filter by CVE ID"),
+    sort: str = Query(
+        "created_at_desc",
+        pattern="^(created_at_desc|created_at_asc|cvss_desc|cvss_asc)$",
+        description="Sort order"
+    ),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -74,7 +79,13 @@ async def list_alerts(
     total = (await db.execute(final_count_query)).scalar_one()
 
     # Apply ordering and pagination to the main data query
-    query = query.order_by(Alert.created_at.desc()).offset(skip).limit(size)
+    order_columns = {
+        "created_at_desc": [Alert.created_at.desc()],
+        "created_at_asc": [Alert.created_at.asc()],
+        "cvss_desc": [Alert.cvss_score.desc().nulls_last(), Alert.created_at.desc()],
+        "cvss_asc": [Alert.cvss_score.asc().nulls_last(), Alert.created_at.desc()],
+    }
+    query = query.order_by(*order_columns[sort]).offset(skip).limit(size)
 
     result = await db.execute(query)
     rows = result.all()  # This will give rows of (Alert, asset_name, asset_vendor, asset_product)
