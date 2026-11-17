@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { Validation } from './Validation';
@@ -63,5 +63,30 @@ describe('Validation result triage', () => {
     const runButton = screen.getByRole('button', { name: 'Run' });
     expect(within(viewButton).queryByRole('button', { name: 'Run' })).toBeNull();
     expect(runButton.parentElement?.getAttribute('role')).not.toBe('button');
+  });
+});
+
+describe('Validation run confirmation', () => {
+  it('runs only after confirming in the dialog', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({ data: { data: [{ ...run, status: 'pending' }] } });
+    vi.mocked(apiClient.post).mockResolvedValue({ data: {} });
+    render(<Validation />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Run' }));
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    expect(vi.mocked(apiClient.post)).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    await waitFor(() => expect(vi.mocked(apiClient.post)).toHaveBeenCalledWith('/validation/runs/8/execute'));
+  });
+
+  it('cancelling the dialog leaves the run untouched', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({ data: { data: [{ ...run, status: 'pending' }] } });
+    vi.mocked(apiClient.post).mockResolvedValue({ data: {} });
+    render(<Validation />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Run' }));
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await screen.findByRole('button', { name: 'Run' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(vi.mocked(apiClient.post)).not.toHaveBeenCalled();
   });
 });

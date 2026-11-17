@@ -7,6 +7,7 @@ import { getApiErrorMessage } from '../api/errors';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
 interface ValidationStep {
   id: number;
@@ -54,6 +55,7 @@ export function Validation() {
   const [resultFilter, setResultFilter] = useState<'all' | 'attention' | 'detected'>('all');
   const [creating, setCreating] = useState(false);
   const [executing, setExecuting] = useState<number | null>(null);
+  const [confirmRunId, setConfirmRunId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -85,11 +87,12 @@ export function Validation() {
   };
 
   const executeRun = async (runId: number) => {
-    if (executing !== null || !window.confirm('Run this detection validation now?')) return;
+    if (executing !== null) return;
     setExecuting(runId);
     try {
       await apiClient.post(`/validation/runs/${runId}/execute`);
       toast('Validation complete', 'success');
+      setConfirmRunId(null);
       await fetchRuns();
       await viewRun(runId);
     } catch (err) { toast(getApiErrorMessage(err, 'Execution failed.'), 'error'); }
@@ -187,7 +190,7 @@ export function Validation() {
                   {r.status}
                 </span>
                 {r.status === 'pending' && (
-                  <button disabled={executing !== null} onClick={e => { e.stopPropagation(); executeRun(r.id); }}
+                  <button disabled={executing !== null} onClick={e => { e.stopPropagation(); setConfirmRunId(r.id); }}
                     className="flex items-center gap-1 px-3 py-1.5 bg-primary-500 hover:bg-primary-400 text-surface-950 rounded text-xs font-medium transition-colors">
                     <Play className="w-3 h-3" /> Run
                   </button>
@@ -266,6 +269,16 @@ export function Validation() {
             </div>
           )}
         </div>
+      )}
+      {confirmRunId !== null && (
+        <ConfirmDialog
+          title={`Run validation #${confirmRunId}?`}
+          description="The run simulates its ATT&CK techniques against your detection controls and records per-step results."
+          confirmLabel="Run now"
+          busy={executing !== null}
+          onCancel={() => setConfirmRunId(null)}
+          onConfirm={() => void executeRun(confirmRunId)}
+        />
       )}
     </div>
   );
