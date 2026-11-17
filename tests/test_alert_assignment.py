@@ -182,7 +182,7 @@ class TestAlertAssignmentFilter:
         return owner, member_id
 
     def test_filter_me_returns_only_my_alerts(self, client):
-        owner, member_id = self._setup(client)
+        owner, _member_id = self._setup(client)
         resp = client.get("/api/v1/alerts/", params={"assigned": "me"}, headers=owner)
         assert resp.status_code == 200
         rows = resp.json()["alerts"]
@@ -190,7 +190,7 @@ class TestAlertAssignmentFilter:
         assert resp.json()["total"] == 0  # both alerts: one assigned to member, one unassigned
 
     def test_filter_unassigned_excludes_assigned(self, client):
-        owner, member_id = self._setup(client)
+        owner, _member_id = self._setup(client)
         resp = client.get("/api/v1/alerts/", params={"assigned": "unassigned"}, headers=owner)
         assert resp.status_code == 200
         rows = resp.json()["alerts"]
@@ -213,7 +213,10 @@ class TestAlertExport:
         assert res.status_code == 200
         assert res.headers["content-type"].startswith("text/csv")
         lines = res.text.strip().splitlines()
-        assert lines[0] == "id,cve_id,title,severity,status,cvss_score,asset_name,assigned_to_email,created_at,acknowledged_at"
+        assert lines[0] == (
+            "id,cve_id,title,severity,status,cvss_score,asset_name,"
+            "assigned_to_email,created_at,acknowledged_at,snoozed_until"
+        )
         assert len(lines) == 2
         fields = lines[1].split(",")
         assert fields[1] == "CVE-2026-0001"

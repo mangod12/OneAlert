@@ -168,3 +168,18 @@ class TestAlertSnooze:
         _seed_alert(client, headers)
         res = client.get("/api/v1/alerts/", params={"snoozed": "bogus"}, headers=headers)
         assert res.status_code == 422
+
+
+class TestExportSnoozeFilter:
+    def test_export_respects_snooze_filter(self, client):
+        headers = _register_and_login(client, "export@example.com")
+        alert_id = _seed_alert(client, headers)
+        client.post(f"/api/v1/alerts/{alert_id}/snooze", json={"hours": 24}, headers=headers)
+
+        res = client.get("/api/v1/alerts/export", headers=headers)
+        assert res.status_code == 200
+        assert "PLC weak authentication" not in res.text
+        assert "snoozed_until" in res.text.splitlines()[0]
+
+        res = client.get("/api/v1/alerts/export", params={"snoozed": "all"}, headers=headers)
+        assert "PLC weak authentication" in res.text
