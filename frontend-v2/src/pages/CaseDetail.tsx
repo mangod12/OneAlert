@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import apiClient from '../api/client';
 import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
+import { toast } from '../components/Toast';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { NarrativeText } from '../components/ui/NarrativeText';
@@ -14,6 +15,23 @@ const timelineIcons: Record<string, typeof Brain> = {
   event: Activity,
   action: Target,
   note: Clock,
+};
+
+// Forward and backward status transitions an analyst can take on a case.
+const NEXT_STATUSES: Record<string, Array<{ status: string; label: string }>> = {
+  open: [
+    { status: 'investigating', label: 'Start investigating' },
+    { status: 'resolved', label: 'Resolve' },
+  ],
+  investigating: [
+    { status: 'resolved', label: 'Resolve' },
+    { status: 'open', label: 'Back to open' },
+  ],
+  resolved: [
+    { status: 'closed', label: 'Close' },
+    { status: 'investigating', label: 'Reopen' },
+  ],
+  closed: [{ status: 'open', label: 'Reopen' }],
 };
 
 interface TimelineEntry {
@@ -52,6 +70,18 @@ export function CaseDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [degraded, setDegraded] = useState<string[]>([]);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+
+  const changeStatus = async (status: string) => {
+    if (updatingStatus) return;
+    setUpdatingStatus(true);
+    try {
+      await apiClient.patch(`/cases/${caseId}`, null, { params: { status_update: status } });
+      toast(`Case marked ${status}`, 'success');
+      await fetchAll();
+    } catch (err) { toast(getApiErrorMessage(err, 'Case status could not be updated.'), 'error'); }
+    finally { setUpdatingStatus(false); }
+  };
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -106,6 +136,21 @@ export function CaseDetail() {
             <h1 className="text-2xl font-bold text-surface-50">{caseData.title}</h1>
             {caseData.summary && <p className="text-surface-400 mt-2">{caseData.summary}</p>}
           </div>
+          {(NEXT_STATUSES[caseData.status] ?? []).length > 0 && (
+            <div className="flex shrink-0 gap-2" aria-label="Case status actions">
+              {(NEXT_STATUSES[caseData.status] ?? []).map(action => (
+                <button
+                  key={action.status}
+                  type="button"
+                  disabled={updatingStatus}
+                  onClick={() => void changeStatus(action.status)}
+                  className="rounded-md border border-surface-700 px-3 py-1.5 text-xs font-medium text-surface-200 transition-colors hover:bg-surface-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
