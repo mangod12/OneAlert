@@ -20,6 +20,8 @@ export function Alerts() {
   const [severityFilter, setSeverityFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [cveSearch, setCveSearch] = useState('');
+  const [assetFilter, setAssetFilter] = useState('');
+  const [assetOptions, setAssetOptions] = useState<{ id: number; name: string }[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
@@ -32,6 +34,7 @@ export function Alerts() {
       if (severityFilter) params.severity = severityFilter;
       if (statusFilter) params.status = statusFilter;
       if (cveSearch) params.cve_id = cveSearch;
+      if (assetFilter) params.asset_id = Number(assetFilter);
 
       const res = await apiClient.get<AlertListResponse>('/alerts/', { params });
       setAlerts(res.data.alerts);
@@ -42,11 +45,17 @@ export function Alerts() {
     } finally {
       setLoading(false);
     }
-  }, [page, severityFilter, statusFilter, cveSearch]);
+  }, [page, severityFilter, statusFilter, cveSearch, assetFilter]);
 
   useEffect(() => {
     fetchAlerts();
   }, [fetchAlerts]);
+
+  useEffect(() => {
+    apiClient.get('/assets/', { params: { size: 100 } })
+      .then(res => setAssetOptions((res.data.assets ?? []).map((a: { id: number; name: string }) => ({ id: a.id, name: a.name }))))
+      .catch(() => {});
+  }, []);
 
   const handleAcknowledge = async (alertId: number) => {
     if (pendingIds.has(alertId)) return;
@@ -124,6 +133,17 @@ export function Alerts() {
           <option value="medium">Medium</option>
           <option value="low">Low</option>
         </select>
+        {assetOptions.length > 0 && (
+          <select
+            aria-label="Filter by asset"
+            value={assetFilter}
+            onChange={(e) => { setAssetFilter(e.target.value); setPage(1); }}
+            className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          >
+            <option value="">All assets</option>
+            {assetOptions.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        )}
         <select
           aria-label="Filter by status"
           value={statusFilter}
