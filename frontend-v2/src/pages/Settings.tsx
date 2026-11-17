@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bell, KeyRound, Settings as SettingsIcon, Shield, UserPlus, UserRound, Users } from 'lucide-react';
+import { Bell, KeyRound, Pencil, Settings as SettingsIcon, Shield, UserPlus, UserRound, Users } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
@@ -41,6 +41,9 @@ export function Settings() {
   const [creatingOrg, setCreatingOrg] = useState(false);
   const [orgName, setOrgName] = useState('');
   const [orgSlug, setOrgSlug] = useState('');
+  const [editingName, setEditingName] = useState(false);
+  const [newOrgName, setNewOrgName] = useState('');
+  const [renaming, setRenaming] = useState(false);
 
   const fetchTeam = async () => {
     try {
@@ -85,6 +88,23 @@ export function Settings() {
       setTeamMessage({ text: getApiErrorMessage(error, 'The organization could not be created.'), error: true });
     } finally {
       setCreatingOrg(false);
+    }
+  };
+
+  const handleRenameOrg = async () => {
+    const name = newOrgName.trim();
+    if (!org || !name || name === org.name || renaming) return;
+    setRenaming(true);
+    setTeamMessage(null);
+    try {
+      await apiClient.patch('/orgs/me', { name });
+      setEditingName(false);
+      setTeamMessage({ text: `Organization renamed to ${name}.`, error: false });
+      await fetchTeam();
+    } catch (error: unknown) {
+      setTeamMessage({ text: getApiErrorMessage(error, 'The organization could not be renamed.'), error: true });
+    } finally {
+      setRenaming(false);
     }
   };
 
@@ -200,6 +220,20 @@ export function Settings() {
               {!noOrg && (
                 <>
                   {org && <div className="mb-3 flex items-center gap-2"><StatusBadge tone="info">{org.plan}</StatusBadge></div>}
+                  {org && user?.role === 'admin' && (
+                    editingName ? (
+                      <form className="mb-3 flex items-center gap-2" onSubmit={event => { event.preventDefault(); void handleRenameOrg(); }}>
+                        <label htmlFor="org-rename" className="sr-only">New organization name</label>
+                        <input id="org-rename" type="text" autoComplete="off" value={newOrgName} onChange={event => setNewOrgName(event.target.value)} className="min-w-0 flex-1 rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
+                        <button type="submit" disabled={renaming || !newOrgName.trim() || newOrgName.trim() === org.name} className="min-h-9 rounded-md bg-primary-500 px-3 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">{renaming ? 'Saving…' : 'Save'}</button>
+                        <button type="button" onClick={() => setEditingName(false)} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-300 hover:bg-surface-800">Cancel</button>
+                      </form>
+                    ) : (
+                      <button type="button" onClick={() => { setNewOrgName(org.name); setEditingName(true); }} className="mb-3 inline-flex min-h-9 items-center gap-1.5 rounded-md border border-surface-600 px-3 text-sm text-surface-300 hover:bg-surface-800">
+                        <Pencil className="h-4 w-4" /> Rename organization
+                      </button>
+                    )
+                  )}
                   <ul className="divide-y divide-surface-800">
                     {members.map(member => (
                       <li key={member.id} className="flex items-center justify-between gap-3 py-2 text-sm">
