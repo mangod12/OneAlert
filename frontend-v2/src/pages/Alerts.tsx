@@ -25,6 +25,7 @@ export function Alerts() {
   const [assignedFilter, setAssignedFilter] = useState('');
   const [assetOptions, setAssetOptions] = useState<{ id: number; name: string }[]>([]);
   const [sort, setSort] = useState('created_at_desc');
+  const [showSnoozedOnly, setShowSnoozedOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
@@ -68,6 +69,7 @@ export function Alerts() {
       if (cveSearch) params.search = cveSearch;
       if (assetFilter) params.asset_id = Number(assetFilter);
       if (assignedFilter) params.assigned = assignedFilter;
+      if (showSnoozedOnly) params.snoozed = 'only';
       params.sort = sort;
 
       const res = await apiClient.get<AlertListResponse>('/alerts/', { params });
@@ -79,7 +81,7 @@ export function Alerts() {
     } finally {
       setLoading(false);
     }
-  }, [page, severityFilter, statusFilter, cveSearch, assetFilter, assignedFilter, sort]);
+  }, [page, severityFilter, statusFilter, cveSearch, assetFilter, assignedFilter, showSnoozedOnly, sort]);
 
   useEffect(() => {
     fetchAlerts();
@@ -147,6 +149,26 @@ export function Alerts() {
     await fetchAlerts();
     if (failedIds.length > 0) toast(`${failedIds.length} alerts could not be acknowledged and remain selected.`, 'error');
     else toast(`${ids.length} alerts acknowledged.`, 'success');
+  };
+
+  const handleSnooze = async (alertId: number, hours: number | null) => {
+    if (pendingIds.has(alertId)) return;
+    setPendingIds(current => new Set(current).add(alertId));
+    try {
+      if (hours === null) {
+        await apiClient.delete(`/alerts/${alertId}/snooze`);
+        toast('Snooze cleared.', 'success');
+      } else {
+        await apiClient.post(`/alerts/${alertId}/snooze`, { hours });
+        toast(`Alert snoozed for ${hours >= 24 ? `${hours / 24} day${hours > 24 ? 's' : ''}` : `${hours} hour${hours > 1 ? 's' : ''}`}.`, 'success');
+      }
+      await fetchAlerts();
+      setSelectedAlert(null);
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'Alert could not be snoozed.'), 'error');
+    } finally {
+      setPendingIds(current => { const next = new Set(current); next.delete(alertId); return next; });
+    }
   };
 
   const handleResolve = async (alertId: number) => {
@@ -279,6 +301,14 @@ export function Alerts() {
             setPage(1);
           }}
         />
+        <button
+          type="button"
+          aria-pressed={showSnoozedOnly}
+          onClick={() => { setShowSnoozedOnly(current => !current); setPage(1); }}
+          className={`px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 ${showSnoozedOnly ? 'bg-primary-500/15 border-primary-500/40 text-primary-300' : 'bg-surface-800 border-surface-600 text-surface-50 hover:bg-surface-700'}`}
+        >
+          Snoozed
+        </button>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
           <input
@@ -491,6 +521,7 @@ export function Alerts() {
           onAcknowledge={handleAcknowledge}
           onResolve={handleResolve}
           onReopen={handleReopen}
+          onSnooze={handleSnooze}
           onAssigned={handleAssigned}
         />
       )}

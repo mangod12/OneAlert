@@ -82,6 +82,22 @@ describe('Alerts page', () => {
     expect(alertCalls).toBe(2);
   });
 
+  it('filters to snoozed alerts when the Snoozed chip is toggled', async () => {
+    render(<Alerts />);
+    await screen.findByText('CVE-2026-0001');
+    fireEvent.click(screen.getByRole('button', { name: 'Snoozed' }));
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenLastCalledWith('/alerts/', {
+        params: expect.objectContaining({ snoozed: 'only' }),
+      });
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Snoozed' }));
+    await waitFor(() => {
+      const lastParams = mockGet.mock.calls.filter(call => call[0] === '/alerts/').at(-1)?.[1]?.params;
+      expect(lastParams).not.toHaveProperty('snoozed');
+    });
+  });
+
   it('refetches with the severity filter applied', async () => {
     render(<Alerts />);
     await screen.findByText('CVE-2026-0001');
