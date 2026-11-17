@@ -28,7 +28,7 @@ async def run_all_scrapers() -> list[dict[str, Any]]:
     logger.info(f"Loaded scrapers: {[s.name for s in scrapers]}")
     tasks = [s.scrape() for s in scrapers]
     results_nested = await asyncio.gather(*tasks, return_exceptions=True)
-    for scraper, result in zip(scrapers, results_nested):
+    for scraper, result in zip(scrapers, results_nested, strict=True):
         if isinstance(result, Exception):
             logger.error(f"Error in scraper {scraper.name}: {result}")
         else:

@@ -140,7 +140,7 @@ class VulnerabilityScheduler:
                 user_assets = result.all()
                 rescored_count = 0
 
-                for user, asset in user_assets:
+                for _user, asset in user_assets:
                     if asset is None:
                         continue
 

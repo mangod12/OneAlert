@@ -122,8 +122,6 @@ class TriageAgent(BaseAgent):
 
     def _group_by_correlation(self, alerts: list, events: list) -> list:
         """Group alerts and events by overlapping IPs, assets, and time windows."""
-        groups = []
-
         # Build IP → items index
         ip_map: dict[str, dict] = {}
 
@@ -159,11 +157,11 @@ class TriageAgent(BaseAgent):
                 ip_map[new_key]["ips"] |= keys
 
         # Filter out groups with only info-level events and no alerts
-        for key, group in ip_map.items():
-            if group["alerts"] or any(e.severity != "info" for e in group["events"]):
-                groups.append(group)
-
-        return groups
+        return [
+            group
+            for group in ip_map.values()
+            if group["alerts"] or any(e.severity != "info" for e in group["events"])
+        ]
 
     async def _analyze_and_create_case(self, group: dict) -> Case | None:
         """Use LLM to analyze a correlation group and create a case."""

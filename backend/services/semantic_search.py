@@ -138,7 +138,7 @@ async def find_similar_cases(
     similarities = []
     target_techniques = set(target.mitre_techniques or [])
 
-    for case, tokens in zip(others, other_tokens):
+    for case, tokens in zip(others, other_tokens, strict=True):
         vec = _tfidf_vector(tokens, idf)
         sim = _cosine_similarity(target_vec, vec)
 
@@ -191,7 +191,7 @@ async def search_cases(
     query_vec = _tfidf_vector(query_tokens, idf)
 
     results = []
-    for case, tokens in zip(cases, case_tokens):
+    for case, tokens in zip(cases, case_tokens, strict=True):
         vec = _tfidf_vector(tokens, idf)
         score = _cosine_similarity(query_vec, vec)
 
@@ -258,7 +258,7 @@ async def get_blast_radius(
     seen_nodes.add(f"case-{case.id}")
 
     # Asset nodes
-    for alert, asset in alert_assets:
+    for _alert, asset in alert_assets:
         if asset and f"asset-{asset.id}" not in seen_nodes:
             nodes.append({
                 "id": f"asset-{asset.id}",
