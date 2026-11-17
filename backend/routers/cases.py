@@ -345,6 +345,50 @@ async def get_case_events(
              "signature": e.signature, "category": e.category} for e in events]
 
 
+@router.post("/{case_id}/events/{event_id}")
+async def link_event_to_case(
+    case_id: int,
+    event_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Link a security event to a case manually. Idempotent: re-linking is a no-op."""
+    from backend.models.security_event import SecurityEvent
+
+    case = (await db.execute(
+        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    event = (await db.execute(
+        select(SecurityEvent).where(SecurityEvent.id == event_id, SecurityEvent.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    existing = (await db.execute(
+        select(CaseEvent).where(
+            CaseEvent.case_id == case_id, CaseEvent.event_id == event_id
+        )
+    )).scalar_one_or_none()
+    if existing is not None:
+        return {"success": True, "data": {"linked": False, "message": "Event already linked to this case"}}
+
+    db.add(CaseEvent(case_id=case.id, event_id=event.id))
+    event.processed = "in_case"
+    db.add(event)
+    label = event.signature or f"{event.event_type} event"
+    db.add(CaseTimeline(
+        case_id=case.id,
+        entry_type="event",
+        content=f"Event linked manually by {current_user.email}: {label}",
+        source="human",
+    ))
+    await db.commit()
+    return {"success": True, "data": {"linked": True}}
+
+
 
 @router.get("/{case_id}/similar")
 async def get_similar_cases(

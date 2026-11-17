@@ -87,6 +87,9 @@ export function CaseDetail() {
   const [showLinkAlert, setShowLinkAlert] = useState(false);
   const [alertOptions, setAlertOptions] = useState<RelatedAlert[]>([]);
   const [linkingAlert, setLinkingAlert] = useState(false);
+  const [showLinkEvent, setShowLinkEvent] = useState(false);
+  const [eventOptions, setEventOptions] = useState<RelatedEvent[]>([]);
+  const [linkingEvent, setLinkingEvent] = useState(false);
 
   const changeStatus = async (status: string) => {
     if (updatingStatus) return;
@@ -118,6 +121,27 @@ export function CaseDetail() {
       await fetchAll();
     } catch (err) { toast(getApiErrorMessage(err, 'The alert could not be linked.'), 'error'); }
     finally { setLinkingAlert(false); }
+  };
+
+  const openLinkEvent = async () => {
+    setShowLinkEvent(true);
+    try {
+      const res = await apiClient.get('/events/', { params: { size: 20 } });
+      const linked = new Set(events.map(e => e.id));
+      setEventOptions(((res.data.events ?? []) as RelatedEvent[]).filter(e => !linked.has(e.id)));
+    } catch (err) { toast(getApiErrorMessage(err, 'Recent events could not be loaded.'), 'error'); }
+  };
+
+  const linkEvent = async (eventId: number) => {
+    if (linkingEvent) return;
+    setLinkingEvent(true);
+    try {
+      await apiClient.post(`/cases/${caseId}/events/${eventId}`);
+      setShowLinkEvent(false);
+      toast('Event linked to the case.', 'success');
+      await fetchAll();
+    } catch (err) { toast(getApiErrorMessage(err, 'The event could not be linked.'), 'error'); }
+    finally { setLinkingEvent(false); }
   };
 
   const addNote = async () => {
@@ -389,7 +413,12 @@ export function CaseDetail() {
           </div>
 
           <div className="oa-panel p-6">
-            <h2 className="text-lg font-semibold text-surface-50 mb-3">Related Events</h2>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold text-surface-50">Related Events</h2>
+              <button type="button" onClick={() => void openLinkEvent()} className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-surface-600 px-2.5 text-xs font-semibold text-surface-200 hover:bg-surface-800">
+                <Link2 className="w-3.5 h-3.5" /> Link event
+              </button>
+            </div>
             {events.length === 0 ? (
               <p className="text-surface-500 text-sm">No linked events.</p>
             ) : (
@@ -417,6 +446,15 @@ export function CaseDetail() {
           busy={linkingAlert}
           onCancel={() => setShowLinkAlert(false)}
           onLink={alertId => void linkAlert(alertId)}
+        />
+      )}
+
+      {showLinkEvent && (
+        <LinkEventDialog
+          options={eventOptions}
+          busy={linkingEvent}
+          onCancel={() => setShowLinkEvent(false)}
+          onLink={eventId => void linkEvent(eventId)}
         />
       )}
     </div>
@@ -452,6 +490,7 @@ function LinkAlertDialog({ options, busy, onCancel, onLink }: LinkAlertDialogPro
         {options.length === 0 ? (
           <p className="mt-4 text-sm text-surface-500">Every recent alert is already linked.</p>
         ) : (
+
           <form className="mt-4 space-y-3" onSubmit={event => { event.preventDefault(); if (selectedId) onLink(Number(selectedId)); }}>
             <label htmlFor="link-alert-select" className="sr-only">Alert to link</label>
             <select id="link-alert-select" value={selectedId} onChange={event => setSelectedId(event.target.value)} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100">
@@ -461,6 +500,51 @@ function LinkAlertDialog({ options, busy, onCancel, onLink }: LinkAlertDialogPro
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" onClick={onCancel} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-300 hover:bg-surface-800">Cancel</button>
               <button type="submit" disabled={busy || !selectedId} className="min-h-9 rounded-md bg-primary-500 px-4 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">{busy ? 'Linking…' : 'Link alert'}</button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface LinkEventDialogProps {
+  options: RelatedEvent[];
+  busy: boolean;
+  onCancel: () => void;
+  onLink: (eventId: number) => void;
+}
+
+// Dialog for attaching a recent event to the case, mirroring LinkAlertDialog.
+function LinkEventDialog({ options, busy, onCancel, onLink }: LinkEventDialogProps) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const [selectedId, setSelectedId] = useState('');
+  useDialogFocus(dialogRef, onCancel);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-surface-950/70" aria-hidden="true" onClick={() => { if (!busy) onCancel(); }} />
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="link-event-dialog-title"
+        className="relative w-full max-w-md rounded-lg border border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]"
+      >
+        <h2 id="link-event-dialog-title" className="text-lg font-semibold text-surface-50">Link an event</h2>
+        <p className="mt-1 text-sm text-surface-400">Attach a recent security event to this investigation.</p>
+        {options.length === 0 ? (
+          <p className="mt-4 text-sm text-surface-500">Every recent event is already linked.</p>
+        ) : (
+          <form className="mt-4 space-y-3" onSubmit={event => { event.preventDefault(); if (selectedId) onLink(Number(selectedId)); }}>
+            <label htmlFor="link-event-select" className="sr-only">Event to link</label>
+            <select id="link-event-select" value={selectedId} onChange={event => setSelectedId(event.target.value)} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100">
+              <option value="">Choose an event…</option>
+              {options.map(e => <option key={e.id} value={e.id}>{(e.signature ?? e.event_type)} ({e.severity})</option>)}
+            </select>
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={onCancel} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-300 hover:bg-surface-800">Cancel</button>
+              <button type="submit" disabled={busy || !selectedId} className="min-h-9 rounded-md bg-primary-500 px-4 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">{busy ? 'Linking…' : 'Link event'}</button>
             </div>
           </form>
         )}

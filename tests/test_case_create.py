@@ -2,6 +2,8 @@
 Tests for manual investigation creation (POST /api/v1/cases/).
 """
 
+from datetime import UTC
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -256,3 +258,83 @@ class TestCaseAlertLinking:
         foreign_alert = client.post(f"/api/v1/cases/{case_id}/alerts/99999", headers=owner)
         assert foreign_case.status_code == 404
         assert foreign_alert.status_code == 404
+
+
+class TestCaseEventLinking:
+    """Tests for POST /api/v1/cases/{case_id}/events/{event_id}"""
+
+    def _make_event(self, client: TestClient, headers, signature="ET SCAN Nmap") -> int:
+        from datetime import datetime
+
+        from backend.models.security_event import SecurityEvent
+
+        me = client.get("/api/v1/auth/me", headers=headers)
+        assert me.status_code == 200, me.text
+        db = _TestingSessionLocal()
+        try:
+            event = SecurityEvent(
+                user_id=me.json()["id"],
+                timestamp=datetime.now(UTC),
+                event_type="alert", severity="high", signature=signature,
+                source_ip="10.0.4.9", dest_ip="10.0.4.20",
+            )
+            db.add(event)
+            db.commit()
+            db.refresh(event)
+            return event.id
+        finally:
+            db.close()
+
+    def _make_case(self, client: TestClient, headers) -> int:
+        resp = client.post("/api/v1/cases/", json={"title": "Event link target"}, headers=headers)
+        assert resp.status_code == 201, resp.text
+        return resp.json()["id"]
+
+    def test_link_event(self, client):
+        """Linking an event adds it to the case, marks it in_case and notes the timeline."""
+        headers = register_and_login(client, "analyst@example.com")
+        case_id = self._make_case(client, headers)
+        event_id = self._make_event(client, headers)
+
+        resp = client.post(f"/api/v1/cases/{case_id}/events/{event_id}", headers=headers)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["linked"] is True
+
+        events = client.get(f"/api/v1/cases/{case_id}/events", headers=headers)
+        assert [e["id"] for e in events.json()] == [event_id]
+
+        detail = client.get(f"/api/v1/cases/{case_id}", headers=headers)
+        assert detail.json()["event_count"] == 1
+        link_entries = [e for e in detail.json()["timeline"] if e["entry_type"] == "event"]
+        assert any("ET SCAN Nmap" in e["content"] for e in link_entries)
+
+        db = _TestingSessionLocal()
+        try:
+            from backend.models.security_event import SecurityEvent
+            stored = db.get(SecurityEvent, event_id)
+            assert stored.processed == "in_case"
+        finally:
+            db.close()
+
+    def test_link_is_idempotent(self, client):
+        headers = register_and_login(client, "analyst@example.com")
+        case_id = self._make_case(client, headers)
+        event_id = self._make_event(client, headers)
+
+        client.post(f"/api/v1/cases/{case_id}/events/{event_id}", headers=headers)
+        again = client.post(f"/api/v1/cases/{case_id}/events/{event_id}", headers=headers)
+        assert again.status_code == 200, again.text
+        assert again.json()["data"]["linked"] is False
+        detail = client.get(f"/api/v1/cases/{case_id}", headers=headers)
+        assert detail.json()["event_count"] == 1
+
+    def test_foreign_case_or_event_is_404(self, client):
+        owner = register_and_login(client, "owner@example.com")
+        outsider = register_and_login(client, "outsider@example.com")
+        case_id = self._make_case(client, owner)
+        event_id = self._make_event(client, owner)
+
+        foreign_case = client.post(f"/api/v1/cases/{case_id}/events/{event_id}", headers=outsider)
+        foreign_event = client.post(f"/api/v1/cases/{case_id}/events/99999", headers=owner)
+        assert foreign_case.status_code == 404
+        assert foreign_event.status_code == 404
