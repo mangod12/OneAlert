@@ -334,7 +334,9 @@ async def promote_device_to_asset(
         description=f"Promoted from discovered device at {device.ip_address}",
         is_ot_asset=device.is_ot_device,
         primary_protocol=device.protocols[0] if device.protocols else None,
-        secondary_protocols=json.dumps(device.protocols[1:]) if device.protocols and len(device.protocols) > 1 else None,
+        secondary_protocols=(
+            json.dumps(device.protocols[1:]) if device.protocols and len(device.protocols) > 1 else None
+        ),
         serial_number=device.serial_number,
         firmware_version=device.firmware_version,
         last_known_ip=device.ip_address,

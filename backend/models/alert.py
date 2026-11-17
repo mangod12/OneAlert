@@ -6,7 +6,8 @@ schemas for alert-related API operations (create, read, etc).
 
 - The `Alert` class is the database model for alerts.
 - The `Severity` and `AlertStatus` enums define the severity and status of alerts.
-- The Pydantic models (`AlertBase`, `AlertCreate`, `AlertRead`) are used for request/response validation and serialization.
+- The Pydantic models (`AlertBase`, `AlertCreate`, `AlertRead`) are used
+  for request/response validation and serialization.
 """
 
 from datetime import datetime

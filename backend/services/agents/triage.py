@@ -252,7 +252,10 @@ class TriageAgent(BaseAgent):
 
         await self.log_step(
             "create_case",
-            output_summary=f"Created case '{case.title}' (severity={case.severity}, confidence={case.confidence_score})",
+            output_summary=(
+                f"Created case '{case.title}' "
+                f"(severity={case.severity}, confidence={case.confidence_score})"
+            ),
         )
 
         return case
@@ -264,14 +267,16 @@ class TriageAgent(BaseAgent):
         if alerts:
             parts.append("=== ALERTS ===")
             parts.extend(
-                f"- [{a.severity}] {a.title} | CVE: {a.cve_id or 'N/A'} | Asset ID: {a.asset_id} | CVSS: {a.cvss_score or 'N/A'}"
+                f"- [{a.severity}] {a.title} | CVE: {a.cve_id or 'N/A'} | "
+                f"Asset ID: {a.asset_id} | CVSS: {a.cvss_score or 'N/A'}"
                 for a in alerts[:20]
             )
 
         if events:
             parts.append("\n=== SECURITY EVENTS ===")
             parts.extend(
-                f"- [{e.severity}] {e.event_type} | {e.source_ip}:{e.source_port or ''} → {e.dest_ip}:{e.dest_port or ''} | "
+                f"- [{e.severity}] {e.event_type} | {e.source_ip}:{e.source_port or ''} → "
+                f"{e.dest_ip}:{e.dest_port or ''} | "
                 f"sig: {e.signature or 'N/A'} | cat: {e.category or 'N/A'}"
                 for e in events[:50]
             )

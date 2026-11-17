@@ -5,7 +5,8 @@ This module defines the SQLAlchemy ORM model for users and the Pydantic
 schemas for user-related API operations (registration, login, profile, etc).
 
 - The `User` class is the database model for users.
-- The Pydantic models (`UserBase`, `UserCreate`, `UserUpdate`, `UserResponse`, `Token`, `TokenData`) are used for request/response validation and serialization.
+- The Pydantic models (`UserBase`, `UserCreate`, `UserUpdate`, `UserResponse`, `Token`,
+  `TokenData`) are used for request/response validation and serialization.
 """
 
 from datetime import datetime

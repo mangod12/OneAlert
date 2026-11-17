@@ -51,7 +51,10 @@ class BaseAgent(ABC):
             logger.error(f"Agent {self.agent_type} failed: {e}")
             raise
 
-    async def log_step(self, action: str, input_summary: str = "", output_summary: str = "", tool_used: str = "", duration_ms: int = 0):
+    async def log_step(
+        self, action: str, input_summary: str = "", output_summary: str = "",
+        tool_used: str = "", duration_ms: int = 0,
+    ):
         """Log a step in the agent run ledger."""
         if not self._run:
             return

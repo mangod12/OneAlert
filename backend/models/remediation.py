@@ -21,7 +21,8 @@ class RemediationAction(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     alert_id = Column(Integer, ForeignKey("alerts.id"), nullable=False)
-    action_type = Column(String, nullable=False)  # patch | compensating_control | network_segmentation | firmware_upgrade | accept_risk
+    # action_type values: patch | compensating_control | network_segmentation | firmware_upgrade | accept_risk
+    action_type = Column(String, nullable=False)
     description = Column(Text, nullable=False)
     estimated_downtime_minutes = Column(Integer, nullable=True)
     requires_maintenance_window = Column(Boolean, default=False)

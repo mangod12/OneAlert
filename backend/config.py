@@ -81,7 +81,10 @@ class Settings(BaseSettings):
 
     # List of allowed origins for CORS (Cross-Origin Resource Sharing).
     # Important for frontend applications running on different domains/ports.
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:8080", "http://127.0.0.1:8000", "http://localhost:8000", "http://localhost:8001"]
+    cors_origins: list[str] = [
+        "http://localhost:3000", "http://localhost:8080", "http://127.0.0.1:8000",
+        "http://localhost:8000", "http://localhost:8001",
+    ]
 
     # Scheduler Configuration
     # Interval in hours for the vulnerability scraper to run.

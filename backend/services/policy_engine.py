@@ -8,9 +8,24 @@ logger = logging.getLogger(__name__)
 AUTONOMY_LEVELS = {
     "L0": {"name": "Read-only", "auto_approve": [], "description": "Summarizes and explains only"},
     "L1": {"name": "Assisted", "auto_approve": ["notify", "ticket"], "description": "Drafts plans, can notify"},
-    "L2": {"name": "Approved actions", "auto_approve": ["notify", "ticket"], "description": "Executes after human approval"},
-    "L3": {"name": "Guarded autonomy", "auto_approve": ["notify", "ticket", "block_ip", "block_domain", "snapshot_logs"], "description": "Auto-executes low-risk containment"},
-    "L4": {"name": "Crisis mode", "auto_approve": ["notify", "ticket", "block_ip", "block_domain", "disable_user", "revoke_token", "snapshot_logs", "preserve_pcap", "disable_egress"], "description": "Aggressive defense in owned environment"},
+    "L2": {
+        "name": "Approved actions",
+        "auto_approve": ["notify", "ticket"],
+        "description": "Executes after human approval",
+    },
+    "L3": {
+        "name": "Guarded autonomy",
+        "auto_approve": ["notify", "ticket", "block_ip", "block_domain", "snapshot_logs"],
+        "description": "Auto-executes low-risk containment",
+    },
+    "L4": {
+        "name": "Crisis mode",
+        "auto_approve": [
+            "notify", "ticket", "block_ip", "block_domain", "disable_user", "revoke_token",
+            "snapshot_logs", "preserve_pcap", "disable_egress",
+        ],
+        "description": "Aggressive defense in owned environment",
+    },
 }
 
 # Actions that ALWAYS require human approval regardless of autonomy level

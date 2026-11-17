@@ -72,4 +72,6 @@ class AnthropicProvider(AIProvider):
         )
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        raise NotImplementedError("Anthropic does not provide an embeddings API. Use a different provider for embeddings.")
+        raise NotImplementedError(
+            "Anthropic does not provide an embeddings API. Use a different provider for embeddings."
+        )

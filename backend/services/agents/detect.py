@@ -183,10 +183,15 @@ class DetectAgent(BaseAgent):
                 findings.append({
                     "title": f"OT protocol traffic detected on port {port} ({ot_ports[port]})",
                     "severity": "high" if count > 10 else "medium",
-                    "description": f"{count} events targeting {ot_ports[port]} (port {port}). Verify these are authorized OT communications.",
+                    "description": (
+                        f"{count} events targeting {ot_ports[port]} (port {port}). "
+                        "Verify these are authorized OT communications."
+                    ),
                     "affected_ips": [],
                     "indicators": ["ot_protocol", ot_ports[port].lower()],
-                    "recommended_actions": [f"Verify {ot_ports[port]} traffic is from authorized engineering workstations"],
+                    "recommended_actions": [
+                        f"Verify {ot_ports[port]} traffic is from authorized engineering workstations"
+                    ],
                 })
 
         # Rule: High critical/high severity count
