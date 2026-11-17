@@ -30,8 +30,11 @@ async def execute_response_plan(db: AsyncSession, plan: ResponsePlan) -> dict:
     """Execute all actions in an approved response plan.
 
     Actions execute in priority order. Each action result is logged.
-    Plan status transitions: approved -> executing -> completed/failed.
+    Plan status transitions: approved -> executing -> completed/partial.
     """
+    if plan.status != "approved":
+        raise ValueError("Response plan must be approved before execution")
+
     plan.status = "executing"
     await db.flush()
 
@@ -48,8 +51,10 @@ async def execute_response_plan(db: AsyncSession, plan: ResponsePlan) -> dict:
 
         handler_name = ACTION_HANDLERS.get(action_type)
         if not handler_name:
+            failed += 1
             result = {"action": action_type, "target": target, "status": "skipped",
-                       "detail": f"Unknown action type: {action_type}"}
+                      "detail": f"Unknown action type: {action_type}",
+                      "executed_at": datetime.now(UTC).isoformat()}
             results.append(result)
             continue
 
@@ -77,8 +82,7 @@ async def execute_response_plan(db: AsyncSession, plan: ResponsePlan) -> dict:
     # Store execution results back into actions
     updated_actions = []
     for action, result in zip(sorted_actions, results, strict=True):
-        action["execution_result"] = result
-        updated_actions.append(action)
+        updated_actions.append({**action, "execution_result": result})
     plan.actions = updated_actions
 
     await db.commit()
