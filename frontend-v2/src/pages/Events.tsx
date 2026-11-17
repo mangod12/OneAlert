@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect, type ComponentProps } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import apiClient from '../api/client';
 import { Activity } from 'lucide-react';
 import clsx from 'clsx';
@@ -6,6 +6,7 @@ import { getApiErrorMessage } from '../api/errors';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { eventSeverityTones } from '../components/ui/tones';
 
 const severityColors: Record<string, string> = {
   critical: 'text-danger',
@@ -13,16 +14,6 @@ const severityColors: Record<string, string> = {
   medium: 'text-warning',
   low: 'text-info',
   info: 'text-surface-500',
-};
-
-type BadgeTone = ComponentProps<typeof StatusBadge>['tone'];
-
-const severityTones: Record<string, BadgeTone> = {
-  critical: 'danger',
-  high: 'warning',
-  medium: 'info',
-  low: 'neutral',
-  info: 'neutral',
 };
 
 interface SecurityEvent {
@@ -139,7 +130,7 @@ export function Events() {
                   <tr key={e.id} className="border-b border-surface-800 hover:bg-surface-800/50">
                     <td className="p-3 text-surface-400 whitespace-nowrap text-xs tabular-nums">{new Date(e.timestamp).toLocaleString()}</td>
                     <td className="p-3">
-                      <StatusBadge tone={severityTones[e.severity] ?? 'neutral'}>{e.severity}</StatusBadge>
+                      <StatusBadge tone={eventSeverityTones[e.severity] ?? 'neutral'}>{e.severity}</StatusBadge>
                     </td>
                     <td className="p-3 text-surface-300">{e.event_type}</td>
                     <td className="p-3 text-surface-300 font-mono text-xs">
