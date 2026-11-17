@@ -87,6 +87,7 @@ describe('Events page', () => {
     await waitFor(() => {
       expect(mockGet).toHaveBeenCalledWith('/events/', { params: { page: 1, size: 50, severity: 'high' } });
     });
+    expect(screen.getByRole('button', { name: /^high/i }).getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(screen.getByRole('button', { name: /^high/i }));
     await waitFor(() => {
       expect(mockGet).toHaveBeenCalledTimes(10);
