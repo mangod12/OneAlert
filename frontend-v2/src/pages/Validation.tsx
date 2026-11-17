@@ -6,13 +6,14 @@ import { toast } from '../components/Toast';
 import { getApiErrorMessage } from '../api/errors';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
+import { StatusBadge } from '../components/ui/StatusBadge';
 
 interface ValidationStep {
   id: number;
   technique_id: string;
   test_name: string;
-  actual_result: string;
-  duration_ms: number;
+  actual_result: string | null;
+  duration_ms: number | null;
 }
 interface ValidationRunDetail extends ValidationRun { steps: ValidationStep[]; }
 
@@ -50,6 +51,7 @@ export function Validation() {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedRun, setSelectedRun] = useState<ValidationRunDetail | null>(null);
   const [newRun, setNewRun] = useState({ name: '', description: '', techniques: [] as string[] });
+  const [resultFilter, setResultFilter] = useState<'all' | 'attention' | 'detected'>('all');
   const [creating, setCreating] = useState(false);
   const [executing, setExecuting] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -98,6 +100,7 @@ export function Validation() {
     try {
       const res = await apiClient.get(`/validation/runs/${runId}`);
       setSelectedRun(res.data.data);
+      setResultFilter('all');
     } catch (err) { toast(getApiErrorMessage(err, 'Run details could not be loaded.'), 'error'); }
   };
 
@@ -136,7 +139,7 @@ export function Validation() {
               <label className="block text-sm font-medium text-surface-300 mb-2">ATT&CK Techniques</label>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 {AVAILABLE_TECHNIQUES.map(t => (
-                  <button key={t.id} onClick={() => toggleTechnique(t.id)}
+                  <button key={t.id} aria-pressed={newRun.techniques.includes(t.id)} onClick={() => toggleTechnique(t.id)}
                     className={clsx('p-2 rounded-lg text-left text-xs border transition-colors',
                       newRun.techniques.includes(t.id)
                         ? 'border-primary-500 bg-primary-500/10 text-primary-300'
@@ -163,12 +166,11 @@ export function Validation() {
         ) : (
           <div className="space-y-3">
             {runs.map(r => (
-              <div key={r.id} role="button" tabIndex={0} className="flex items-center gap-4 p-4 bg-surface-900/50 rounded-lg cursor-pointer hover:bg-surface-900/80 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500"
-                onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); viewRun(r.id); } }}
-                onClick={() => viewRun(r.id)}>
+              <div key={r.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-surface-700 bg-surface-900/50 p-4 sm:flex-nowrap">
                 <ShieldCheck className="w-5 h-5 text-primary-400 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-surface-50 font-medium">{r.name}</p>
+                <div className="min-w-0 flex-1 basis-40">
+                  <button type="button" onClick={() => void viewRun(r.id)} aria-label={`View results for ${r.name}`}
+                    className="rounded text-left text-sm font-semibold text-surface-50 hover:text-primary-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">{r.name}</button>
                   <p className="text-xs text-surface-500">
                     {r.mitre_techniques?.length || 0} techniques · {r.mode} · {new Date(r.created_at).toLocaleDateString()}
                   </p>
@@ -185,7 +187,7 @@ export function Validation() {
                   {r.status}
                 </span>
                 {r.status === 'pending' && (
-                  <button disabled={executing === r.id} onClick={e => { e.stopPropagation(); executeRun(r.id); }}
+                  <button disabled={executing !== null} onClick={e => { e.stopPropagation(); executeRun(r.id); }}
                     className="flex items-center gap-1 px-3 py-1.5 bg-primary-500 hover:bg-primary-400 text-surface-950 rounded text-xs font-medium transition-colors">
                     <Play className="w-3 h-3" /> Run
                   </button>
@@ -201,8 +203,15 @@ export function Validation() {
         <div className="oa-panel p-6">
           <h2 className="text-lg font-semibold text-surface-50 mb-4 flex items-center gap-2">
             <Target className="w-5 h-5 text-primary-400" />
-            {selectedRun.name} — Results
+            {selectedRun.name} - Results
           </h2>
+
+          {selectedRun.description && <p className="mb-4 text-sm text-surface-400">{selectedRun.description}</p>}
+          {selectedRun.mode === 'dry_run' && (
+            <div className="mb-5 rounded-md border border-info/30 bg-info/10 p-3 text-sm text-info" role="note">
+              Dry-run simulation. These results do not prove that live detection controls fired.
+            </div>
+          )}
 
           {selectedRun.results_summary && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
@@ -228,23 +237,32 @@ export function Validation() {
           )}
 
           {selectedRun.steps?.length > 0 && (
-            <div className="space-y-2">
-              {selectedRun.steps.map(step => (
-                <div key={step.id} className="flex items-center gap-4 p-3 bg-surface-900/30 rounded-lg">
-                  {step.actual_result === 'detected' ? (
-                    <CheckCircle className="w-4 h-4 text-success shrink-0" />
-                  ) : (
-                    <XCircle className="w-4 h-4 text-danger shrink-0" />
-                  )}
-                  <span className="font-mono text-xs text-primary-400 w-12">{step.technique_id}</span>
-                  <span className="text-sm text-surface-300 flex-1">{step.test_name}</span>
-                  <span className={clsx('text-xs px-2 py-0.5 rounded',
-                    step.actual_result === 'detected' ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger')}>
-                    {step.actual_result}
-                  </span>
-                  <span className="text-xs text-surface-500">{step.duration_ms}ms</span>
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Filter validation results">
+                {([
+                  { key: 'all', label: 'All results', count: selectedRun.steps.length },
+                  { key: 'attention', label: 'Needs attention', count: selectedRun.steps.filter(step => step.actual_result !== 'detected').length },
+                  { key: 'detected', label: 'Detected', count: selectedRun.steps.filter(step => step.actual_result === 'detected').length },
+                ] as const).map(filter => (
+                  <button key={filter.key} type="button" aria-pressed={resultFilter === filter.key} onClick={() => setResultFilter(filter.key)}
+                    className={clsx('rounded-md border px-3 py-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+                      resultFilter === filter.key ? 'border-primary-500 bg-primary-500/10 text-primary-300' : 'border-surface-700 text-surface-400 hover:bg-surface-800')}>
+                    {filter.label} ({filter.count})
+                  </button>
+                ))}
+              </div>
+              {selectedRun.steps.filter(step => resultFilter === 'all' || (resultFilter === 'detected' ? step.actual_result === 'detected' : step.actual_result !== 'detected')).map(step => (
+                <div key={step.id} className="flex flex-wrap items-start gap-3 rounded-lg border border-surface-800 bg-surface-900/30 p-3 sm:items-center">
+                  {step.actual_result === 'detected' ? <CheckCircle className="h-4 w-4 shrink-0 text-success" aria-hidden="true" /> : <XCircle className="h-4 w-4 shrink-0 text-warning" aria-hidden="true" />}
+                  <span className="font-mono text-xs text-primary-400">{step.technique_id}</span>
+                  <span className="min-w-0 flex-1 basis-40 break-words text-sm text-surface-300">{step.test_name}</span>
+                  <StatusBadge tone={step.actual_result === 'detected' ? 'success' : step.actual_result === 'missed' || step.actual_result === 'error' ? 'danger' : 'warning'}>{step.actual_result || 'Not run'}</StatusBadge>
+                  <span className="text-xs tabular-nums text-surface-500">{step.duration_ms === null ? 'Not timed' : `${step.duration_ms}ms`}</span>
                 </div>
               ))}
+              {!selectedRun.steps.some(step => resultFilter === 'all' || (resultFilter === 'detected' ? step.actual_result === 'detected' : step.actual_result !== 'detected')) && (
+                <p className="rounded-md border border-surface-800 p-4 text-sm text-surface-400" role="status">No results match this filter.</p>
+              )}
             </div>
           )}
         </div>
