@@ -277,6 +277,47 @@ async def get_case_alerts(
     return [a.to_dict() for a in alerts]
 
 
+@router.post("/{case_id}/alerts/{alert_id}")
+async def link_alert_to_case(
+    case_id: int,
+    alert_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Link an alert to a case manually. Idempotent: re-linking is a no-op."""
+    from backend.models.alert import Alert
+
+    case = (await db.execute(
+        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    alert = (await db.execute(
+        select(Alert).where(Alert.id == alert_id, Alert.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if alert is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    existing = (await db.execute(
+        select(CaseAlert).where(
+            CaseAlert.case_id == case_id, CaseAlert.alert_id == alert_id
+        )
+    )).scalar_one_or_none()
+    if existing is not None:
+        return {"success": True, "data": {"linked": False, "message": "Alert already linked to this case"}}
+
+    db.add(CaseAlert(case_id=case.id, alert_id=alert.id))
+    db.add(CaseTimeline(
+        case_id=case.id,
+        entry_type="alert",
+        content=f"Alert linked manually by {current_user.email}: {alert.title}",
+        source="human",
+    ))
+    await db.commit()
+    return {"success": True, "data": {"linked": True}}
+
+
 @router.get("/{case_id}/events")
 async def get_case_events(
     case_id: int,

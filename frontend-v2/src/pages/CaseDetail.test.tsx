@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CaseDetail } from './CaseDetail';
@@ -168,5 +168,54 @@ describe('Timeline notes', () => {
     expect(button.disabled).toBe(true);
     fireEvent.change(screen.getByLabelText('Add a timeline note'), { target: { value: 'Checking pcap' } });
     expect(button.disabled).toBe(false);
+  });
+});
+
+describe('Linking alerts to the case', () => {
+  const recentAlerts = [
+    { id: 11, title: 'Suspicious login burst', severity: 'high' },
+    { id: 12, title: 'Old firmware on PLC', severity: 'medium' },
+  ];
+
+  function mockLoadWithRecentAlerts() {
+    mockGet.mockImplementation(url => {
+      if (url === '/alerts/') return Promise.resolve({ data: { alerts: recentAlerts, total: 2 } });
+      if (url.endsWith('/alerts')) return Promise.resolve({ data: [{ id: 11, severity: 'high', title: 'Suspicious login burst' }] });
+      if (url.endsWith('/events')) return Promise.resolve({ data: [] });
+      if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: null } });
+      if (url.endsWith('/similar')) return Promise.resolve({ data: { success: true, data: [] } });
+      return Promise.resolve({ data: caseData });
+    });
+  }
+
+  it('links a selected alert and refreshes the case', async () => {
+    mockLoadWithRecentAlerts();
+    mockPost.mockResolvedValue({ data: { success: true, data: { linked: true } } });
+    renderDetail();
+    await screen.findByText('Suspicious lateral movement');
+    fireEvent.click(screen.getByRole('button', { name: /link alert/i }));
+    const select = await screen.findByLabelText('Alert to link');
+    // Alert 11 is already linked, so only alert 12 is offered.
+    expect(screen.queryByRole('option', { name: /Suspicious login burst/ })).toBeNull();
+    fireEvent.change(select, { target: { value: '12' } });
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Link alert' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/alerts/12'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2));
+  });
+
+  it('notes when every recent alert is already linked', async () => {
+    mockGet.mockImplementation(url => {
+      if (url === '/alerts/') return Promise.resolve({ data: { alerts: recentAlerts, total: 2 } });
+      if (url.endsWith('/alerts')) return Promise.resolve({ data: recentAlerts });
+      if (url.endsWith('/events')) return Promise.resolve({ data: [] });
+      if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: null } });
+      if (url.endsWith('/similar')) return Promise.resolve({ data: { success: true, data: [] } });
+      return Promise.resolve({ data: caseData });
+    });
+    renderDetail();
+    await screen.findByText('Suspicious lateral movement');
+    fireEvent.click(screen.getByRole('button', { name: /link alert/i }));
+    expect(await screen.findByText('Every recent alert is already linked.')).toBeTruthy();
   });
 });

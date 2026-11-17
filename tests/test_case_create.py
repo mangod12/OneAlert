@@ -183,3 +183,76 @@ class TestCaseNotes:
         case_id = self._make_case(client, headers)
         resp = client.post(f"/api/v1/cases/{case_id}/notes", json={"content": "   "}, headers=headers)
         assert resp.status_code == 422, resp.text
+
+
+class TestCaseAlertLinking:
+    """Tests for POST /api/v1/cases/{case_id}/alerts/{alert_id}"""
+
+    def _make_alert(self, client: TestClient, headers, title="Suspicious login burst") -> int:
+        from backend.models.alert import Alert
+
+        asset = client.post("/api/v1/assets/", json={
+            "name": "Edge router", "asset_type": "hardware", "vendor": "Cisco",
+            "product": "ASR1000", "version": "1.0", "description": "Test asset",
+        }, headers=headers)
+        assert asset.status_code == 201, asset.text
+        me = client.get("/api/v1/auth/me", headers=headers)
+        assert me.status_code == 200, me.text
+        db = _TestingSessionLocal()
+        try:
+            alert = Alert(
+                user_id=me.json()["id"], asset_id=asset.json()["id"],
+                title=title, severity="high", status="pending",
+            )
+            db.add(alert)
+            db.commit()
+            db.refresh(alert)
+            return alert.id
+        finally:
+            db.close()
+
+    def _make_case(self, client: TestClient, headers) -> int:
+        resp = client.post("/api/v1/cases/", json={"title": "Link target"}, headers=headers)
+        assert resp.status_code == 201, resp.text
+        return resp.json()["id"]
+
+    def test_link_alert(self, client):
+        """Linking an alert adds it to the case and notes it on the timeline."""
+        headers = register_and_login(client, "analyst@example.com")
+        case_id = self._make_case(client, headers)
+        alert_id = self._make_alert(client, headers)
+
+        resp = client.post(f"/api/v1/cases/{case_id}/alerts/{alert_id}", headers=headers)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["linked"] is True
+
+        alerts = client.get(f"/api/v1/cases/{case_id}/alerts", headers=headers)
+        assert [a["id"] for a in alerts.json()] == [alert_id]
+
+        detail = client.get(f"/api/v1/cases/{case_id}", headers=headers)
+        assert detail.json()["alert_count"] == 1
+        link_entries = [e for e in detail.json()["timeline"] if e["entry_type"] == "alert"]
+        assert any("Suspicious login burst" in e["content"] for e in link_entries)
+
+    def test_link_is_idempotent(self, client):
+        headers = register_and_login(client, "analyst@example.com")
+        case_id = self._make_case(client, headers)
+        alert_id = self._make_alert(client, headers)
+
+        client.post(f"/api/v1/cases/{case_id}/alerts/{alert_id}", headers=headers)
+        again = client.post(f"/api/v1/cases/{case_id}/alerts/{alert_id}", headers=headers)
+        assert again.status_code == 200, again.text
+        assert again.json()["data"]["linked"] is False
+        detail = client.get(f"/api/v1/cases/{case_id}", headers=headers)
+        assert detail.json()["alert_count"] == 1
+
+    def test_foreign_case_or_alert_is_404(self, client):
+        owner = register_and_login(client, "owner@example.com")
+        outsider = register_and_login(client, "outsider@example.com")
+        case_id = self._make_case(client, owner)
+        alert_id = self._make_alert(client, owner)
+
+        foreign_case = client.post(f"/api/v1/cases/{case_id}/alerts/{alert_id}", headers=outsider)
+        foreign_alert = client.post(f"/api/v1/cases/{case_id}/alerts/99999", headers=owner)
+        assert foreign_case.status_code == 404
+        assert foreign_alert.status_code == 404

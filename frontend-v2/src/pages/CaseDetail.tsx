@@ -1,10 +1,11 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import apiClient from '../api/client';
-import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch } from 'lucide-react';
+import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2 } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { toast } from '../components/Toast';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { useDialogFocus } from '../components/ui/useDialogFocus';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { NarrativeText } from '../components/ui/NarrativeText';
 import { alertSeverityTones, caseStatusTones, eventSeverityTones } from '../components/ui/tones';
@@ -83,6 +84,9 @@ export function CaseDetail() {
   const [similarCases, setSimilarCases] = useState<SimilarCase[]>([]);
   const [noteText, setNoteText] = useState('');
   const [addingNote, setAddingNote] = useState(false);
+  const [showLinkAlert, setShowLinkAlert] = useState(false);
+  const [alertOptions, setAlertOptions] = useState<RelatedAlert[]>([]);
+  const [linkingAlert, setLinkingAlert] = useState(false);
 
   const changeStatus = async (status: string) => {
     if (updatingStatus) return;
@@ -93,6 +97,27 @@ export function CaseDetail() {
       await fetchAll();
     } catch (err) { toast(getApiErrorMessage(err, 'Case status could not be updated.'), 'error'); }
     finally { setUpdatingStatus(false); }
+  };
+
+  const openLinkAlert = async () => {
+    setShowLinkAlert(true);
+    try {
+      const res = await apiClient.get('/alerts/', { params: { size: 20 } });
+      const linked = new Set(alerts.map(a => a.id));
+      setAlertOptions(((res.data.alerts ?? []) as RelatedAlert[]).filter(a => !linked.has(a.id)));
+    } catch (err) { toast(getApiErrorMessage(err, 'Recent alerts could not be loaded.'), 'error'); }
+  };
+
+  const linkAlert = async (alertId: number) => {
+    if (linkingAlert) return;
+    setLinkingAlert(true);
+    try {
+      await apiClient.post(`/cases/${caseId}/alerts/${alertId}`);
+      setShowLinkAlert(false);
+      toast('Alert linked to the case.', 'success');
+      await fetchAll();
+    } catch (err) { toast(getApiErrorMessage(err, 'The alert could not be linked.'), 'error'); }
+    finally { setLinkingAlert(false); }
   };
 
   const addNote = async () => {
@@ -340,7 +365,12 @@ export function CaseDetail() {
         {/* Related Alerts & Events */}
         <div className="space-y-6">
           <div className="oa-panel p-6">
-            <h2 className="text-lg font-semibold text-surface-50 mb-3">Related Alerts</h2>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold text-surface-50">Related Alerts</h2>
+              <button type="button" onClick={() => void openLinkAlert()} className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-surface-600 px-2.5 text-xs font-semibold text-surface-200 hover:bg-surface-800">
+                <Link2 className="w-3.5 h-3.5" /> Link alert
+              </button>
+            </div>
             {alerts.length === 0 ? (
               <p className="text-surface-500 text-sm">No linked alerts.</p>
             ) : (
@@ -379,6 +409,61 @@ export function CaseDetail() {
             )}
           </div>
         </div>
+      </div>
+
+      {showLinkAlert && (
+        <LinkAlertDialog
+          options={alertOptions}
+          busy={linkingAlert}
+          onCancel={() => setShowLinkAlert(false)}
+          onLink={alertId => void linkAlert(alertId)}
+        />
+      )}
+    </div>
+  );
+}
+
+interface LinkAlertDialogProps {
+  options: RelatedAlert[];
+  busy: boolean;
+  onCancel: () => void;
+  onLink: (alertId: number) => void;
+}
+
+// Dialog for attaching a recent alert to the case. Kept as its own component
+// so focus management mounts with the dialog and the selection resets on close.
+function LinkAlertDialog({ options, busy, onCancel, onLink }: LinkAlertDialogProps) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const [selectedId, setSelectedId] = useState('');
+  useDialogFocus(dialogRef, onCancel);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-surface-950/70" aria-hidden="true" onClick={() => { if (!busy) onCancel(); }} />
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="link-alert-dialog-title"
+        className="relative w-full max-w-md rounded-lg border border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]"
+      >
+        <h2 id="link-alert-dialog-title" className="text-lg font-semibold text-surface-50">Link an alert</h2>
+        <p className="mt-1 text-sm text-surface-400">Attach a recent alert to this investigation.</p>
+        {options.length === 0 ? (
+          <p className="mt-4 text-sm text-surface-500">Every recent alert is already linked.</p>
+        ) : (
+          <form className="mt-4 space-y-3" onSubmit={event => { event.preventDefault(); if (selectedId) onLink(Number(selectedId)); }}>
+            <label htmlFor="link-alert-select" className="sr-only">Alert to link</label>
+            <select id="link-alert-select" value={selectedId} onChange={event => setSelectedId(event.target.value)} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100">
+              <option value="">Choose an alert…</option>
+              {options.map(a => <option key={a.id} value={a.id}>{a.title} ({a.severity})</option>)}
+            </select>
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={onCancel} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-300 hover:bg-surface-800">Cancel</button>
+              <button type="submit" disabled={busy || !selectedId} className="min-h-9 rounded-md bg-primary-500 px-4 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">{busy ? 'Linking…' : 'Link alert'}</button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
