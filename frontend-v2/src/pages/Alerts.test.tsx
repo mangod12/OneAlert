@@ -48,7 +48,10 @@ afterEach(() => {
 });
 
 beforeEach(() => {
-  mockGet.mockResolvedValue(listResponse([makeAlert()]));
+  mockGet.mockImplementation(async (url: string) => {
+    if (typeof url === 'string' && url.endsWith('/notes')) return { data: [] };
+    return listResponse([makeAlert()]);
+  });
   mockPost.mockResolvedValue({ data: {} });
   mockPatch.mockResolvedValue({ data: {} });
 });

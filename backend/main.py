@@ -20,6 +20,7 @@ from backend.middleware.rate_limiter import RateLimitExceeded, limiter, rate_lim
 from backend.middleware.request_id import RequestIDMiddleware
 from backend.middleware.security_headers import SecurityHeadersMiddleware
 from backend.routers import (
+    alert_notes,
     alerts,
     assets,
     auth,
@@ -176,6 +177,7 @@ app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(assets.router, prefix="/api/v1/assets", tags=["Assets"])
 app.include_router(saved_views.router, prefix="/api/v1/alerts/views", tags=["Alerts"])  # before /alerts/{alert_id}
 app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["Alerts"])
+app.include_router(alert_notes.router, prefix="/api/v1/alerts", tags=["Alerts"])
 app.include_router(ot.router, prefix="/api/v1/ot", tags=["OT/ICS"])
 app.include_router(sensor_ingest.router, prefix="/api/v1/ot", tags=["OT/ICS"])
 app.include_router(organizations.router, prefix="/api/v1/orgs", tags=["Organizations"])

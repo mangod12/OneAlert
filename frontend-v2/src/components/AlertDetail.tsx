@@ -33,6 +33,13 @@ interface OrgMember {
   is_active: boolean;
 }
 
+interface AlertNote {
+  id: number;
+  alert_id: number;
+  body: string;
+  created_at: string;
+}
+
 export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen, onSnooze, onAssigned }: Props) {
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
@@ -45,6 +52,10 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
   const [kev, setKev] = useState<{ date_added: string | null; due_date: string | null; known_ransomware_campaign_use: string | null; required_action: string | null } | null>(null);
   const [remediations, setRemediations] = useState<RemediationAction[] | null>(null);
   const [showEscalate, setShowEscalate] = useState(false);
+  const [notes, setNotes] = useState<AlertNote[] | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [assigning, setAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
@@ -68,6 +79,39 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
       setAssignError(getApiErrorMessage(error, 'The alert could not be assigned.'));
     } finally {
       setAssigning(false);
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient.get<AlertNote[]>(`/alerts/${alert.id}/notes`)
+      .then(res => { if (!cancelled) setNotes(res.data); })
+      .catch(() => { if (!cancelled) setNotes([]); });
+    return () => { cancelled = true; };
+  }, [alert.id]);
+
+  const addNote = async () => {
+    const body = noteDraft.trim();
+    if (!body || noteSaving) return;
+    setNoteSaving(true);
+    setNoteError(null);
+    try {
+      const res = await apiClient.post<AlertNote>(`/alerts/${alert.id}/notes`, { body });
+      setNotes(current => [...(current ?? []), res.data]);
+      setNoteDraft('');
+    } catch (error: unknown) {
+      setNoteError(getApiErrorMessage(error, 'The note could not be saved.'));
+    } finally {
+      setNoteSaving(false);
+    }
+  };
+
+  const deleteNote = async (noteId: number) => {
+    try {
+      await apiClient.delete(`/alerts/${alert.id}/notes/${noteId}`);
+      setNotes(current => current?.filter(note => note.id !== noteId) ?? current);
+    } catch (error: unknown) {
+      setNoteError(getApiErrorMessage(error, 'The note could not be deleted.'));
     }
   };
 
@@ -190,6 +234,53 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
               </ol>
             </div>
           )}
+
+          <div className="pt-4 border-t border-surface-700">
+            <label className="text-xs text-surface-500 uppercase tracking-wide">Notes</label>
+            {notes === null ? (
+              <p className="mt-2 text-xs text-surface-500">Loading notes…</p>
+            ) : (
+              <ul className="mt-2 space-y-2">
+                {notes.length === 0 && <li className="text-xs text-surface-500">No notes yet</li>}
+                {notes.map(note => (
+                  <li key={note.id} className="rounded-md border border-surface-700 bg-surface-800/50 p-3">
+                    <p className="text-sm text-surface-300 whitespace-pre-wrap">{note.body}</p>
+                    <div className="mt-1.5 flex items-center justify-between">
+                      <span className="text-[11px] text-surface-500">{new Date(note.created_at).toLocaleString()}</span>
+                      <button
+                        type="button"
+                        aria-label={`Delete note ${note.id}`}
+                        onClick={() => void deleteNote(note.id)}
+                        className="text-[11px] font-medium text-surface-500 hover:text-danger-400"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="mt-2 flex items-start gap-2">
+              <textarea
+                aria-label="Add a note"
+                placeholder="Add a note…"
+                value={noteDraft}
+                maxLength={4000}
+                rows={2}
+                onChange={event => setNoteDraft(event.target.value)}
+                className="min-w-0 flex-1 rounded-md border border-surface-700 bg-surface-800 px-2.5 py-1.5 text-sm text-surface-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              <button
+                type="button"
+                disabled={!noteDraft.trim() || noteSaving}
+                onClick={() => void addNote()}
+                className="shrink-0 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-500 disabled:opacity-40"
+              >
+                Add
+              </button>
+            </div>
+            {noteError && <p role="alert" className="mt-1.5 text-xs text-danger-400">{noteError}</p>}
+          </div>
 
           {alert.source && (
             <div>
