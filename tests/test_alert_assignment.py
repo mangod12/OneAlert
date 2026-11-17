@@ -196,3 +196,43 @@ class TestAlertAssignmentFilter:
         rows = resp.json()["alerts"]
         assert resp.json()["total"] == 1
         assert rows[0]["assigned_to_id"] is None
+
+
+class TestAlertExport:
+    def test_export_csv_includes_assignee(self, client):
+        owner = _register_and_login(client, "owner@example.com")
+        member = _register_and_login(client, "member@example.com")
+        owner_id = _user_id(client, owner)
+        member_id = _user_id(client, member)
+        _share_org(owner_id, member_id)
+        alert_id = _seed_alert(owner_id)
+        resp = client.patch(f"/api/v1/alerts/{alert_id}", json={"assigned_to_id": member_id}, headers=owner)
+        assert resp.status_code == 200, resp.text
+
+        res = client.get("/api/v1/alerts/export", headers=owner)
+        assert res.status_code == 200
+        assert res.headers["content-type"].startswith("text/csv")
+        lines = res.text.strip().splitlines()
+        assert lines[0] == "id,cve_id,title,severity,status,cvss_score,asset_name,assigned_to_email,created_at,acknowledged_at"
+        assert len(lines) == 2
+        fields = lines[1].split(",")
+        assert fields[1] == "CVE-2026-0001"
+        assert fields[6] == "edge-router-01"
+        assert fields[7] == "member@example.com"
+
+    def test_export_respects_filters(self, client):
+        owner = _register_and_login(client, "owner@example.com")
+        member = _register_and_login(client, "member@example.com")
+        owner_id = _user_id(client, owner)
+        member_id = _user_id(client, member)
+        _share_org(owner_id, member_id)
+        alert_id = _seed_alert(owner_id)
+        resp = client.patch(f"/api/v1/alerts/{alert_id}", json={"assigned_to_id": member_id}, headers=owner)
+        assert resp.status_code == 200, resp.text
+        _seed_alert(owner_id)  # unassigned
+
+        res = client.get("/api/v1/alerts/export", params={"assigned": "unassigned"}, headers=owner)
+        assert res.status_code == 200
+        lines = res.text.strip().splitlines()
+        assert len(lines) == 2
+        assert lines[1].split(",")[7] == ""

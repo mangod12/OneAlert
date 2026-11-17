@@ -4,9 +4,12 @@ Provides endpoints for viewing, acknowledging, and getting statistics on securit
 """
 
 
+import csv
+import io
 from datetime import UTC
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
@@ -125,6 +128,75 @@ async def list_alerts(
         page=page,
         size=size,
         pages=(total + size - 1) // size if total > 0 else 1
+    )
+
+
+@router.get("/export")
+async def export_alerts(
+    severity: Severity | None = Query(None, description="Filter by severity"),
+    status: AlertStatus | None = Query(None, description="Filter by status"),
+    asset_id: int | None = Query(None, description="Filter by asset ID"),
+    cve_id: str | None = Query(None, description="Filter by CVE ID"),
+    search: str | None = Query(None, description="Case-insensitive substring match against CVE ID or title"),
+    assigned: str | None = Query(
+        None, pattern="^(me|unassigned)$", description="Filter by assignment: 'me' or 'unassigned'"
+    ),
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Export the filtered alert list as CSV (same filters as the list, max 5000 rows)."""
+    query = select(Alert, Asset.name.label("asset_name")).join(
+        Asset, Alert.asset_id == Asset.id
+    ).options(
+        joinedload(Alert.assignee)
+    ).where(Alert.user_id == current_user.id)
+
+    if status:
+        query = query.filter(Alert.status == status)
+    if severity:
+        query = query.filter(Alert.severity == severity)
+    if asset_id:
+        query = query.filter(Alert.asset_id == asset_id)
+    if cve_id:
+        query = query.filter(Alert.cve_id == cve_id)
+    if search:
+        query = query.filter(or_(
+            Alert.cve_id.ilike(f"%{search}%"),
+            Alert.title.ilike(f"%{search}%"),
+        ))
+    if assigned == "me":
+        query = query.filter(Alert.assigned_to_id == current_user.id)
+    elif assigned == "unassigned":
+        query = query.filter(Alert.assigned_to_id.is_(None))
+
+    query = query.order_by(Alert.created_at.desc()).limit(5000)
+    rows = (await db.execute(query)).all()
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([
+        "id", "cve_id", "title", "severity", "status", "cvss_score",
+        "asset_name", "assigned_to_email", "created_at", "acknowledged_at",
+    ])
+    for row in rows:
+        alert = row.Alert
+        writer.writerow([
+            alert.id,
+            alert.cve_id or "",
+            alert.title,
+            alert.severity.value if hasattr(alert.severity, "value") else alert.severity,
+            alert.status.value if hasattr(alert.status, "value") else alert.status,
+            alert.cvss_score if alert.cvss_score is not None else "",
+            row.asset_name,
+            alert.assignee.email if alert.assignee else "",
+            alert.created_at.isoformat() if alert.created_at else "",
+            alert.acknowledged_at.isoformat() if alert.acknowledged_at else "",
+        ])
+    buffer.seek(0)
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=alerts.csv"},
     )
 
 
