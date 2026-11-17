@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import apiClient from '../api/client';
-import { Bot, Search } from 'lucide-react';
+import { Bot, Download, Search } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -43,6 +43,29 @@ export function AuditLog() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+
+  const exportCsv = async () => {
+    if (exporting) return;
+    setExporting(true);
+    setExportError('');
+    try {
+      const params: Record<string, string> = {};
+      if (search.trim()) params.action = search.trim();
+      const res = await apiClient.get('/auth/audit-logs/export', { params, responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'audit-logs.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      setExportError(getApiErrorMessage(err, 'The export could not be downloaded.'));
+    } finally {
+      setExporting(false);
+    }
+  };
   const SIZE = 50;
   const pages = Math.max(1, Math.ceil(total / SIZE));
 
@@ -90,17 +113,29 @@ export function AuditLog() {
         <ErrorState title="Audit log unavailable" description={error} action={<RetryButton onClick={() => void fetchLogs(page, search)} />} />
       ) : (
         <>
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
-            <input
-              type="text"
-              aria-label="Search audit actions"
-              placeholder="Search actions..."
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              className="w-full pl-9 pr-4 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative max-w-sm flex-1 min-w-52">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
+              <input
+                type="text"
+                aria-label="Search audit actions"
+                placeholder="Search actions..."
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                className="w-full pl-9 pr-4 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => { void exportCsv(); }}
+              disabled={exporting}
+              className="flex items-center gap-2 px-3 py-2 bg-surface-800 hover:bg-surface-700 border border-surface-600 rounded-lg text-sm text-surface-200 transition-colors disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" aria-hidden="true" />
+              {exporting ? 'Exporting...' : 'Export CSV'}
+            </button>
           </div>
+          {exportError && <p role="alert" className="text-sm text-danger-400">{exportError}</p>}
 
           <div className="oa-panel overflow-hidden rounded-md">
             <table className="w-full text-sm">

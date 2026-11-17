@@ -3,12 +3,15 @@ Authentication router for user registration, login, and JWT token management.
 Handles user authentication, password hashing, and JWT token creation/validation.
 """
 
+import csv
+import io
 import logging
 import secrets
 import time
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, ConfigDict, HttpUrl, field_validator
 from sqlalchemy import func, select
@@ -412,3 +415,54 @@ async def get_audit_logs(
             for log in logs
         ],
     }
+
+
+@router.get("/audit-logs/export")
+async def export_audit_logs(
+    action: str | None = Query(None, max_length=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Admin: export org audit logs as CSV (same scoping/filter as the list, max 5000 rows)."""
+    if not current_user.role or current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    if current_user.org_id:
+        org_user_ids = (await db.execute(
+            select(User.id).where(User.org_id == current_user.org_id)
+        )).scalars().all()
+        scope = AuditLog.user_id.in_(org_user_ids)
+    else:
+        scope = AuditLog.user_id == current_user.id
+    if action:
+        escaped = action.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        scope = scope & (AuditLog.action.ilike(f"%{escaped}%", escape="\\"))
+
+    result = await db.execute(
+        select(AuditLog, User.email)
+        .join(User, AuditLog.user_id == User.id)
+        .where(scope)
+        .order_by(AuditLog.timestamp.desc())
+        .limit(5000)
+    )
+    rows = result.all()
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["id", "timestamp", "user_email", "action", "target_type", "target_id", "detail"])
+    for log, email in rows:
+        writer.writerow([
+            log.id,
+            log.timestamp.isoformat() if log.timestamp else "",
+            email,
+            log.action,
+            log.target_type or "",
+            log.target_id or "",
+            log.detail or "",
+        ])
+    buffer.seek(0)
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=audit-logs.csv"},
+    )

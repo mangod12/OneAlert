@@ -158,3 +158,43 @@ class TestAuditLogOrdering:
         headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
         res = client.get("/api/v1/auth/audit-logs", headers=headers)
         assert res.status_code == 403
+
+
+class TestAuditLogExport:
+    def test_export_csv_newest_first_with_email(self, client):
+        headers = _register_admin_and_login(client, "exporter@example.com")
+        _add_logs("exporter@example.com", 3)
+        res = client.get("/api/v1/auth/audit-logs/export", headers=headers)
+        assert res.status_code == 200
+        assert res.headers["content-type"].startswith("text/csv")
+        assert "attachment" in res.headers["content-disposition"]
+        lines = res.text.strip().splitlines()
+        assert lines[0] == "id,timestamp,user_email,action,target_type,target_id,detail"
+        assert len(lines) == 4
+        assert lines[1].split(",")[3] == "action_2"  # newest first
+        assert lines[1].split(",")[2] == "exporter@example.com"
+
+    def test_export_respects_action_filter(self, client):
+        headers = _register_admin_and_login(client, "exporter2@example.com")
+        _add_logs("exporter2@example.com", 5)
+        res = client.get("/api/v1/auth/audit-logs/export", params={"action": "action_1"}, headers=headers)
+        assert res.status_code == 200
+        lines = res.text.strip().splitlines()
+        assert len(lines) == 2
+        assert "action_1" in lines[1]
+
+    def test_export_non_admin_forbidden(self, client):
+        reg = client.post("/api/v1/auth/register", json={
+            "email": "viewer2@example.com",
+            "password": "securepass123",
+            "full_name": "Viewer Two",
+            "company": "TestCorp",
+        })
+        assert reg.status_code == 201
+        login = client.post("/api/v1/auth/login", data={
+            "username": "viewer2@example.com",
+            "password": "securepass123",
+        })
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        res = client.get("/api/v1/auth/audit-logs/export", headers=headers)
+        assert res.status_code == 403

@@ -76,3 +76,45 @@ describe('AuditLog action search and pagination', () => {
     expect(screen.getByRole('button', { name: 'Prev' })).toHaveProperty('disabled', false);
   });
 });
+
+describe('AuditLog CSV export', () => {
+  it('downloads the CSV with the current action filter', async () => {
+    URL.createObjectURL = vi.fn(() => 'blob:audit');
+    URL.revokeObjectURL = vi.fn();
+    const clicks: string[] = [];
+    const origCreate = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string, options?: ElementCreationOptions) => {
+      const el = origCreate(tag, options);
+      if (tag === 'a') {
+        Object.defineProperty(el, 'download', { set: (v: string) => clicks.push(v), configurable: true });
+        el.click = () => clicks.push('clicked');
+      }
+      return el;
+    });
+    get.mockImplementation(async (url: string) => {
+      if (url === '/auth/audit-logs/export') return { data: new Blob(['id,timestamp\n1,2026-11-17'], { type: 'text/csv' }) };
+      if (url === '/auth/audit-logs') return { data: { logs, total: logs.length } };
+      if (url === '/cases/agents/runs') return { data: runs };
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<AuditLog />);
+    fireEvent.change(await screen.findByLabelText('Search audit actions'), { target: { value: 'case' } });
+    fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/auth/audit-logs/export', { params: { action: 'case' }, responseType: 'blob' }));
+    await waitFor(() => expect(clicks).toContain('audit-logs.csv'));
+    expect(clicks).toContain('clicked');
+  });
+
+  it('shows an inline error when the export fails', async () => {
+    render(<AuditLog />);
+    await screen.findByLabelText('Search audit actions');
+    get.mockImplementation(async (url: string) => {
+      if (url === '/auth/audit-logs/export') throw { isAxiosError: true, response: { status: 500, data: {} } };
+      if (url === '/auth/audit-logs') return { data: { logs, total: logs.length } };
+      if (url === '/cases/agents/runs') return { data: runs };
+      throw new Error(`unexpected ${url}`);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
+    expect(await screen.findByRole('alert')).toBeTruthy();
+  });
+});
