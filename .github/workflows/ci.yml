@@ -78,6 +78,10 @@ jobs:
         working-directory: frontend-v2
         run: npx eslint .
 
+      - name: Test frontend
+        working-directory: frontend-v2
+        run: npm test
+
       - name: Type check and build
         working-directory: frontend-v2
         run: npm run build
