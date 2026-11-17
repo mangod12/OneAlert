@@ -30,6 +30,18 @@ interface CaseSearchResult {
   snippet: string;
 }
 
+interface PipelineStageResult {
+  summary?: string;
+  error?: string;
+}
+
+interface PipelineResult {
+  detect: PipelineStageResult | null;
+  triage: PipelineStageResult | null;
+  total_duration_ms: number;
+  pipeline_status: string;
+}
+
 export function Cases() {
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,6 +51,9 @@ export function Cases() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<CaseSearchResult[] | null>(null);
   const [searching, setSearching] = useState(false);
+  const [pipelining, setPipelining] = useState(false);
+  const [pipelineLookback, setPipelineLookback] = useState(24);
+  const [pipelineResult, setPipelineResult] = useState<PipelineResult | null>(null);
 
   const fetchCases = async () => {
     setError(null);
@@ -50,6 +65,20 @@ export function Cases() {
       setError(getApiErrorMessage(err, 'Investigations could not be loaded.'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const runPipeline = async () => {
+    setPipelining(true);
+    setPipelineResult(null);
+    try {
+      const res = await apiClient.post('/cases/pipeline', null, { params: { hours_back: pipelineLookback } });
+      setPipelineResult((res.data?.data ?? res.data) as PipelineResult);
+      await fetchCases();
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'The detection pipeline could not be run.'), 'error');
+    } finally {
+      setPipelining(false);
     }
   };
 
@@ -92,15 +121,51 @@ export function Cases() {
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="Command" title="Investigations" description={`${total} cases correlated from alerts, security events, and agent analysis.`} actions={
-        <button
-          onClick={runTriage}
-          disabled={triaging}
-          className="flex min-h-9 items-center gap-2 rounded-md bg-primary-500 px-3.5 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50"
-        >
-          <Play className="w-4 h-4" />
-          {triaging ? 'Running triage…' : 'Run AI triage'}
-        </button>
+        <>
+          <label htmlFor="pipeline-lookback" className="sr-only">Pipeline lookback</label>
+          <select
+            id="pipeline-lookback"
+            value={pipelineLookback}
+            onChange={e => setPipelineLookback(Number(e.target.value))}
+            className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200"
+          >
+            <option value={24}>Last 24 hours</option>
+            <option value={72}>Last 72 hours</option>
+            <option value={168}>Last 7 days</option>
+          </select>
+          <button
+            onClick={runPipeline}
+            disabled={pipelining || triaging}
+            className="flex min-h-9 items-center gap-2 rounded-md border border-primary-500/40 px-3.5 text-sm font-semibold text-primary-300 hover:bg-primary-500/10 disabled:opacity-50"
+          >
+            <Shield className="w-4 h-4" />
+            {pipelining ? 'Running pipeline…' : 'Run pipeline'}
+          </button>
+          <button
+            onClick={runTriage}
+            disabled={triaging || pipelining}
+            className="flex min-h-9 items-center gap-2 rounded-md bg-primary-500 px-3.5 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50"
+          >
+            <Play className="w-4 h-4" />
+            {triaging ? 'Running triage…' : 'Run AI triage'}
+          </button>
+        </>
       } />
+
+      {pipelineResult && (
+        <div role="status" className="rounded-md border border-surface-700 bg-surface-900/60 px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1 text-sm">
+              <p className="font-semibold text-surface-100">Pipeline finished in {(pipelineResult.total_duration_ms / 1000).toFixed(1)}s</p>
+              <p className="text-surface-300">Detect: {pipelineResult.detect?.summary ?? pipelineResult.detect?.error ?? 'No detect stage result.'}</p>
+              <p className="text-surface-300">Triage: {pipelineResult.triage?.summary ?? pipelineResult.triage?.error ?? 'No triage stage result.'}</p>
+            </div>
+            <button type="button" onClick={() => setPipelineResult(null)} aria-label="Dismiss pipeline result" className="text-surface-400 hover:text-surface-200">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {!loading && !error && cases.length > 0 && (
         <form className="flex gap-2" onSubmit={e => { e.preventDefault(); void runSearch(); }}>
