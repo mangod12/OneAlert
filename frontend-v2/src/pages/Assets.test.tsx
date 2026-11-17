@@ -44,6 +44,20 @@ describe('Assets page', () => {
     }));
   });
 
+  it('filters by vendor from the dropdown', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/assets/vendors/') return { data: ['Acme', 'Cisco'] };
+      if (url === '/assets/types/') return { data: ['hardware'] };
+      return { data: { assets: [asset], total: 1 } };
+    });
+    render(<Assets />);
+    const select = await screen.findByRole('combobox', { name: 'Filter by vendor' });
+    fireEvent.change(select, { target: { value: 'Cisco' } });
+    await waitFor(() => {
+      expect(get).toHaveBeenCalledWith('/assets/', { params: { page: 1, size: 15, vendor: 'Cisco' } });
+    });
+  });
+
   it('filters by asset type from the dropdown', async () => {
     render(<Assets />);
     await screen.findByText('Plant gateway');

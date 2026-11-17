@@ -30,6 +30,8 @@ export function Assets() {
   const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
   const [pendingDelete, setPendingDelete] = useState<Asset | null>(null);
   const [typeFilter, setTypeFilter] = useState('');
+  const [vendorFilter, setVendorFilter] = useState('');
+  const [vendorOptions, setVendorOptions] = useState<string[]>([]);
 
   const fetchAssets = useCallback(async () => {
     setLoading(true);
@@ -38,6 +40,7 @@ export function Assets() {
       const params: Record<string, string | number> = { page, size: 15 };
       if (search) params.search = search;
       if (typeFilter) params.asset_type = typeFilter;
+      if (vendorFilter) params.vendor = vendorFilter;
       const res = await apiClient.get<AssetListResponse>('/assets/', { params });
       setAssets(res.data.assets);
       setTotal(res.data.total);
@@ -46,7 +49,7 @@ export function Assets() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, typeFilter]);
+  }, [page, search, typeFilter, vendorFilter]);
 
   const [assetTypes, setAssetTypes] = useState<string[]>(FALLBACK_ASSET_TYPES);
 
@@ -59,6 +62,9 @@ export function Assets() {
     apiClient.get<string[]>('/assets/types/').then(res => {
       if (!cancelled && Array.isArray(res.data) && res.data.length > 0) setAssetTypes(res.data);
     }).catch(() => { /* keep the fallback list */ });
+    apiClient.get<string[]>('/assets/vendors/').then(res => {
+      if (!cancelled && Array.isArray(res.data)) setVendorOptions(res.data);
+    }).catch(() => { /* no vendor filter without a list */ });
     return () => { cancelled = true; };
   }, []);
 
@@ -131,6 +137,17 @@ export function Assets() {
           <option value="">All types</option>
           {assetTypes.map(t => <option key={t} value={t}>{assetTypeLabel(t)}</option>)}
         </select>
+        {vendorOptions.length > 0 && (
+          <select
+            aria-label="Filter by vendor"
+            value={vendorFilter}
+            onChange={(e) => { setVendorFilter(e.target.value); setPage(1); }}
+            className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          >
+            <option value="">All vendors</option>
+            {vendorOptions.map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+        )}
       </div>
 
       {error ? <ErrorState title="Asset inventory unavailable" description={error} action={<RetryButton onClick={() => void fetchAssets()} />} /> : <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

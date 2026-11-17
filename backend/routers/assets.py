@@ -173,3 +173,22 @@ async def get_asset_types():
     """Get available asset types."""
     from backend.models.asset import AssetType
     return [asset_type.value for asset_type in AssetType]
+
+
+@router.get("/vendors/", response_model=list[str])
+async def get_asset_vendors(
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get distinct vendor names across the current user's assets."""
+    result = await db.execute(
+        select(Asset.vendor)
+        .where(
+            Asset.user_id == current_user.id,
+            Asset.vendor.is_not(None),
+            Asset.vendor != ""
+        )
+        .distinct()
+        .order_by(Asset.vendor)
+    )
+    return [row[0] for row in result.all()]
