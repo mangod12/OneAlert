@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
-import { Package, Trash2, Upload } from 'lucide-react';
+import { Download, Package, Trash2, Upload } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -42,6 +42,25 @@ export function Sbom() {
   const [components, setComponents] = useState<SbomComponent[]>([]);
   const [componentsLoading, setComponentsLoading] = useState(false);
   const [componentsError, setComponentsError] = useState('');
+  const [exportingId, setExportingId] = useState<number | null>(null);
+
+  const exportComponents = async (sbom: Sbom) => {
+    if (exportingId !== null) return;
+    setExportingId(sbom.id);
+    try {
+      const res = await apiClient.get(`/sbom/${sbom.id}/export`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `sbom-${sbom.id}-components.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'The export could not be downloaded.'), 'error');
+    } finally {
+      setExportingId(null);
+    }
+  };
   const [componentSearch, setComponentSearch] = useState('');
   const [vulnerableOnly, setVulnerableOnly] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Sbom | null>(null);
@@ -223,6 +242,15 @@ export function Sbom() {
                                 Vulnerable only
                               </label>
                               <span className="text-xs text-surface-500">{visibleComponents.length} of {components.length} components</span>
+                              <button
+                                type="button"
+                                onClick={() => { void exportComponents(sbom); }}
+                                disabled={exportingId === sbom.id}
+                                className="ml-auto flex items-center gap-1.5 rounded-md border border-surface-600 px-2.5 py-1 text-xs text-surface-200 hover:border-primary-500 hover:text-primary-300 disabled:opacity-50"
+                              >
+                                <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                                {exportingId === sbom.id ? 'Exporting...' : 'Export CSV'}
+                              </button>
                             </div>
                             {visibleComponents.length === 0 ? (
                               <p className="text-sm text-surface-500">No components match the current filters.</p>

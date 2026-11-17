@@ -24,6 +24,7 @@ beforeEach(() => {
     if (url === '/sbom/') return { data: sboms };
     if (url === '/assets/') return { data: assets };
     if (url === '/sbom/1/components') return { data: components };
+    if (url === '/sbom/1/export') return { data: new Blob(['name,version'], { type: 'text/csv' }) };
     throw new Error(`unexpected ${url}`);
   });
   del.mockResolvedValue({ data: {} });
@@ -70,6 +71,23 @@ describe('SBOM page', () => {
     expect(screen.getByText('1 of 2 components')).toBeTruthy();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Vulnerable only' }));
     expect(screen.getByText('busybox')).toBeTruthy();
+  });
+
+  it('exports the expanded SBOM components as CSV', async () => {
+    const createUrl = vi.fn(() => 'blob:mock');
+    const revokeUrl = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', { value: createUrl, configurable: true });
+    Object.defineProperty(URL, 'revokeObjectURL', { value: revokeUrl, configurable: true });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    render(<Sbom />);
+    fireEvent.click(await screen.findByText('Plant gateway'));
+    await screen.findByText('openssl');
+    fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/sbom/1/export', { responseType: 'blob' }));
+    await waitFor(() => expect(createUrl).toHaveBeenCalled());
+    expect(click).toHaveBeenCalled();
+    expect(revokeUrl).toHaveBeenCalled();
   });
 
   it('deletes an SBOM through the confirm dialog', async () => {
