@@ -93,6 +93,26 @@ describe('Alerts page', () => {
     });
   });
 
+  it('opens the detail panel with the keyboard', async () => {
+    render(<Alerts />);
+    const cveCell = await screen.findByText('CVE-2026-0001');
+    const row = cveCell.closest('tr');
+    expect(row?.tabIndex).toBe(0);
+    fireEvent.keyDown(row as HTMLElement, { key: 'Enter' });
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /close alert details/i }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.keyDown(row as HTMLElement, { key: ' ' });
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+  });
+
+  it('does not open the detail panel when the row checkbox handles the key', async () => {
+    render(<Alerts />);
+    const checkbox = await screen.findByRole('checkbox', { name: /select alert cve-2026-0001/i });
+    fireEvent.keyDown(checkbox, { key: 'Enter' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('acknowledges a pending alert from the detail panel', async () => {
     render(<Alerts />);
     fireEvent.click(await screen.findByText('CVE-2026-0001'));
