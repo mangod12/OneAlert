@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/authStore';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
 import { PageHeader } from '../components/ui/PageHeader';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { SiemIntegrationsPanel } from '../components/settings/SiemIntegrationsPanel';
 import { Panel } from '../components/ui/Panel';
 import { StatusBadge } from '../components/ui/StatusBadge';
@@ -35,6 +36,8 @@ export function Settings() {
   const [org, setOrg] = useState<Org | null>(null);
   const [noOrg, setNoOrg] = useState(false);
   const [members, setMembers] = useState<OrgMember[]>([]);
+  const [pendingRemove, setPendingRemove] = useState<OrgMember | null>(null);
+  const [removing, setRemoving] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviting, setInviting] = useState(false);
   const [teamMessage, setTeamMessage] = useState<{ text: string; error: boolean } | null>(null);
@@ -105,6 +108,22 @@ export function Settings() {
       setTeamMessage({ text: getApiErrorMessage(error, 'The organization could not be renamed.'), error: true });
     } finally {
       setRenaming(false);
+    }
+  };
+
+  const handleRemoveMember = async () => {
+    if (!pendingRemove || removing) return;
+    setRemoving(true);
+    setTeamMessage(null);
+    try {
+      await apiClient.delete(`/orgs/me/members/${pendingRemove.id}`);
+      setMembers(prev => prev.filter(m => m.id !== pendingRemove.id));
+      setTeamMessage({ text: `${pendingRemove.email} was removed from the organization.`, error: false });
+      setPendingRemove(null);
+    } catch (error: unknown) {
+      setTeamMessage({ text: getApiErrorMessage(error, 'The member could not be removed.'), error: true });
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -241,7 +260,19 @@ export function Settings() {
                           <p className="truncate font-medium text-surface-200">{member.full_name || member.email}</p>
                           {member.full_name && <p className="truncate text-xs text-surface-500">{member.email}</p>}
                         </div>
-                        <StatusBadge tone={member.is_active ? 'success' : 'neutral'}>{member.is_active ? 'Active' : 'Inactive'}</StatusBadge>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <StatusBadge tone={member.is_active ? 'success' : 'neutral'}>{member.is_active ? 'Active' : 'Inactive'}</StatusBadge>
+                          {user?.role === 'admin' && member.id !== user?.id && (
+                            <button
+                              type="button"
+                              aria-label={`Remove ${member.email} from the organization`}
+                              onClick={() => setPendingRemove(member)}
+                              className="min-h-8 rounded-md border border-surface-600 px-2.5 text-xs text-surface-300 hover:bg-surface-800"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -327,6 +358,18 @@ export function Settings() {
         <SiemIntegrationsPanel />
         </div>
       </div>
+
+      {pendingRemove && (
+        <ConfirmDialog
+          title="Remove member?"
+          description={`${pendingRemove.email} will lose access to this organization's workspace. Their account is not deleted.`}
+          confirmLabel="Remove member"
+          tone="danger"
+          busy={removing}
+          onCancel={() => { if (!removing) setPendingRemove(null); }}
+          onConfirm={() => { void handleRemoveMember(); }}
+        />
+      )}
     </div>
   );
 }

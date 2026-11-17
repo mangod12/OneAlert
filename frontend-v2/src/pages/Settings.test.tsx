@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Settings } from './Settings';
 import { useAuthStore } from '../stores/authStore';
@@ -18,6 +18,7 @@ import apiClient from '../api/client';
 const mockGet = vi.mocked(apiClient.get);
 const mockPost = vi.mocked(apiClient.post);
 const mockPatch = vi.mocked(apiClient.patch);
+const mockDelete = vi.mocked(apiClient.delete);
 
 const analyst = {
   id: 1,
@@ -102,6 +103,19 @@ describe('Team panel', () => {
     expect(screen.getByText(/Acme SOC · 2 of 5 seats used/)).toBeTruthy();
     expect(screen.getByText('idle@example.com')).toBeTruthy();
     expect(screen.getByText('Inactive')).toBeTruthy();
+  });
+
+  it('removes a member through the confirm dialog', async () => {
+    useAuthStore.setState({ user: { ...admin } as never });
+    mockTeam();
+    mockDelete.mockResolvedValue({ data: { success: true } });
+    render(<Settings />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove idle@example.com from the organization' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove member' }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/orgs/me/members/2'));
+    await waitFor(() => expect(screen.queryByText('idle@example.com')).toBeNull());
+    expect(screen.queryByRole('button', { name: 'Remove analyst@example.com from the organization' })).toBeNull();
   });
 
   it('invites a member by email and refreshes the list', async () => {

@@ -7,7 +7,7 @@ managing organization membership (inviting users, listing members).
 
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -187,6 +187,68 @@ async def invite_user_to_org(
     return {
         "success": True,
         "data": {"message": f"User {email} added to organization {org.name}"},
+        "error": None,
+        "metadata": {},
+    }
+
+
+@router.delete("/me/members/{user_id}", status_code=status.HTTP_200_OK)
+async def remove_org_member(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Remove a member from the current organization (admin only).
+
+    The member keeps their account but leaves the org. An admin cannot
+    remove themselves, and the last remaining admin cannot be removed.
+    """
+    if current_user.org_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User does not belong to an organization",
+        )
+
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only organization admins can remove members",
+        )
+
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admins cannot remove themselves from the organization",
+        )
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    member = result.scalar_one_or_none()
+    if member is None or member.org_id != current_user.org_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Member not found in this organization",
+        )
+
+    if member.role == "admin":
+        admin_count = (await db.execute(
+            select(func.count()).select_from(User).where(
+                User.org_id == current_user.org_id,
+                User.role == "admin",
+            )
+        )).scalar_one()
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The last remaining admin cannot be removed",
+            )
+
+    member.org_id = None
+    db.add(member)
+    await db.commit()
+
+    return {
+        "success": True,
+        "data": {"message": f"User {member.email} removed from the organization"},
         "error": None,
         "metadata": {},
     }
