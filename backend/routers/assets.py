@@ -42,6 +42,7 @@ async def list_assets(
     asset_type: str | None = Query(None, description="Filter by asset type"),
     vendor: str | None = Query(None, description="Filter by vendor"),
     criticality: str | None = Query(None, description="Filter by criticality"),
+    is_ot: bool | None = Query(None, description="Filter to OT assets (true) or non-OT assets (false)"),
     search: str | None = Query(None, description="Search in name, vendor, or product"),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
@@ -61,6 +62,9 @@ async def list_assets(
     if asset_type:
         query = query.filter(Asset.asset_type == asset_type)
         count_query = count_query.filter(Asset.asset_type == asset_type) # Apply to count_query as well
+    if is_ot is not None:
+        query = query.filter(Asset.is_ot_asset == is_ot)
+        count_query = count_query.filter(Asset.is_ot_asset == is_ot) # Apply to count_query as well
     if search:
         search_filter = (
             Asset.name.ilike(f"%{search}%") |

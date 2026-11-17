@@ -67,6 +67,15 @@ describe('Assets page', () => {
     });
   });
 
+  it('filters to OT assets from the dropdown', async () => {
+    render(<Assets />);
+    const select = await screen.findByRole('combobox', { name: 'Filter by OT or IT' });
+    fireEvent.change(select, { target: { value: 'true' } });
+    await waitFor(() => {
+      expect(get).toHaveBeenCalledWith('/assets/', { params: { page: 1, size: 15, is_ot: 'true' } });
+    });
+  });
+
   it('filters by asset type from the dropdown', async () => {
     render(<Assets />);
     await screen.findByText('Plant gateway');
