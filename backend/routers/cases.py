@@ -218,6 +218,44 @@ async def add_case_note(
     return entry
 
 
+@router.patch("/{case_id}/notes/{entry_id}", response_model=TimelineEntryResponse)
+async def update_case_note(
+    case_id: int,
+    entry_id: int,
+    note: CaseNoteCreate,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Edit an investigator note on the case timeline.
+
+    Only timeline entries of type ``note`` are editable; system and agent
+    entries form the investigation's audit trail and stay immutable.
+    """
+    case = (await db.execute(
+        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    entry = (await db.execute(
+        select(CaseTimeline).where(CaseTimeline.id == entry_id, CaseTimeline.case_id == case.id)
+    )).scalar_one_or_none()
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Note not found")
+    if entry.entry_type != "note":
+        raise HTTPException(status_code=422, detail="Only investigator notes can be edited")
+
+    content = note.content.strip()
+    if not content:
+        raise HTTPException(status_code=422, detail="Note must not be blank")
+
+    entry.content = content
+    entry.metadata_json = {**(entry.metadata_json or {}), "edited": True}
+    await db.commit()
+    await db.refresh(entry)
+    return entry
+
+
 @router.patch("/{case_id}")
 async def update_case(
     case_id: int,
