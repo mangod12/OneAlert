@@ -147,6 +147,7 @@ export function Events() {
             <button
               key={sev}
               onClick={() => setSeverityFilter(severityFilter === sev ? '' : sev)}
+              aria-pressed={severityFilter === sev}
               className={clsx(
                 'oa-panel p-4 text-left transition-colors rounded-md',
                 severityFilter === sev ? 'border-primary-500' : 'border-surface-700 hover:border-surface-600',
