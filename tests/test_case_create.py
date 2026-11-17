@@ -338,3 +338,68 @@ class TestCaseEventLinking:
         foreign_event = client.post(f"/api/v1/cases/{case_id}/events/99999", headers=owner)
         assert foreign_case.status_code == 404
         assert foreign_event.status_code == 404
+
+
+class TestCaseUnlinking:
+    """Tests for DELETE /api/v1/cases/{case_id}/alerts|events/{id}"""
+
+    def _setup_linked(self, client: TestClient, headers):
+        link = TestCaseAlertLinking()
+        case_id = link._make_case(client, headers)
+        alert_id = link._make_alert(client, headers)
+        resp = client.post(f"/api/v1/cases/{case_id}/alerts/{alert_id}", headers=headers)
+        assert resp.status_code == 200, resp.text
+        ev = TestCaseEventLinking()
+        event_id = ev._make_event(client, headers)
+        resp = client.post(f"/api/v1/cases/{case_id}/events/{event_id}", headers=headers)
+        assert resp.status_code == 200, resp.text
+        return case_id, alert_id, event_id
+
+    def test_unlink_alert(self, client):
+        """Unlinking an alert removes the link and notes the timeline."""
+        headers = register_and_login(client, "analyst@example.com")
+        case_id, alert_id, _ = self._setup_linked(client, headers)
+
+        resp = client.delete(f"/api/v1/cases/{case_id}/alerts/{alert_id}", headers=headers)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["unlinked"] is True
+
+        detail = client.get(f"/api/v1/cases/{case_id}", headers=headers)
+        assert detail.json()["alert_count"] == 0
+        assert client.get(f"/api/v1/cases/{case_id}/alerts", headers=headers).json() == []
+        unlink_notes = [e for e in detail.json()["timeline"] if "unlinked" in e["content"]]
+        assert len(unlink_notes) == 1
+
+    def test_unlink_alert_is_idempotent(self, client):
+        headers = register_and_login(client, "analyst@example.com")
+        case_id, alert_id, _ = self._setup_linked(client, headers)
+
+        client.delete(f"/api/v1/cases/{case_id}/alerts/{alert_id}", headers=headers)
+        again = client.delete(f"/api/v1/cases/{case_id}/alerts/{alert_id}", headers=headers)
+        assert again.status_code == 200, again.text
+        assert again.json()["data"]["unlinked"] is False
+
+    def test_unlink_event(self, client):
+        """Unlinking an event removes the link and notes the timeline."""
+        headers = register_and_login(client, "analyst@example.com")
+        case_id, _, event_id = self._setup_linked(client, headers)
+
+        resp = client.delete(f"/api/v1/cases/{case_id}/events/{event_id}", headers=headers)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["unlinked"] is True
+
+        detail = client.get(f"/api/v1/cases/{case_id}", headers=headers)
+        assert detail.json()["event_count"] == 0
+        assert client.get(f"/api/v1/cases/{case_id}/events", headers=headers).json() == []
+
+    def test_unlink_requires_owned_case(self, client):
+        owner = register_and_login(client, "owner@example.com")
+        outsider = register_and_login(client, "outsider@example.com")
+        case_id, alert_id, event_id = self._setup_linked(client, owner)
+
+        assert client.delete(f"/api/v1/cases/{case_id}/alerts/{alert_id}", headers=outsider).status_code == 404
+        assert client.delete(f"/api/v1/cases/{case_id}/events/{event_id}", headers=outsider).status_code == 404
+        # Owner's links are untouched.
+        detail = client.get(f"/api/v1/cases/{case_id}", headers=owner)
+        assert detail.json()["alert_count"] == 1
+        assert detail.json()["event_count"] == 1

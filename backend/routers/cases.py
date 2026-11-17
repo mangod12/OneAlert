@@ -318,6 +318,40 @@ async def link_alert_to_case(
     return {"success": True, "data": {"linked": True}}
 
 
+
+
+@router.delete("/{case_id}/alerts/{alert_id}")
+async def unlink_alert_from_case(
+    case_id: int,
+    alert_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Remove an alert link from a case. Idempotent: unlinking twice is a no-op."""
+    case = (await db.execute(
+        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    link = (await db.execute(
+        select(CaseAlert).where(
+            CaseAlert.case_id == case_id, CaseAlert.alert_id == alert_id
+        )
+    )).scalar_one_or_none()
+    if link is None:
+        return {"success": True, "data": {"unlinked": False, "message": "Alert is not linked to this case"}}
+
+    await db.delete(link)
+    db.add(CaseTimeline(
+        case_id=case.id,
+        entry_type="alert",
+        content=f"Alert #{alert_id} unlinked by {current_user.email}.",
+        source="human",
+    ))
+    await db.commit()
+    return {"success": True, "data": {"unlinked": True}}
+
 @router.get("/{case_id}/events")
 async def get_case_events(
     case_id: int,
@@ -389,6 +423,40 @@ async def link_event_to_case(
     return {"success": True, "data": {"linked": True}}
 
 
+
+
+
+@router.delete("/{case_id}/events/{event_id}")
+async def unlink_event_from_case(
+    case_id: int,
+    event_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Remove an event link from a case. Idempotent: unlinking twice is a no-op."""
+    case = (await db.execute(
+        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    link = (await db.execute(
+        select(CaseEvent).where(
+            CaseEvent.case_id == case_id, CaseEvent.event_id == event_id
+        )
+    )).scalar_one_or_none()
+    if link is None:
+        return {"success": True, "data": {"unlinked": False, "message": "Event is not linked to this case"}}
+
+    await db.delete(link)
+    db.add(CaseTimeline(
+        case_id=case.id,
+        entry_type="event",
+        content=f"Event #{event_id} unlinked by {current_user.email}.",
+        source="human",
+    ))
+    await db.commit()
+    return {"success": True, "data": {"unlinked": True}}
 
 @router.get("/{case_id}/similar")
 async def get_similar_cases(
