@@ -193,10 +193,12 @@ async def update_case(
     case_id: int,
     status_update: str | None = None,
     severity: str | None = None,
+    title: str | None = None,
+    summary: str | None = None,
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Update case status or severity."""
+    """Update case status, severity, title, or summary."""
     case = (await db.execute(
         select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
     )).scalar_one_or_none()
@@ -208,6 +210,13 @@ async def update_case(
         case.status = status_update
     if severity:
         case.severity = severity
+    if title is not None:
+        stripped_title = title.strip()
+        if not stripped_title:
+            raise HTTPException(status_code=400, detail="Title cannot be empty")
+        case.title = stripped_title
+    if summary is not None:
+        case.summary = summary.strip() or None
 
     await db.commit()
     return {"success": True, "message": "Case updated"}

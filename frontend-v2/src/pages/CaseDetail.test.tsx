@@ -323,3 +323,30 @@ describe('Case severity editing', () => {
     expect(mockPatch).not.toHaveBeenCalled();
   });
 });
+
+describe('Case detail editing', () => {
+  it('patches title and summary from the edit dialog', async () => {
+    mockLoad();
+    mockPatch.mockResolvedValue({ data: { success: true } });
+    renderDetail();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit case details' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit case details' });
+    const titleInput = dialog.querySelector('#edit-case-title') as HTMLInputElement;
+    expect(titleInput.value).toBe('Suspicious lateral movement');
+    fireEvent.change(titleInput, { target: { value: 'Credential theft campaign' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith(
+      '/cases/7', null, { params: { title: 'Credential theft campaign', summary: 'Correlated brute force and discovery activity' } },
+    ));
+  });
+
+  it('keeps the Save button disabled for a blank title', async () => {
+    mockLoad();
+    renderDetail();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit case details' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit case details' });
+    fireEvent.change(dialog.querySelector('#edit-case-title') as HTMLInputElement, { target: { value: '  ' } });
+    expect((within(dialog).getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+});

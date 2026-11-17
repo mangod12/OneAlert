@@ -1,7 +1,7 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import apiClient from '../api/client';
-import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X } from 'lucide-react';
+import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { toast } from '../components/Toast';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -92,6 +92,7 @@ export function CaseDetail() {
   const [linkingEvent, setLinkingEvent] = useState(false);
   const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
   const [changingSeverity, setChangingSeverity] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
 
   const changeStatus = async (status: string) => {
     if (updatingStatus) return;
@@ -113,6 +114,15 @@ export function CaseDetail() {
       await fetchAll();
     } catch (err) { toast(getApiErrorMessage(err, 'Case severity could not be updated.'), 'error'); }
     finally { setChangingSeverity(false); }
+  };
+
+  const saveDetails = async (title: string, summary: string) => {
+    try {
+      await apiClient.patch(`/cases/${caseId}`, null, { params: { title, summary } });
+      setShowEdit(false);
+      toast('Case details updated.', 'success');
+      await fetchAll();
+    } catch (err) { toast(getApiErrorMessage(err, 'Case details could not be updated.'), 'error'); }
   };
 
   const openLinkAlert = async () => {
@@ -246,7 +256,17 @@ export function CaseDetail() {
                 </span>
               )}
             </div>
-            <h1 className="text-2xl font-bold text-surface-50">{caseData.title}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-surface-50">{caseData.title}</h1>
+              <button
+                type="button"
+                aria-label="Edit case details"
+                onClick={() => setShowEdit(true)}
+                className="grid h-9 w-9 place-items-center rounded-md text-surface-400 hover:bg-surface-800 hover:text-surface-50"
+              >
+                <Pencil className="w-4 h-4" aria-hidden="true" />
+              </button>
+            </div>
             {caseData.summary && <p className="text-surface-400 mt-2">{caseData.summary}</p>}
           </div>
           {(NEXT_STATUSES[caseData.status] ?? []).length > 0 && (
@@ -492,6 +512,15 @@ export function CaseDetail() {
         </div>
       </div>
 
+      {showEdit && (
+        <EditCaseDialog
+          initialTitle={caseData.title}
+          initialSummary={caseData.summary ?? ''}
+          onCancel={() => setShowEdit(false)}
+          onSave={(title, summary) => void saveDetails(title, summary)}
+        />
+      )}
+
       {showLinkAlert && (
         <LinkAlertDialog
           options={alertOptions}
@@ -600,6 +629,53 @@ function LinkEventDialog({ options, busy, onCancel, onLink }: LinkEventDialogPro
             </div>
           </form>
         )}
+      </div>
+    </div>
+  );
+}
+
+
+interface EditCaseDialogProps {
+  initialTitle: string;
+  initialSummary: string;
+  onCancel: () => void;
+  onSave: (title: string, summary: string) => void;
+}
+
+// Dialog for renaming a case and editing its summary. Own component so focus
+// management mounts with the dialog and fields reset on close.
+function EditCaseDialog({ initialTitle, initialSummary, onCancel, onSave }: EditCaseDialogProps) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const [title, setTitle] = useState(initialTitle);
+  const [summary, setSummary] = useState(initialSummary);
+  const [busy, setBusy] = useState(false);
+  useDialogFocus(dialogRef, onCancel);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-surface-950/70" aria-hidden="true" onClick={() => { if (!busy) onCancel(); }} />
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-case-dialog-title"
+        className="relative w-full max-w-md rounded-lg border border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]"
+      >
+        <h2 id="edit-case-dialog-title" className="text-lg font-semibold text-surface-50">Edit case details</h2>
+        <form className="mt-4 space-y-3" onSubmit={event => { event.preventDefault(); setBusy(true); onSave(title.trim(), summary.trim()); setBusy(false); }}>
+          <div>
+            <label htmlFor="edit-case-title" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-surface-400">Title</label>
+            <input id="edit-case-title" type="text" autoComplete="off" value={title} onChange={event => setTitle(event.target.value)} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
+          </div>
+          <div>
+            <label htmlFor="edit-case-summary" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-surface-400">Summary</label>
+            <textarea id="edit-case-summary" rows={3} value={summary} onChange={event => setSummary(event.target.value)} placeholder="Optional context for the team" className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={onCancel} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-300 hover:bg-surface-800">Cancel</button>
+            <button type="submit" disabled={busy || !title.trim()} className="min-h-9 rounded-md bg-primary-500 px-4 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">Save</button>
+          </div>
+        </form>
       </div>
     </div>
   );
