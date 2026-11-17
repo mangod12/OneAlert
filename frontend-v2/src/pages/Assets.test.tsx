@@ -40,7 +40,7 @@ describe('Assets page', () => {
     await screen.findByText('Plant gateway');
     fireEvent.change(screen.getByPlaceholderText('Search assets...'), { target: { value: 'plant' } });
     await waitFor(() => expect(get).toHaveBeenLastCalledWith('/assets/', {
-      params: { page: 1, size: 15, search: 'plant' },
+      params: { page: 1, size: 15, search: 'plant', sort: 'created_at_desc' },
     }));
   });
 
@@ -54,7 +54,7 @@ describe('Assets page', () => {
     const select = await screen.findByRole('combobox', { name: 'Filter by vendor' });
     fireEvent.change(select, { target: { value: 'Cisco' } });
     await waitFor(() => {
-      expect(get).toHaveBeenCalledWith('/assets/', { params: { page: 1, size: 15, vendor: 'Cisco' } });
+      expect(get).toHaveBeenCalledWith('/assets/', { params: { page: 1, size: 15, vendor: 'Cisco', sort: 'created_at_desc' } });
     });
   });
 
@@ -63,7 +63,7 @@ describe('Assets page', () => {
     const select = await screen.findByRole('combobox', { name: 'Filter by criticality' });
     fireEvent.change(select, { target: { value: 'high' } });
     await waitFor(() => {
-      expect(get).toHaveBeenCalledWith('/assets/', { params: { page: 1, size: 15, criticality: 'high' } });
+      expect(get).toHaveBeenCalledWith('/assets/', { params: { page: 1, size: 15, criticality: 'high', sort: 'created_at_desc' } });
     });
   });
 
@@ -72,7 +72,16 @@ describe('Assets page', () => {
     const select = await screen.findByRole('combobox', { name: 'Filter by OT or IT' });
     fireEvent.change(select, { target: { value: 'true' } });
     await waitFor(() => {
-      expect(get).toHaveBeenCalledWith('/assets/', { params: { page: 1, size: 15, is_ot: 'true' } });
+      expect(get).toHaveBeenCalledWith('/assets/', { params: { page: 1, size: 15, is_ot: 'true', sort: 'created_at_desc' } });
+    });
+  });
+
+  it('sends the chosen sort order to the API', async () => {
+    render(<Assets />);
+    const select = await screen.findByRole('combobox', { name: 'Sort assets' });
+    fireEvent.change(select, { target: { value: 'name_asc' } });
+    await waitFor(() => {
+      expect(get).toHaveBeenCalledWith('/assets/', { params: { page: 1, size: 15, sort: 'name_asc' } });
     });
   });
 
@@ -81,7 +90,7 @@ describe('Assets page', () => {
     await screen.findByText('Plant gateway');
     fireEvent.change(screen.getByRole('combobox', { name: 'Filter by asset type' }), { target: { value: 'plc' } });
     await waitFor(() => {
-      expect(get).toHaveBeenCalledWith('/assets/', { params: { page: 1, size: 15, asset_type: 'plc' } });
+      expect(get).toHaveBeenCalledWith('/assets/', { params: { page: 1, size: 15, asset_type: 'plc', sort: 'created_at_desc' } });
     });
   });
 
