@@ -113,3 +113,16 @@ describe('Response plan confirmation dialogs', () => {
     expect(post).not.toHaveBeenCalled();
   });
 });
+
+describe('Status filter', () => {
+  it('sends the chosen status to the API', async () => {
+    get.mockImplementation(url => Promise.resolve({ data: { data: url.endsWith('pending-approvals') ? [] : [plan] } }));
+    render(<ResponsePlans />);
+    const select = await screen.findByLabelText('Filter plans by status');
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/response-plans/', { params: {} }));
+    fireEvent.change(select, { target: { value: 'pending_approval' } });
+    await waitFor(() => {
+      expect(get).toHaveBeenCalledWith('/response-plans/', { params: { status: 'pending_approval' } });
+    });
+  });
+});

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import apiClient from '../api/client';
 import { CheckCircle, XCircle, Play, Clock, Shield } from 'lucide-react';
 import clsx from 'clsx';
@@ -52,6 +52,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 export function ResponsePlans() {
   const [plans, setPlans] = useState<ResponsePlan[]>([]);
+  const [statusFilter, setStatusFilter] = useState('');
   const [pending, setPending] = useState<PendingApproval[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const selectedPlan = plans.find(plan => plan.id === selectedPlanId) ?? null;
@@ -60,10 +61,10 @@ export function ResponsePlans() {
   const [workingPlan, setWorkingPlan] = useState<number | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ type: 'reject' | 'execute'; planId: number } | null>(null);
 
-  const fetchPlans = async () => {
+  const fetchPlans = useCallback(async () => {
     setLoading(true);
     const [planResult, approvalResult] = await Promise.allSettled([
-      apiClient.get('/response-plans/'),
+      apiClient.get('/response-plans/', { params: statusFilter ? { status: statusFilter } : {} }),
       apiClient.get('/response-plans/pending-approvals'),
     ]);
     const nextErrors: string[] = [];
@@ -73,7 +74,7 @@ export function ResponsePlans() {
     else nextErrors.push(getApiErrorMessage(approvalResult.reason, 'Pending approvals could not be loaded.'));
     setErrors(nextErrors);
     setLoading(false);
-  };
+  }, [statusFilter]);
 
   const approvePlan = async (planId: number) => {
     if (workingPlan !== null) return;
@@ -110,7 +111,7 @@ export function ResponsePlans() {
     finally { setWorkingPlan(null); }
   };
 
-  useEffect(() => { void fetchPlans(); }, []);
+  useEffect(() => { void fetchPlans(); }, [fetchPlans]);
 
   return (
     <div className="space-y-6">
@@ -156,7 +157,27 @@ export function ResponsePlans() {
 
       {/* Plans Table */}
       <div className="oa-panel p-6">
-        <h2 className="text-lg font-semibold text-surface-50 mb-4">All Response Plans</h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-surface-50">All Response Plans</h2>
+          <label className="flex items-center gap-2 text-xs text-surface-400">
+            Status
+            <select
+              aria-label="Filter plans by status"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="rounded-md border border-surface-600 bg-surface-950 px-2 py-1.5 text-sm text-surface-100"
+            >
+              <option value="">All statuses</option>
+              <option value="draft">Draft</option>
+              <option value="pending_approval">Pending approval</option>
+              <option value="approved">Approved</option>
+              <option value="executing">Executing</option>
+              <option value="completed">Completed</option>
+              <option value="rejected">Rejected</option>
+              <option value="partial">Partial</option>
+            </select>
+          </label>
+        </div>
         {plans.length === 0 ? (
           !loading && errors.length === 0 && <EmptyState title="No response plans" description="Run the agent pipeline to generate a guarded response plan." />
         ) : (
