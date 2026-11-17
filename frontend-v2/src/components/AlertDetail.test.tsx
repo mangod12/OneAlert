@@ -72,7 +72,7 @@ describe('AlertDetail', () => {
     get.mockRejectedValue(new Error('offline'));
     render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />);
     expect(screen.getByText('RouterOS RCE')).toBeTruthy();
-    await waitFor(() => expect(get).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(5));
     expect(screen.queryByText(/Exploit probability/)).toBeNull();
     expect(screen.queryByText('Remediation plan')).toBeNull();
   });
@@ -283,5 +283,44 @@ describe('AlertDetail snooze', () => {
     });
     render(<AlertDetail alert={{ ...alert, status: 'resolved' }} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />);
     expect(screen.queryByRole('button', { name: 'Snooze alert for 24h' })).toBeNull();
+  });
+});
+
+describe('AlertDetail notes', () => {
+  function mockNotesGets(notes: unknown[] = []) {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: null, epss_percentile: null } };
+      if (url === '/alerts/1/remediations') return { data: [] };
+      if (url === '/orgs/me/members') return { data: [] };
+      if (url === '/alerts/1/notes') return { data: notes };
+      throw new Error(`unexpected ${url}`);
+    });
+  }
+
+  it('lists existing notes', async () => {
+    mockNotesGets([{ id: 5, alert_id: 1, body: 'Vendor confirms patch due Friday', created_at: '2026-11-17T09:00:00Z' }]);
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />);
+    expect(await screen.findByText('Vendor confirms patch due Friday')).toBeTruthy();
+  });
+
+  it('adds a note and shows it', async () => {
+    mockNotesGets();
+    post.mockResolvedValue({ data: { id: 6, alert_id: 1, body: 'Escalated to OT lead', created_at: '2026-11-18T05:00:00Z' } } as never);
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />);
+    expect(await screen.findByText('No notes yet')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Add a note'), { target: { value: 'Escalated to OT lead' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/alerts/1/notes', { body: 'Escalated to OT lead' }));
+    expect(await screen.findByText('Escalated to OT lead')).toBeTruthy();
+  });
+
+  it('deletes a note', async () => {
+    mockNotesGets([{ id: 7, alert_id: 1, body: 'obsolete note', created_at: '2026-11-17T09:00:00Z' }]);
+    const del = vi.mocked(apiClient.delete);
+    del.mockResolvedValue({} as never);
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />);
+    fireEvent.click(await screen.findByLabelText('Delete note 7'));
+    await waitFor(() => expect(del).toHaveBeenCalledWith('/alerts/1/notes/7'));
+    expect(screen.queryByText('obsolete note')).toBeNull();
   });
 });
