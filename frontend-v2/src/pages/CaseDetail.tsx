@@ -1,12 +1,13 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import apiClient from '../api/client';
-import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil } from 'lucide-react';
+import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil, Trash2 } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { toast } from '../components/Toast';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { useDialogFocus } from '../components/ui/useDialogFocus';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { NarrativeText } from '../components/ui/NarrativeText';
 import { alertSeverityTones, caseStatusTones, eventSeverityTones } from '../components/ui/tones';
 
@@ -89,6 +90,8 @@ export function CaseDetail() {
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editNoteText, setEditNoteText] = useState('');
   const [savingNoteEdit, setSavingNoteEdit] = useState(false);
+  const [pendingDeleteNote, setPendingDeleteNote] = useState<TimelineEntry | null>(null);
+  const [deletingNote, setDeletingNote] = useState(false);
   const [showLinkAlert, setShowLinkAlert] = useState(false);
   const [alertOptions, setAlertOptions] = useState<RelatedAlert[]>([]);
   const [linkingAlert, setLinkingAlert] = useState(false);
@@ -233,6 +236,18 @@ export function CaseDetail() {
       await fetchAll();
     } catch (err) { toast(getApiErrorMessage(err, 'The note could not be updated.'), 'error'); }
     finally { setSavingNoteEdit(false); }
+  };
+
+  const deleteNote = async (entry: TimelineEntry) => {
+    if (deletingNote) return;
+    setDeletingNote(true);
+    try {
+      await apiClient.delete(`/cases/${caseId}/notes/${entry.id}`);
+      setPendingDeleteNote(null);
+      toast('Note deleted.', 'success');
+      await fetchAll();
+    } catch (err) { toast(getApiErrorMessage(err, 'The note could not be deleted.'), 'error'); }
+    finally { setDeletingNote(false); }
   };
 
   const fetchAll = useCallback(async () => {
@@ -488,14 +503,24 @@ export function CaseDetail() {
                           <span className="text-xs text-surface-600">{entry.source}</span>
                           {entry.metadata_json?.edited ? <span className="text-xs text-surface-600">(edited)</span> : null}
                           {entry.entry_type === 'note' && editingNoteId !== entry.id && (
-                            <button
-                              type="button"
-                              aria-label="Edit note"
-                              onClick={() => startNoteEdit(entry)}
-                              className="ml-auto text-surface-500 hover:text-primary-400"
-                            >
-                              <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
-                            </button>
+                            <span className="ml-auto flex items-center gap-2">
+                              <button
+                                type="button"
+                                aria-label="Edit note"
+                                onClick={() => startNoteEdit(entry)}
+                                className="text-surface-500 hover:text-primary-400"
+                              >
+                                <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
+                                aria-label="Delete note"
+                                onClick={() => setPendingDeleteNote(entry)}
+                                className="text-surface-500 hover:text-danger"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                              </button>
+                            </span>
                           )}
                         </div>
                         {editingNoteId === entry.id ? (
@@ -609,6 +634,18 @@ export function CaseDetail() {
           </div>
         </div>
       </div>
+
+      {pendingDeleteNote && (
+        <ConfirmDialog
+          title="Delete note?"
+          description="This timeline note will be permanently removed from the investigation. This cannot be undone."
+          confirmLabel="Delete note"
+          tone="danger"
+          busy={deletingNote}
+          onCancel={() => { if (!deletingNote) setPendingDeleteNote(null); }}
+          onConfirm={() => { void deleteNote(pendingDeleteNote); }}
+        />
+      )}
 
       {showEdit && (
         <EditCaseDialog
