@@ -1,15 +1,27 @@
 import { useEffect, useState } from 'react';
 import apiClient from '../../api/client';
+import { getApiErrorMessage } from '../../api/errors';
 import type { ZoneData } from '../../api/types';
 import clsx from 'clsx';
 
 export function RiskHeatmap() {
   const [zones, setZones] = useState<ZoneData[]>([]);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     apiClient.get('/ot/devices-by-zone').then((res) => {
+      if (cancelled) return;
       setZones(res.data.zones || []);
-    }).catch(() => {});
+      setError('');
+    }).catch((err) => {
+      if (cancelled) return;
+      setError(getApiErrorMessage(err, 'Zone data could not be loaded.'));
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
   }, []);
 
   const purdueZones = [
@@ -47,12 +59,19 @@ export function RiskHeatmap() {
     return 'bg-danger/10 border-danger/30';
   };
 
+  if (loading) {
+    return <p className="py-4 text-center text-sm text-surface-500" role="status">Loading zone data…</p>;
+  }
+  if (error) {
+    return <p className="py-4 text-center text-sm text-danger" role="alert">{error}</p>;
+  }
+
   return (
-    <div className="space-y-2">
+    <ul className="space-y-2">
       {purdueZones.map((zone) => {
         const count = getZoneCount(zone.level);
         return (
-          <div
+          <li
             key={zone.level}
             className={clsx(
               'flex items-center justify-between p-3 rounded-lg border',
@@ -67,14 +86,14 @@ export function RiskHeatmap() {
               </div>
             </div>
             <span className="text-sm font-semibold text-surface-300">{count} devices</span>
-          </div>
+          </li>
         );
       })}
       {zones.length === 0 && (
-        <p className="text-center text-surface-500 py-4 text-sm">
+        <li className="text-center text-surface-500 py-4 text-sm">
           No OT zone data. Add assets with network zones to populate.
-        </p>
+        </li>
       )}
-    </div>
+    </ul>
   );
 }
