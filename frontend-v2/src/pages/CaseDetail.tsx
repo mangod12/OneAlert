@@ -1,7 +1,7 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import apiClient from '../api/client';
-import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil, Trash2, Download } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { toast } from '../components/Toast';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -92,6 +92,7 @@ export function CaseDetail() {
   const [savingNoteEdit, setSavingNoteEdit] = useState(false);
   const [pendingDeleteNote, setPendingDeleteNote] = useState<TimelineEntry | null>(null);
   const [deletingNote, setDeletingNote] = useState(false);
+  const [exportingTimeline, setExportingTimeline] = useState(false);
   const [showLinkAlert, setShowLinkAlert] = useState(false);
   const [alertOptions, setAlertOptions] = useState<RelatedAlert[]>([]);
   const [linkingAlert, setLinkingAlert] = useState(false);
@@ -218,6 +219,21 @@ export function CaseDetail() {
       await fetchAll();
     } catch (err) { toast(getApiErrorMessage(err, 'The note could not be added.'), 'error'); }
     finally { setAddingNote(false); }
+  };
+
+  const exportTimeline = async () => {
+    if (exportingTimeline) return;
+    setExportingTimeline(true);
+    try {
+      const res = await apiClient.get(`/cases/${caseId}/export`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `case-${caseId}-timeline.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) { toast(getApiErrorMessage(err, 'The timeline could not be exported.'), 'error'); }
+    finally { setExportingTimeline(false); }
   };
 
   const startNoteEdit = (entry: TimelineEntry) => {
@@ -467,7 +483,18 @@ export function CaseDetail() {
         {/* Timeline */}
         <div className="lg:col-span-2">
           <div className="oa-panel p-6">
-            <h2 className="text-lg font-semibold text-surface-50 mb-4">Investigation Timeline</h2>
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold text-surface-50">Investigation Timeline</h2>
+              <button
+                type="button"
+                onClick={() => { void exportTimeline(); }}
+                disabled={exportingTimeline}
+                className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-surface-600 px-2.5 text-xs font-semibold text-surface-200 hover:bg-surface-800 disabled:opacity-50"
+              >
+                <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                {exportingTimeline ? 'Exporting...' : 'Export CSV'}
+              </button>
+            </div>
             <form className="mb-4 flex items-start gap-2" onSubmit={e => { e.preventDefault(); void addNote(); }}>
               <label htmlFor="case-note" className="sr-only">Add a timeline note</label>
               <textarea

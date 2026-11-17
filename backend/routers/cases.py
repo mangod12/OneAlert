@@ -1,7 +1,11 @@
 """Cases router — investigation cases created by AI triage agent."""
 
 
+import csv
+import io
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import case as sql_case
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -187,6 +191,45 @@ async def get_case(
     resp.assigned_to_email = case.assignee.email if case.assignee else None
     resp.timeline = [TimelineEntryResponse.model_validate(t) for t in timeline]
     return resp
+
+
+@router.get("/{case_id}/export")
+async def export_case_timeline(
+    case_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Export the case timeline as CSV for incident reports."""
+    case = (await db.execute(
+        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    timeline = (await db.execute(
+        select(CaseTimeline)
+        .where(CaseTimeline.case_id == case.id)
+        .order_by(CaseTimeline.timestamp)
+    )).scalars().all()
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["case_id", "case_title", "timestamp", "entry_type", "source", "content"])
+    for entry in timeline:
+        writer.writerow([
+            case.id,
+            case.title,
+            entry.timestamp.isoformat() if entry.timestamp else "",
+            entry.entry_type,
+            entry.source,
+            entry.content,
+        ])
+    buffer.seek(0)
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename=case-{case.id}-timeline.csv'},
+    )
 
 
 @router.post("/{case_id}/notes", response_model=TimelineEntryResponse, status_code=status.HTTP_201_CREATED)
