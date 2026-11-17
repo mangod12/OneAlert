@@ -21,6 +21,7 @@ interface Props {
   onClose: () => void;
   onAcknowledge: (id: number) => void;
   onResolve: (id: number) => void;
+  onReopen: (id: number) => void;
   onAssigned: (id: number, assigneeId: number | null, assigneeEmail: string | null) => void;
 }
 
@@ -31,7 +32,7 @@ interface OrgMember {
   is_active: boolean;
 }
 
-export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onAssigned }: Props) {
+export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen, onAssigned }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus(dialogRef, onClose);
   const [epss, setEpss] = useState<EpssScore | null>(null);
@@ -231,6 +232,14 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onAssign
                 className="flex items-center justify-center gap-2 w-full py-2.5 bg-surface-800 hover:bg-surface-700 text-success rounded-lg font-medium transition-colors"
               >
                 Resolve Alert
+              </button>
+            )}
+            {alert.status === 'resolved' && (
+              <button
+                onClick={() => onReopen(alert.id)}
+                className="flex items-center justify-center gap-2 w-full py-2.5 bg-surface-800 hover:bg-surface-700 text-warning rounded-lg font-medium transition-colors"
+              >
+                Reopen Alert
               </button>
             )}
             <a

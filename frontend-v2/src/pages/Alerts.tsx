@@ -162,6 +162,20 @@ export function Alerts() {
     }
   };
 
+  const handleReopen = async (alertId: number) => {
+    if (pendingIds.has(alertId)) return;
+    setPendingIds(current => new Set(current).add(alertId));
+    try {
+      await apiClient.post(`/alerts/${alertId}/reopen`);
+      await fetchAlerts();
+      setSelectedAlert(null);
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'Alert could not be reopened.'), 'error');
+    } finally {
+      setPendingIds(current => { const next = new Set(current); next.delete(alertId); return next; });
+    }
+  };
+
   const handleBulkResolve = async () => {
     const ids = Array.from(selectedIds).filter(id => !pendingIds.has(id));
     if (ids.length === 0) return;
@@ -456,6 +470,7 @@ export function Alerts() {
           onClose={() => setSelectedAlert(null)}
           onAcknowledge={handleAcknowledge}
           onResolve={handleResolve}
+          onReopen={handleReopen}
           onAssigned={handleAssigned}
         />
       )}
