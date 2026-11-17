@@ -5,6 +5,7 @@ Provides CRUD operations for assets that users want to monitor for vulnerabiliti
 
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import case as sql_case
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,6 +44,11 @@ async def list_assets(
     vendor: str | None = Query(None, description="Filter by vendor"),
     criticality: str | None = Query(None, description="Filter by criticality"),
     is_ot: bool | None = Query(None, description="Filter to OT assets (true) or non-OT assets (false)"),
+    sort: str = Query(
+        "created_at_desc",
+        pattern="^(created_at_desc|created_at_asc|name_asc|name_desc|criticality_desc|criticality_asc)$",
+        description="Sort order"
+    ),
     search: str | None = Query(None, description="Search in name, vendor, or product"),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
@@ -78,9 +84,22 @@ async def list_assets(
     # Ensure count_query also has user_id filter if needed and is properly formed.
     total = (await db.execute(count_query)).scalar_one()
 
-    # Apply pagination
+    # Apply pagination and ordering
     offset = (page - 1) * size
-    query = query.offset(offset).limit(size).order_by(Asset.created_at.desc())
+    criticality_rank = sql_case(
+        {"critical": 4, "high": 3, "medium": 2, "low": 1},
+        value=Asset.criticality,
+        else_=2
+    )
+    order_columns = {
+        "created_at_desc": [Asset.created_at.desc()],
+        "created_at_asc": [Asset.created_at.asc()],
+        "name_asc": [Asset.name.asc()],
+        "name_desc": [Asset.name.desc()],
+        "criticality_desc": [criticality_rank.desc(), Asset.name.asc()],
+        "criticality_asc": [criticality_rank.asc(), Asset.name.asc()],
+    }
+    query = query.offset(offset).limit(size).order_by(*order_columns[sort])
 
     # Execute query
     result = await db.execute(query)

@@ -34,6 +34,7 @@ export function Assets() {
   const [vendorOptions, setVendorOptions] = useState<string[]>([]);
   const [criticalityFilter, setCriticalityFilter] = useState('');
   const [otFilter, setOtFilter] = useState('');
+  const [sort, setSort] = useState('created_at_desc');
 
   const fetchAssets = useCallback(async () => {
     setLoading(true);
@@ -45,6 +46,7 @@ export function Assets() {
       if (vendorFilter) params.vendor = vendorFilter;
       if (criticalityFilter) params.criticality = criticalityFilter;
       if (otFilter) params.is_ot = otFilter;
+      params.sort = sort;
       const res = await apiClient.get<AssetListResponse>('/assets/', { params });
       setAssets(res.data.assets);
       setTotal(res.data.total);
@@ -53,7 +55,7 @@ export function Assets() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, typeFilter, vendorFilter, criticalityFilter, otFilter]);
+  }, [page, search, typeFilter, vendorFilter, criticalityFilter, otFilter, sort]);
 
   const [assetTypes, setAssetTypes] = useState<string[]>(FALLBACK_ASSET_TYPES);
 
@@ -173,6 +175,19 @@ export function Assets() {
           <option value="">OT and IT</option>
           <option value="true">OT only</option>
           <option value="false">IT only</option>
+        </select>
+        <select
+          aria-label="Sort assets"
+          value={sort}
+          onChange={(e) => { setSort(e.target.value); setPage(1); }}
+          className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+        >
+          <option value="created_at_desc">Newest first</option>
+          <option value="created_at_asc">Oldest first</option>
+          <option value="name_asc">Name A-Z</option>
+          <option value="name_desc">Name Z-A</option>
+          <option value="criticality_desc">Highest criticality</option>
+          <option value="criticality_asc">Lowest criticality</option>
         </select>
       </div>
 
