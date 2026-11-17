@@ -61,13 +61,18 @@ describe('Alerts page', () => {
 
   it('shows an error state and retries on demand', async () => {
     mockGet.mockReset();
-    mockGet.mockRejectedValueOnce({ isAxiosError: true, response: { status: 500, data: {} } });
-    mockGet.mockResolvedValueOnce(listResponse([makeAlert()]));
+    let alertCalls = 0;
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/assets/') return { data: { assets: [], total: 0 } };
+      alertCalls += 1;
+      if (alertCalls === 1) throw { isAxiosError: true, response: { status: 500, data: {} } };
+      return listResponse([makeAlert()]);
+    });
     render(<Alerts />);
     expect(await screen.findByText('Alerts could not be loaded.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /retry/i }));
     expect(await screen.findByText('CVE-2026-0001')).toBeTruthy();
-    expect(mockGet).toHaveBeenCalledTimes(2);
+    expect(alertCalls).toBe(2);
   });
 
   it('refetches with the severity filter applied', async () => {
@@ -88,6 +93,21 @@ describe('Alerts page', () => {
     expect(screen.getByRole('textbox', { name: 'Search by CVE ID' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: 'Filter by severity' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: 'Filter by status' })).toBeTruthy();
+  });
+
+  it('filters by asset from the dropdown', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/assets/') return { data: { assets: [{ id: 10, name: 'edge-router-01' }], total: 1 } };
+      return listResponse([makeAlert()]);
+    });
+    render(<Alerts />);
+    const select = await screen.findByRole('combobox', { name: 'Filter by asset' });
+    fireEvent.change(select, { target: { value: '10' } });
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith('/alerts/', {
+        params: { page: 1, size: 15, asset_id: 10 },
+      });
+    });
   });
 
   it('opens the detail panel on row click and closes it', async () => {
