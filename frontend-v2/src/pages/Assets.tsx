@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import apiClient from '../api/client';
 import type { Asset, AssetCreate, AssetListResponse } from '../api/types';
 import { Plus, Search, Server, Trash2, Edit2 } from 'lucide-react';
@@ -7,6 +7,7 @@ import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncS
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { criticalityTones } from '../components/ui/tones';
+import { useDialogFocus } from '../components/ui/useDialogFocus';
 import { toast } from '../components/Toast';
 
 export function Assets() {
@@ -179,16 +180,13 @@ function AssetModal({ asset, onClose, onSave, saving }: { asset: Asset | null; o
     onSave(form);
   };
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape' && !saving) onClose(); };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose, saving]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef, () => { if (!saving) onClose(); });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-surface-950/75 backdrop-blur-sm" onClick={onClose}></div>
-      <div role="dialog" aria-modal="true" aria-labelledby="asset-dialog-title" className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg border border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="asset-dialog-title" className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg border border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]">
         <h2 id="asset-dialog-title" className="text-lg font-semibold text-surface-50 mb-4">{asset ? 'Edit Asset' : 'Add Asset'}</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <input
