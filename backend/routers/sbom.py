@@ -6,7 +6,11 @@ retrieval, component listing, and deletion.
 """
 
 
+import csv
+import io
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -170,6 +174,56 @@ async def get_sbom_components(
     )
     components = result.scalars().all()
     return components
+
+
+@router.get("/{sbom_id}/export")
+async def export_sbom_components(
+    sbom_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Export an SBOM's component list as CSV."""
+    result = await db.execute(
+        select(SBOM).where(
+            SBOM.id == sbom_id,
+            SBOM.user_id == current_user.id,
+        )
+    )
+    sbom = result.scalar_one_or_none()
+    if not sbom:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="SBOM not found",
+        )
+
+    result = await db.execute(
+        select(SBOMComponent)
+        .where(SBOMComponent.sbom_id == sbom.id)
+        .order_by(SBOMComponent.name)
+    )
+    components = result.scalars().all()
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([
+        "name", "version", "supplier", "purl", "cpe", "license", "known_vulnerabilities",
+    ])
+    for component in components:
+        writer.writerow([
+            component.name,
+            component.version or "",
+            component.supplier or "",
+            component.purl or "",
+            component.cpe or "",
+            component.license or "",
+            component.has_known_vulnerability,
+        ])
+    buffer.seek(0)
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=sbom-{sbom.id}-components.csv"},
+    )
 
 
 @router.delete("/{sbom_id}", status_code=status.HTTP_204_NO_CONTENT)
