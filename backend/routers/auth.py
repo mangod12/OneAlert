@@ -374,11 +374,17 @@ async def get_audit_logs(current_user: User = Depends(get_current_user), db: Asy
             select(User.id).where(User.org_id == current_user.org_id)
         )).scalars().all()
         result = await db.execute(
-            select(AuditLog).where(AuditLog.user_id.in_(org_user_ids))
+            select(AuditLog)
+            .where(AuditLog.user_id.in_(org_user_ids))
+            .order_by(AuditLog.timestamp.desc())
+            .limit(500)
         )
     else:
         result = await db.execute(
-            select(AuditLog).where(AuditLog.user_id == current_user.id)
+            select(AuditLog)
+            .where(AuditLog.user_id == current_user.id)
+            .order_by(AuditLog.timestamp.desc())
+            .limit(500)
         )
     logs = result.scalars().all()
     return [
