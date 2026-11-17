@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
-import { Play, Shield, ChevronRight } from 'lucide-react';
+import { Play, Search, Shield, ChevronRight, X } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -23,12 +23,22 @@ interface CaseItem {
   event_count: number;
 }
 
+interface CaseSearchResult {
+  case_id: number;
+  title: string;
+  score: number;
+  snippet: string;
+}
+
 export function Cases() {
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [triaging, setTriaging] = useState(false);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<CaseSearchResult[] | null>(null);
+  const [searching, setSearching] = useState(false);
 
   const fetchCases = async () => {
     setError(null);
@@ -57,6 +67,28 @@ export function Cases() {
 
   useEffect(() => { fetchCases(); }, []);
 
+  const runSearch = async () => {
+    const q = searchQuery.trim();
+    if (q.length < 2 || searching) {
+      if (q.length > 0 && q.length < 2) toast('Type at least 2 characters to search.', 'info');
+      return;
+    }
+    setSearching(true);
+    try {
+      const res = await apiClient.get('/cases/search', { params: { q } });
+      setSearchResults(res.data.data ?? []);
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'The search could not be completed.'), 'error');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const clearSearch = () => {
+    setSearchQuery('');
+    setSearchResults(null);
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="Command" title="Investigations" description={`${total} cases correlated from alerts, security events, and agent analysis.`} actions={
@@ -69,6 +101,52 @@ export function Cases() {
           {triaging ? 'Running triage…' : 'Run AI triage'}
         </button>
       } />
+
+      {!loading && !error && cases.length > 0 && (
+        <form className="flex gap-2" onSubmit={e => { e.preventDefault(); void runSearch(); }}>
+          <label htmlFor="case-search" className="sr-only">Search investigations</label>
+          <input
+            id="case-search"
+            type="text"
+            autoComplete="off"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search investigations in plain language…"
+            className="min-w-0 flex-1 rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500"
+          />
+          <button type="submit" disabled={searching} className="inline-flex min-h-9 items-center gap-1.5 rounded-md bg-primary-500 px-3.5 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">
+            <Search className="h-4 w-4" /> {searching ? 'Searching…' : 'Search'}
+          </button>
+          {searchResults !== null && (
+            <button type="button" onClick={clearSearch} className="inline-flex min-h-9 items-center gap-1 rounded-md border border-surface-600 px-3 text-sm text-surface-300 hover:bg-surface-800">
+              <X className="h-4 w-4" /> Clear
+            </button>
+          )}
+        </form>
+      )}
+
+      {searchResults !== null && (
+        <div className="oa-panel p-5">
+          <h2 className="mb-3 text-sm font-semibold text-surface-100">{searchResults.length} result{searchResults.length === 1 ? '' : 's'} for this search</h2>
+          {searchResults.length === 0 ? (
+            <p className="text-sm text-surface-500">No investigations match that search.</p>
+          ) : (
+            <ul className="divide-y divide-surface-800">
+              {searchResults.map(result => (
+                <li key={result.case_id}>
+                  <Link to={`/cases/${result.case_id}`} className="block py-3 transition hover:bg-surface-800/40">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="truncate text-sm font-medium text-surface-100">{result.title}</p>
+                      <span className="shrink-0 text-xs text-surface-500">{Math.round(result.score * 100)}% match</span>
+                    </div>
+                    {result.snippet && <p className="mt-1 line-clamp-2 text-xs text-surface-400">{result.snippet}</p>}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <LoadingSurface rows={3} label="Loading investigations" />
