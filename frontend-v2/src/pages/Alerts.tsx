@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, type ComponentProps } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import apiClient from '../api/client';
 import type { Alert, AlertListResponse } from '../api/types';
 import { AlertDetail } from '../components/AlertDetail';
@@ -6,23 +6,9 @@ import { Search, Filter, CheckCircle, ChevronRight } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { alertSeverityTones, alertStatusTones } from '../components/ui/tones';
 import { ErrorState, RetryButton } from '../components/ui/AsyncState';
 import { toast } from '../components/Toast';
-
-type BadgeTone = ComponentProps<typeof StatusBadge>['tone'];
-
-const severityTones: Record<string, BadgeTone> = {
-  critical: 'danger',
-  high: 'warning',
-  medium: 'info',
-  low: 'success',
-};
-
-const statusTones: Record<string, BadgeTone> = {
-  pending: 'warning',
-  acknowledged: 'info',
-  resolved: 'success',
-};
 
 export function Alerts() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -200,11 +186,11 @@ export function Alerts() {
                   </td>
                   <td className="px-4 py-3 font-mono text-primary-300">{alert.cve_id}</td>
                   <td className="px-4 py-3">
-                    <StatusBadge tone={severityTones[alert.severity] ?? 'neutral'}>{alert.severity}</StatusBadge>
+                    <StatusBadge tone={alertSeverityTones[alert.severity] ?? 'neutral'}>{alert.severity}</StatusBadge>
                   </td>
                   <td className="px-4 py-3 text-surface-300">{alert.asset_name}</td>
                   <td className="px-4 py-3">
-                    <StatusBadge tone={statusTones[alert.status] ?? 'neutral'}>{alert.status}</StatusBadge>
+                    <StatusBadge tone={alertStatusTones[alert.status] ?? 'neutral'}>{alert.status}</StatusBadge>
                   </td>
                   <td className="px-4 py-3 text-surface-500 hidden md:table-cell">
                     {new Date(alert.created_at).toLocaleDateString()}

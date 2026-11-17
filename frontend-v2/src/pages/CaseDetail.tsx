@@ -2,17 +2,29 @@ import { useCallback, useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import apiClient from '../api/client';
 import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target } from 'lucide-react';
-import clsx from 'clsx';
 import { getApiErrorMessage } from '../api/errors';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { StatusBadge } from '../components/ui/StatusBadge';
+import { alertSeverityTones, caseStatusTones, eventSeverityTones } from '../components/ui/tones';
 
-const severityColors: Record<string, string> = {
-  critical: 'bg-danger/10 text-danger border-danger/30',
-  high: 'bg-warning/10 text-warning border-warning/30',
-  medium: 'bg-warning/10 text-warning border-warning/30',
-  low: 'bg-info/10 text-info border-info/30',
-  info: 'bg-surface-500/20 text-surface-400 border-surface-500/30',
-};
+function renderBold(text: string) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+    part.startsWith('**') && part.endsWith('**')
+      ? <strong key={i} className="font-semibold text-surface-100">{part.slice(2, -2)}</strong>
+      : part
+  );
+}
+
+function NarrativeText({ text }: { text: string }) {
+  const paragraphs = text.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+  return (
+    <div className="space-y-3">
+      {paragraphs.map((para, i) => (
+        <p key={i} className="text-surface-300 leading-relaxed">{renderBold(para)}</p>
+      ))}
+    </div>
+  );
+}
 
 const timelineIcons: Record<string, typeof Brain> = {
   ai_analysis: Brain,
@@ -101,12 +113,8 @@ export function CaseDetail() {
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <span className={clsx('px-2.5 py-1 text-xs font-medium rounded-full border', severityColors[caseData.severity])}>
-                {caseData.severity}
-              </span>
-              <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-surface-700 text-surface-300">
-                {caseData.status}
-              </span>
+              <StatusBadge tone={alertSeverityTones[caseData.severity] ?? 'neutral'}>{caseData.severity}</StatusBadge>
+              <StatusBadge tone={caseStatusTones[caseData.status] ?? 'neutral'}>{caseData.status}</StatusBadge>
               {caseData.confidence_score && (
                 <span className="text-sm text-surface-400">
                   {Math.round(caseData.confidence_score * 100)}% confidence
@@ -145,7 +153,7 @@ export function CaseDetail() {
           <h2 className="flex items-center gap-2 text-lg font-semibold text-surface-50 mb-3">
             <Brain className="w-5 h-5 text-primary-400" /> AI Analysis
           </h2>
-          <p className="text-surface-300 leading-relaxed whitespace-pre-wrap">{caseData.attack_narrative}</p>
+          <NarrativeText text={caseData.attack_narrative} />
         </div>
       )}
 
@@ -213,7 +221,7 @@ export function CaseDetail() {
                 {alerts.map(a => (
                   <div key={a.id} className="p-3 bg-surface-900/50 rounded-lg">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className={clsx('px-1.5 py-0.5 text-xs rounded', severityColors[a.severity])}>{a.severity}</span>
+                      <StatusBadge tone={alertSeverityTones[a.severity] ?? 'neutral'}>{a.severity}</StatusBadge>
                       {a.cve_id && <span className="text-xs text-primary-400">{a.cve_id}</span>}
                     </div>
                     <p className="text-sm text-surface-300 truncate">{a.title}</p>
@@ -232,7 +240,7 @@ export function CaseDetail() {
                 {events.map(e => (
                   <div key={e.id} className="p-3 bg-surface-900/50 rounded-lg">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className={clsx('px-1.5 py-0.5 text-xs rounded', severityColors[e.severity])}>{e.severity}</span>
+                      <StatusBadge tone={eventSeverityTones[e.severity] ?? 'neutral'}>{e.severity}</StatusBadge>
                       <span className="text-xs text-surface-500">{e.event_type}</span>
                     </div>
                     <p className="text-xs text-surface-400">
