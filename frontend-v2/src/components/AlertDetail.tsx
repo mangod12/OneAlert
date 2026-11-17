@@ -1,7 +1,9 @@
 import type { Alert, EpssScore, RemediationAction } from '../api/types';
 import apiClient from '../api/client';
-import { X, ExternalLink, Wrench } from 'lucide-react';
+import { getApiErrorMessage } from '../api/errors';
+import { X, ExternalLink, Wrench, FolderOpen } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { StatusBadge } from './ui/StatusBadge';
 import { alertSeverityTones, alertStatusTones } from './ui/tones';
 import { useDialogFocus } from './ui/useDialogFocus';
@@ -25,6 +27,7 @@ export function AlertDetail({ alert, onClose, onAcknowledge }: Props) {
   useDialogFocus(dialogRef, onClose);
   const [epss, setEpss] = useState<EpssScore | null>(null);
   const [remediations, setRemediations] = useState<RemediationAction[] | null>(null);
+  const [showEscalate, setShowEscalate] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,6 +138,13 @@ export function AlertDetail({ alert, onClose, onAcknowledge }: Props) {
           )}
 
           <div className="pt-4 border-t border-surface-700 space-y-3">
+            <button
+              onClick={() => setShowEscalate(true)}
+              className="flex items-center justify-center gap-2 w-full py-2.5 bg-surface-800 hover:bg-surface-700 text-surface-300 rounded-lg font-medium transition-colors"
+            >
+              <FolderOpen className="w-4 h-4" aria-hidden="true" />
+              Open investigation
+            </button>
             {alert.status === 'pending' && (
               <button
                 onClick={() => onAcknowledge(alert.id)}
@@ -154,6 +164,80 @@ export function AlertDetail({ alert, onClose, onAcknowledge }: Props) {
             </a>
           </div>
         </div>
+      </div>
+      {showEscalate && <EscalateDialog alert={alert} onCancel={() => setShowEscalate(false)} />}
+    </div>
+  );
+}
+
+
+interface EscalateDialogProps {
+  alert: Alert;
+  onCancel: () => void;
+}
+
+function EscalateDialog({ alert, onCancel }: EscalateDialogProps) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  useDialogFocus(dialogRef, onCancel);
+  const navigate = useNavigate();
+  const [title, setTitle] = useState(`Investigate ${alert.cve_id} on ${alert.asset_name}`);
+  const [summary, setSummary] = useState('');
+  const [severity, setSeverity] = useState<string>(alert.severity);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    if (busy || !title.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await apiClient.post('/cases/', { title: title.trim(), summary: summary.trim() || null, severity });
+      const caseId: number = res.data.id;
+      await apiClient.post(`/cases/${caseId}/alerts/${alert.id}`);
+      navigate(`/cases/${caseId}`);
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'The investigation could not be opened.'));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-surface-950/70" aria-hidden="true" onClick={() => { if (!busy) onCancel(); }} />
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="escalate-dialog-title"
+        className="relative w-full max-w-md rounded-lg border border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]"
+      >
+        <h2 id="escalate-dialog-title" className="text-lg font-semibold text-surface-50">Open investigation</h2>
+        <p className="mt-1 text-sm text-surface-400">Create a case from {alert.cve_id} and link this alert to it.</p>
+        <form className="mt-4 space-y-3" onSubmit={event => { event.preventDefault(); void handleSubmit(); }}>
+          <div>
+            <label htmlFor="escalate-title" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-surface-400">Title</label>
+            <input id="escalate-title" type="text" autoComplete="off" value={title} onChange={event => setTitle(event.target.value)} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
+          </div>
+          <div>
+            <label htmlFor="escalate-summary" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-surface-400">Summary</label>
+            <textarea id="escalate-summary" rows={3} value={summary} onChange={event => setSummary(event.target.value)} placeholder="Optional context for the team" className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
+          </div>
+          <div>
+            <label htmlFor="escalate-severity" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-surface-400">Severity</label>
+            <select id="escalate-severity" value={severity} onChange={event => setSeverity(event.target.value)} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100">
+              <option value="info">Info</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+          {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={onCancel} disabled={busy} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-300 hover:bg-surface-800">Cancel</button>
+            <button type="submit" disabled={busy || !title.trim()} className="min-h-9 rounded-md bg-primary-500 px-4 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">{busy ? 'Opening…' : 'Open investigation'}</button>
+          </div>
+        </form>
       </div>
     </div>
   );
