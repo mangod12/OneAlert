@@ -57,6 +57,7 @@ export function Events() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [severityFilter, setSeverityFilter] = useState('');
+  const [sort, setSort] = useState('timestamp_desc');
   const [eventTypeFilter, setEventTypeFilter] = useState('');
   const [eventTypes, setEventTypes] = useState<string[]>([]);
   const [ipSearch, setIpSearch] = useState('');
@@ -75,6 +76,7 @@ export function Events() {
       if (eventTypeFilter) params.event_type = eventTypeFilter;
       if (ipSearch.trim()) params.ip = ipSearch.trim();
       if (sourceTypeFilter) params.source_type = sourceTypeFilter;
+      params.sort = sort;
       const [evtResult, statsResult, sourcesResult] = await Promise.allSettled([
         apiClient.get('/events/', { params }),
         apiClient.get('/events/stats'),
@@ -92,7 +94,7 @@ export function Events() {
     } finally {
       setLoading(false);
     }
-  }, [page, severityFilter, eventTypeFilter, ipSearch, sourceTypeFilter]);
+  }, [page, severityFilter, eventTypeFilter, ipSearch, sourceTypeFilter, sort]);
 
   useEffect(() => { void fetchEvents(); }, [fetchEvents]);
 
@@ -224,6 +226,21 @@ export function Events() {
           </select>
         </div>
       )}
+      <div className="flex items-center gap-2">
+        <label htmlFor="event-sort" className="text-xs text-surface-400">Sort</label>
+        <select
+          id="event-sort"
+          aria-label="Sort events"
+          value={sort}
+          onChange={e => { setPage(1); setSort(e.target.value); }}
+          className="bg-surface-800 border border-surface-700 text-surface-200 text-xs rounded px-2 py-1.5"
+        >
+          <option value="timestamp_desc">Newest first</option>
+          <option value="timestamp_asc">Oldest first</option>
+          <option value="severity_desc">Highest severity</option>
+          <option value="severity_asc">Lowest severity</option>
+        </select>
+      </div>
       </div>
 
       {/* Event Table */}
