@@ -30,6 +30,7 @@ from backend.routers import (
     hunt,
     integrations,
     mitre,
+    notifications,
     organizations,
     ot,
     response_plans,
@@ -187,6 +188,7 @@ app.include_router(mitre.router, prefix="/api/v1/mitre", tags=["MITRE ATT&CK"])
 app.include_router(hunt.router, prefix="/api/v1/hunt", tags=["Threat Hunting"])
 app.include_router(response_plans.router, prefix="/api/v1/response-plans", tags=["Response Plans"])
 app.include_router(validation.router, prefix="/api/v1/validation", tags=["Purple-Team Validation"])
+app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["Notifications"])
 
 
 # Health check endpoint

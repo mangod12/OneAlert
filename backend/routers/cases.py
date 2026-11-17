@@ -27,6 +27,7 @@ from backend.models.case import (
     CaseTimeline,
     TimelineEntryResponse,
 )
+from backend.models.notification import Notification
 from backend.models.user import User
 from backend.routers.auth import get_active_user
 
@@ -395,6 +396,14 @@ async def assign_case(
             )
 
     case.assigned_to_id = assignment.user_id
+    if assignment.user_id is not None and assignment.user_id != current_user.id:
+        db.add(Notification(
+            user_id=assignment.user_id,
+            kind="case_assigned",
+            title=f"Case #{case.id} assigned to you",
+            body=case.title,
+            link=f"/app/cases/{case.id}",
+        ))
     await db.commit()
     assignee_email = None
     if case.assigned_to_id is not None:
