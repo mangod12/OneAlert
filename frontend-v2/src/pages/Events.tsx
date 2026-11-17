@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/client';
-import { Activity, Radio, Upload } from 'lucide-react';
+import { Activity, Download, Radio, Upload } from 'lucide-react';
 import clsx from 'clsx';
 import { getApiErrorMessage } from '../api/errors';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -67,6 +67,31 @@ export function Events() {
   const [errors, setErrors] = useState<string[]>([]);
   const [sources, setSources] = useState<EventSource[]>([]);
   const [showUpload, setShowUpload] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const exportCsv = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const params: Record<string, string> = {};
+      if (severityFilter) params.severity = severityFilter;
+      if (eventTypeFilter) params.event_type = eventTypeFilter;
+      if (sourceTypeFilter) params.source_type = sourceTypeFilter;
+      if (ipSearch.trim()) params.ip = ipSearch.trim();
+      if (signatureSearch.trim()) params.signature = signatureSearch.trim();
+      const res = await apiClient.get('/events/export', { params, responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'events.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'The export could not be downloaded.'), 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
   const [escalateEvent, setEscalateEvent] = useState<SecurityEvent | null>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -257,6 +282,15 @@ export function Events() {
           <option value="severity_asc">Lowest severity</option>
         </select>
       </div>
+      <button
+        type="button"
+        onClick={() => { void exportCsv(); }}
+        disabled={exporting}
+        className="ml-auto flex items-center gap-2 px-3 py-1.5 bg-surface-800 hover:bg-surface-700 border border-surface-700 rounded text-xs text-surface-200 transition-colors disabled:opacity-50"
+      >
+        <Download className="w-3.5 h-3.5" aria-hidden="true" />
+        {exporting ? 'Exporting...' : 'Export CSV'}
+      </button>
       </div>
 
       {/* Event Table */}

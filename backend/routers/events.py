@@ -1,9 +1,12 @@
 """Security events router — ingest, upload, list, and manage event sources."""
 
+import csv
+import io
 import json
 import logging
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import case as sql_case
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -194,6 +197,71 @@ async def list_events(
     events = result.scalars().all()
 
     return EventListResponse(events=events, total=total, page=page, size=size)
+
+
+@router.get("/export")
+async def export_events(
+    severity: str | None = Query(None),
+    event_type: str | None = Query(None),
+    source_ip: str | None = Query(None),
+    dest_ip: str | None = Query(None),
+    source_type: str | None = Query(None),
+    ip: str | None = Query(None, description="Substring match against source or destination IP"),
+    signature: str | None = Query(None, description="Substring match against the event signature"),
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Export the filtered event list as CSV (same filters as the list, max 10000 rows)."""
+    query = select(SecurityEvent).where(SecurityEvent.user_id == current_user.id)
+
+    if severity:
+        query = query.filter(SecurityEvent.severity == severity)
+    if event_type:
+        query = query.filter(SecurityEvent.event_type == event_type)
+    if source_ip:
+        query = query.filter(SecurityEvent.source_ip == source_ip)
+    if dest_ip:
+        query = query.filter(SecurityEvent.dest_ip == dest_ip)
+    if source_type:
+        query = query.filter(SecurityEvent.source_type == source_type)
+    if ip:
+        query = query.filter(or_(
+            SecurityEvent.source_ip.ilike(f"%{ip}%"),
+            SecurityEvent.dest_ip.ilike(f"%{ip}%"),
+        ))
+    if signature:
+        query = query.filter(SecurityEvent.signature.ilike(f"%{signature}%"))
+
+    query = query.order_by(SecurityEvent.timestamp.desc()).limit(10000)
+    rows = (await db.execute(query)).scalars().all()
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([
+        "id", "timestamp", "event_type", "severity", "signature", "category",
+        "source_ip", "source_port", "dest_ip", "dest_port", "protocol", "action",
+    ])
+    for event in rows:
+        writer.writerow([
+            event.id,
+            event.timestamp.isoformat() if event.timestamp else "",
+            event.event_type,
+            event.severity,
+            event.signature or "",
+            event.category or "",
+            event.source_ip or "",
+            event.source_port if event.source_port is not None else "",
+            event.dest_ip or "",
+            event.dest_port if event.dest_port is not None else "",
+            event.protocol or "",
+            event.action or "",
+        ])
+    buffer.seek(0)
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=events.csv"},
+    )
 
 
 @router.get("/sources", response_model=list[EventSourceResponse])
