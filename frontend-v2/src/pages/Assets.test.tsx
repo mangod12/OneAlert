@@ -62,7 +62,7 @@ describe('Assets page', () => {
     fireEvent.click(dialog.getByRole('button', { name: 'Delete asset' }));
     await waitFor(() => {
       expect(remove).toHaveBeenCalledWith('/assets/7');
-      expect(get).toHaveBeenCalledTimes(2);
+      expect(get.mock.calls.filter(([url]) => url === '/assets/').length).toBe(2);
       expect(screen.queryByRole('dialog')).toBeNull();
     });
   });
@@ -79,5 +79,39 @@ describe('Assets page', () => {
       expect(put).toHaveBeenCalledWith('/assets/7', expect.objectContaining({ name: 'Updated gateway' }));
       expect(screen.queryByRole('dialog')).toBeNull();
     });
+  });
+});
+
+describe('Asset type options', () => {
+  it('loads the valid types from the API instead of the stale hardcoded list', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/assets/types/') return { data: ['hardware', 'software', 'firmware', 'operating_system', 'plc', 'hmi', 'rtu', 'ied', 'scada_server', 'historian'] };
+      return { data: { assets: [asset], total: 1 } };
+    });
+    render(<Assets />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Plant gateway' }));
+    const dialog = within(screen.getByRole('dialog'));
+    const select = await dialog.findByLabelText('Asset type');
+    const options = Array.from((select as HTMLSelectElement).options).map(o => o.value);
+    expect(options).toEqual(['hardware', 'software', 'firmware', 'operating_system', 'plc', 'hmi', 'rtu', 'ied', 'scada_server', 'historian']);
+    expect(options).not.toContain('scada');
+    expect(options).not.toContain('other_ot');
+    expect(dialog.getByText('SCADA Server')).toBeTruthy();
+    expect(dialog.getByText('Operating System')).toBeTruthy();
+    expect(dialog.getByText('IED')).toBeTruthy();
+  });
+
+  it('keeps a valid fallback list when the types endpoint fails', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/assets/types/') throw new Error('down');
+      return { data: { assets: [asset], total: 1 } };
+    });
+    render(<Assets />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Plant gateway' }));
+    const dialog = within(screen.getByRole('dialog'));
+    const select = dialog.getByLabelText('Asset type');
+    const options = Array.from((select as HTMLSelectElement).options).map(o => o.value);
+    expect(options).toContain('scada_server');
+    expect(options).not.toContain('scada');
   });
 });

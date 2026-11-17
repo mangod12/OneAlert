@@ -11,6 +11,12 @@ import { useDialogFocus } from '../components/ui/useDialogFocus';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { toast } from '../components/Toast';
 
+const FALLBACK_ASSET_TYPES = ['hardware', 'software', 'firmware', 'operating_system', 'plc', 'hmi', 'rtu', 'ied', 'scada_server', 'historian'];
+const ACRONYMS = new Set(['plc', 'hmi', 'rtu', 'ied', 'scada']);
+function assetTypeLabel(value: string): string {
+  return value.split('_').map(word => ACRONYMS.has(word) ? word.toUpperCase() : word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+}
+
 export function Assets() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [total, setTotal] = useState(0);
@@ -40,9 +46,19 @@ export function Assets() {
     }
   }, [page, search]);
 
+  const [assetTypes, setAssetTypes] = useState<string[]>(FALLBACK_ASSET_TYPES);
+
   useEffect(() => {
     fetchAssets();
   }, [fetchAssets]);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient.get<string[]>('/assets/types/').then(res => {
+      if (!cancelled && Array.isArray(res.data) && res.data.length > 0) setAssetTypes(res.data);
+    }).catch(() => { /* keep the fallback list */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const requestDelete = (asset: Asset) => {
     if (!deletingIds.has(asset.id)) setPendingDelete(asset);
@@ -172,6 +188,7 @@ export function Assets() {
       {showModal && (
         <AssetModal
           asset={editAsset}
+          assetTypes={assetTypes}
           onClose={() => { setShowModal(false); setEditAsset(null); }}
           onSave={handleSave}
           saving={saving}
@@ -181,7 +198,7 @@ export function Assets() {
   );
 }
 
-function AssetModal({ asset, onClose, onSave, saving }: { asset: Asset | null; onClose: () => void; onSave: (data: AssetCreate) => void; saving: boolean }) {
+function AssetModal({ asset, assetTypes, onClose, onSave, saving }: { asset: Asset | null; assetTypes: string[]; onClose: () => void; onSave: (data: AssetCreate) => void; saving: boolean }) {
   const [form, setForm] = useState<AssetCreate>({
     name: asset?.name || '',
     asset_type: asset?.asset_type || 'hardware',
@@ -234,19 +251,14 @@ function AssetModal({ asset, onClose, onSave, saving }: { asset: Asset | null; o
             className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
           <select
+            aria-label="Asset type"
             value={form.asset_type}
             onChange={(e) => setForm({ ...form, asset_type: e.target.value })}
             className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
-            <option value="hardware">Hardware</option>
-            <option value="software">Software</option>
-            <option value="firmware">Firmware</option>
-            <option value="plc">PLC</option>
-            <option value="hmi">HMI</option>
-            <option value="scada">SCADA</option>
-            <option value="rtu">RTU</option>
-            <option value="network_device">Network Device</option>
-            <option value="other_ot">Other OT</option>
+            {assetTypes.map(type => (
+              <option key={type} value={type}>{assetTypeLabel(type)}</option>
+            ))}
           </select>
           <select
             value={form.criticality || 'medium'}
