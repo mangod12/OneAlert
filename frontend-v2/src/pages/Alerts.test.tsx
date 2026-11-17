@@ -64,6 +64,7 @@ describe('Alerts page', () => {
     let alertCalls = 0;
     mockGet.mockImplementation(async (url: string) => {
       if (url === '/assets/') return { data: { assets: [], total: 0 } };
+      if (url === '/alerts/epss-batch') return { data: { scores: {} } };
       alertCalls += 1;
       if (alertCalls === 1) throw { isAxiosError: true, response: { status: 500, data: {} } };
       return listResponse([makeAlert()]);
@@ -227,5 +228,30 @@ describe('Alerts CSV export', () => {
     fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/alerts/export', { params: { assigned: 'me' }, responseType: 'blob' }));
     await waitFor(() => expect(clicks).toContain('alerts.csv'));
+  });
+});
+
+describe('EPSS badges', () => {
+  it('shows the exploit probability under the CVE when EPSS data arrives', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/alerts/epss-batch') return Promise.resolve({ data: { scores: { 'CVE-2026-0001': { score: 0.97, percentile: 0.99 } } } });
+      if (url === '/assets/') return Promise.resolve({ data: { assets: [] } });
+      return Promise.resolve(listResponse([makeAlert()]));
+    });
+    render(<Alerts />);
+    expect(await screen.findByText('EPSS 97%')).toBeTruthy();
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/alerts/epss-batch', { params: { cve_ids: 'CVE-2026-0001' } }));
+  });
+
+  it('renders the list without badges when the EPSS lookup fails', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/alerts/epss-batch') return Promise.reject(new Error('upstream down'));
+      if (url === '/assets/') return Promise.resolve({ data: { assets: [] } });
+      return Promise.resolve(listResponse([makeAlert()]));
+    });
+    render(<Alerts />);
+    expect(await screen.findByText('CVE-2026-0001')).toBeTruthy();
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/alerts/epss-batch', { params: { cve_ids: 'CVE-2026-0001' } }));
+    expect(screen.queryByText(/EPSS/)).toBeNull();
   });
 });

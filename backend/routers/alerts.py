@@ -200,6 +200,33 @@ async def export_alerts(
     )
 
 
+@router.get("/epss-batch")
+async def get_epss_batch(
+    cve_ids: str = Query(..., description="Comma-separated CVE IDs (max 100, deduplicated)"),
+    current_user: User = Depends(get_active_user),
+):
+    """Batch EPSS exploit-probability lookup for alert triage views.
+
+    EPSS data is public (FIRST.org); no alert records are exposed here.
+    """
+    from backend.services.epss_service import get_epss_scores
+
+    ids: list[str] = []
+    seen: set[str] = set()
+    for raw in cve_ids.split(","):
+        cve = raw.strip()
+        if cve and cve not in seen:
+            seen.add(cve)
+            ids.append(cve)
+    if not ids:
+        raise HTTPException(status_code=422, detail="No CVE IDs provided")
+    if len(ids) > 100:
+        raise HTTPException(status_code=422, detail="At most 100 CVE IDs per request")
+
+    scores = await get_epss_scores(ids)
+    return {"scores": scores}
+
+
 @router.get("/{alert_id}", response_model=AlertRead) # Use AlertRead as the response_model
 async def get_alert(
     alert_id: int,
