@@ -310,6 +310,8 @@ export function Alerts() {
           <option value="created_at_asc">Oldest first</option>
           <option value="cvss_desc">Highest CVSS</option>
           <option value="cvss_asc">Lowest CVSS</option>
+          <option value="severity_desc">Highest severity</option>
+          <option value="severity_asc">Lowest severity</option>
         </select>
         <button
           type="button"

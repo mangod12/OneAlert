@@ -273,6 +273,19 @@ describe('EPSS badges', () => {
   });
 });
 
+describe('Severity sort', () => {
+  it('sends severity_desc when Highest severity is selected', async () => {
+    render(<Alerts />);
+    await screen.findByRole('combobox', { name: 'Filter by status' });
+    fireEvent.change(screen.getByRole('combobox', { name: /sort alerts/i }), { target: { value: 'severity_desc' } });
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith('/alerts/', {
+        params: { page: 1, size: 15, sort: 'severity_desc' },
+      });
+    });
+  });
+});
+
 describe('KEV badges', () => {
   it('marks CVEs listed in the CISA KEV catalog', async () => {
     mockGet.mockImplementation((url: string) => {
