@@ -22,6 +22,8 @@ interface CaseItem {
   created_at: string;
   alert_count: number;
   event_count: number;
+  assigned_to_id: number | null;
+  assigned_to_email: string | null;
 }
 
 interface CaseSearchResult {
@@ -347,6 +349,7 @@ export function Cases() {
                     )}
                     <span>{new Date(c.created_at).toLocaleDateString()}</span>
                     <span className="capitalize">{c.created_by}</span>
+                    {c.assigned_to_email && <span>Assigned to {c.assigned_to_email}</span>}
                   </div>
                 </div>
                 <ChevronRight className="w-5 h-5 text-surface-600 group-hover:text-primary-400 transition-colors mt-1" />
