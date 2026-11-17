@@ -3,10 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { Sbom } from './Sbom';
 
-vi.mock('../api/client', () => ({ default: { get: vi.fn(), delete: vi.fn() } }));
+vi.mock('../api/client', () => ({ default: { get: vi.fn(), delete: vi.fn(), post: vi.fn() } }));
 
 const get = vi.mocked(apiClient.get);
 const del = vi.mocked(apiClient.delete);
+const post = vi.mocked(apiClient.post);
 
 const sboms = [
   { id: 1, asset_id: 7, format: 'CycloneDX', version: '1.5', source: 'upload', component_count: 2, vulnerability_count: 1, created_at: '2026-11-15T08:00:00Z' },
@@ -26,6 +27,7 @@ beforeEach(() => {
     throw new Error(`unexpected ${url}`);
   });
   del.mockResolvedValue({ data: {} });
+  post.mockResolvedValue({ data: {} });
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -52,5 +54,42 @@ describe('SBOM page', () => {
     const dialog = within(await screen.findByRole('dialog'));
     fireEvent.click(dialog.getByRole('button', { name: 'Delete SBOM' }));
     await waitFor(() => expect(del).toHaveBeenCalledWith('/sbom/1'));
+  });
+});
+describe('SBOM upload', () => {
+  it('uploads a pasted CycloneDX document for the selected asset', async () => {
+    render(<Sbom />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Upload SBOM' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    fireEvent.change(dialog.getByLabelText('Asset'), { target: { value: '7' } });
+    fireEvent.change(dialog.getByLabelText('SBOM JSON document'), { target: { value: '{"bomFormat": "CycloneDX", "specVersion": "1.5", "components": []}' } });
+    fireEvent.click(dialog.getByRole('button', { name: 'Upload' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/sbom/upload', {
+      asset_id: 7,
+      sbom_data: { bomFormat: 'CycloneDX', specVersion: '1.5', components: [] },
+      source: 'upload',
+    }));
+  });
+
+  it('rejects JSON without a CycloneDX or SPDX marker', async () => {
+    render(<Sbom />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Upload SBOM' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    fireEvent.change(dialog.getByLabelText('Asset'), { target: { value: '7' } });
+    fireEvent.change(dialog.getByLabelText('SBOM JSON document'), { target: { value: '{"foo": 1}' } });
+    fireEvent.click(dialog.getByRole('button', { name: 'Upload' }));
+    expect(await dialog.findByRole('alert')).toBeTruthy();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed JSON', async () => {
+    render(<Sbom />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Upload SBOM' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    fireEvent.change(dialog.getByLabelText('Asset'), { target: { value: '7' } });
+    fireEvent.change(dialog.getByLabelText('SBOM JSON document'), { target: { value: 'not json' } });
+    fireEvent.click(dialog.getByRole('button', { name: 'Upload' }));
+    expect(await dialog.findByRole('alert')).toBeTruthy();
+    expect(post).not.toHaveBeenCalled();
   });
 });
