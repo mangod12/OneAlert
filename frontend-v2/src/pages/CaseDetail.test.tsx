@@ -475,3 +475,33 @@ describe('Deleting timeline notes', () => {
     expect(screen.getByText('Note to remove')).toBeTruthy();
   });
 });
+
+describe('Timeline CSV export', () => {
+  it('downloads the timeline CSV', async () => {
+    URL.createObjectURL = vi.fn(() => 'blob:timeline');
+    URL.revokeObjectURL = vi.fn();
+    const clicks: string[] = [];
+    const origCreate = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string, options?: ElementCreationOptions) => {
+      const el = origCreate(tag, options);
+      if (tag === 'a') {
+        Object.defineProperty(el, 'download', { set: (v: string) => clicks.push(v), configurable: true });
+        el.click = () => clicks.push('clicked');
+      }
+      return el;
+    });
+    mockLoad();
+    mockGet.mockImplementation(url => {
+      if (url === '/cases/7/export') return Promise.resolve({ data: new Blob(['case_id\n7']) });
+      if (url.endsWith('/alerts')) return Promise.resolve({ data: [] });
+      if (url.endsWith('/events')) return Promise.resolve({ data: [] });
+      if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: blastRadius } });
+      if (url.endsWith('/similar')) return Promise.resolve({ data: { success: true, data: similarCases } });
+      return Promise.resolve({ data: { ...caseData } });
+    });
+    renderDetail();
+    fireEvent.click(await screen.findByRole('button', { name: /export csv/i }));
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/7/export', { responseType: 'blob' }));
+    await waitFor(() => expect(clicks).toContain('case-7-timeline.csv'));
+  });
+});
