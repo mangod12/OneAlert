@@ -86,6 +86,9 @@ export function CaseDetail() {
   const [similarCases, setSimilarCases] = useState<SimilarCase[]>([]);
   const [noteText, setNoteText] = useState('');
   const [addingNote, setAddingNote] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [editNoteText, setEditNoteText] = useState('');
+  const [savingNoteEdit, setSavingNoteEdit] = useState(false);
   const [showLinkAlert, setShowLinkAlert] = useState(false);
   const [alertOptions, setAlertOptions] = useState<RelatedAlert[]>([]);
   const [linkingAlert, setLinkingAlert] = useState(false);
@@ -212,6 +215,24 @@ export function CaseDetail() {
       await fetchAll();
     } catch (err) { toast(getApiErrorMessage(err, 'The note could not be added.'), 'error'); }
     finally { setAddingNote(false); }
+  };
+
+  const startNoteEdit = (entry: TimelineEntry) => {
+    setEditingNoteId(entry.id);
+    setEditNoteText(entry.content);
+  };
+
+  const saveNoteEdit = async () => {
+    const content = editNoteText.trim();
+    if (!content || editingNoteId === null || savingNoteEdit) return;
+    setSavingNoteEdit(true);
+    try {
+      await apiClient.patch(`/cases/${caseId}/notes/${editingNoteId}`, { content });
+      setEditingNoteId(null);
+      toast('Note updated.', 'success');
+      await fetchAll();
+    } catch (err) { toast(getApiErrorMessage(err, 'The note could not be updated.'), 'error'); }
+    finally { setSavingNoteEdit(false); }
   };
 
   const fetchAll = useCallback(async () => {
@@ -465,8 +486,49 @@ export function CaseDetail() {
                           <span className="text-xs text-surface-500">{new Date(entry.timestamp).toLocaleString()}</span>
                           <span className="text-xs px-1.5 py-0.5 rounded bg-surface-700 text-surface-400">{entry.entry_type}</span>
                           <span className="text-xs text-surface-600">{entry.source}</span>
+                          {entry.metadata_json?.edited ? <span className="text-xs text-surface-600">(edited)</span> : null}
+                          {entry.entry_type === 'note' && editingNoteId !== entry.id && (
+                            <button
+                              type="button"
+                              aria-label="Edit note"
+                              onClick={() => startNoteEdit(entry)}
+                              className="ml-auto text-surface-500 hover:text-primary-400"
+                            >
+                              <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                            </button>
+                          )}
                         </div>
-                        <p className="text-surface-300 text-sm">{entry.content}</p>
+                        {editingNoteId === entry.id ? (
+                          <div className="flex items-start gap-2">
+                            <label htmlFor={`edit-note-${entry.id}`} className="sr-only">Edit note</label>
+                            <textarea
+                              id={`edit-note-${entry.id}`}
+                              rows={2}
+                              value={editNoteText}
+                              onChange={e => setEditNoteText(e.target.value)}
+                              className="min-w-0 flex-1 rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100"
+                            />
+                            <div className="flex gap-1.5">
+                              <button
+                                type="button"
+                                disabled={savingNoteEdit || !editNoteText.trim()}
+                                onClick={() => void saveNoteEdit()}
+                                className="min-h-8 rounded-md bg-primary-500 px-2.5 text-xs font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50"
+                              >
+                                {savingNoteEdit ? 'Saving…' : 'Save'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingNoteId(null)}
+                                className="min-h-8 rounded-md border border-surface-600 px-2.5 text-xs text-surface-300 hover:bg-surface-800"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-surface-300 text-sm">{entry.content}</p>
+                        )}
                       </div>
                     </div>
                   );

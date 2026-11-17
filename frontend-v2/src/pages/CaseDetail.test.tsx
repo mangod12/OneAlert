@@ -46,6 +46,16 @@ function mockLoad(status = 'open') {
   });
 }
 
+function mockLoadWithTimeline(timeline: Array<Record<string, unknown>>) {
+  mockGet.mockImplementation(url => {
+    if (url.endsWith('/alerts')) return Promise.resolve({ data: [] });
+    if (url.endsWith('/events')) return Promise.resolve({ data: [] });
+    if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: blastRadius } });
+    if (url.endsWith('/similar')) return Promise.resolve({ data: { success: true, data: similarCases } });
+    return Promise.resolve({ data: { ...caseData, timeline } });
+  });
+}
+
 const blastRadius = {
   case_id: 7,
   nodes: [
@@ -170,6 +180,45 @@ describe('Timeline notes', () => {
     expect(button.disabled).toBe(true);
     fireEvent.change(screen.getByLabelText('Add a timeline note'), { target: { value: 'Checking pcap' } });
     expect(button.disabled).toBe(false);
+  });
+});
+
+describe('Editing timeline notes', () => {
+  const noteEntry = { id: 21, entry_type: 'note', content: 'Original note', source: 'human', timestamp: '2026-11-17T09:00:00Z', metadata_json: null };
+  const actionEntry = { id: 22, entry_type: 'action', content: 'Containment ran', source: 'agent', timestamp: '2026-11-17T09:05:00Z', metadata_json: null };
+
+  it('offers edit only on note entries and patches the note on save', async () => {
+    mockLoadWithTimeline([noteEntry, actionEntry]);
+    mockPatch.mockResolvedValue({ data: { ...noteEntry, content: 'Rewritten note' } });
+    renderDetail();
+    await screen.findByText('Original note');
+    expect(screen.getAllByRole('button', { name: 'Edit note' }).length).toBe(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit note' }));
+    const box = screen.getByLabelText('Edit note') as HTMLTextAreaElement;
+    expect(box.value).toBe('Original note');
+    fireEvent.change(box, { target: { value: 'Rewritten note' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/notes/21', { content: 'Rewritten note' }));
+    await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2));
+  });
+
+  it('cancel leaves the note untouched', async () => {
+    mockLoadWithTimeline([noteEntry]);
+    renderDetail();
+    await screen.findByText('Original note');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit note' }));
+    fireEvent.change(screen.getByLabelText('Edit note'), { target: { value: 'Changed but cancelled' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByText('Original note')).toBeTruthy();
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it('marks edited notes with an (edited) badge', async () => {
+    mockLoadWithTimeline([{ ...noteEntry, content: 'Fixed later', metadata_json: { edited: true } }]);
+    renderDetail();
+    await screen.findByText('Fixed later');
+    expect(screen.getByText('(edited)')).toBeTruthy();
   });
 });
 
