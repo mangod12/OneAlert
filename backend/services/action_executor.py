@@ -76,7 +76,7 @@ async def execute_response_plan(db: AsyncSession, plan: ResponsePlan) -> dict:
     plan.status = "completed" if failed == 0 else "partial"
     # Store execution results back into actions
     updated_actions = []
-    for action, result in zip(sorted_actions, results):
+    for action, result in zip(sorted_actions, results, strict=True):
         action["execution_result"] = result
         updated_actions.append(action)
     plan.actions = updated_actions

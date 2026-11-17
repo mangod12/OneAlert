@@ -6,8 +6,24 @@ line-length = 120
 
 [tool.ruff.lint]
 # Intentional rule set for CI. Notable exclusions:
-# - B/BLE: FastAPI Depends() defaults trip B008; blind-except needs case-by-case review.
-select = ["E", "F", "W", "I", "UP", "SIM", "PIE", "RUF", "PERF", "DTZ"]
+# - BLE001: blind `except Exception` sites need case-by-case narrowing, not a bulk rewrite.
+select = ["E", "F", "W", "I", "UP", "SIM", "PIE", "RUF", "PERF", "DTZ", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection markers are designed to be used as argument defaults;
+# they are evaluated per-request, so the usual mutable-default concern does not apply.
+extend-immutable-calls = [
+    "backend.dependencies.user_dependencies.require_role",
+    "fastapi.Body",
+    "fastapi.Cookie",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+    "fastapi.Security",
+]
 
 [tool.ruff.lint.per-file-ignores]
 # Pydantic v2 deep-copies mutable field defaults per instance; RUF012 is a false positive there.

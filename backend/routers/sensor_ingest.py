@@ -156,12 +156,12 @@ async def ingest_sensor_batch(
 
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
         logger.exception("Sensor ingestion failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to ingest sensor batch"
-        )
+        ) from e
 
 
 @router.post("/ingest/single")
@@ -184,12 +184,12 @@ async def ingest_single_device(
             "action": result.get("status")
         }
 
-    except Exception:
+    except Exception as e:
         logger.exception("Single device ingestion failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to ingest device"
-        )
+        ) from e
 
 
 # ============================================================================

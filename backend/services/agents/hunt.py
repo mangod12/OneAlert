@@ -152,7 +152,7 @@ class HuntAgent(BaseAgent):
         query = self._build_safe_query(sql, params or {})
         result = await self.db.execute(query)
         columns = result.keys()
-        return [dict(zip(columns, row)) for row in result.fetchall()]
+        return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
 
     def _build_safe_query(self, sql: str, params: dict) -> object:
         """Build a constrained SQLAlchemy query from validated hunt SQL."""

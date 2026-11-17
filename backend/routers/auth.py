@@ -223,12 +223,12 @@ async def github_login():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
-        )
+        ) from e
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate GitHub auth URL: {e!s}"
-        )
+        ) from e
 
 
 @router.get("/github/callback")
@@ -268,7 +268,7 @@ async def github_callback(code: str, state: str | None = None):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"GitHub callback failed: {e!s}"
-        )
+        ) from e
 
 
 class WebhookIntegrationsUpdate(BaseModel):
