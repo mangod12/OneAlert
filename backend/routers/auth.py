@@ -3,6 +3,7 @@ Authentication router for user registration, login, and JWT token management.
 Handles user authentication, password hashing, and JWT token creation/validation.
 """
 
+import logging
 import secrets
 import time
 from datetime import timedelta
@@ -20,6 +21,8 @@ from backend.models.audit_log import AuditLog
 from backend.models.user import Token, User, UserCreate, UserResponse
 from backend.services.auth_service import create_access_token, get_password_hash, verify_password, verify_token
 from backend.services.github_auth_service import github_auth_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
@@ -220,14 +223,16 @@ async def github_login():
         auth_url = github_auth_service.get_authorization_url(oauth_state)
         return {"auth_url": auth_url}
     except ValueError as e:
+        logger.error("GitHub OAuth is misconfigured: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="GitHub sign-in is not configured correctly",
         ) from e
     except Exception as e:
+        logger.error("Failed to generate GitHub auth URL: %s", type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate GitHub auth URL: {e!s}"
+            detail="GitHub sign-in could not be started",
         ) from e
 
 
@@ -262,12 +267,13 @@ async def github_callback(code: str, state: str | None = None):
             )
             return response
         return RedirectResponse(url="/app/?github_error=1")
-    except HTTPException as e:
-        raise e
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error("GitHub callback failed: %s", type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"GitHub callback failed: {e!s}"
+            detail="GitHub sign-in could not be completed",
         ) from e
 
 
