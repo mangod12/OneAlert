@@ -5,12 +5,14 @@ import { Events } from './Events';
 vi.mock('../api/client', () => ({
   default: {
     get: vi.fn(),
+    post: vi.fn(),
   },
 }));
 
 import apiClient from '../api/client';
 
 const mockGet = vi.mocked(apiClient.get);
+const mockPost = vi.mocked(apiClient.post);
 
 interface SecurityEvent {
   id: number;
@@ -117,5 +119,46 @@ describe('Events page', () => {
     render(<Events />);
     expect(await screen.findByText('ET SCAN SSH brute force')).toBeTruthy();
     expect(screen.getByText('Some live data is unavailable')).toBeTruthy();
+  });
+});
+
+describe('Event upload', () => {
+  function mockStream() {
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/events/') return { data: { events: [], total: 0 } };
+      if (url === '/events/stats') return { data: { data: { total_events: 0, by_severity: {}, by_type: {}, source_count: 0 } } };
+      throw new Error(`unexpected ${url}`);
+    });
+  }
+
+  it('uploads the chosen file as multipart with the source type and refreshes', async () => {
+    mockStream();
+    mockPost.mockResolvedValue({ data: { success: true, data: { ingested: 42, skipped: 1, redacted: 0, source_id: 3 } } });
+    render(<Events />);
+    await screen.findByText(/No events ingested yet/);
+    fireEvent.click(screen.getByRole('button', { name: /upload events/i }));
+    const file = new File(['{"event_type":"alert"}\n'], 'eve.json', { type: 'application/json' });
+    fireEvent.change(screen.getByLabelText('Log file'), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText('Source type'), { target: { value: 'zeek' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+    const [url, body, config] = mockPost.mock.calls[0];
+    expect(url).toBe('/events/upload');
+    expect(body).toBeInstanceOf(FormData);
+    expect((body as FormData).get('file')).toBe(file);
+    expect(config).toMatchObject({ params: { source_type: 'zeek' } });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(mockGet.mock.calls.filter(([u]) => u === '/events/').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('keeps the dialog open and posts nothing without a file', async () => {
+    mockStream();
+    render(<Events />);
+    await screen.findByText(/No events ingested yet/);
+    fireEvent.click(screen.getByRole('button', { name: /upload events/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
+    expect(await screen.findByText('Choose a file to upload.')).toBeTruthy();
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeTruthy();
   });
 });
