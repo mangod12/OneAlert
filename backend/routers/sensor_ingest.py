@@ -14,7 +14,7 @@ Typical workflow:
 """
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -138,7 +138,7 @@ async def ingest_sensor_batch(
                 skipped_count += 1
 
         # Update sensor heartbeat
-        sensor.last_heartbeat = datetime.utcnow()
+        sensor.last_heartbeat = datetime.now(UTC).replace(tzinfo=None)
         sensor.last_discovery_count = len(ingestion.devices)
         await db.commit()
 
@@ -239,7 +239,7 @@ async def _process_ingested_device(
 
     if existing_device:
         # UPDATE existing device
-        existing_device.last_seen = datetime.utcnow()
+        existing_device.last_seen = datetime.now(UTC).replace(tzinfo=None)
         existing_device.hostname = hostname or existing_device.hostname
         existing_device.risk_score = risk_score
         existing_device.risk_factors = risk_factors

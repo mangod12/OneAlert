@@ -20,7 +20,7 @@ Scoring designed for industrial environments where:
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import ClassVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -198,7 +198,7 @@ class OTRiskScorer:
             score *= 0.8  # Reduce for moderate CVSS
 
         # Exploit age penalty (unpatched > 30 days = higher risk)
-        old_count = len([a for a in alerts if a.created_at < datetime.utcnow() - timedelta(days=30)])
+        old_count = len([a for a in alerts if a.created_at < datetime.now(UTC).replace(tzinfo=None) - timedelta(days=30)])
         score += old_count * 10  # Each unpatched 30+ days = +10 points
 
         # Cap at 100

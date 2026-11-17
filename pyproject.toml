@@ -6,8 +6,7 @@ line-length = 120
 # Intentional rule set for CI. Notable exclusions:
 # - E501: long lines (URLs, log strings) are handled in a dedicated pass.
 # - B/BLE: FastAPI Depends() defaults trip B008; blind-except needs case-by-case review.
-# - DTZ: datetime.utcnow() cleanup is a dedicated PR (naive/aware consistency).
-select = ["E", "F", "W", "I", "UP", "SIM", "PIE", "RUF", "PERF"]
+select = ["E", "F", "W", "I", "UP", "SIM", "PIE", "RUF", "PERF", "DTZ"]
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]

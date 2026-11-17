@@ -4,7 +4,7 @@ Handles email composition and delivery for security alerts.
 """
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 import requests
 from requests.adapters import HTTPAdapter, Retry
@@ -151,7 +151,7 @@ class EmailService:
                     <li>Monitor vendor advisories for additional information</li>
                 </ul>
 
-                <p><em>This alert was generated on {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC</em></p>
+                <p><em>This alert was generated on {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')} UTC</em></p>
             </div>
 
             <div class="footer">
@@ -193,7 +193,7 @@ RECOMMENDED ACTIONS:
 
 For full details, visit: {cve_data.get('source_url', 'N/A')}
 
-This alert was generated on {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC
+This alert was generated on {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')} UTC
 
 ---
 This alert was sent by {settings.app_name}.
@@ -275,7 +275,7 @@ This alert was sent by {settings.app_name}.
 
                 <a href="{advisory_data.get('source_url', '#')}" class="cta-button">View Advisory</a>
 
-                <p><em>This alert was generated on {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC</em></p>
+                <p><em>This alert was generated on {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')} UTC</em></p>
             </div>
 
             <div class="footer">
@@ -313,7 +313,7 @@ DESCRIPTION:
 
 For full details, visit: {advisory_data.get('source_url', 'N/A')}
 
-This alert was generated on {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC
+This alert was generated on {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')} UTC
 
 ---
 This alert was sent by {settings.app_name}.

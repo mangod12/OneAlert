@@ -4,7 +4,7 @@ Uses APScheduler to run vulnerability scanning tasks at regular intervals.
 """
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.jobstores.memory import MemoryJobStore
@@ -77,11 +77,11 @@ class VulnerabilityScheduler:
         """Run the main vulnerability checking process."""
         try:
             logger.info("Starting scheduled vulnerability check...")
-            start_time = datetime.utcnow()
+            start_time = datetime.now(UTC)
 
             await alert_checker.check_new_vulnerabilities()
 
-            end_time = datetime.utcnow()
+            end_time = datetime.now(UTC)
             duration = (end_time - start_time).total_seconds()
 
             logger.info(f"Vulnerability check completed in {duration:.2f} seconds")
