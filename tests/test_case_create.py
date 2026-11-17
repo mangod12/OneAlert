@@ -1,0 +1,141 @@
+"""
+Tests for manual investigation creation (POST /api/v1/cases/).
+"""
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import sessionmaker
+
+from backend.database.db import Base, get_async_db, get_db
+from backend.main import app
+
+SQLALCHEMY_DATABASE_URL = "sqlite:///./test_case_create.db"
+_engine = create_engine(
+    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+)
+_TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
+
+ASYNC_SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///./test_case_create.db"
+_async_engine_test = create_async_engine(
+    ASYNC_SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+)
+_AsyncTestingSessionLocal = async_sessionmaker(
+    bind=_async_engine_test, class_=AsyncSession, expire_on_commit=False
+)
+
+
+def _override_get_db():
+    try:
+        db = _TestingSessionLocal()
+        yield db
+    finally:
+        db.close()
+
+
+async def _override_get_async_db():
+    async with _AsyncTestingSessionLocal() as session:
+        yield session
+
+
+@pytest.fixture(scope="function")
+def client():
+    """Create a test client with fresh database tables."""
+    app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_async_db] = _override_get_async_db
+
+    Base.metadata.drop_all(bind=_engine)
+    Base.metadata.create_all(bind=_engine)
+    with TestClient(app) as test_client:
+        yield test_client
+    Base.metadata.drop_all(bind=_engine)
+
+
+def register_and_login(client: TestClient, email: str, password: str = "securepass123"):
+    """Register a user and return auth headers."""
+    reg = client.post("/api/v1/auth/register", json={
+        "email": email,
+        "password": password,
+        "full_name": f"User {email.split('@')[0]}",
+        "company": "TestCorp",
+    })
+    assert reg.status_code == 201, f"Registration failed: {reg.text}"
+    login = client.post("/api/v1/auth/login", data={
+        "username": email,
+        "password": password,
+    })
+    assert login.status_code == 200, f"Login failed: {login.text}"
+    token = login.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+class TestManualCaseCreation:
+    """Tests for POST /api/v1/cases/"""
+
+    def test_create_case(self, client):
+        """A manually opened case is attributed to a human and starts open."""
+        headers = register_and_login(client, "analyst@example.com")
+        resp = client.post("/api/v1/cases/", json={
+            "title": "Suspicious USB activity on floor 3",
+            "summary": "Multiple hosts reported new removable media.",
+            "severity": "high",
+        }, headers=headers)
+
+        assert resp.status_code == 201, resp.text
+        data = resp.json()
+        assert data["title"] == "Suspicious USB activity on floor 3"
+        assert data["summary"] == "Multiple hosts reported new removable media."
+        assert data["severity"] == "high"
+        assert data["status"] == "open"
+        assert data["created_by"] == "human"
+        assert data["alert_count"] == 0
+        assert data["event_count"] == 0
+
+        listing = client.get("/api/v1/cases/", headers=headers)
+        assert listing.status_code == 200
+        assert listing.json()["total"] == 1
+        assert listing.json()["cases"][0]["title"] == "Suspicious USB activity on floor 3"
+
+    def test_create_case_records_a_timeline_note(self, client):
+        """Opening a case manually leaves an attribution note on its timeline."""
+        headers = register_and_login(client, "analyst@example.com")
+        created = client.post("/api/v1/cases/", json={
+            "title": "Odd VPN logins",
+        }, headers=headers)
+        assert created.status_code == 201, created.text
+        case_id = created.json()["id"]
+
+        detail = client.get(f"/api/v1/cases/{case_id}", headers=headers)
+        assert detail.status_code == 200, detail.text
+        notes = [e for e in detail.json()["timeline"] if e["entry_type"] == "note"]
+        assert any("analyst@example.com" in e["content"] for e in notes)
+
+    def test_create_case_defaults(self, client):
+        """Severity defaults to medium and a blank summary is stored as null."""
+        headers = register_and_login(client, "analyst@example.com")
+        resp = client.post("/api/v1/cases/", json={
+            "title": "  Padded title  ",
+            "summary": "   ",
+        }, headers=headers)
+        assert resp.status_code == 201, resp.text
+        data = resp.json()
+        assert data["title"] == "Padded title"
+        assert data["summary"] is None
+        assert data["severity"] == "medium"
+
+    def test_create_case_rejects_invalid_input(self, client):
+        """Blank titles, bad severities and unknown fields are rejected."""
+        headers = register_and_login(client, "analyst@example.com")
+        for payload in (
+            {"title": "   "},
+            {"title": "Ok title", "severity": "severe"},
+            {"title": "Ok title", "assignee": "bob"},
+            {},
+        ):
+            resp = client.post("/api/v1/cases/", json=payload, headers=headers)
+            assert resp.status_code == 422, (payload, resp.text)
+
+    def test_create_case_requires_auth(self, client):
+        resp = client.post("/api/v1/cases/", json={"title": "Nope"})
+        assert resp.status_code == 401

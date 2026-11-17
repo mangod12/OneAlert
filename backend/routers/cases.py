@@ -1,7 +1,7 @@
 """Cases router — investigation cases created by AI triage agent."""
 
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +11,7 @@ from backend.models.case import (
     AgentRunResponse,
     Case,
     CaseAlert,
+    CaseCreate,
     CaseDetailResponse,
     CaseEvent,
     CaseListResponse,
@@ -66,6 +67,44 @@ async def list_cases(
         case_responses.append(resp)
 
     return CaseListResponse(cases=case_responses, total=total, page=page, size=size)
+
+
+@router.post("/", response_model=CaseResponse, status_code=status.HTTP_201_CREATED)
+async def create_case(
+    case_data: CaseCreate,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Open an investigation manually."""
+    title = case_data.title.strip()
+    if not title:
+        raise HTTPException(
+            status_code=422,
+            detail="Title must not be blank",
+        )
+    summary = (case_data.summary or "").strip() or None
+    case = Case(
+        user_id=current_user.id,
+        title=title,
+        summary=summary,
+        severity=case_data.severity,
+        status="open",
+        created_by="human",
+    )
+    db.add(case)
+    await db.flush()
+    db.add(CaseTimeline(
+        case_id=case.id,
+        entry_type="note",
+        content=f"Investigation opened manually by {current_user.email}.",
+        source="human",
+    ))
+    await db.commit()
+    await db.refresh(case)
+    resp = CaseResponse.model_validate(case)
+    resp.alert_count = 0
+    resp.event_count = 0
+    return resp
 
 
 # --- Semantic Search (MUST be before /{case_id} to avoid route conflict) ---

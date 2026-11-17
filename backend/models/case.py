@@ -2,8 +2,9 @@
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -133,6 +134,14 @@ class AgentStep(Base):
 
 
 # --- Pydantic Schemas ---
+
+class CaseCreate(BaseModel):
+    """Schema for opening an investigation manually."""
+    title: str = Field(min_length=1, max_length=200)
+    summary: str | None = Field(default=None, max_length=2000)
+    severity: Literal["info", "low", "medium", "high", "critical"] = "medium"
+    model_config = {"extra": "forbid"}
+
 
 class CaseResponse(BaseModel):
     id: int
