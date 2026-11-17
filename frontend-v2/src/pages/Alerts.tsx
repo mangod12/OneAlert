@@ -45,6 +45,7 @@ export function Alerts() {
       if (cveSearch) params.search = cveSearch;
       if (assetFilter) params.asset_id = Number(assetFilter);
       if (assignedFilter) params.assigned = assignedFilter;
+      if (showSnoozedOnly) params.snoozed = 'only';
       const res = await apiClient.get('/alerts/export', { params, responseType: 'blob' });
       const url = URL.createObjectURL(res.data as Blob);
       const link = document.createElement('a');

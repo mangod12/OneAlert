@@ -163,6 +163,10 @@ async def export_alerts(
     assigned: str | None = Query(
         None, pattern="^(me|unassigned)$", description="Filter by assignment: 'me' or 'unassigned'"
     ),
+    snoozed: str = Query(
+        "active", pattern="^(active|all|only)$",
+        description="Snooze visibility: 'active' hides snoozed alerts, 'all' includes them, 'only' returns snoozed"
+    ),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -190,6 +194,10 @@ async def export_alerts(
         query = query.filter(Alert.assigned_to_id == current_user.id)
     elif assigned == "unassigned":
         query = query.filter(Alert.assigned_to_id.is_(None))
+    if snoozed == "active":
+        query = query.filter(or_(Alert.snoozed_until.is_(None), Alert.snoozed_until <= datetime.now(UTC)))
+    elif snoozed == "only":
+        query = query.filter(Alert.snoozed_until > datetime.now(UTC))
 
     query = query.order_by(Alert.created_at.desc()).limit(5000)
     rows = (await db.execute(query)).all()
@@ -198,7 +206,7 @@ async def export_alerts(
     writer = csv.writer(buffer)
     writer.writerow([
         "id", "cve_id", "title", "severity", "status", "cvss_score",
-        "asset_name", "assigned_to_email", "created_at", "acknowledged_at",
+        "asset_name", "assigned_to_email", "created_at", "acknowledged_at", "snoozed_until",
     ])
     for row in rows:
         alert = row.Alert
@@ -213,6 +221,7 @@ async def export_alerts(
             alert.assignee.email if alert.assignee else "",
             alert.created_at.isoformat() if alert.created_at else "",
             alert.acknowledged_at.isoformat() if alert.acknowledged_at else "",
+            alert.snoozed_until.isoformat() if alert.snoozed_until else "",
         ])
     buffer.seek(0)
     return StreamingResponse(
