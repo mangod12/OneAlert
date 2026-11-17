@@ -2,10 +2,10 @@
 
 import time
 from collections import defaultdict, deque
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-
 
 # In-memory metrics store (bounded to prevent memory leaks)
 _request_counts: dict = defaultdict(int)

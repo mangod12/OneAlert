@@ -1,9 +1,11 @@
 """
 Audit logging model for tracking user logins and CRUD actions.
 """
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.sql import func
+
 from backend.database.db import Base
+
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"

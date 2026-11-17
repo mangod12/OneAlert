@@ -1,5 +1,6 @@
-import requests
 from functools import lru_cache
+
+import requests
 
 NVD_API_URL = "https://services.nvd.nist.gov/rest/json/cve/1.0/"
 
@@ -21,4 +22,4 @@ def enrich_cve(cve_id: str) -> dict:
             'exploitability': base_metric.get('exploitabilityScore'),
         }
     except Exception as e:
-        return {'error': str(e)} 
+        return {'error': str(e)}

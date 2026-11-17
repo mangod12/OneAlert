@@ -5,22 +5,22 @@ Provides endpoints for SBOM upload (CycloneDX/SPDX JSON), listing, detail
 retrieval, component listing, and deletion.
 """
 
-from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.database.db import get_async_db
-from backend.models.user import User
 from backend.models.asset import Asset
 from backend.models.sbom import (
     SBOM,
     SBOMComponent,
-    SBOMResponse,
     SBOMComponentResponse,
+    SBOMResponse,
     SBOMUpload,
 )
+from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.services.sbom_service import parse_cyclonedx, parse_spdx
 
@@ -103,7 +103,7 @@ async def upload_sbom(
     return db_sbom
 
 
-@router.get("/", response_model=List[SBOMResponse])
+@router.get("/", response_model=list[SBOMResponse])
 async def list_sboms(
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
@@ -142,7 +142,7 @@ async def get_sbom(
     return sbom
 
 
-@router.get("/{sbom_id}/components", response_model=List[SBOMComponentResponse])
+@router.get("/{sbom_id}/components", response_model=list[SBOMComponentResponse])
 async def get_sbom_components(
     sbom_id: int,
     current_user: User = Depends(get_active_user),

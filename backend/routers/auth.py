@@ -3,28 +3,23 @@ Authentication router for user registration, login, and JWT token management.
 Handles user authentication, password hashing, and JWT token creation/validation.
 """
 
-from datetime import timedelta
 import secrets
 import time
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from typing import Optional, List
+from datetime import timedelta
 
-from backend.database.db import get_async_db
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, ConfigDict, HttpUrl, field_validator
-from backend.models.user import User, UserCreate, UserResponse, Token
-from backend.models.audit_log import AuditLog
-from backend.services.auth_service import (
-    create_access_token,
-    verify_password,
-    get_password_hash,
-    verify_token
-)
-from backend.services.github_auth_service import github_auth_service
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from backend.config import settings
+from backend.database.db import get_async_db
 from backend.middleware.rate_limiter import limiter
+from backend.models.audit_log import AuditLog
+from backend.models.user import Token, User, UserCreate, UserResponse
+from backend.services.auth_service import create_access_token, get_password_hash, verify_password, verify_token
+from backend.services.github_auth_service import github_auth_service
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
@@ -49,7 +44,7 @@ def _consume_github_state(state: str) -> bool:
 
 async def get_current_user(
     request: Request,
-    token: Optional[str] = Depends(oauth2_scheme),
+    token: str | None = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_async_db)
 ) -> User:
     """Get current authenticated user from JWT token or httpOnly cookie."""
@@ -69,11 +64,11 @@ async def get_current_user(
     email = verify_token(token)
     if email is None:
         raise credentials_exception
-    
+
     # Get user from database
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
-    
+
     if user is None:
         raise credentials_exception
 
@@ -82,7 +77,7 @@ async def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Inactive user",
         )
-    
+
     return user
 
 
@@ -104,13 +99,13 @@ async def register_user(
     # Check if user already exists
     result = await db.execute(select(User).where(User.email == user_data.email))
     existing_user = result.scalar_one_or_none()
-    
+
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
-    
+
     # Create new user
     hashed_password = get_password_hash(user_data.password)
     db_user = User(
@@ -121,11 +116,11 @@ async def register_user(
         is_active=True,
         is_verified=False  # Email verification would be implemented here
     )
-    
+
     db.add(db_user)
     await db.commit()
     await db.refresh(db_user)
-    
+
     return db_user
 
 
@@ -141,7 +136,7 @@ async def login_user(
     # Get user by email
     result = await db.execute(select(User).where(User.email == form_data.username))
     user = result.scalar_one_or_none()
-    
+
     # Verify user and password
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
@@ -149,7 +144,7 @@ async def login_user(
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -232,12 +227,12 @@ async def github_login():
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate GitHub auth URL: {str(e)}"
+            detail=f"Failed to generate GitHub auth URL: {e!s}"
         )
 
 
 @router.get("/github/callback")
-async def github_callback(code: str, state: Optional[str] = None):
+async def github_callback(code: str, state: str | None = None):
     """Handle GitHub OAuth callback and authenticate user."""
     from fastapi.responses import RedirectResponse
     try:
@@ -272,20 +267,20 @@ async def github_callback(code: str, state: Optional[str] = None):
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"GitHub callback failed: {str(e)}"
+            detail=f"GitHub callback failed: {e!s}"
         )
 
 
 class WebhookIntegrationsUpdate(BaseModel):
     """Write-only notification endpoints; credentials are never serialized back."""
 
-    slack_webhook_url: Optional[HttpUrl] = None
-    webhook_url: Optional[HttpUrl] = None
+    slack_webhook_url: HttpUrl | None = None
+    webhook_url: HttpUrl | None = None
     model_config = ConfigDict(extra="forbid")
 
     @field_validator("slack_webhook_url", "webhook_url")
     @classmethod
-    def require_https(cls, value: Optional[HttpUrl]) -> Optional[HttpUrl]:
+    def require_https(cls, value: HttpUrl | None) -> HttpUrl | None:
         if value is not None and value.scheme != "https":
             raise ValueError("Webhook URLs must use HTTPS")
         return value
@@ -348,7 +343,7 @@ async def verify_mfa(body: MFAVerifyRequest, current_user: User = Depends(get_cu
     return totp.verify(body.code)
 
 
-@router.get("/audit-logs", response_model=List[dict])
+@router.get("/audit-logs", response_model=list[dict])
 async def get_audit_logs(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_async_db)):
     """Admin: Get audit logs scoped to the admin's organization."""
     if not current_user.role or current_user.role != "admin":

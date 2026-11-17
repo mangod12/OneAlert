@@ -1,17 +1,18 @@
 """Case and investigation models — AI-generated investigation containers."""
 
-from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Text
+from datetime import datetime
+from enum import StrEnum
+
+from pydantic import BaseModel
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.types import JSON
+
 from backend.database.db import Base
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
-from enum import Enum
 
 
-class CaseStatus(str, Enum):
+class CaseStatus(StrEnum):
     OPEN = "open"
     INVESTIGATING = "investigating"
     RESOLVED = "resolved"
@@ -19,7 +20,7 @@ class CaseStatus(str, Enum):
     FALSE_POSITIVE = "false_positive"
 
 
-class CaseSeverity(str, Enum):
+class CaseSeverity(StrEnum):
     INFO = "info"
     LOW = "low"
     MEDIUM = "medium"
@@ -37,7 +38,7 @@ class Case(Base):
     summary = Column(Text, nullable=True)
     severity = Column(String, default="medium")
     status = Column(String, default="open")
-    confidence_score = Column(Float, nullable=True)  # 0.0–1.0
+    confidence_score = Column(Float, nullable=True)  # 0.0-1.0
     mitre_tactics = Column(JSON, nullable=True)  # ["TA0001", "TA0008"]
     mitre_techniques = Column(JSON, nullable=True)  # [{"id": "T1078", "name": "Valid Accounts", "confidence": 0.85}]
     attack_narrative = Column(Text, nullable=True)  # AI-generated attack story
@@ -133,23 +134,23 @@ class CaseResponse(BaseModel):
     id: int
     user_id: int
     title: str
-    summary: Optional[str] = None
+    summary: str | None = None
     severity: str
     status: str
-    confidence_score: Optional[float] = None
-    mitre_tactics: Optional[list] = None
-    mitre_techniques: Optional[list] = None
-    attack_narrative: Optional[str] = None
+    confidence_score: float | None = None
+    mitre_tactics: list | None = None
+    mitre_techniques: list | None = None
+    attack_narrative: str | None = None
     created_by: str
     created_at: datetime
-    updated_at: Optional[datetime] = None
+    updated_at: datetime | None = None
     alert_count: int = 0
     event_count: int = 0
     model_config = {"from_attributes": True}
 
 
 class CaseListResponse(BaseModel):
-    cases: List[CaseResponse]
+    cases: list[CaseResponse]
     total: int
     page: int
     size: int
@@ -162,12 +163,12 @@ class TimelineEntryResponse(BaseModel):
     entry_type: str
     content: str
     source: str
-    metadata_json: Optional[dict] = None
+    metadata_json: dict | None = None
     model_config = {"from_attributes": True}
 
 
 class CaseDetailResponse(CaseResponse):
-    timeline: List[TimelineEntryResponse] = []
+    timeline: list[TimelineEntryResponse] = []
     model_config = {"from_attributes": True}
 
 
@@ -176,9 +177,9 @@ class AgentRunResponse(BaseModel):
     agent_type: str
     status: str
     started_at: datetime
-    completed_at: Optional[datetime] = None
-    model_used: Optional[str] = None
+    completed_at: datetime | None = None
+    model_used: str | None = None
     prompt_tokens: int = 0
     completion_tokens: int = 0
-    result_summary: Optional[str] = None
+    result_summary: str | None = None
     model_config = {"from_attributes": True}

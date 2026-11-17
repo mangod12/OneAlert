@@ -1,12 +1,13 @@
 """Detection rule and hunt session models."""
 
-from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, ForeignKey
+from datetime import datetime
+
+from pydantic import BaseModel
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.sql import func
 from sqlalchemy.types import JSON
+
 from backend.database.db import Base
-from pydantic import BaseModel
-from typing import Optional
-from datetime import datetime
 
 
 class DetectionRule(Base):
@@ -47,10 +48,10 @@ class HuntSession(Base):
 class DetectionRuleResponse(BaseModel):
     id: int
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     rule_type: str
     rule_content: str
-    mitre_techniques: Optional[list] = None
+    mitre_techniques: list | None = None
     confidence: str
     tested: bool
     enabled: bool
@@ -65,7 +66,7 @@ class HuntSessionResponse(BaseModel):
     status: str
     queries_run: int
     findings_count: int
-    sigma_rule: Optional[str] = None
+    sigma_rule: str | None = None
     created_at: datetime
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
     model_config = {"from_attributes": True}

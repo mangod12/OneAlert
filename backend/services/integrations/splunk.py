@@ -2,8 +2,8 @@
 import logging
 
 import httpx
-from .base import BaseIntegration, INTEGRATION_REQUEST_ERROR, validate_outbound_url
 
+from .base import INTEGRATION_REQUEST_ERROR, BaseIntegration, validate_outbound_url
 
 logger = logging.getLogger(__name__)
 

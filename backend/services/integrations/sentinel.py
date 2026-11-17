@@ -1,14 +1,15 @@
 """Microsoft Sentinel integration via Log Analytics Data Collector API."""
-import httpx
-import json
+import base64
 import hashlib
 import hmac
-import base64
+import json
 import logging
 import re
-from datetime import datetime, timezone
-from .base import BaseIntegration, INTEGRATION_REQUEST_ERROR, validate_outbound_url
+from datetime import UTC, datetime
 
+import httpx
+
+from .base import INTEGRATION_REQUEST_ERROR, BaseIntegration, validate_outbound_url
 
 logger = logging.getLogger(__name__)
 WORKSPACE_ID_PATTERN = re.compile(r"^[0-9a-fA-F-]{1,64}$")
@@ -39,7 +40,7 @@ class SentinelIntegration(BaseIntegration):
             return {"success": False, "error": "Sentinel not configured"}
 
         body = json.dumps([alert_data])
-        rfc1123_date = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        rfc1123_date = datetime.now(UTC).strftime("%a, %d %b %Y %H:%M:%S GMT")
 
         try:
             if not WORKSPACE_ID_PATTERN.fullmatch(self.workspace_id):

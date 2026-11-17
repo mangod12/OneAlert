@@ -2,10 +2,10 @@
 Notification service interface and implementations for Slack, Teams, Webhook, and SIEM.
 Includes factory and unified notification dispatch for extensibility and Celery compatibility.
 """
-import httpx
 import logging
-from typing import List
 import os
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ class SIEMNotificationService(NotificationService):
             except Exception as e:
                 logger.error(f"SIEM notification failed: {e}")
 
-def get_notification_services_from_env() -> List[NotificationService]:
+def get_notification_services_from_env() -> list[NotificationService]:
     """Factory to instantiate enabled notification services from environment variables."""
     services = []
     slack_url = os.getenv("SLACK_WEBHOOK_URL")

@@ -1,7 +1,7 @@
 """PII and secret redaction pipeline for event data before LLM processing."""
 
-import re
 import logging
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)

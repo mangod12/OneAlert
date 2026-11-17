@@ -1,9 +1,10 @@
 """Compliance engine -- automated evidence collection and assessment."""
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from backend.models.asset import Asset
+
 from backend.models.alert import Alert, AlertStatus
+from backend.models.asset import Asset
 from backend.models.compliance import ComplianceAssessment, ComplianceControl
 from backend.models.discovered_device import NetworkSensor
 

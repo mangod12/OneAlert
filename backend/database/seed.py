@@ -6,22 +6,23 @@ with PLCs, HMIs, SCADA servers, network sensors, discovered devices, and alerts.
 """
 
 import asyncio
-from datetime import datetime, timedelta, timezone
-from sqlalchemy.ext.asyncio import AsyncSession
+import logging
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import AsyncSessionLocal
-from backend.models.user import User
-from backend.models.asset import Asset
 from backend.models.alert import Alert, AlertStatus, Severity
-from backend.models.discovered_device import NetworkSensor, DiscoveredDevice
+from backend.models.asset import Asset
+from backend.models.discovered_device import DiscoveredDevice, NetworkSensor
 from backend.models.network_connection import NetworkConnection
+from backend.models.user import User
 from backend.services.auth_service import get_password_hash
-import logging
 
 logger = logging.getLogger(__name__)
 
-NOW = datetime.now(timezone.utc)
+NOW = datetime.now(UTC)
 
 
 async def create_demo_user(session: AsyncSession) -> User:
@@ -516,7 +517,7 @@ async def create_security_events(session: AsyncSession, user_id: int):
     Scenario: Attacker compromises VPN → lateral movement to engineering
     workstation → attempts PLC modification → detected by Suricata/Zeek.
     """
-    from backend.models.security_event import SecurityEvent, EventSource
+    from backend.models.security_event import EventSource, SecurityEvent
 
     result = await session.execute(select(SecurityEvent).where(SecurityEvent.user_id == user_id).limit(1))
     if result.scalar_one_or_none():

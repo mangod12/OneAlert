@@ -1,8 +1,10 @@
 """
 CVE enrichment service for fetching extra data from NVD or VulDB.
 """
-import httpx
 import logging
+
+import httpx
+
 from backend.config import settings
 
 logger = logging.getLogger(__name__)

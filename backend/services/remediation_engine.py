@@ -1,9 +1,8 @@
 """Rule-based remediation engine for OT/ICS vulnerability alerts."""
 
-from typing import List
 
 
-def generate_remediations(alert, asset) -> List[dict]:
+def generate_remediations(alert, asset) -> list[dict]:
     """Generate remediation actions based on alert + asset context.
 
     Rules:

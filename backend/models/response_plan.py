@@ -1,13 +1,14 @@
 """Response plan and approval workflow models."""
 
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey
+from datetime import datetime
+
+from pydantic import BaseModel
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.types import JSON
+
 from backend.database.db import Base
-from pydantic import BaseModel
-from typing import Optional
-from datetime import datetime
 
 
 class ResponsePlan(Base):
@@ -53,7 +54,7 @@ class ResponsePlanResponse(BaseModel):
     status: str
     autonomy_level: str
     created_by: str
-    approved_by: Optional[int] = None
-    approved_at: Optional[datetime] = None
+    approved_by: int | None = None
+    approved_at: datetime | None = None
     created_at: datetime
     model_config = {"from_attributes": True}

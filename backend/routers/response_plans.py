@@ -1,16 +1,18 @@
 """Response plans router — approval workflow, plan lifecycle, action execution."""
 
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from datetime import datetime, timezone
 
 from backend.database.db import get_async_db
-from backend.models.user import User
 from backend.models.response_plan import (
-    ResponsePlan, ApprovalRequest, ResponsePlanResponse,
+    ApprovalRequest,
+    ResponsePlan,
+    ResponsePlanResponse,
 )
+from backend.models.user import User
 from backend.routers.auth import get_active_user
 
 router = APIRouter()
@@ -20,8 +22,8 @@ router = APIRouter()
 async def list_response_plans(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
-    status_filter: Optional[str] = Query(None, alias="status"),
-    case_id: Optional[int] = Query(None),
+    status_filter: str | None = Query(None, alias="status"),
+    case_id: int | None = Query(None),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -124,7 +126,7 @@ async def approve_plan(
     if plan.status not in ("pending_approval", "draft"):
         raise HTTPException(status_code=400, detail=f"Plan status is '{plan.status}', cannot approve")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     plan.status = "approved"
     plan.approved_by = current_user.id
     plan.approved_at = now
@@ -173,7 +175,7 @@ async def reject_plan(
     if plan.status not in ("pending_approval", "draft"):
         raise HTTPException(status_code=400, detail=f"Plan status is '{plan.status}', cannot reject")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     plan.status = "rejected"
 
     approvals = (await db.execute(
@@ -224,15 +226,13 @@ async def execute_plan(
     from backend.services.action_executor import execute_response_plan
     result = await execute_response_plan(db=db, plan=plan)
 
-    public_results = []
-    for action_result in result.get("results", []):
-        public_results.append({
-            "action": action_result.get("action", "unknown"),
-            "target": action_result.get("target", "unknown"),
-            "status": action_result.get("status", "unknown"),
-            "detail": action_result.get("detail", ""),
-            "executed_at": action_result.get("executed_at"),
-        })
+    public_results = [{
+        "action": action_result.get("action", "unknown"),
+        "target": action_result.get("target", "unknown"),
+        "status": action_result.get("status", "unknown"),
+        "detail": action_result.get("detail", ""),
+        "executed_at": action_result.get("executed_at"),
+    } for action_result in result.get("results", [])]
 
     return {
         "success": True,

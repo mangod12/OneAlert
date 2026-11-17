@@ -13,16 +13,17 @@ Typical workflow:
 5. Alerts triggered for high-risk or new OT devices
 """
 
-from typing import List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 import logging
 from datetime import datetime
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
-from backend.models.user import User
 from backend.models.discovered_device import DiscoveredDevice
+from backend.models.user import User
 from backend.routers.auth import get_active_user
 
 logger = logging.getLogger(__name__)
@@ -32,36 +33,33 @@ router = APIRouter()
 
 class SensorReportItem(dict):
     """Flexible schema for sensor-reported device data."""
-    pass
 
 
 class SensorIngestionRequest:
     """Parsed sensor ingestion request."""
-    
-    def __init__(self, data: Dict[str, Any]):
+
+    def __init__(self, data: dict[str, Any]):
         self.sensor_id: int = data.get("sensor_id")
         self.discovery_method: str = data.get("discovery_method", "sensor_report")
         self.timestamp: str = data.get("timestamp")
-        self.devices: List[Dict[str, Any]] = data.get("devices", [])
-    
+        self.devices: list[dict[str, Any]] = data.get("devices", [])
+
     def validate(self) -> bool:
         """Basic validation of ingestion request."""
         if not self.sensor_id or not self.devices:
             return False
-        if not isinstance(self.devices, list):
-            return False
-        return True
+        return isinstance(self.devices, list)
 
 
 @router.post("/ingest/batch")
 async def ingest_sensor_batch(
-    request_data: Dict[str, Any],
+    request_data: dict[str, Any],
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
 ):
     """
     Ingest a batch of discovered devices from a network sensor.
-    
+
     Request schema:
     {
         "sensor_id": 1,
@@ -88,7 +86,7 @@ async def ingest_sensor_batch(
         ]
     }
     """
-    
+
     try:
         # Parse and validate request
         ingestion = SensorIngestionRequest(request_data)
@@ -97,7 +95,7 @@ async def ingest_sensor_batch(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid ingestion request: missing sensor_id or devices"
             )
-        
+
         # Verify sensor belongs to user
         from backend.models.discovered_device import NetworkSensor  # Import here to avoid circular deps
         sensor_result = await db.execute(
@@ -112,20 +110,20 @@ async def ingest_sensor_batch(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Sensor not found or access denied"
             )
-        
+
         # Process each device in batch
         created_count = 0
         updated_count = 0
         skipped_count = 0
         high_risk_devices = []
-        
+
         for device_data in ingestion.devices:
             try:
                 result = await _process_ingested_device(
-                    db, current_user.id, ingestion.sensor_id, 
+                    db, current_user.id, ingestion.sensor_id,
                     device_data, ingestion.discovery_method
                 )
-                
+
                 if result["status"] == "created":
                     created_count += 1
                     if result.get("risk_score", 0) > 70:
@@ -134,16 +132,16 @@ async def ingest_sensor_batch(
                     updated_count += 1
                 elif result["status"] == "skipped":
                     skipped_count += 1
-                    
+
             except Exception as e:
                 logger.warning(f"Error processing device {device_data.get('ip_address')}: {e}")
                 skipped_count += 1
-        
+
         # Update sensor heartbeat
         sensor.last_heartbeat = datetime.utcnow()
         sensor.last_discovery_count = len(ingestion.devices)
         await db.commit()
-        
+
         return {
             "status": "success",
             "summary": {
@@ -155,7 +153,7 @@ async def ingest_sensor_batch(
             "high_risk_devices": high_risk_devices,
             "message": f"Processed {len(ingestion.devices)} devices: {created_count} new, {updated_count} updated"
         }
-        
+
     except HTTPException:
         raise
     except Exception:
@@ -168,24 +166,24 @@ async def ingest_sensor_batch(
 
 @router.post("/ingest/single")
 async def ingest_single_device(
-    device_data: Dict[str, Any],
+    device_data: dict[str, Any],
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
 ):
     """Ingest a single discovered device (for real-time sensors)."""
-    
+
     try:
         result = await _process_ingested_device(
-            db, current_user.id, None, device_data, 
+            db, current_user.id, None, device_data,
             device_data.get("discovery_method", "sensor_report")
         )
-        
+
         return {
             "status": "success",
             "device_id": result.get("device_id"),
             "action": result.get("status")
         }
-        
+
     except Exception:
         logger.exception("Single device ingestion failed")
         raise HTTPException(
@@ -202,9 +200,9 @@ async def _process_ingested_device(
     db: AsyncSession,
     user_id: int,
     sensor_id: int,
-    device_data: Dict[str, Any],
+    device_data: dict[str, Any],
     discovery_method: str
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Process a single ingested device:
     1. Check for duplicates (by IP + MAC)
@@ -212,40 +210,40 @@ async def _process_ingested_device(
     3. Create or update DiscoveredDevice
     4. Return result metadata
     """
-    
+
     ip_address = device_data.get("ip_address")
     mac_address = device_data.get("mac_address")
     hostname = device_data.get("hostname")
-    
+
     if not ip_address:
         raise ValueError("Device must have ip_address")
-    
+
     # Check for existing device (by IP + MAC if available, else by IP)
     existing_query = select(DiscoveredDevice).where(
         DiscoveredDevice.user_id == user_id,
         DiscoveredDevice.ip_address == ip_address
     )
-    
+
     if mac_address:
         existing_query = select(DiscoveredDevice).where(
             DiscoveredDevice.user_id == user_id,
             (DiscoveredDevice.ip_address == ip_address) | (DiscoveredDevice.mac_address == mac_address)
         )
-    
+
     existing_result = await db.execute(existing_query)
     existing_device = existing_result.scalar_one_or_none()
-    
+
     # Calculate OT risk score
     risk_score = await _calculate_risk_score(device_data)
     risk_factors = await _identify_risk_factors(device_data)
-    
+
     if existing_device:
         # UPDATE existing device
         existing_device.last_seen = datetime.utcnow()
         existing_device.hostname = hostname or existing_device.hostname
         existing_device.risk_score = risk_score
         existing_device.risk_factors = risk_factors
-        
+
         # Update enriched fields if new data provided
         if device_data.get("manufacturer"):
             existing_device.manufacturer = device_data.get("manufacturer")
@@ -253,14 +251,14 @@ async def _process_ingested_device(
             existing_device.model = device_data.get("model")
         if device_data.get("firmware_version"):
             existing_device.firmware_version = device_data.get("firmware_version")
-        
+
         await db.commit()
         return {
             "status": "updated",
             "device_id": existing_device.id,
             "risk_score": risk_score
         }
-    
+
     else:
         # CREATE new device
         new_device = DiscoveredDevice(
@@ -285,11 +283,11 @@ async def _process_ingested_device(
             risk_score=risk_score,
             risk_factors=risk_factors
         )
-        
+
         db.add(new_device)
         await db.commit()
         await db.refresh(new_device)
-        
+
         return {
             "status": "created",
             "device_id": new_device.id,
@@ -297,36 +295,36 @@ async def _process_ingested_device(
         }
 
 
-async def _calculate_risk_score(device_data: Dict[str, Any]) -> float:
+async def _calculate_risk_score(device_data: dict[str, Any]) -> float:
     """
     Calculate OT device risk score (0-100).
-    
+
     Risk factors:
     - Exposed services (50% weight) - SSH, Telnet, HTTP on OT device
     - Outdated firmware (30% weight)
     - Known vulnerable protocols (20% weight)
     """
-    
+
     score = 0.0
-    
+
     # Factor 1: Exposed insecure services (SSH, Telnet, HTTP on OT device)
     services = device_data.get("services_detected", [])
     ports = device_data.get("ports_open", [])
     is_ot = device_data.get("is_ot_device", False)
-    
+
     exposed_insecure_services = ["ssh", "telnet", "http", "ftp", "smtp"]
     dangerous_ports = [22, 23, 80, 21, 25]  # SSH, Telnet, HTTP, FTP, SMTP
-    
+
     if is_ot:
         # OT device with exposed insecure services is HIGH risk
         for svc in services:
             if svc.lower() in exposed_insecure_services:
                 score += 25  # Major risk factor
-        
+
         for port in ports:
             if port in dangerous_ports:
                 score += 10  # Secondary risk
-    
+
     # Factor 2: Industrial protocols (lower risk if HTTPS/VPN also present)
     industrial_protocols = device_data.get("industrial_protocols", [])
     if industrial_protocols:
@@ -334,11 +332,11 @@ async def _calculate_risk_score(device_data: Dict[str, Any]) -> float:
         for proto in industrial_protocols:
             if proto.lower() in ["modbus", "dnp3", "profibus"]:
                 score += 15
-        
+
         # Check for HTTPS/encrypted services
         if "https" not in [s.lower() for s in services]:
             score += 10  # Higher risk if no encryption
-    
+
     # Factor 3: Outdated firmware (heuristic - assume >3 years is outdated)
     firmware = device_data.get("firmware_version", "")
     if firmware:
@@ -349,40 +347,40 @@ async def _calculate_risk_score(device_data: Dict[str, Any]) -> float:
                 score += 20
         except (ValueError, IndexError):
             pass
-    
+
     # Factor 4: Missing critical protocol (if OT but no security/encr)
-    if is_ot and not any(p.lower() in ["https", "opc_ua", "ips"] 
+    if is_ot and not any(p.lower() in ["https", "opc_ua", "ips"]
                          for p in industrial_protocols):
         score += 15
-    
+
     return min(score, 100.0)  # Cap at 100
 
 
-async def _identify_risk_factors(device_data: Dict[str, Any]) -> List[str]:
+async def _identify_risk_factors(device_data: dict[str, Any]) -> list[str]:
     """Identify specific risk factors for a device."""
-    
+
     factors = []
     services = device_data.get("services_detected", [])
     ports = device_data.get("ports_open", [])
     is_ot = device_data.get("is_ot_device", False)
     industrial_protocols = device_data.get("industrial_protocols", [])
-    
+
     if is_ot:
         if any(s.lower() in ["ssh", "telnet", "ftp"] for s in services):
             factors.append("exposed_insecure_remote_access")
-        
+
         if any(p in [80, 8080] for p in ports):
             factors.append("unencrypted_web_service")
-    
+
     if any(s.lower() in ["http", "telnet"] for s in services):
         factors.append("unencrypted_protocols")
-    
-    if industrial_protocols and not any(p.lower() in ["https", "opc_ua"] 
+
+    if industrial_protocols and not any(p.lower() in ["https", "opc_ua"]
                                         for p in services):
         factors.append("industrial_protocol_without_encryption")
-    
+
     # Check for default credentials hint (simple heuristic)
     if device_data.get("model") and "default" in device_data.get("model", "").lower():
         factors.append("possible_default_credentials")
-    
+
     return factors

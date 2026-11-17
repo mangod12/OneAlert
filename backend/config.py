@@ -13,8 +13,9 @@ Key Features:
 - Centralized configuration access throughout the application.
 """
 
-from typing import List, Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
     """
@@ -24,18 +25,18 @@ class Settings(BaseSettings):
     Pydantic automatically reads values from environment variables
     (case-insensitive) or a .env file.
     """
-    
+
     # Database Configuration
     # Defines the connection URL for the primary synchronous database.
     # Example for SQLite: "sqlite:///./cybersec_alerts.db"
     # Example for PostgreSQL: "postgresql://user:password@host:port/dbname"
-    database_url: str = "sqlite:///./cybersec_alerts.db" 
-    
+    database_url: str = "sqlite:///./cybersec_alerts.db"
+
     # Defines the connection URL for the asynchronous database.
     # Automatically derived from `database_url` if not provided.
     # Example for SQLite: "sqlite+aiosqlite:///./cybersec_alerts.db"
     # Example for PostgreSQL: "postgresql+asyncpg://user:password@host:port/dbname"
-    async_database_url: Optional[str] = None
+    async_database_url: str | None = None
 
     # JWT (JSON Web Token) Configuration
     # Secret key used to sign and verify JWTs. CRITICAL for security.
@@ -44,74 +45,74 @@ class Settings(BaseSettings):
 
     # Environment flag: "production", "staging", or "development"
     environment: str = "development"
-    
+
     # Algorithm used for JWT signing (e.g., HS256, RS256).
     algorithm: str = "HS256"
-    
+
     # Expiration time for access tokens in minutes.
     access_token_expire_minutes: int = 30
-    
+
     # Email Configuration (using Mailgun as an example)
     # API key for the Mailgun service. Required for sending email alerts.
-    mailgun_api_key: Optional[str] = None
-    
+    mailgun_api_key: str | None = None
+
     # Domain configured with Mailgun for sending emails.
-    mailgun_domain: Optional[str] = None
-    
+    mailgun_domain: str | None = None
+
     # Default "From" email address for outgoing alert emails.
     from_email: str = "alerts@example.com" # Replace with your actual sender email.
-    
+
     # CVE/NVD (National Vulnerability Database) API Configuration
     # Optional API key for NVD services to get higher rate limits.
-    nvd_api_key: Optional[str] = None
-    
+    nvd_api_key: str | None = None
+
     # Base URL for the NVD CVE API.
     nvd_api_base_url: str = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 
     # Application Core Configuration
     # Name of the application.
     app_name: str = "CyberSec Alert SaaS"
-    
+
     # Current version of the application.
     app_version: str = "1.0.0"
-    
+
     # Debug mode flag. Set to False in production for security and performance.
     debug: bool = False
-    
+
     # List of allowed origins for CORS (Cross-Origin Resource Sharing).
     # Important for frontend applications running on different domains/ports.
-    cors_origins: List[str] = ["http://localhost:3000", "http://localhost:8080", "http://127.0.0.1:8000", "http://localhost:8000", "http://localhost:8001"]
-    
+    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:8080", "http://127.0.0.1:8000", "http://localhost:8000", "http://localhost:8001"]
+
     # Scheduler Configuration
     # Interval in hours for the vulnerability scraper to run.
     scraper_interval_hours: int = 6
 
     # Stripe Configuration (Optional - if payment processing is integrated)
     # Secret key for Stripe API.
-    stripe_secret_key: Optional[str] = None
-    
+    stripe_secret_key: str | None = None
+
     # Publishable key for Stripe API (used on the frontend).
-    stripe_publishable_key: Optional[str] = None
+    stripe_publishable_key: str | None = None
 
     # GitHub OAuth Configuration
     # GitHub OAuth App Client ID
-    github_client_id: Optional[str] = None
-    
+    github_client_id: str | None = None
+
     # GitHub OAuth App Client Secret
-    github_client_secret: Optional[str] = None
-    
+    github_client_secret: str | None = None
+
     # GitHub OAuth redirect URI (port 8000 for local, 8001 for Docker)
     github_redirect_uri: str = "http://localhost:8000/api/v1/auth/github/callback"
 
     # AI Provider Configuration
     ai_provider: str = "anthropic"  # anthropic | openai | ollama | vllm | groq | together | llamacpp
-    ai_base_url: Optional[str] = None
-    ai_api_key: Optional[str] = None  # Falls back to ANTHROPIC_API_KEY
-    ai_triage_model: Optional[str] = None
-    ai_code_model: Optional[str] = None
-    ai_embedding_model: Optional[str] = None
-    ai_default_model: Optional[str] = None
-    anthropic_api_key: Optional[str] = None
+    ai_base_url: str | None = None
+    ai_api_key: str | None = None  # Falls back to ANTHROPIC_API_KEY
+    ai_triage_model: str | None = None
+    ai_code_model: str | None = None
+    ai_embedding_model: str | None = None
+    ai_default_model: str | None = None
+    anthropic_api_key: str | None = None
 
     # Pydantic Model Configuration
     # Tells Pydantic how to load and manage settings.

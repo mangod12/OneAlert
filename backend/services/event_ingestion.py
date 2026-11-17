@@ -1,13 +1,12 @@
 """Event ingestion service — batch insert, dedup, source tracking."""
 
 import logging
-from datetime import datetime, timezone
-from typing import List
+from datetime import UTC, datetime
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.models.security_event import SecurityEvent, EventSource
+from backend.models.security_event import EventSource, SecurityEvent
 from backend.services.parsers.suricata import parse_suricata_eve
 from backend.services.parsers.zeek import parse_zeek_log
 from backend.services.pii_redactor import redact_dict
@@ -23,7 +22,7 @@ PARSERS = {
 async def ingest_events(
     db: AsyncSession,
     user_id: int,
-    raw_events: List[dict],
+    raw_events: list[dict],
     source_type: str,
     source_name: str | None = None,
 ) -> dict:
@@ -68,7 +67,7 @@ async def ingest_events(
 
     # Update source stats
     source.event_count = (source.event_count or 0) + ingested
-    source.last_event_at = datetime.now(timezone.utc)
+    source.last_event_at = datetime.now(UTC)
     source.status = "active"
 
     await db.commit()
@@ -107,7 +106,7 @@ async def _get_or_create_source(
 def _passthrough_parser(raw: dict) -> dict:
     """Minimal parser for unknown source types."""
     return {
-        "timestamp": datetime.now(timezone.utc),
+        "timestamp": datetime.now(UTC),
         "event_type": raw.get("event_type", "unknown"),
         "severity": raw.get("severity", "info"),
         "source_ip": raw.get("source_ip") or raw.get("src_ip"),

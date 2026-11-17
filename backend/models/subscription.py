@@ -5,12 +5,13 @@ Tracks Stripe subscription state per organization, plan limits,
 and provides Pydantic schemas for API serialization.
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean
-from sqlalchemy.sql import func
-from backend.database.db import Base
-from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
+
+from pydantic import BaseModel
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy.sql import func
+
+from backend.database.db import Base
 
 
 class Subscription(Base):
@@ -45,9 +46,9 @@ class SubscriptionResponse(BaseModel):
     org_id: int
     plan: str
     status: str
-    stripe_subscription_id: Optional[str] = None
-    current_period_start: Optional[datetime] = None
-    current_period_end: Optional[datetime] = None
+    stripe_subscription_id: str | None = None
+    current_period_start: datetime | None = None
+    current_period_end: datetime | None = None
     cancel_at_period_end: bool
     created_at: datetime
     model_config = {"from_attributes": True}
@@ -58,7 +59,7 @@ class PlanInfo(BaseModel):
     max_assets: int
     max_users: int
     features: list
-    price_monthly: Optional[int] = None  # in cents
+    price_monthly: int | None = None  # in cents
     model_config = {"from_attributes": True}
 
 

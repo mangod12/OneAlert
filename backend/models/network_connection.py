@@ -5,12 +5,13 @@ Tracks observed connections between devices/IPs on the network,
 enabling graph-based topology visualization and anomaly detection.
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, BigInteger, Boolean
-from sqlalchemy.sql import func
-from backend.database.db import Base
-from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
+
+from pydantic import BaseModel
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy.sql import func
+
+from backend.database.db import Base
 
 
 class NetworkConnection(Base):
@@ -37,12 +38,12 @@ class ConnectionCreate(BaseModel):
     source_ip: str
     target_ip: str
     protocol: str
-    port: Optional[int] = None
+    port: int | None = None
     direction: str = "bidirectional"
     is_encrypted: bool = False
     bytes_transferred: int = 0
-    source_device_id: Optional[int] = None
-    target_device_id: Optional[int] = None
+    source_device_id: int | None = None
+    target_device_id: int | None = None
     model_config = {"from_attributes": True}
 
 
@@ -51,14 +52,14 @@ class ConnectionResponse(BaseModel):
     source_ip: str
     target_ip: str
     protocol: str
-    port: Optional[int] = None
+    port: int | None = None
     direction: str
     is_encrypted: bool
     bytes_transferred: int
     first_seen: datetime
     last_seen: datetime
-    source_device_id: Optional[int] = None
-    target_device_id: Optional[int] = None
+    source_device_id: int | None = None
+    target_device_id: int | None = None
     model_config = {"from_attributes": True}
 
 
@@ -66,7 +67,7 @@ class TopologyNode(BaseModel):
     id: str  # IP or device ID
     label: str
     type: str  # device | gateway | unknown
-    zone: Optional[str] = None
+    zone: str | None = None
     risk_score: float = 0
     model_config = {"from_attributes": True}
 
@@ -76,7 +77,7 @@ class TopologyEdge(BaseModel):
     target: str
     protocol: str
     is_encrypted: bool
-    port: Optional[int] = None
+    port: int | None = None
     model_config = {"from_attributes": True}
 
 

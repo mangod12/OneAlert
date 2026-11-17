@@ -5,12 +5,13 @@ This module defines the SQLAlchemy ORM model for remediation actions and the
 Pydantic schemas for remediation-related API operations.
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean, Float
-from sqlalchemy.sql import func
-from backend.database.db import Base
-from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
+
+from pydantic import BaseModel
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy.sql import func
+
+from backend.database.db import Base
 
 
 class RemediationAction(Base):
@@ -37,7 +38,7 @@ class RemediationResponse(BaseModel):
     alert_id: int
     action_type: str
     description: str
-    estimated_downtime_minutes: Optional[int] = None
+    estimated_downtime_minutes: int | None = None
     requires_maintenance_window: bool
     priority: int
     status: str

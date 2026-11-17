@@ -1,9 +1,9 @@
 """Seed compliance frameworks and controls."""
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from backend.models.compliance import ComplianceFramework, ComplianceControl
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.models.compliance import ComplianceControl, ComplianceFramework
 
 IEC_62443_CONTROLS = [
     {"control_id": "FR1-SR1.1", "title": "Human user identification and authentication", "category": "FR1 - Identification and Authentication"},

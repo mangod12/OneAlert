@@ -7,67 +7,68 @@ token exchange, and user information retrieval.
 """
 
 import hmac
+import logging
+from typing import Any
 from urllib.parse import urlencode
 
 import httpx
-from typing import Optional, Dict, Any
 from fastapi import HTTPException
-from backend.config import settings
-from backend.services.auth_service import create_access_token
-from backend.models.user import User
-from backend.database.db import AsyncSessionLocal
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-import logging
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.config import settings
+from backend.database.db import AsyncSessionLocal
+from backend.models.user import User
+from backend.services.auth_service import create_access_token
 
 logger = logging.getLogger(__name__)
 
 class GitHubAuthService:
     """Service for handling GitHub OAuth authentication."""
-    
+
     def __init__(self):
         self.client_id = settings.github_client_id
         self.client_secret = settings.github_client_secret
         self.redirect_uri = settings.github_redirect_uri
-        
+
         if not self.client_id or not self.client_secret:
             logger.warning("GitHub OAuth credentials not configured")
-    
-    def get_authorization_url(self, state: Optional[str] = None) -> str:
+
+    def get_authorization_url(self, state: str | None = None) -> str:
         """
         Generate GitHub OAuth authorization URL.
-        
+
         Args:
             state: Optional state parameter for CSRF protection
-            
+
         Returns:
             GitHub authorization URL
         """
         if not self.client_id:
             raise ValueError("GitHub client ID not configured")
-        
+
         params = {
             "client_id": self.client_id,
             "redirect_uri": self.redirect_uri,
             "scope": "read:user user:email",
             "response_type": "code"
         }
-        
+
         if state:
             params["state"] = state
-            
+
         query_string = urlencode(params)
         return f"https://github.com/login/oauth/authorize?{query_string}"
-    
-    async def exchange_code_for_token(self, code: str, session_state: str, state: str) -> Optional[str]:
+
+    async def exchange_code_for_token(self, code: str, session_state: str, state: str) -> str | None:
         """
         Exchange authorization code for access token.
-        
+
         Args:
             code: Authorization code from GitHub
             session_state: State from the user's session
             state: State from the GitHub callback
-            
+
         Returns:
             Access token or None if exchange failed
         """
@@ -79,7 +80,7 @@ class GitHubAuthService:
 
         if not self.client_id or not self.client_secret:
             raise ValueError("GitHub OAuth credentials not configured")
-        
+
         logger.info("Requesting GitHub OAuth access token")
         async with httpx.AsyncClient() as client:
             headers = {"Accept": "application/json"}
@@ -106,16 +107,16 @@ class GitHubAuthService:
             if not access_token:
                 logger.warning("GitHub OAuth token exchange returned no access token")
                 raise HTTPException(status_code=400, detail="No access token received from GitHub")
-            
+
             return access_token
-    
-    async def get_user_info(self, access_token: str) -> Optional[Dict[str, Any]]:
+
+    async def get_user_info(self, access_token: str) -> dict[str, Any] | None:
         """
         Get user information from GitHub using access token.
-        
+
         Args:
             access_token: GitHub access token
-            
+
         Returns:
             User information dictionary or None if failed
         """
@@ -138,16 +139,16 @@ class GitHubAuthService:
                 if primary_email:
                     user_data["email"] = primary_email
             return user_data
-    
-    async def authenticate_user(self, code: str, session_state: str, state: str) -> Optional[Dict[str, Any]]:
+
+    async def authenticate_user(self, code: str, session_state: str, state: str) -> dict[str, Any] | None:
         """
         Complete GitHub OAuth authentication flow.
-        
+
         Args:
             code: Authorization code from GitHub
             session_state: State from the user's session
             state: State from the GitHub callback
-        
+
         Returns:
             Authentication result with user info and JWT token
         """
@@ -168,15 +169,15 @@ class GitHubAuthService:
                 if not user:
                     logger.warning("Failed to get or create user from GitHub info")
                     return None
-                
+
                 # Generate JWT token
                 token_data = {
                     "sub": user.email,
                     "is_active": user.is_active
                 }
-                
+
                 jwt_token = create_access_token(token_data)
-                
+
                 return {
                     "access_token": jwt_token,
                     "token_type": "bearer",
@@ -187,19 +188,19 @@ class GitHubAuthService:
                         "is_active": user.is_active
                     }
                 }
-                
+
         except Exception as e:
             logger.warning("GitHub authentication failed: %s", type(e).__name__)
             return None
-    
-    async def _get_or_create_user(self, session: AsyncSession, user_info: Dict[str, Any]) -> Optional[User]:
+
+    async def _get_or_create_user(self, session: AsyncSession, user_info: dict[str, Any]) -> User | None:
         """
         Get existing user or create new user from GitHub info.
-        
+
         Args:
             session: Database session
             user_info: GitHub user information
-            
+
         Returns:
             User object or None if creation failed
         """
@@ -207,18 +208,18 @@ class GitHubAuthService:
         if not email:
             logger.error("No email found in GitHub user info")
             return None
-        
+
         # Check if user exists
         result = await session.execute(select(User).where(User.email == email))
         user = result.scalar_one_or_none()
-        
+
         if user:
             # Update user info if needed
             if not user.full_name and user_info.get("name"):
                 user.full_name = user_info["name"]
             await session.commit()
             return user
-        
+
         # Create new user
         try:
             user = User(
@@ -239,15 +240,15 @@ class GitHubAuthService:
 # Global instance
 github_auth_service: GitHubAuthService = GitHubAuthService()
 
-async def github_callback(code: str, state: str, session_state: str) -> Dict[str, Any]:
+async def github_callback(code: str, state: str, session_state: str) -> dict[str, Any]:
     """
     GitHub OAuth2 callback endpoint.
-    
+
     Args:
         code: Authorization code received from GitHub
         state: CSRF protection state parameter
         session_state: State stored in the user's session for CSRF protection
-    
+
     Returns:
         Redirect response or error message
     """

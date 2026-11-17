@@ -1,5 +1,6 @@
 import abc
-from typing import List, Dict, Any
+from typing import Any
+
 
 class ScraperBase(abc.ABC):
     """
@@ -9,9 +10,8 @@ class ScraperBase(abc.ABC):
     description: str  # Short description
 
     @abc.abstractmethod
-    async def scrape(self) -> List[Dict[str, Any]]:
+    async def scrape(self) -> list[dict[str, Any]]:
         """
         Scrape for new vulnerabilities.
         Returns a list of dicts with at least 'cve_id', 'title', 'url', 'published_date'.
         """
-        pass 

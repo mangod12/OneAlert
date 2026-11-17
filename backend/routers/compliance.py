@@ -9,30 +9,30 @@ Provides endpoints for:
 - Viewing compliance summary per framework
 """
 
-from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 
 from backend.database.db import get_async_db
-from backend.models.user import User
 from backend.models.compliance import (
-    ComplianceFramework,
-    ComplianceControl,
-    ComplianceAssessment,
-    FrameworkResponse,
-    ControlResponse,
     AssessmentResponse,
     AssessmentUpdate,
+    ComplianceAssessment,
+    ComplianceControl,
+    ComplianceFramework,
     ComplianceSummary,
+    ControlResponse,
+    FrameworkResponse,
 )
+from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.services.compliance_engine import run_automated_assessment
 
 router = APIRouter()
 
 
-@router.get("/frameworks", response_model=List[FrameworkResponse])
+@router.get("/frameworks", response_model=list[FrameworkResponse])
 async def list_frameworks(
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
@@ -43,7 +43,7 @@ async def list_frameworks(
     return frameworks
 
 
-@router.get("/frameworks/{framework_id}/controls", response_model=List[ControlResponse])
+@router.get("/frameworks/{framework_id}/controls", response_model=list[ControlResponse])
 async def list_controls(
     framework_id: int,
     current_user: User = Depends(get_active_user),
@@ -62,7 +62,7 @@ async def list_controls(
     return controls
 
 
-@router.get("/summary", response_model=List[ComplianceSummary])
+@router.get("/summary", response_model=list[ComplianceSummary])
 async def compliance_summary(
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
@@ -157,7 +157,7 @@ async def update_assessment(
     return assessment
 
 
-@router.get("/assessments", response_model=List[AssessmentResponse])
+@router.get("/assessments", response_model=list[AssessmentResponse])
 async def list_assessments(
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),

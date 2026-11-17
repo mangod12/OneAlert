@@ -8,20 +8,26 @@ Provides endpoints for:
 - OT-specific asset filtering and drilldown
 """
 
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 import json
 
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from backend.database.db import get_async_db
-from backend.models.user import User
 from backend.models.asset import Asset
 from backend.models.discovered_device import (
-    NetworkSensor, DiscoveredDevice, 
-    NetworkSensorCreate, NetworkSensorUpdate, NetworkSensorResponse,
-    DiscoveredDeviceCreate, DiscoveredDeviceUpdate, DiscoveredDeviceResponse, DiscoveredDeviceListResponse
+    DiscoveredDevice,
+    DiscoveredDeviceCreate,
+    DiscoveredDeviceListResponse,
+    DiscoveredDeviceResponse,
+    DiscoveredDeviceUpdate,
+    NetworkSensor,
+    NetworkSensorCreate,
+    NetworkSensorResponse,
+    NetworkSensorUpdate,
 )
+from backend.models.user import User
 from backend.routers.auth import get_active_user
 
 router = APIRouter()
@@ -48,7 +54,7 @@ async def create_network_sensor(
     return db_sensor
 
 
-@router.get("/sensors", response_model=List[NetworkSensorResponse])
+@router.get("/sensors", response_model=list[NetworkSensorResponse])
 async def list_network_sensors(
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
@@ -97,11 +103,11 @@ async def update_network_sensor(
     sensor = result.scalar_one_or_none()
     if not sensor:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sensor not found")
-    
+
     # Update only provided fields
     for field, value in sensor_update.model_dump(exclude_unset=True).items():
         setattr(sensor, field, value)
-    
+
     await db.commit()
     await db.refresh(sensor)
     return sensor
@@ -123,7 +129,7 @@ async def delete_network_sensor(
     sensor = result.scalar_one_or_none()
     if not sensor:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sensor not found")
-    
+
     await db.delete(sensor)
     await db.commit()
 
@@ -145,7 +151,7 @@ async def create_discovered_device(
         services_detected=device_data.services_detected,
         protocols=device_data.protocols,
         industrial_protocols=device_data.industrial_protocols,
-        **{k: v for k, v in device_data.model_dump().items() 
+        **{k: v for k, v in device_data.model_dump().items()
            if k not in ['ports_open', 'services_detected', 'protocols', 'industrial_protocols']}
     )
     db.add(db_device)
@@ -158,52 +164,52 @@ async def create_discovered_device(
 async def list_discovered_devices(
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(20, ge=1, le=100, description="Page size"),
-    ip_address: Optional[str] = Query(None, description="Filter by IP address"),
-    ot_only: Optional[bool] = Query(False, description="Only show OT devices"),
-    risk_min: Optional[float] = Query(None, ge=0, le=100, description="Minimum risk score"),
-    risk_max: Optional[float] = Query(None, ge=0, le=100, description="Maximum risk score"),
-    correlated: Optional[bool] = Query(None, description="Filter by correlation status"),
+    ip_address: str | None = Query(None, description="Filter by IP address"),
+    ot_only: bool | None = Query(False, description="Only show OT devices"),
+    risk_min: float | None = Query(None, ge=0, le=100, description="Minimum risk score"),
+    risk_max: float | None = Query(None, ge=0, le=100, description="Maximum risk score"),
+    correlated: bool | None = Query(None, description="Filter by correlation status"),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
 ):
     """List discovered devices with filtering and pagination."""
     skip = (page - 1) * size
-    
+
     # Build query
     query = select(DiscoveredDevice).where(DiscoveredDevice.user_id == current_user.id)
     count_query = select(func.count()).select_from(DiscoveredDevice).where(DiscoveredDevice.user_id == current_user.id)
-    
+
     # Apply filters
     if ip_address:
         query = query.filter(DiscoveredDevice.ip_address.ilike(f"%{ip_address}%"))
         count_query = count_query.filter(DiscoveredDevice.ip_address.ilike(f"%{ip_address}%"))
-    
+
     if ot_only:
         query = query.filter(DiscoveredDevice.is_ot_device.is_(True))
         count_query = count_query.filter(DiscoveredDevice.is_ot_device.is_(True))
-    
+
     if risk_min is not None:
         query = query.filter(DiscoveredDevice.risk_score >= risk_min)
         count_query = count_query.filter(DiscoveredDevice.risk_score >= risk_min)
-    
+
     if risk_max is not None:
         query = query.filter(DiscoveredDevice.risk_score <= risk_max)
         count_query = count_query.filter(DiscoveredDevice.risk_score <= risk_max)
-    
+
     if correlated is not None:
         query = query.filter(DiscoveredDevice.is_correlated == correlated)
         count_query = count_query.filter(DiscoveredDevice.is_correlated == correlated)
-    
+
     # Get total
     total = (await db.execute(count_query)).scalar_one()
-    
+
     # Apply pagination and ordering
     query = query.order_by(DiscoveredDevice.risk_score.desc(), DiscoveredDevice.last_seen.desc())
     query = query.offset(skip).limit(size)
-    
+
     result = await db.execute(query)
     devices = result.scalars().all()
-    
+
     return DiscoveredDeviceListResponse(
         devices=devices,
         total=total,
@@ -248,11 +254,11 @@ async def update_discovered_device(
     device = result.scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
-    
+
     # Update fields
     for field, value in device_update.model_dump(exclude_unset=True).items():
         setattr(device, field, value)
-    
+
     await db.commit()
     await db.refresh(device)
     return device
@@ -262,7 +268,7 @@ async def update_discovered_device(
 async def correlate_device_to_asset(
     device_id: int,
     asset_id: int,
-    correlation_score: Optional[float] = Query(None, ge=0, le=100),
+    correlation_score: float | None = Query(None, ge=0, le=100),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -277,7 +283,7 @@ async def correlate_device_to_asset(
     device = device_result.scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
-    
+
     # Verify asset belongs to user
     asset_result = await db.execute(
         select(Asset).where(
@@ -288,12 +294,12 @@ async def correlate_device_to_asset(
     asset = asset_result.scalar_one_or_none()
     if not asset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
-    
+
     # Update correlation
     device.asset_id = asset_id
     device.is_correlated = True
     device.correlation_score = correlation_score or 100.0
-    
+
     await db.commit()
     await db.refresh(device)
     return device
@@ -316,7 +322,7 @@ async def promote_device_to_asset(
     device = device_result.scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
-    
+
     # Create managed asset from discovered device
     new_asset = Asset(
         user_id=current_user.id,
@@ -335,18 +341,18 @@ async def promote_device_to_asset(
         criticality="high" if device.risk_score > 70 else "medium" if device.risk_score > 40 else "low",
         discovery_method="sensor_report"
     )
-    
+
     db.add(new_asset)
     await db.flush()
-    
+
     # Correlate discovered device to new asset
     device.asset_id = new_asset.id
     device.is_correlated = True
     device.correlation_score = 100.0
-    
+
     await db.commit()
     await db.refresh(new_asset)
-    
+
     return {
         "message": "Device promoted to managed asset",
         "asset_id": new_asset.id,
@@ -364,7 +370,7 @@ async def get_ot_summary(
     db: AsyncSession = Depends(get_async_db)
 ):
     """Get OT asset discovery summary for dashboard."""
-    
+
     # Count managed OT assets
     managed_result = await db.execute(
         select(func.count(Asset.id)).where(
@@ -373,7 +379,7 @@ async def get_ot_summary(
         )
     )
     managed_ot_count = managed_result.scalar_one()
-    
+
     # Count discovered OT devices
     discovered_result = await db.execute(
         select(func.count(DiscoveredDevice.id)).where(
@@ -382,7 +388,7 @@ async def get_ot_summary(
         )
     )
     discovered_ot_count = discovered_result.scalar_one()
-    
+
     # Count high-risk discovered devices
     high_risk_result = await db.execute(
         select(func.count(DiscoveredDevice.id)).where(
@@ -391,7 +397,7 @@ async def get_ot_summary(
         )
     )
     high_risk_count = high_risk_result.scalar_one()
-    
+
     # Count uncorrelated devices
     uncorrelated_result = await db.execute(
         select(func.count(DiscoveredDevice.id)).where(
@@ -400,7 +406,7 @@ async def get_ot_summary(
         )
     )
     uncorrelated_count = uncorrelated_result.scalar_one()
-    
+
     return {
         "managed_ot_assets": managed_ot_count,
         "discovered_ot_devices": discovered_ot_count,

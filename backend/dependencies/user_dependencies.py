@@ -5,8 +5,9 @@ This module avoids circular imports by separating dependencies from models and r
 """
 
 from fastapi import Depends, HTTPException, status
-from backend.routers.auth import get_current_user
+
 from backend.models.user import User
+from backend.routers.auth import get_current_user
 
 
 def require_role(role: str):

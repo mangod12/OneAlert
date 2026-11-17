@@ -18,17 +18,18 @@ Periodically fetches and indexes advisories for:
 - etc.
 """
 
-import httpx
 import logging
-from typing import List, Dict, Any
+from typing import Any
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
 
 class ICSAdvisory:
     """Structured representation of an ICS advisory."""
-    
-    def __init__(self, data: Dict[str, Any]):
+
+    def __init__(self, data: dict[str, Any]):
         self.advisory_id = data.get("advisory_id")  # ICSA-23-001-01 or CISA-2023-123
         self.title = data.get("title")
         self.description = data.get("description")
@@ -46,37 +47,37 @@ class ICSAdvisory:
 
 class ICSCertFeedService:
     """Service for fetching and parsing ICS-CERT / CISA vulnerability feeds."""
-    
+
     def __init__(self):
         # CISA endpoints
         self.cisa_kev_url = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
         self.cisa_nvmc_url = "https://nvmc.nist.gov/feeds/json/cve/1.1/nvdcve-1.1-modified.json"
-        
+
         # ICS-CERT RSS feeds
         self.icsa_rss_url = "https://us-cert.cisa.gov/icon/advisory/rss.xml"
-        
+
         # Vendor-specific feeds (example)
         self.siemens_url = "https://support.industry.siemens.com/cs/ww/en/view/WIB/sicherheit/"
         self.rockwell_url = "https://rockwellautomation.custhelp.com/app/product_security/p/24/gspf_ProductSecurityVulnerabilityInfo?cid=soc-security-vuln"
-        
+
         # Session for HTTP requests
         self.session = None
-    
-    async def fetch_cisa_kev(self) -> List[ICSAdvisory]:
+
+    async def fetch_cisa_kev(self) -> list[ICSAdvisory]:
         """
         Fetch CISA Known Exploited Vulnerabilities catalog.
         This is the authoritative list of CVEs known to be exploited.
         """
         advisories = []
-        
+
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.get(self.cisa_kev_url)
                 response.raise_for_status()
-                
+
                 data = response.json()
                 vulnerabilities = data.get("vulnerabilities", [])
-                
+
                 for vuln in vulnerabilities:
                     advisory = ICSAdvisory({
                         "advisory_id": vuln.get("cveID"),
@@ -93,29 +94,29 @@ class ICSCertFeedService:
                         "remediation": vuln.get("requiredAction", "")
                     })
                     advisories.append(advisory)
-                
+
                 logger.info(f"Fetched {len(vulnerabilities)} CISA KEV vulnerabilities")
-                
+
         except Exception as e:
             logger.error(f"Error fetching CISA KEV: {e}")
-        
+
         return advisories
-    
-    async def fetch_industrial_cves(self, keywords: List[str] = None) -> List[ICSAdvisory]:
+
+    async def fetch_industrial_cves(self, keywords: list[str] | None = None) -> list[ICSAdvisory]:
         """
         Fetch CVEs related to industrial systems from multiple sources.
         Keywords filter for industrial vendors (Siemens, Rockwell, etc).
         """
-        
+
         if not keywords:
             keywords = [
                 "siemens", "rockwell", "honeywell", "abb", "schneider",
                 "gc", "general electric", "scada", "plc", "hmi",
                 "modbus", "profinet", "dnp3", "ethernet/ip"
             ]
-        
+
         advisories = []
-        
+
         # For demo: return hardcoded sample industrial CVEs
         # In production, would query NVD with ICS-specific keywords
         sample_advisories = [
@@ -159,15 +160,15 @@ class ICSCertFeedService:
                 "remediation": "Update to FactoryTalk version 2.80.1 or later"
             }
         ]
-        
+
         for adv_data in sample_advisories:
             advisory = ICSAdvisory(adv_data)
             advisories.append(advisory)
-        
+
         logger.info(f"Fetched {len(advisories)} industrial CVEs")
         return advisories
-    
-    async def fetch_general_cves_with_ot_keywords(self, hours_back: int = 24) -> List[ICSAdvisory]:
+
+    async def fetch_general_cves_with_ot_keywords(self, hours_back: int = 24) -> list[ICSAdvisory]:
         """
         Fetch recent CVEs from NVD that match OT-related keywords.
         This acts as a filter for relevant CVEs in general feed.
@@ -181,12 +182,12 @@ class ICSCertFeedService:
             # industrial, ics, operational technology, control system, critical infrastructure
             # For now, return empty or cached results
             logger.info("Sampled NVD for OT-related CVEs")
-            
+
         except Exception as e:
             logger.error(f"Error fetching general CVEs: {e}")
-        
+
         return advisories
-    
+
     def _map_severity(self, cisa_severity: str) -> str:
         """Map CISA severity to internal format."""
         severity_map = {
@@ -197,8 +198,8 @@ class ICSCertFeedService:
             "UNKNOWN": "medium"
         }
         return severity_map.get(cisa_severity.upper(), "medium")
-    
-    def advisory_to_dict(self, advisory: ICSAdvisory) -> Dict[str, Any]:
+
+    def advisory_to_dict(self, advisory: ICSAdvisory) -> dict[str, Any]:
         """Convert advisory to dictionary for storage."""
         return {
             "advisory_id": advisory.advisory_id,
@@ -215,7 +216,7 @@ class ICSCertFeedService:
             "source_url": advisory.source_url,
             "remediation": advisory.remediation
         }
-    
+
     async def enrich_advisory_with_exploit_intelligence(self, advisory: ICSAdvisory) -> None:
         """
         Enrich advisory with real-time exploit intelligence.
@@ -224,7 +225,6 @@ class ICSCertFeedService:
         # TODO: Implement exploit.db integration
         # TODO: Check for POCs on GitHub
         # TODO: Update advisory.known_exploited if POC found
-        pass
 
 
 # Global service instance

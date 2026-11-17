@@ -1,5 +1,7 @@
 import requests
+
 from .base import AlertSenderBase
+
 
 class SlackAlertSender(AlertSenderBase):
     def __init__(self, webhook_url: str):

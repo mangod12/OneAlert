@@ -1,8 +1,8 @@
 """Base agent with run/step ledger logging."""
 
 import logging
-from datetime import datetime, timezone
 from abc import ABC, abstractmethod
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,7 +37,7 @@ class BaseAgent(ABC):
         try:
             result = await self.run(**kwargs)
             self._run.status = "completed"
-            self._run.completed_at = datetime.now(timezone.utc)
+            self._run.completed_at = datetime.now(UTC)
             self._run.result_summary = str(result.get("summary", ""))[:500]
             self._run.prompt_tokens = self._total_prompt_tokens
             self._run.completion_tokens = self._total_completion_tokens
@@ -45,7 +45,7 @@ class BaseAgent(ABC):
             return result
         except Exception as e:
             self._run.status = "failed"
-            self._run.completed_at = datetime.now(timezone.utc)
+            self._run.completed_at = datetime.now(UTC)
             self._run.error_message = str(e)[:500]
             await self.db.commit()
             logger.error(f"Agent {self.agent_type} failed: {e}")

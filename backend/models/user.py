@@ -8,17 +8,16 @@ schemas for user-related API operations (registration, login, profile, etc).
 - The Pydantic models (`UserBase`, `UserCreate`, `UserUpdate`, `UserResponse`, `Token`, `TokenData`) are used for request/response validation and serialization.
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
+from datetime import datetime
+
+from fastapi import Depends
+from pydantic import BaseModel, EmailStr, field_validator
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from backend.database.db import Base
-from pydantic import BaseModel, EmailStr, field_validator
-from typing import Optional, List
-from datetime import datetime
-from fastapi import Depends
-from backend.database.db import get_async_db
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+
+from backend.database.db import Base, get_async_db
 from backend.services.auth_service import validate_new_password
 
 
@@ -36,7 +35,7 @@ class User(Base):
     is_verified = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
+
     # GitHub OAuth fields
     github_id = Column(String, unique=True, nullable=True, index=True)
     github_username = Column(String, nullable=True)
@@ -67,11 +66,11 @@ class User(Base):
 class UserBase(BaseModel):
     """Base user schema."""
     email: EmailStr
-    full_name: Optional[str] = None
-    company: Optional[str] = None
-    slack_webhook_url: Optional[str] = None
-    webhook_url: Optional[str] = None
-    mfa_enabled: Optional[bool] = False
+    full_name: str | None = None
+    company: str | None = None
+    slack_webhook_url: str | None = None
+    webhook_url: str | None = None
+    mfa_enabled: bool | None = False
 
     model_config = {"from_attributes": True}
 
@@ -84,7 +83,7 @@ class UserCreate(UserBase):
     @classmethod
     def validate_password(cls, value: str) -> str:
         return validate_new_password(value)
-    
+
     model_config = {"from_attributes": True}
 
 
@@ -93,30 +92,30 @@ class GitHubUserCreate(BaseModel):
     github_id: str
     github_username: str
     email: str
-    full_name: Optional[str] = None
-    company: Optional[str] = None
-    avatar_url: Optional[str] = None
-    slack_webhook_url: Optional[str] = None
-    webhook_url: Optional[str] = None
-    
+    full_name: str | None = None
+    company: str | None = None
+    avatar_url: str | None = None
+    slack_webhook_url: str | None = None
+    webhook_url: str | None = None
+
     model_config = {"from_attributes": True}
 
 
 class UserUpdate(BaseModel):
     """Schema for user updates."""
-    full_name: Optional[str] = None
-    company: Optional[str] = None
-    password: Optional[str] = None
-    slack_webhook_url: Optional[str] = None
-    webhook_url: Optional[str] = None
-    mfa_enabled: Optional[bool] = False
-    mfa_secret: Optional[str] = None
+    full_name: str | None = None
+    company: str | None = None
+    password: str | None = None
+    slack_webhook_url: str | None = None
+    webhook_url: str | None = None
+    mfa_enabled: bool | None = False
+    mfa_secret: str | None = None
 
     @field_validator("password")
     @classmethod
-    def validate_password(cls, value: Optional[str]) -> Optional[str]:
+    def validate_password(cls, value: str | None) -> str | None:
         return validate_new_password(value) if value is not None else value
-    
+
     model_config = {"from_attributes": True}
 
 
@@ -124,14 +123,14 @@ class UserResponse(BaseModel):
     """Schema for user response."""
     id: int
     email: EmailStr
-    full_name: Optional[str] = None
-    company: Optional[str] = None
+    full_name: str | None = None
+    company: str | None = None
     is_active: bool
     is_verified: bool
     created_at: datetime
-    updated_at: Optional[datetime] = None
-    org_id: Optional[int] = None
-    mfa_enabled: Optional[bool] = False
+    updated_at: datetime | None = None
+    org_id: int | None = None
+    mfa_enabled: bool | None = False
 
     model_config = {"from_attributes": True}
 
@@ -140,17 +139,17 @@ class Token(BaseModel):
     """Token response schema."""
     access_token: str
     token_type: str
-    
+
     model_config = {"from_attributes": True}
 
 
 class TokenData(BaseModel):
     """Token payload schema."""
-    email: Optional[str] = None
-    
+    email: str | None = None
+
     model_config = {"from_attributes": True}
 
 
-async def list_users(db: AsyncSession = Depends(get_async_db)) -> List[User]:
+async def list_users(db: AsyncSession = Depends(get_async_db)) -> list[User]:
     result = await db.execute(select(User))
     return result.scalars().all()

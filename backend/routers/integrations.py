@@ -3,23 +3,23 @@ Integrations router for managing SIEM/SOAR integration configurations.
 Provides CRUD endpoints for integration configs plus connection testing.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
-from backend.models.user import User
 from backend.models.integration_config import (
     IntegrationConfig,
     IntegrationConfigCreate,
     IntegrationConfigResponse,
     IntegrationConfigUpdate,
 )
+from backend.models.user import User
 from backend.routers.auth import get_active_user
-from backend.services.integrations.splunk import SplunkIntegration
+from backend.services.integrations.base import validate_outbound_url
+from backend.services.integrations.pagerduty import PagerDutyIntegration
 from backend.services.integrations.sentinel import SentinelIntegration
 from backend.services.integrations.servicenow import ServiceNowIntegration
-from backend.services.integrations.pagerduty import PagerDutyIntegration
-from backend.services.integrations.base import validate_outbound_url
+from backend.services.integrations.splunk import SplunkIntegration
 
 router = APIRouter()
 

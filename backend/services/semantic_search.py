@@ -5,13 +5,13 @@ with pure Python fallback. Provides similar-incident retrieval and
 blast-radius graph queries.
 """
 
-import re
-import math
 import logging
+import math
+import re
 from collections import Counter
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.case import Case
 
@@ -129,7 +129,7 @@ async def find_similar_cases(
     other_tokens = [_tokenize(_case_to_text(c)) for c in others]
 
     # Compute IDF across all documents
-    all_docs = [target_tokens] + other_tokens
+    all_docs = [target_tokens, *other_tokens]
     idf = _compute_idf(all_docs)
 
     # Compute TF-IDF vectors
@@ -185,7 +185,7 @@ async def search_cases(
         return []
 
     case_tokens = [_tokenize(_case_to_text(c)) for c in cases]
-    all_docs = [query_tokens] + case_tokens
+    all_docs = [query_tokens, *case_tokens]
     idf = _compute_idf(all_docs)
 
     query_vec = _tfidf_vector(query_tokens, idf)
@@ -218,10 +218,10 @@ async def get_blast_radius(
 
     Returns graph of affected entities and their relationships.
     """
-    from backend.models.case import CaseAlert, CaseEvent
     from backend.models.alert import Alert
-    from backend.models.security_event import SecurityEvent
     from backend.models.asset import Asset
+    from backend.models.case import CaseAlert, CaseEvent
+    from backend.models.security_event import SecurityEvent
 
     # Get case
     case = (await db.execute(

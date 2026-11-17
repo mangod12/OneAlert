@@ -3,16 +3,26 @@ Alerts router for managing vulnerability notifications.
 Provides endpoints for viewing, acknowledging, and getting statistics on security alerts.
 """
 
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+
+from datetime import UTC
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
 
 from backend.database.db import get_async_db
-from backend.models.user import User
-from backend.models.alert import Alert, AlertRead, AlertUpdate, AlertListResponse, AlertStats, AlertStatus, Severity # Import AlertRead
+from backend.models.alert import (  # Import AlertRead
+    Alert,
+    AlertListResponse,
+    AlertRead,
+    AlertStats,
+    AlertStatus,
+    AlertUpdate,
+    Severity,
+)
 from backend.models.asset import Asset
+from backend.models.user import User
 from backend.routers.auth import get_active_user
 
 router = APIRouter()
@@ -22,10 +32,10 @@ router = APIRouter()
 async def list_alerts(
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
-    severity: Optional[Severity] = Query(None, description="Filter by severity"),
-    status: Optional[AlertStatus] = Query(None, description="Filter by status"),
-    asset_id: Optional[int] = Query(None, description="Filter by asset ID"),
-    cve_id: Optional[str] = Query(None, description="Filter by CVE ID"),
+    severity: Severity | None = Query(None, description="Filter by severity"),
+    status: AlertStatus | None = Query(None, description="Filter by status"),
+    asset_id: int | None = Query(None, description="Filter by asset ID"),
+    cve_id: str | None = Query(None, description="Filter by CVE ID"),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -65,7 +75,7 @@ async def list_alerts(
 
     # Apply ordering and pagination to the main data query
     query = query.order_by(Alert.created_at.desc()).offset(skip).limit(size)
-    
+
     result = await db.execute(query)
     rows = result.all()  # This will give rows of (Alert, asset_name, asset_vendor, asset_product)
 
@@ -101,7 +111,7 @@ async def get_alert(
     alert = result.scalar_one_or_none()
     if not alert:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
-    
+
     # Prepare response, potentially transforming alert object if needed
     # For now, assuming the Alert model can be directly returned
     # If Alert model has a to_dict or Pydantic model conversion, use it here
@@ -123,21 +133,21 @@ async def update_alert(
         )
     )
     alert = result.scalar_one_or_none()
-    
+
     if not alert:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Alert not found"
         )
-    
+
     # Update alert fields
     update_data = alert_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(alert, field, value)
-    
+
     await db.commit()
     await db.refresh(alert)
-    
+
     return alert
 
 
@@ -148,7 +158,7 @@ async def acknowledge_alert(
     db: AsyncSession = Depends(get_async_db)
 ):
     """Acknowledge an alert."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     result = await db.execute(
         select(Alert).where(
@@ -165,11 +175,11 @@ async def acknowledge_alert(
         )
 
     alert.status = AlertStatus.ACKNOWLEDGED
-    alert.acknowledged_at = datetime.now(timezone.utc)
-    
+    alert.acknowledged_at = datetime.now(UTC)
+
     await db.commit()
     await db.refresh(alert)
-    
+
     return {"message": "Alert acknowledged successfully"}
 
 
@@ -257,7 +267,7 @@ async def get_alert_stats(
         select(func.count()).where(Alert.user_id == current_user.id)
     )
     total_alerts = total_result.scalar()
-    
+
     # Alerts by severity
     severity_stats = {}
     for severity in Severity:
@@ -267,7 +277,7 @@ async def get_alert_stats(
             )
         )
         severity_stats[f"{severity.value}_alerts"] = result.scalar()
-    
+
     # Alerts by status
     pending_result = await db.execute(
         select(func.count()).where(
@@ -275,14 +285,14 @@ async def get_alert_stats(
         )
     )
     pending_alerts = pending_result.scalar()
-    
+
     acknowledged_result = await db.execute(
         select(func.count()).where(
             and_(Alert.user_id == current_user.id, Alert.status == AlertStatus.ACKNOWLEDGED)
         )
     )
     acknowledged_alerts = acknowledged_result.scalar()
-    
+
     return AlertStats(
         total_alerts=total_alerts,
         critical_alerts=severity_stats.get("critical_alerts", 0),

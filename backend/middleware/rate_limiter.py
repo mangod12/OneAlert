@@ -5,11 +5,11 @@ Protects authentication endpoints from brute-force attacks.
 
 import os
 
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 _enabled = not os.getenv("TESTING")
 limiter = Limiter(

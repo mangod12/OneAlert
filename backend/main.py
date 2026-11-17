@@ -3,26 +3,42 @@ FastAPI main application entry point.
 Configures the API, middleware, routers, and startup/shutdown events.
 """
 
+import logging
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from contextlib import asynccontextmanager
-import logging
-import os
-
-from backend.config import settings
-from backend.routers import auth, assets, alerts, ot, organizations, compliance, sbom, topology, billing
-from backend.routers import sensor_ingest, integrations, events, cases, mitre, hunt, response_plans, validation
-from backend.scheduler.cron import scheduler
-from backend.middleware.security_headers import SecurityHeadersMiddleware
 from slowapi.middleware import SlowAPIMiddleware
 
-from backend.middleware.rate_limiter import limiter, RateLimitExceeded, rate_limit_exceeded_handler
-from backend.middleware.request_id import RequestIDMiddleware
-from backend.middleware.metrics import MetricsMiddleware, get_metrics_summary
+from backend.config import settings
 from backend.logging_config import setup_logging
-
+from backend.middleware.metrics import MetricsMiddleware, get_metrics_summary
+from backend.middleware.rate_limiter import RateLimitExceeded, limiter, rate_limit_exceeded_handler
+from backend.middleware.request_id import RequestIDMiddleware
+from backend.middleware.security_headers import SecurityHeadersMiddleware
+from backend.routers import (
+    alerts,
+    assets,
+    auth,
+    billing,
+    cases,
+    compliance,
+    events,
+    hunt,
+    integrations,
+    mitre,
+    organizations,
+    ot,
+    response_plans,
+    sbom,
+    sensor_ingest,
+    topology,
+    validation,
+)
+from backend.scheduler.cron import scheduler
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -37,23 +53,23 @@ async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
     logger.info("Starting CyberSec Alert SaaS...")
-    
+
     # Initialize database tables and seed demo data
     try:
-        from backend.database.db import get_async_engine, AsyncSessionLocal, Base
+        from backend.database.db import AsyncSessionLocal, Base, get_async_engine
         from backend.database.seed import seed_database
         from backend.services.compliance_seed import seed_compliance_data
-        
+
         logger.info("Initializing database tables...")
         async_engine = get_async_engine()
-        
+
         # NOTE: In production, use `alembic upgrade head` instead of create_all.
         # create_all is kept for development convenience.
         async with async_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        
+
         logger.info("Database tables initialized")
-        
+
         # Seed demo user if needed
         await seed_database()
         logger.info("Database seeding complete")
@@ -62,18 +78,18 @@ async def lifespan(app: FastAPI):
         async with AsyncSessionLocal() as session:
             await seed_compliance_data(session)
         logger.info("Compliance data seeding complete")
-        
+
     except Exception as e:
         logger.error(f"Database initialization error: {e}")
         # Continue startup even if seeding fails
-    
+
     # Start scheduler
     if not os.getenv("DISABLE_SCHEDULER"):
         scheduler.start()
         logger.info("Scheduler started")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down...")
     if not os.getenv("DISABLE_SCHEDULER"):

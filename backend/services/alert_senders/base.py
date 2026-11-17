@@ -1,10 +1,10 @@
 import abc
-from typing import Dict, Any
+from typing import Any
+
 
 class AlertSenderBase(abc.ABC):
     @abc.abstractmethod
-    def send_alert(self, alert: Dict[str, Any]):
+    def send_alert(self, alert: dict[str, Any]):
         """
         Send an alert to the configured destination.
         """
-        pass 

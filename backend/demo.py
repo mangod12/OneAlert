@@ -3,8 +3,9 @@
 Usage: python -m backend.demo
 """
 
-import uvicorn
 import os
+
+import uvicorn
 
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./demo.db")
 os.environ.setdefault("SECRET_KEY", "demo-secret-key-not-for-production")

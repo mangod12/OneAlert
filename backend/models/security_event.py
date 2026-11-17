@@ -1,17 +1,18 @@
 """Security event models for ingested telemetry (Suricata, Zeek, syslog, etc.)."""
 
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Index
+from datetime import datetime
+from enum import StrEnum
+
+from pydantic import BaseModel
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.types import JSON
+
 from backend.database.db import Base
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
-from enum import Enum
 
 
-class EventSourceType(str, Enum):
+class EventSourceType(StrEnum):
     SURICATA = "suricata"
     ZEEK = "zeek"
     SYSLOG = "syslog"
@@ -22,7 +23,7 @@ class EventSourceType(str, Enum):
     WEBHOOK = "webhook"
 
 
-class EventSeverity(str, Enum):
+class EventSeverity(StrEnum):
     INFO = "info"
     LOW = "low"
     MEDIUM = "medium"
@@ -93,31 +94,31 @@ class SecurityEventCreate(BaseModel):
     timestamp: datetime
     event_type: str
     severity: str = "info"
-    signature: Optional[str] = None
-    signature_id: Optional[str] = None
-    category: Optional[str] = None
-    source_ip: Optional[str] = None
-    source_port: Optional[int] = None
-    dest_ip: Optional[str] = None
-    dest_port: Optional[int] = None
-    protocol: Optional[str] = None
-    action: Optional[str] = None
-    hostname: Optional[str] = None
-    username: Optional[str] = None
-    domain: Optional[str] = None
-    url: Optional[str] = None
-    user_agent: Optional[str] = None
-    bytes_in: Optional[int] = None
-    bytes_out: Optional[int] = None
-    raw_data: Optional[dict] = None
-    source_type: Optional[str] = None
+    signature: str | None = None
+    signature_id: str | None = None
+    category: str | None = None
+    source_ip: str | None = None
+    source_port: int | None = None
+    dest_ip: str | None = None
+    dest_port: int | None = None
+    protocol: str | None = None
+    action: str | None = None
+    hostname: str | None = None
+    username: str | None = None
+    domain: str | None = None
+    url: str | None = None
+    user_agent: str | None = None
+    bytes_in: int | None = None
+    bytes_out: int | None = None
+    raw_data: dict | None = None
+    source_type: str | None = None
     model_config = {"from_attributes": True}
 
 
 class SecurityEventResponse(SecurityEventCreate):
     id: int
     user_id: int
-    source_id: Optional[int] = None
+    source_id: int | None = None
     processed: str = "pending"
     created_at: datetime
     model_config = {"from_attributes": True}
@@ -126,12 +127,12 @@ class SecurityEventResponse(SecurityEventCreate):
 class EventBatchIngest(BaseModel):
     """Batch of events for webhook/upload ingestion."""
     source_type: str = "webhook"
-    source_name: Optional[str] = None
-    events: List[dict]  # Raw events, will be parsed by source-specific parser
+    source_name: str | None = None
+    events: list[dict]  # Raw events, will be parsed by source-specific parser
 
 
 class EventListResponse(BaseModel):
-    events: List[SecurityEventResponse]
+    events: list[SecurityEventResponse]
     total: int
     page: int
     size: int
@@ -144,6 +145,6 @@ class EventSourceResponse(BaseModel):
     source_type: str
     status: str
     event_count: int
-    last_event_at: Optional[datetime] = None
+    last_event_at: datetime | None = None
     created_at: datetime
     model_config = {"from_attributes": True}
