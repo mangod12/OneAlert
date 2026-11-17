@@ -6,6 +6,7 @@ import { toast } from '../components/Toast';
 import { getApiErrorMessage } from '../api/errors';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton, DegradedBanner } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
 interface ResponseAction {
   priority?: number;
@@ -57,6 +58,7 @@ export function ResponsePlans() {
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState<string[]>([]);
   const [workingPlan, setWorkingPlan] = useState<number | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ type: 'reject' | 'execute'; planId: number } | null>(null);
 
   const fetchPlans = async () => {
     setLoading(true);
@@ -84,23 +86,25 @@ export function ResponsePlans() {
     finally { setWorkingPlan(null); }
   };
 
-  const rejectPlan = async (planId: number) => {
-    if (workingPlan !== null || !window.confirm('Reject this response plan?')) return;
+  const rejectPlan = async (planId: number, reason: string) => {
+    if (workingPlan !== null) return;
     setWorkingPlan(planId);
     try {
-      await apiClient.post(`/response-plans/${planId}/reject`, { reason: 'Manual rejection' });
+      await apiClient.post(`/response-plans/${planId}/reject`, { reason: reason || 'Manual rejection' });
       toast('Plan rejected', 'warning');
+      setConfirmAction(null);
       await fetchPlans();
     } catch (err) { toast(getApiErrorMessage(err, 'Failed to reject plan.'), 'error'); }
     finally { setWorkingPlan(null); }
   };
 
   const executePlan = async (planId: number) => {
-    if (workingPlan !== null || !window.confirm('Execute this approved response plan now?')) return;
+    if (workingPlan !== null) return;
     setWorkingPlan(planId);
     try {
       await apiClient.post(`/response-plans/${planId}/execute`);
       toast('Plan executed successfully', 'success');
+      setConfirmAction(null);
       await fetchPlans();
     } catch (err) { toast(getApiErrorMessage(err, 'Execution failed.'), 'error'); }
     finally { setWorkingPlan(null); }
@@ -139,7 +143,7 @@ export function ResponsePlans() {
                     className="flex items-center gap-1 px-3 py-1.5 bg-success hover:bg-success/80 text-surface-950 rounded text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40">
                     <CheckCircle className="w-3.5 h-3.5" /> Approve
                   </button>
-                  <button disabled={workingPlan !== null || loading || errors.length > 0} onClick={() => rejectPlan(a.plan_id)}
+                  <button disabled={workingPlan !== null || loading || errors.length > 0} onClick={() => setConfirmAction({ type: 'reject', planId: a.plan_id })}
                     className="flex items-center gap-1 px-3 py-1.5 bg-danger hover:bg-danger/80 text-surface-950 rounded text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40">
                     <XCircle className="w-3.5 h-3.5" /> Reject
                   </button>
@@ -186,7 +190,7 @@ export function ResponsePlans() {
                     <td className="p-3 text-surface-500 text-xs">{new Date(p.created_at).toLocaleString()}</td>
                     <td className="p-3">
                       {p.status === 'approved' && (
-                        <button disabled={workingPlan !== null || loading || errors.length > 0} onClick={e => { e.stopPropagation(); executePlan(p.id); }}
+                        <button disabled={workingPlan !== null || loading || errors.length > 0} onClick={e => { e.stopPropagation(); setConfirmAction({ type: 'execute', planId: p.id }); }}
                           className="flex items-center gap-1 px-2 py-1 bg-primary-500 hover:bg-primary-400 text-surface-950 rounded text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40">
                           <Play className="w-3 h-3" /> Execute
                         </button>
@@ -227,6 +231,30 @@ export function ResponsePlans() {
             ))}
           </div>
         </div>
+      )}
+
+      {confirmAction?.type === 'execute' && (
+        <ConfirmDialog
+          title={`Execute plan #${confirmAction.planId}?`}
+          description="Execution runs every guarded action in this approved plan immediately. Results are recorded on the plan's decision trail."
+          confirmLabel="Execute now"
+          busy={workingPlan !== null}
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={() => void executePlan(confirmAction.planId)}
+        />
+      )}
+      {confirmAction?.type === 'reject' && (
+        <ConfirmDialog
+          title={`Reject plan #${confirmAction.planId}?`}
+          description="Rejection closes the plan and its pending approval. The reason is recorded on the approval's decision trail."
+          confirmLabel="Reject plan"
+          tone="danger"
+          reasonLabel="Reason for rejection (optional)"
+          reasonPlaceholder="e.g. Isolation window overlaps the maintenance freeze"
+          busy={workingPlan !== null}
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={reason => void rejectPlan(confirmAction.planId, reason)}
+        />
       )}
     </div>
   );

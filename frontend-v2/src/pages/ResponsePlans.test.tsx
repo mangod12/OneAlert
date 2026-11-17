@@ -44,12 +44,72 @@ describe('Response plan refresh safety', () => {
       }] }],
     } }));
     post.mockImplementation(async () => { executed = true; return { data: {} }; });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<ResponsePlans />);
     fireEvent.click(await screen.findByText('Case #4'));
     expect(screen.queryByText('completed')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Execute' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Execute now' }));
     expect(await screen.findByText('completed')).toBeTruthy();
     await waitFor(() => expect(post).toHaveBeenCalledWith('/response-plans/12/execute'));
+  });
+});
+
+describe('Response plan confirmation dialogs', () => {
+  const pendingApproval = {
+    id: 7, plan_id: 12, case_id: 4, status: 'pending', reason: 'Agent requests approval',
+    autonomy_level: 'L2', created_at: '2026-11-17T08:00:00Z',
+    actions: [{ action_type: 'isolate_host', target: 'plant-gateway', reason: 'Contain traffic' }],
+  };
+
+  const mockLoad = (planStatus = 'pending_approval') => {
+    get.mockImplementation(url => Promise.resolve({ data: { data:
+      url.endsWith('pending-approvals') ? [pendingApproval] : [{ ...plan, status: planStatus }],
+    } }));
+  };
+
+  it('sends the typed reason when rejecting a plan', async () => {
+    mockLoad();
+    post.mockResolvedValue({ data: {} });
+    render(<ResponsePlans />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(screen.getByLabelText('Reason for rejection (optional)'), {
+      target: { value: 'Freeze window conflict' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Reject plan' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/response-plans/12/reject', { reason: 'Freeze window conflict' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(dialog).toBeTruthy();
+  });
+
+  it('falls back to a default reason when none is typed', async () => {
+    mockLoad();
+    post.mockResolvedValue({ data: {} });
+    render(<ResponsePlans />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject plan' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/response-plans/12/reject', { reason: 'Manual rejection' }));
+  });
+
+  it('closes on Escape without calling the API', async () => {
+    mockLoad();
+    post.mockResolvedValue({ data: {} });
+    render(<ResponsePlans />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('cancelling the execute dialog leaves the plan untouched', async () => {
+    mockLoad('approved');
+    post.mockResolvedValue({ data: {} });
+    render(<ResponsePlans />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Execute' }));
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(post).not.toHaveBeenCalled();
   });
 });
