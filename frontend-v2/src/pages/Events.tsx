@@ -1,10 +1,11 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, type ComponentProps } from 'react';
 import apiClient from '../api/client';
 import { Activity } from 'lucide-react';
 import clsx from 'clsx';
 import { getApiErrorMessage } from '../api/errors';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
+import { StatusBadge } from '../components/ui/StatusBadge';
 
 const severityColors: Record<string, string> = {
   critical: 'text-danger',
@@ -12,6 +13,16 @@ const severityColors: Record<string, string> = {
   medium: 'text-warning',
   low: 'text-info',
   info: 'text-surface-500',
+};
+
+type BadgeTone = ComponentProps<typeof StatusBadge>['tone'];
+
+const severityTones: Record<string, BadgeTone> = {
+  critical: 'danger',
+  high: 'warning',
+  medium: 'info',
+  low: 'neutral',
+  info: 'neutral',
 };
 
 interface SecurityEvent {
@@ -120,15 +131,15 @@ export function Events() {
                   <th className="text-left p-3 text-surface-400 font-medium">Source</th>
                   <th className="text-left p-3 text-surface-400 font-medium">Destination</th>
                   <th className="text-left p-3 text-surface-400 font-medium">Signature</th>
-                  <th className="text-left p-3 text-surface-400 font-medium">Source</th>
+                  <th className="text-left p-3 text-surface-400 font-medium">Sensor</th>
                 </tr>
               </thead>
               <tbody>
                 {events.map(e => (
                   <tr key={e.id} className="border-b border-surface-800 hover:bg-surface-800/50">
-                    <td className="p-3 text-surface-400 whitespace-nowrap text-xs">{new Date(e.timestamp).toLocaleString()}</td>
+                    <td className="p-3 text-surface-400 whitespace-nowrap text-xs tabular-nums">{new Date(e.timestamp).toLocaleString()}</td>
                     <td className="p-3">
-                      <span className={clsx('text-xs font-medium', severityColors[e.severity])}>{e.severity}</span>
+                      <StatusBadge tone={severityTones[e.severity] ?? 'neutral'}>{e.severity}</StatusBadge>
                     </td>
                     <td className="p-3 text-surface-300">{e.event_type}</td>
                     <td className="p-3 text-surface-300 font-mono text-xs">
