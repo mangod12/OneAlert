@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Events } from './Events';
 
@@ -253,5 +254,27 @@ describe('Telemetry sources', () => {
     expect(screen.getByText(/zeek · 40 events · no events yet/)).toBeTruthy();
     expect(screen.getByText('active')).toBeTruthy();
     expect(screen.getByText('paused')).toBeTruthy();
+  });
+});
+
+describe('Escalate to investigation', () => {
+  it('creates a case, links the event and prefills title and severity', async () => {
+    mockPost.mockImplementation(async (url: string, data?: unknown) => {
+      if (url === '/cases/') return { data: { id: 7, ...(data as object) } };
+      if (url === '/cases/7/events/1') return { data: { ok: true } };
+      throw new Error(`unexpected POST ${url}`);
+    });
+    render(<MemoryRouter><Events /></MemoryRouter>);
+    const escalateBtn = await screen.findByRole('button', { name: 'Escalate event 1' });
+    fireEvent.click(escalateBtn);
+    await screen.findByRole('dialog', { name: 'Open investigation' });
+    expect(screen.getByLabelText('Title')).toHaveProperty('value', 'Investigate: ET SCAN SSH brute force');
+    expect(screen.getByLabelText('Severity')).toHaveProperty('value', 'high');
+    fireEvent.change(screen.getByLabelText('Summary'), { target: { value: 'Brute force against web-01' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open investigation' }));
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/cases/', { title: 'Investigate: ET SCAN SSH brute force', summary: 'Brute force against web-01', severity: 'high' });
+      expect(mockPost).toHaveBeenCalledWith('/cases/7/events/1');
+    });
   });
 });
