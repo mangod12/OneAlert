@@ -65,6 +65,7 @@ export function HuntLab() {
   const [detections, setDetections] = useState<DetectionRule[]>([]);
   const [ruleForm, setRuleForm] = useState<RuleFormState | null>(null);
   const [savingRule, setSavingRule] = useState(false);
+  const [togglingRuleId, setTogglingRuleId] = useState<number | null>(null);
   const fetchSessions = async () => {
     try {
       const res = await apiClient.get('/hunt/');
@@ -122,6 +123,20 @@ export function HuntLab() {
   };
 
   useEffect(() => { fetchSessions(); void fetchDetections(); }, []);
+
+  const toggleRule = async (rule: DetectionRule) => {
+    if (togglingRuleId !== null) return;
+    setTogglingRuleId(rule.id);
+    try {
+      const res = await apiClient.patch(`/hunt/detections/${rule.id}`, { enabled: !rule.enabled });
+      setDetections(prev => prev.map(r => (r.id === rule.id ? res.data : r)));
+      toast(res.data.enabled ? 'Detection rule enabled.' : 'Detection rule disabled.', 'success');
+    } catch (err) {
+      toast(getApiErrorMessage(err, 'The detection rule could not be updated.'), 'error');
+    } finally {
+      setTogglingRuleId(null);
+    }
+  };
 
   const saveRule = async () => {
     if (!ruleForm || savingRule) return;
@@ -331,7 +346,18 @@ export function HuntLab() {
                     {rule.mitre_techniques?.map(t => <span key={t} className="font-mono text-xs text-primary-400">{t}</span>)}
                   </div>
                 </div>
-                <span className="shrink-0 text-xs text-surface-500">{rule.created_by} · {new Date(rule.created_at).toLocaleDateString()}</span>
+                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                  <span className="text-xs text-surface-500">{rule.created_by} · {new Date(rule.created_at).toLocaleDateString()}</span>
+                  <button
+                    type="button"
+                    aria-label={`${rule.enabled ? 'Disable' : 'Enable'} rule ${rule.name}`}
+                    disabled={togglingRuleId !== null}
+                    onClick={() => void toggleRule(rule)}
+                    className="min-h-8 rounded-md border border-surface-600 px-2.5 text-xs text-surface-200 hover:bg-surface-800 disabled:opacity-50"
+                  >
+                    {rule.enabled ? 'Disable' : 'Enable'}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
