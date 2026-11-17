@@ -21,7 +21,14 @@ from backend.config import settings
 from backend.database.db import get_async_db
 from backend.middleware.rate_limiter import limiter
 from backend.models.audit_log import AuditLog
-from backend.models.user import Token, User, UserCreate, UserResponse
+from backend.models.user import (
+    NotificationPreferences,
+    NotificationPreferencesUpdate,
+    Token,
+    User,
+    UserCreate,
+    UserResponse,
+)
 from backend.services.auth_service import create_access_token, get_password_hash, verify_password, verify_token
 from backend.services.github_auth_service import github_auth_service
 
@@ -208,6 +215,29 @@ async def logout_user(response: Response):
 @router.get("/me", response_model=UserResponse)
 async def read_current_user(current_user: User = Depends(get_active_user)):
     """Get current user profile."""
+    return current_user
+
+
+@router.get("/me/notification-preferences", response_model=NotificationPreferences)
+async def read_notification_preferences(current_user: User = Depends(get_active_user)):
+    """Get the current user's email notification preferences."""
+    return current_user
+
+
+@router.patch("/me/notification-preferences", response_model=NotificationPreferences)
+async def update_notification_preferences(
+    update: NotificationPreferencesUpdate,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Update the current user's email notification preferences."""
+    if update.email_notifications_enabled is not None:
+        current_user.email_notifications_enabled = update.email_notifications_enabled
+    if update.notify_min_severity is not None:
+        current_user.notify_min_severity = update.notify_min_severity
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
     return current_user
 
 

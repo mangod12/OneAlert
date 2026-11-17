@@ -25,6 +25,22 @@ from backend.services.vendor_scraper import vendor_scraper
 
 logger = logging.getLogger(__name__)
 
+
+_SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3, "critical": 4}
+
+
+def _should_email_user(user, severity: str | None) -> bool:
+    """Check the user's email notification preferences against an alert severity."""
+    if not getattr(user, "email_notifications_enabled", True):
+        return False
+    minimum = _SEVERITY_RANK.get(
+        str(getattr(user, "notify_min_severity", "low") or "low").lower(), 1
+    )
+    rank = _SEVERITY_RANK.get(str(severity or "").lower())
+    if rank is None:
+        return True  # unknown severities are never suppressed
+    return rank >= minimum
+
 # Notification service instances (read from env)
 _default_slack_webhook = os.getenv("SLACK_WEBHOOK_URL")
 _default_generic_webhook = os.getenv("GENERIC_WEBHOOK_URL")
@@ -291,7 +307,8 @@ class AlertChecker:
             await db.flush()  # Get the ID
 
             # Send email alert
-            await email_service.send_vulnerability_alert(user, asset, alert, cve)
+            if _should_email_user(user, cve.get('severity')):
+                await email_service.send_vulnerability_alert(user, asset, alert, cve)
 
             # Send notifications
             await _notify_all_services(
@@ -339,7 +356,8 @@ class AlertChecker:
             await db.flush()  # Get the ID
 
             # Send email alert
-            await email_service.send_vendor_advisory_alert(user, asset, alert, advisory)
+            if _should_email_user(user, advisory.get('severity')):
+                await email_service.send_vendor_advisory_alert(user, asset, alert, advisory)
 
             # Send notifications
             await _notify_all_services(

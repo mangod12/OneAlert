@@ -41,8 +41,10 @@ beforeEach(() => {
   vi.resetAllMocks();
   mockGet.mockImplementation(async (url: string) => {
     if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
+    if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low' } };
     return notFound();
   });
+  mockPatch.mockResolvedValue({ data: { email_notifications_enabled: false, notify_min_severity: 'high' } });
   useAuthStore.setState({
     user: { ...analyst } as never,
     isAuthenticated: true,
@@ -210,5 +212,41 @@ describe('Organization creation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create organization' }));
     expect(await screen.findByText(/lowercase letters, numbers and hyphens/)).toBeTruthy();
     expect(mockPost).not.toHaveBeenCalled();
+  });
+});
+
+describe('Email notification preferences', () => {
+  it('loads current preferences into the form', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: false, notify_min_severity: 'high' } };
+      if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
+      return notFound();
+    });
+    render(<Settings />);
+    const toggle = await screen.findByRole('checkbox', { name: /email me about new alerts/i });
+    expect((toggle as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByLabelText(/minimum severity/i) as HTMLSelectElement).value).toBe('high');
+    expect((screen.getByLabelText(/minimum severity/i) as HTMLSelectElement).disabled).toBe(true);
+  });
+
+  it('saves updated preferences', async () => {
+    render(<Settings />);
+    const toggle = await screen.findByRole('checkbox', { name: /email me about new alerts/i });
+    fireEvent.click(toggle);
+    fireEvent.change(screen.getByLabelText(/minimum severity/i), { target: { value: 'high' } });
+    fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/auth/me/notification-preferences', {
+      email_notifications_enabled: false,
+      notify_min_severity: 'high',
+    }));
+    await screen.findByText('Notification preferences saved.');
+  });
+
+  it('surfaces a save failure', async () => {
+    mockPatch.mockRejectedValueOnce(new Error('boom'));
+    render(<Settings />);
+    await screen.findByRole('checkbox', { name: /email me about new alerts/i });
+    fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
+    await screen.findByRole('alert');
   });
 });
