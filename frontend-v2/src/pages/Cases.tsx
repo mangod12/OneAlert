@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
-import { Play, Search, Shield, ChevronRight, X } from 'lucide-react';
+import { Play, Plus, Search, Shield, ChevronRight, X } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { useDialogFocus } from '../components/ui/useDialogFocus';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { alertSeverityTones, caseStatusTones } from '../components/ui/tones';
@@ -54,6 +55,8 @@ export function Cases() {
   const [pipelining, setPipelining] = useState(false);
   const [pipelineLookback, setPipelineLookback] = useState(24);
   const [pipelineResult, setPipelineResult] = useState<PipelineResult | null>(null);
+  const [showNewCase, setShowNewCase] = useState(false);
+  const [creatingCase, setCreatingCase] = useState(false);
 
   const fetchCases = async () => {
     setError(null);
@@ -65,6 +68,21 @@ export function Cases() {
       setError(getApiErrorMessage(err, 'Investigations could not be loaded.'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateCase = async (title: string, summary: string, severity: string) => {
+    if (creatingCase) return;
+    setCreatingCase(true);
+    try {
+      await apiClient.post('/cases/', { title, summary: summary || null, severity });
+      setShowNewCase(false);
+      toast('Investigation opened.', 'success');
+      await fetchCases();
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'The investigation could not be opened.'), 'error');
+    } finally {
+      setCreatingCase(false);
     }
   };
 
@@ -122,6 +140,13 @@ export function Cases() {
     <div className="space-y-6">
       <PageHeader eyebrow="Command" title="Investigations" description={`${total} cases correlated from alerts, security events, and agent analysis.`} actions={
         <>
+          <button
+            onClick={() => setShowNewCase(true)}
+            className="flex min-h-9 items-center gap-2 rounded-md border border-surface-600 px-3.5 text-sm font-semibold text-surface-200 hover:bg-surface-800"
+          >
+            <Plus className="w-4 h-4" />
+            New investigation
+          </button>
           <label htmlFor="pipeline-lookback" className="sr-only">Pipeline lookback</label>
           <select
             id="pipeline-lookback"
@@ -259,6 +284,70 @@ export function Cases() {
           ))}
         </div>
       )}
+
+      {showNewCase && (
+        <NewCaseDialog
+          busy={creatingCase}
+          onCancel={() => setShowNewCase(false)}
+          onCreate={(title, summary, severity) => void handleCreateCase(title, summary, severity)}
+        />
+      )}
+    </div>
+  );
+}
+
+interface NewCaseDialogProps {
+  busy: boolean;
+  onCancel: () => void;
+  onCreate: (title: string, summary: string, severity: string) => void;
+}
+
+// Dialog for opening an investigation manually. Kept as its own component so
+// focus management mounts with the dialog and field state resets on close.
+function NewCaseDialog({ busy, onCancel, onCreate }: NewCaseDialogProps) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const [title, setTitle] = useState('');
+  const [summary, setSummary] = useState('');
+  const [severity, setSeverity] = useState('medium');
+  useDialogFocus(dialogRef, onCancel);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-surface-950/70" aria-hidden="true" onClick={() => { if (!busy) onCancel(); }} />
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-case-dialog-title"
+        className="relative w-full max-w-md rounded-lg border border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]"
+      >
+        <h2 id="new-case-dialog-title" className="text-lg font-semibold text-surface-50">New investigation</h2>
+        <p className="mt-1 text-sm text-surface-400">Open a case manually when you spot something the agents have not correlated yet.</p>
+        <form className="mt-4 space-y-3" onSubmit={event => { event.preventDefault(); onCreate(title.trim(), summary.trim(), severity); }}>
+          <div>
+            <label htmlFor="new-case-title" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-surface-400">Title</label>
+            <input id="new-case-title" type="text" autoComplete="off" value={title} onChange={event => setTitle(event.target.value)} placeholder="What are you investigating?" className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
+          </div>
+          <div>
+            <label htmlFor="new-case-summary" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-surface-400">Summary</label>
+            <textarea id="new-case-summary" rows={3} value={summary} onChange={event => setSummary(event.target.value)} placeholder="Optional context for the team" className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
+          </div>
+          <div>
+            <label htmlFor="new-case-severity" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-surface-400">Severity</label>
+            <select id="new-case-severity" value={severity} onChange={event => setSeverity(event.target.value)} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100">
+              <option value="info">Info</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={onCancel} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-300 hover:bg-surface-800">Cancel</button>
+            <button type="submit" disabled={busy || !title.trim()} className="min-h-9 rounded-md bg-primary-500 px-4 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">{busy ? 'Opening…' : 'Open investigation'}</button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

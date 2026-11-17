@@ -147,6 +147,32 @@ describe('Agent pipeline', () => {
   });
 });
 
+describe('Manual investigation creation', () => {
+  it('opens a case from the dialog and refreshes the list', async () => {
+    renderCases();
+    await screen.findByText('Credential dumping on edge router');
+    fireEvent.click(screen.getByRole('button', { name: /new investigation/i }));
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Suspicious USB activity' } });
+    fireEvent.change(screen.getByLabelText('Summary'), { target: { value: 'New removable media on floor 3.' } });
+    fireEvent.change(screen.getByLabelText('Severity'), { target: { value: 'high' } });
+    fireEvent.click(screen.getByRole('button', { name: /open investigation/i }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/', { title: 'Suspicious USB activity', summary: 'New removable media on floor 3.', severity: 'high' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(mockToast).toHaveBeenCalledWith('Investigation opened.', 'success');
+    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
+  });
+
+  it('keeps the submit disabled until a title is entered', async () => {
+    renderCases();
+    await screen.findByText('Credential dumping on edge router');
+    fireEvent.click(screen.getByRole('button', { name: /new investigation/i }));
+    const submit = screen.getByRole('button', { name: /open investigation/i }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Odd VPN logins' } });
+    expect(submit.disabled).toBe(false);
+  });
+});
+
 describe('Case search', () => {
   function mockList() {
     mockGet.mockImplementation(async (url: string) => {
