@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import case as sql_case
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from backend.database.db import get_async_db
 from backend.models.case import (
@@ -12,6 +13,7 @@ from backend.models.case import (
     AgentRunResponse,
     Case,
     CaseAlert,
+    CaseAssign,
     CaseCreate,
     CaseDetailResponse,
     CaseEvent,
@@ -44,7 +46,7 @@ async def list_cases(
     """List investigation cases with pagination and filters."""
     skip = (page - 1) * size
 
-    query = select(Case).where(Case.user_id == current_user.id)
+    query = select(Case).options(joinedload(Case.assignee)).where(Case.user_id == current_user.id)
     count_q = select(func.count(Case.id)).where(Case.user_id == current_user.id)
 
     if severity:
@@ -82,6 +84,7 @@ async def list_cases(
         resp = CaseResponse.model_validate(case)
         resp.alert_count = alert_count
         resp.event_count = event_count
+        resp.assigned_to_email = case.assignee.email if case.assignee else None
         case_responses.append(resp)
 
     return CaseListResponse(cases=case_responses, total=total, page=page, size=size)
@@ -148,7 +151,7 @@ async def get_case(
 ):
     """Get case detail with timeline."""
     case = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+        select(Case).options(joinedload(Case.assignee)).where(Case.id == case_id, Case.user_id == current_user.id)
     )).scalar_one_or_none()
 
     if not case:
@@ -172,6 +175,7 @@ async def get_case(
     resp = CaseDetailResponse.model_validate(case)
     resp.alert_count = alert_count
     resp.event_count = event_count
+    resp.assigned_to_email = case.assignee.email if case.assignee else None
     resp.timeline = [TimelineEntryResponse.model_validate(t) for t in timeline]
     return resp
 
@@ -237,6 +241,51 @@ async def update_case(
 
     await db.commit()
     return {"success": True, "message": "Case updated"}
+
+
+@router.post("/{case_id}/assign")
+async def assign_case(
+    case_id: int,
+    assignment: CaseAssign,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Assign a case to an organization member (null user_id unassigns)."""
+    case = (await db.execute(
+        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+    )).scalar_one_or_none()
+
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    if assignment.user_id is not None:
+        assignee = (await db.execute(
+            select(User).where(User.id == assignment.user_id, User.is_active == True)  # noqa: E712
+        )).scalar_one_or_none()
+        wrong_org = (
+            current_user.org_id is not None
+            and assignee is not None
+            and assignee.org_id != current_user.org_id
+        )
+        no_org = current_user.org_id is None and assignment.user_id != current_user.id
+        if assignee is None or wrong_org or no_org:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Assignee must be an active member of your organization"
+            )
+
+    case.assigned_to_id = assignment.user_id
+    await db.commit()
+    assignee_email = None
+    if case.assigned_to_id is not None:
+        assignee_email = (await db.execute(
+            select(User.email).where(User.id == case.assigned_to_id)
+        )).scalar_one_or_none()
+    return {
+        "success": True,
+        "assigned_to_id": case.assigned_to_id,
+        "assigned_to_email": assignee_email,
+    }
 
 
 @router.post("/pipeline")

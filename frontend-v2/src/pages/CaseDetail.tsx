@@ -58,6 +58,8 @@ interface CaseData {
   created_at: string;
   alert_count: number;
   event_count: number;
+  assigned_to_id: number | null;
+  assigned_to_email: string | null;
   timeline: TimelineEntry[];
 }
 interface RelatedAlert { id: number; severity: string; cve_id?: string | null; title: string; }
@@ -93,6 +95,26 @@ export function CaseDetail() {
   const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
   const [changingSeverity, setChangingSeverity] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [members, setMembers] = useState<Array<{ id: number; email: string; full_name: string | null; is_active: boolean }>>([]);
+  const [assigning, setAssigning] = useState(false);
+
+  useEffect(() => {
+    apiClient.get('/orgs/me/members')
+      .then(res => setMembers((res.data as Array<{ id: number; email: string; full_name: string | null; is_active: boolean }>).filter(m => m.is_active)))
+      .catch(() => setMembers([]));
+  }, []);
+
+  const changeAssignee = async (value: string) => {
+    if (assigning) return;
+    setAssigning(true);
+    const userId = value === '' ? null : Number(value);
+    try {
+      await apiClient.post(`/cases/${caseId}/assign`, { user_id: userId });
+      toast(userId === null ? 'Case unassigned.' : 'Case assigned.', 'success');
+      await fetchAll();
+    } catch (err) { toast(getApiErrorMessage(err, 'The case could not be assigned.'), 'error'); }
+    finally { setAssigning(false); }
+  };
 
   const changeStatus = async (status: string) => {
     if (updatingStatus) return;
@@ -250,6 +272,20 @@ export function CaseDetail() {
               >
                 {['info', 'low', 'medium', 'high', 'critical'].map(sev => <option key={sev} value={sev}>{sev}</option>)}
               </select>
+              {members.length > 0 && (
+                <select
+                  aria-label="Assign case"
+                  value={caseData.assigned_to_id ?? ''}
+                  disabled={assigning}
+                  onChange={e => void changeAssignee(e.target.value)}
+                  className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200 disabled:opacity-40"
+                >
+                  <option value="">Unassigned</option>
+                  {members.map(member => (
+                    <option key={member.id} value={member.id}>{member.full_name ? `${member.full_name} (${member.email})` : member.email}</option>
+                  ))}
+                </select>
+              )}
               {caseData.confidence_score && (
                 <span className="text-sm text-surface-400">
                   {Math.round(caseData.confidence_score * 100)}% confidence

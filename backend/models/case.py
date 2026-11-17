@@ -35,6 +35,7 @@ class Case(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     title = Column(String, nullable=False)
     summary = Column(Text, nullable=True)
     severity = Column(String, default="medium")
@@ -48,6 +49,7 @@ class Case(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relationships
+    assignee = relationship("User", foreign_keys=[assigned_to_id])
     case_alerts = relationship("CaseAlert", back_populates="case", cascade="all, delete-orphan")
     case_events = relationship("CaseEvent", back_populates="case", cascade="all, delete-orphan")
     timeline_entries = relationship(
@@ -143,6 +145,12 @@ class CaseCreate(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class CaseAssign(BaseModel):
+    """Schema for assigning a case to an organization member."""
+    user_id: int | None = None  # null unassigns
+    model_config = {"extra": "forbid"}
+
+
 class CaseResponse(BaseModel):
     id: int
     user_id: int
@@ -159,6 +167,8 @@ class CaseResponse(BaseModel):
     updated_at: datetime | None = None
     alert_count: int = 0
     event_count: int = 0
+    assigned_to_id: int | None = None
+    assigned_to_email: str | None = None
     model_config = {"from_attributes": True}
 
 

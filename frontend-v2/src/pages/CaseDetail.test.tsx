@@ -350,3 +350,48 @@ describe('Case detail editing', () => {
     expect(mockPatch).not.toHaveBeenCalled();
   });
 });
+
+describe('Case assignment', () => {
+  function mockLoadWithMembers() {
+    mockLoad();
+    const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/orgs/me/members') {
+        return Promise.resolve({ data: [
+          { id: 1, email: 'analyst@example.com', full_name: 'Analyst One', is_active: true },
+          { id: 2, email: 'soc-lead@example.com', full_name: 'Sam Oclead', is_active: true },
+          { id: 3, email: 'idle@example.com', full_name: null, is_active: false },
+        ] });
+      }
+      return base(url);
+    });
+  }
+
+  it('assigns the case to an active org member', async () => {
+    mockLoadWithMembers();
+    mockPost.mockResolvedValue({ data: { success: true, assigned_to_id: 2, assigned_to_email: 'soc-lead@example.com' } });
+    renderDetail();
+    const select = await screen.findByLabelText('Assign case');
+    expect(within(select as HTMLElement).queryByText(/idle@example.com/)).toBeNull();
+    fireEvent.change(select, { target: { value: '2' } });
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/assign', { user_id: 2 }));
+  });
+
+  it('unassigns with the empty option', async () => {
+    mockLoadWithMembers();
+    mockPost.mockResolvedValue({ data: { success: true, assigned_to_id: null, assigned_to_email: null } });
+    renderDetail();
+    const select = await screen.findByLabelText('Assign case');
+    fireEvent.change(select, { target: { value: '' } });
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/assign', { user_id: null }));
+  });
+
+  it('shows an error toast when assignment fails', async () => {
+    mockLoadWithMembers();
+    mockPost.mockRejectedValue({ isAxiosError: true, response: { status: 400, data: { detail: 'Assignee must be an active member of your organization' } } });
+    renderDetail();
+    const select = await screen.findByLabelText('Assign case');
+    fireEvent.change(select, { target: { value: '2' } });
+    await waitFor(() => expect(mockPost).toHaveBeenCalled());
+  });
+});
