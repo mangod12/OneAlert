@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/authStore';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
 import { PageHeader } from '../components/ui/PageHeader';
+import { SiemIntegrationsPanel } from '../components/settings/SiemIntegrationsPanel';
 import { Panel } from '../components/ui/Panel';
 import { StatusBadge } from '../components/ui/StatusBadge';
 
@@ -229,6 +230,7 @@ export function Settings() {
           </Panel>
         </div>
 
+        <div className="space-y-4">
         <Panel title="Notification integrations" description="Credentials are write-only. Existing values are never returned to the browser." action={<Bell className="h-4 w-4 text-warning" />}>
           <form className="space-y-5 p-5" onSubmit={event => { event.preventDefault(); void handleSaveIntegrations(); }}>
             <div>
@@ -246,6 +248,9 @@ export function Settings() {
             </div>
           </form>
         </Panel>
+
+        <SiemIntegrationsPanel />
+        </div>
       </div>
     </div>
   );
