@@ -43,8 +43,11 @@ interface PipelineResult {
   pipeline_status: string;
 }
 
+const CASE_STATUSES = ['open', 'investigating', 'resolved', 'closed'] as const;
+
 export function Cases() {
   const [cases, setCases] = useState<CaseItem[]>([]);
+  const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [triaging, setTriaging] = useState(false);
   const [total, setTotal] = useState(0);
@@ -125,6 +128,20 @@ export function Cases() {
   };
 
   useEffect(() => { fetchCases(); }, [statusFilter, severityFilter, sort, page]);
+
+  const changeCaseStatus = async (c: CaseItem, status: string) => {
+    if (updatingStatusId !== null || status === c.status) return;
+    setUpdatingStatusId(c.id);
+    try {
+      await apiClient.patch(`/cases/${c.id}`, null, { params: { status_update: status } });
+      setCases(prev => prev.map(x => (x.id === c.id ? { ...x, status } : x)));
+      toast(`Case #${c.id} marked ${status}.`, 'success');
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'The case status could not be updated.'), 'error');
+    } finally {
+      setUpdatingStatusId(null);
+    }
+  };
 
   const runSearch = async () => {
     const q = searchQuery.trim();
@@ -299,6 +316,18 @@ export function Cases() {
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-2">
                     <StatusBadge tone={alertSeverityTones[c.severity] ?? 'neutral'}>{c.severity}</StatusBadge>
                     <StatusBadge tone={caseStatusTones[c.status] ?? 'neutral'}>{c.status}</StatusBadge>
+                    <select
+                      aria-label={`Set status for case ${c.id}`}
+                      value={c.status}
+                      disabled={updatingStatusId !== null}
+                      onClick={e => { e.preventDefault(); e.stopPropagation(); }}
+                      onChange={e => { e.preventDefault(); void changeCaseStatus(c, e.target.value); }}
+                      className="min-h-7 rounded border border-surface-600 bg-surface-950 px-1.5 text-xs text-surface-300 disabled:opacity-40"
+                    >
+                      {CASE_STATUSES.map(status => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
                     {c.confidence_score && (
                       <span className="text-xs text-surface-500">
                         {Math.round(c.confidence_score * 100)}% confidence
