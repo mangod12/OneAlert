@@ -10,6 +10,7 @@ const routeMeta: Array<{ match: (path: string) => boolean; section: string; titl
   { match: path => path === '/assets', section: 'Observe', title: 'Asset inventory' },
   { match: path => path === '/ot', section: 'Observe', title: 'OT discovery' },
   { match: path => path === '/sbom', section: 'Observe', title: 'Software bill of materials' },
+  { match: path => path === '/topology', section: 'Observe', title: 'Network topology' },
   { match: path => path === '/mitre', section: 'Analyze', title: 'MITRE ATT&CK' },
   { match: path => path === '/hunt', section: 'Analyze', title: 'Hunt lab' },
   { match: path => path === '/response-plans', section: 'Act', title: 'Response plans' },
