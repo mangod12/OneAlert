@@ -303,7 +303,7 @@ class AlertChecker:
             # Log audit trail
             await self.log_audit(
                 db, user.id, action="create_alert", target_type="CVE",
-                target_id=cve.get('cve_id'), detail=str(alert),
+                target_id=cve.get('cve_id'), detail=self._alert_audit_detail(alert, asset),
             )
 
         except Exception as e:
@@ -352,11 +352,17 @@ class AlertChecker:
             # Log audit trail
             await self.log_audit(
                 db, user.id, action="create_alert", target_type="Vendor Advisory",
-                target_id=advisory.get('vendor_advisory_id'), detail=str(alert),
+                target_id=advisory.get('vendor_advisory_id'), detail=self._alert_audit_detail(alert, asset),
             )
 
         except Exception as e:
             logger.error(f"Error creating vendor advisory alert: {e}")
+
+    @staticmethod
+    def _alert_audit_detail(alert: Alert, asset: Asset) -> str:
+        """Human-readable audit detail for a newly created alert."""
+        severity = getattr(alert.severity, "value", alert.severity)
+        return f"Alert #{alert.id} ({severity}) on {asset.name}: {alert.title}"
 
     async def log_audit(
         self, db: AsyncSession, user_id: int, action: str, target_type: str | None = None,
@@ -518,7 +524,7 @@ class AlertChecker:
 
             # Log audit trail
             await self.log_audit(db, user.id, action="create_alert", target_type="ICS Advisory",
-                               target_id=advisory_id, detail=str(alert))
+                               target_id=advisory_id, detail=self._alert_audit_detail(alert, asset))
 
         except Exception as e:
             logger.error(f"Error creating ICS advisory alert: {e}")
