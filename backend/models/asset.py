@@ -6,7 +6,8 @@ schemas for asset-related API operations (create, update, list, etc).
 
 - The `Asset` class is the database model for assets.
 - The `AssetType` enum defines the type of asset (hardware, software, etc).
-- The Pydantic models (`AssetBase`, `AssetCreate`, `AssetUpdate`, `AssetResponse`, `AssetListResponse`) are used for request/response validation and serialization.
+- The Pydantic models (`AssetBase`, `AssetCreate`, `AssetUpdate`, `AssetResponse`,
+  `AssetListResponse`) are used for request/response validation and serialization.
 """
 
 from datetime import datetime

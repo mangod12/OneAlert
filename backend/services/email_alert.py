@@ -155,7 +155,8 @@ class EmailService:
             </div>
 
             <div class="footer">
-                <p>This alert was sent by {settings.app_name}. If you no longer wish to receive these alerts, please contact support.</p>
+                <p>This alert was sent by {settings.app_name}. If you no longer wish to receive these alerts,
+                please contact support.</p>
             </div>
         </body>
         </html>

@@ -49,7 +49,9 @@ class Case(Base):
     # Relationships
     case_alerts = relationship("CaseAlert", back_populates="case", cascade="all, delete-orphan")
     case_events = relationship("CaseEvent", back_populates="case", cascade="all, delete-orphan")
-    timeline_entries = relationship("CaseTimeline", back_populates="case", cascade="all, delete-orphan", order_by="CaseTimeline.timestamp")
+    timeline_entries = relationship(
+        "CaseTimeline", back_populates="case", cascade="all, delete-orphan", order_by="CaseTimeline.timestamp"
+    )
 
 
 class CaseAlert(Base):
@@ -109,7 +111,9 @@ class AgentRun(Base):
     error_message = Column(Text, nullable=True)
     result_summary = Column(Text, nullable=True)
 
-    steps = relationship("AgentStep", back_populates="run", cascade="all, delete-orphan", order_by="AgentStep.step_number")
+    steps = relationship(
+        "AgentStep", back_populates="run", cascade="all, delete-orphan", order_by="AgentStep.step_number"
+    )
 
 
 class AgentStep(Base):

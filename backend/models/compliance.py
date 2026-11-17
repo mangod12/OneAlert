@@ -43,7 +43,8 @@ class ComplianceAssessment(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     control_id = Column(Integer, ForeignKey("compliance_controls.id"), nullable=False)
-    status = Column(String, default="not_assessed")  # compliant | non_compliant | partial | not_applicable | not_assessed
+    # status values: compliant | non_compliant | partial | not_applicable | not_assessed
+    status = Column(String, default="not_assessed")
     evidence_type = Column(String, nullable=True)  # automated | manual | document
     evidence_detail = Column(Text, nullable=True)
     assessed_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -123,7 +123,10 @@ class ICSCertFeedService:
             {
                 "advisory_id": "ICSA-26-053-01",
                 "title": "Siemens SIMATIC S7-1200 Unauthenticated Remote Code Execution",
-                "description": "Siemens SIMATIC S7-1200 PLC allows remote code execution through unauthenticated Modbus TCP requests",
+                "description": (
+                    "Siemens SIMATIC S7-1200 PLC allows remote code execution through unauthenticated Modbus TCP"
+                    " requests"
+                ),
                 "cves": ["CVE-2026-0123"],
                 "affected_products": [
                     {

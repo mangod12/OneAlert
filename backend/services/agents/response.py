@@ -151,7 +151,10 @@ class ResponseAgent(BaseAgent):
             "actions": checked_actions,
             "rationale": response.get("rationale", ""),
             "needs_approval": needs_approval,
-            "summary": f"Generated response plan with {len(actions)} actions (approval: {'required' if needs_approval else 'auto'})",
+            "summary": (
+                f"Generated response plan with {len(actions)} actions "
+                f"(approval: {'required' if needs_approval else 'auto'})"
+            ),
         }
 
     def _build_context(self, case, alert_assets) -> str:

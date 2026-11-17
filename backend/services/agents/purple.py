@@ -17,8 +17,11 @@ ATOMIC_TESTS = {
     "T1059": {
         "name": "Command and Scripting Interpreter",
         "tests": [
-            {"test_name": "PowerShell execution test", "command": "powershell.exe -NoProfile -Command Write-Output 'test'",
-             "expected_detection": "Sigma rule: proc_creation_win_powershell_suspicious"},
+            {
+                "test_name": "PowerShell execution test",
+                "command": "powershell.exe -NoProfile -Command Write-Output 'test'",
+                "expected_detection": "Sigma rule: proc_creation_win_powershell_suspicious",
+            },
             {"test_name": "Bash script execution test", "command": "bash -c 'echo test'",
              "expected_detection": "Sigma rule: proc_creation_lnx_bash_interactive"},
         ],
@@ -159,7 +162,10 @@ class PurpleAgent(BaseAgent):
                     expected=True,
                     detected=was_detected,
                     detection_time_ms=random.randint(10, 200) if was_detected else None,
-                    details=f"{'Detection fired' if was_detected else 'No detection triggered'} for {test['test_name']}",
+                    details=(
+                        f"{'Detection fired' if was_detected else 'No detection triggered'} "
+                        f"for {test['test_name']}"
+                    ),
                 )
                 self.db.add(control)
 
@@ -183,7 +189,10 @@ class PurpleAgent(BaseAgent):
 
         await self.db.commit()
 
-        summary = f"Validated {tested} tests: {detected} detected, {missed} missed ({vrun.results_summary['detection_rate']}% rate)"
+        summary = (
+            f"Validated {tested} tests: {detected} detected, {missed} missed "
+            f"({vrun.results_summary['detection_rate']}% rate)"
+        )
         await self.log_step("complete_validation", output_summary=summary)
 
         return {

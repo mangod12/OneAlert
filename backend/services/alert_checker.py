@@ -73,7 +73,10 @@ class AlertChecker:
             ics_advisories_data = await ics_cert_feed_service.fetch_cisa_kev()
             ics_advisories = [ics_cert_feed_service.advisory_to_dict(adv) for adv in ics_advisories_data]
 
-            logger.info(f"Fetched {len(cves)} CVEs, {len(vendor_advisories)} vendor advisories, {len(ics_advisories)} ICS advisories")
+            logger.info(
+                f"Fetched {len(cves)} CVEs, {len(vendor_advisories)} vendor advisories, "
+                f"{len(ics_advisories)} ICS advisories",
+            )
 
             # Process CVEs
             await self._process_cves(cves)
@@ -291,12 +294,17 @@ class AlertChecker:
             await email_service.send_vulnerability_alert(user, asset, alert, cve)
 
             # Send notifications
-            await _notify_all_services(f"New CVE alert for {user.email}: {alert.title}", alert_id=alert.id, cve_id=alert.cve_id)
+            await _notify_all_services(
+                f"New CVE alert for {user.email}: {alert.title}", alert_id=alert.id, cve_id=alert.cve_id
+            )
 
             logger.info(f"Created CVE alert {cve.get('cve_id')} for user {user.email}")
 
             # Log audit trail
-            await self.log_audit(db, user.id, action="create_alert", target_type="CVE", target_id=cve.get('cve_id'), detail=str(alert))
+            await self.log_audit(
+                db, user.id, action="create_alert", target_type="CVE",
+                target_id=cve.get('cve_id'), detail=str(alert),
+            )
 
         except Exception as e:
             logger.error(f"Error creating CVE alert: {e}")
@@ -334,20 +342,31 @@ class AlertChecker:
             await email_service.send_vendor_advisory_alert(user, asset, alert, advisory)
 
             # Send notifications
-            await _notify_all_services(f"New vendor alert for {user.email}: {alert.title}", alert_id=alert.id, vendor_advisory_id=alert.vendor_advisory_id)
+            await _notify_all_services(
+                f"New vendor alert for {user.email}: {alert.title}",
+                alert_id=alert.id, vendor_advisory_id=alert.vendor_advisory_id,
+            )
 
             logger.info(f"Created vendor alert {advisory.get('vendor_advisory_id')} for user {user.email}")
 
             # Log audit trail
-            await self.log_audit(db, user.id, action="create_alert", target_type="Vendor Advisory", target_id=advisory.get('vendor_advisory_id'), detail=str(alert))
+            await self.log_audit(
+                db, user.id, action="create_alert", target_type="Vendor Advisory",
+                target_id=advisory.get('vendor_advisory_id'), detail=str(alert),
+            )
 
         except Exception as e:
             logger.error(f"Error creating vendor advisory alert: {e}")
 
-    async def log_audit(self, db: AsyncSession, user_id: int, action: str, target_type: str | None = None, target_id: str | None = None, detail: str | None = None):
+    async def log_audit(
+        self, db: AsyncSession, user_id: int, action: str, target_type: str | None = None,
+        target_id: str | None = None, detail: str | None = None,
+    ):
         """Log an audit trail entry."""
         try:
-            audit = AuditLog(user_id=user_id, action=action, target_type=target_type, target_id=target_id, detail=detail)
+            audit = AuditLog(
+                user_id=user_id, action=action, target_type=target_type, target_id=target_id, detail=detail
+            )
             db.add(audit)
             await db.commit()
             logger.info(f"Logged audit trail: {action} by user {user_id} on {target_type} {target_id}")

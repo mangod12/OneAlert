@@ -67,7 +67,8 @@ async def list_assets(
         count_query = count_query.where(search_filter)  # Apply search filter to count_query as well
 
     # Get total count
-    total = (await db.execute(count_query)).scalar_one()  # Ensure count_query also has user_id filter if needed and is properly formed.
+    # Ensure count_query also has user_id filter if needed and is properly formed.
+    total = (await db.execute(count_query)).scalar_one()
 
     # Apply pagination
     offset = (page - 1) * size
