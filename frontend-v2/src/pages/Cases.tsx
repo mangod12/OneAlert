@@ -59,6 +59,7 @@ export function Cases() {
   const [creatingCase, setCreatingCase] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [severityFilter, setSeverityFilter] = useState('');
+  const [sort, setSort] = useState('created_at_desc');
   const [page, setPage] = useState(1);
 
   const fetchCases = async () => {
@@ -70,6 +71,7 @@ export function Cases() {
           size: 20,
           ...(statusFilter ? { status: statusFilter } : {}),
           ...(severityFilter ? { severity: severityFilter } : {}),
+          sort,
         },
       });
       setCases(res.data.cases);
@@ -122,7 +124,7 @@ export function Cases() {
     }
   };
 
-  useEffect(() => { fetchCases(); }, [statusFilter, severityFilter, page]);
+  useEffect(() => { fetchCases(); }, [statusFilter, severityFilter, sort, page]);
 
   const runSearch = async () => {
     const q = searchQuery.trim();
@@ -221,6 +223,13 @@ export function Cases() {
             <option value="medium">Medium</option>
             <option value="high">High</option>
             <option value="critical">Critical</option>
+          </select>
+          <label htmlFor="case-sort" className="sr-only">Sort investigations</label>
+          <select id="case-sort" value={sort} onChange={e => { setPage(1); setSort(e.target.value); }} className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200">
+            <option value="created_at_desc">Newest first</option>
+            <option value="created_at_asc">Oldest first</option>
+            <option value="severity_desc">Highest severity</option>
+            <option value="severity_asc">Lowest severity</option>
           </select>
         </div>
       )}

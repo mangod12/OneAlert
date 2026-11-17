@@ -218,9 +218,19 @@ describe('Case filters', () => {
     renderCases();
     await screen.findByText('Credential dumping on edge router');
     fireEvent.change(screen.getByLabelText('Filter by status'), { target: { value: 'open' } });
-    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/', { params: { page: 1, size: 20, status: 'open' } }));
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/', { params: { page: 1, size: 20, status: 'open', sort: 'created_at_desc' } }));
     fireEvent.change(screen.getByLabelText('Filter by severity'), { target: { value: 'high' } });
-    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/', { params: { page: 1, size: 20, status: 'open', severity: 'high' } }));
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/', { params: { page: 1, size: 20, status: 'open', severity: 'high', sort: 'created_at_desc' } }));
+  });
+
+  it('sends the chosen sort order to the API', async () => {
+    mockGet.mockResolvedValue({ data: { cases: [makeCase()], total: 1 } });
+    renderCases();
+    await screen.findByText('Credential dumping on edge router');
+    fireEvent.change(screen.getByLabelText('Sort investigations'), { target: { value: 'severity_desc' } });
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith('/cases/', { params: { page: 1, size: 20, sort: 'severity_desc' } });
+    });
   });
 });
 

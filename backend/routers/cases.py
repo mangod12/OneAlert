@@ -2,6 +2,7 @@
 
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import case as sql_case
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +33,11 @@ async def list_cases(
     size: int = Query(20, ge=1, le=100),
     severity: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
+    sort: str = Query(
+        "created_at_desc",
+        pattern="^(created_at_desc|created_at_asc|severity_desc|severity_asc)$",
+        description="Sort order"
+    ),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -49,7 +55,18 @@ async def list_cases(
         count_q = count_q.filter(Case.status == status_filter)
 
     total = (await db.execute(count_q)).scalar_one()
-    query = query.order_by(Case.created_at.desc()).offset(skip).limit(size)
+    severity_rank = sql_case(
+        {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0},
+        value=Case.severity,
+        else_=2
+    )
+    order_columns = {
+        "created_at_desc": [Case.created_at.desc()],
+        "created_at_asc": [Case.created_at.asc()],
+        "severity_desc": [severity_rank.desc(), Case.created_at.desc()],
+        "severity_asc": [severity_rank.asc(), Case.created_at.desc()],
+    }
+    query = query.order_by(*order_columns[sort]).offset(skip).limit(size)
     cases = (await db.execute(query)).scalars().all()
 
     # Enrich with counts
