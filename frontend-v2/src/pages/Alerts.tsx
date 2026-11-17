@@ -22,6 +22,7 @@ export function Alerts() {
   const [cveSearch, setCveSearch] = useState('');
   const [assetFilter, setAssetFilter] = useState('');
   const [assetOptions, setAssetOptions] = useState<{ id: number; name: string }[]>([]);
+  const [sort, setSort] = useState('created_at_desc');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
@@ -35,6 +36,7 @@ export function Alerts() {
       if (statusFilter) params.status = statusFilter;
       if (cveSearch) params.cve_id = cveSearch;
       if (assetFilter) params.asset_id = Number(assetFilter);
+      params.sort = sort;
 
       const res = await apiClient.get<AlertListResponse>('/alerts/', { params });
       setAlerts(res.data.alerts);
@@ -45,7 +47,7 @@ export function Alerts() {
     } finally {
       setLoading(false);
     }
-  }, [page, severityFilter, statusFilter, cveSearch, assetFilter]);
+  }, [page, severityFilter, statusFilter, cveSearch, assetFilter, sort]);
 
   useEffect(() => {
     fetchAlerts();
@@ -154,6 +156,17 @@ export function Alerts() {
           <option value="pending">Pending</option>
           <option value="acknowledged">Acknowledged</option>
           <option value="resolved">Resolved</option>
+        </select>
+        <select
+          aria-label="Sort alerts"
+          value={sort}
+          onChange={(e) => { setSort(e.target.value); setPage(1); }}
+          className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+        >
+          <option value="created_at_desc">Newest first</option>
+          <option value="created_at_asc">Oldest first</option>
+          <option value="cvss_desc">Highest CVSS</option>
+          <option value="cvss_asc">Lowest CVSS</option>
         </select>
       </div>
 

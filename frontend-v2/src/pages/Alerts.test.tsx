@@ -56,7 +56,7 @@ describe('Alerts page', () => {
     expect(await screen.findByText('CVE-2026-0001')).toBeTruthy();
     expect(screen.getByText('critical')).toBeTruthy();
     expect(screen.getByText('edge-router-01')).toBeTruthy();
-    expect(mockGet).toHaveBeenCalledWith('/alerts/', { params: { page: 1, size: 15 } });
+    expect(mockGet).toHaveBeenCalledWith('/alerts/', { params: { page: 1, size: 15, sort: 'created_at_desc' } });
   });
 
   it('shows an error state and retries on demand', async () => {
@@ -82,7 +82,7 @@ describe('Alerts page', () => {
     fireEvent.change(severitySelect, { target: { value: 'high' } });
     await waitFor(() => {
       expect(mockGet).toHaveBeenLastCalledWith('/alerts/', {
-        params: { page: 1, size: 15, severity: 'high' },
+        params: { page: 1, size: 15, severity: 'high', sort: 'created_at_desc' },
       });
     });
   });
@@ -105,7 +105,18 @@ describe('Alerts page', () => {
     fireEvent.change(select, { target: { value: '10' } });
     await waitFor(() => {
       expect(mockGet).toHaveBeenCalledWith('/alerts/', {
-        params: { page: 1, size: 15, asset_id: 10 },
+        params: { page: 1, size: 15, asset_id: 10, sort: 'created_at_desc' },
+      });
+    });
+  });
+
+  it('sends the chosen sort order to the API', async () => {
+    render(<Alerts />);
+    const select = await screen.findByRole('combobox', { name: 'Sort alerts' });
+    fireEvent.change(select, { target: { value: 'cvss_desc' } });
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith('/alerts/', {
+        params: { page: 1, size: 15, sort: 'cvss_desc' },
       });
     });
   });
