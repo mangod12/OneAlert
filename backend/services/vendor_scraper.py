@@ -45,7 +45,7 @@ class VendorScraper:
                 logger.info(f"Fetched {len(advisories)} Cisco advisories")
                 return advisories
 
-        except Exception as e:
+        except (httpx.HTTPError, ValueError, TypeError) as e:
             logger.error(f"Error fetching Cisco advisories: {e}")
             return []
 
@@ -73,7 +73,7 @@ class VendorScraper:
                 logger.info(f"Fetched {len(advisories)} Fortinet advisories")
                 return advisories
 
-        except Exception as e:
+        except (httpx.HTTPError, ValueError, TypeError) as e:
             logger.error(f"Error fetching Fortinet advisories: {e}")
             return []
 
@@ -99,7 +99,7 @@ class VendorScraper:
                 logger.info(f"Fetched {len(advisories)} Microsoft advisories")
                 return advisories
 
-        except Exception as e:
+        except (httpx.HTTPError, ValueError, TypeError) as e:
             logger.error(f"Error fetching Microsoft advisories: {e}")
             return []
 
@@ -141,7 +141,7 @@ class VendorScraper:
                 "affected_products": []  # Would need additional parsing
             }
 
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError, KeyError, IndexError) as e:
             logger.error(f"Error parsing Cisco advisory row: {e}")
             return None
 
@@ -171,7 +171,7 @@ class VendorScraper:
                 "affected_products": []
             }
 
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError, KeyError, IndexError) as e:
             logger.error(f"Error parsing Fortinet advisory: {e}")
             return None
 
@@ -205,7 +205,7 @@ class VendorScraper:
                 "affected_products": []
             }
 
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError, KeyError, IndexError) as e:
             logger.error(f"Error parsing Microsoft update: {e}")
             return None
 
@@ -230,7 +230,7 @@ class VendorScraper:
             logger.info(f"Fetched total of {len(all_advisories)} vendor advisories")
             return all_advisories
 
-        except Exception as e:
+        except RuntimeError as e:
             logger.error(f"Error fetching vendor advisories: {e}")
             return []
 

@@ -18,7 +18,7 @@ class NotificationService:
         import asyncio
         try:
             asyncio.run(self.send(message, **kwargs))
-        except Exception as e:
+        except RuntimeError as e:
             logger.error(f"Synchronous notification failed: {e}")
 
 class SlackNotificationService(NotificationService):
@@ -30,7 +30,7 @@ class SlackNotificationService(NotificationService):
             try:
                 resp = await client.post(self.webhook_url, json=payload)
                 resp.raise_for_status()
-            except Exception as e:
+            except httpx.HTTPError as e:
                 logger.error(f"Slack notification failed: {e}")
 
 class TeamsNotificationService(NotificationService):
@@ -42,7 +42,7 @@ class TeamsNotificationService(NotificationService):
             try:
                 resp = await client.post(self.webhook_url, json=payload)
                 resp.raise_for_status()
-            except Exception as e:
+            except httpx.HTTPError as e:
                 logger.error(f"Teams notification failed: {e}")
 
 class WebhookNotificationService(NotificationService):
@@ -54,7 +54,7 @@ class WebhookNotificationService(NotificationService):
             try:
                 resp = await client.post(self.webhook_url, json=payload)
                 resp.raise_for_status()
-            except Exception as e:
+            except httpx.HTTPError as e:
                 logger.error(f"Webhook notification failed: {e}")
 
 class SIEMNotificationService(NotificationService):
@@ -68,7 +68,7 @@ class SIEMNotificationService(NotificationService):
             try:
                 resp = await client.post(self.hec_url, json=payload, headers=headers)
                 resp.raise_for_status()
-            except Exception as e:
+            except httpx.HTTPError as e:
                 logger.error(f"SIEM notification failed: {e}")
 
 def get_notification_services_from_env() -> list[NotificationService]:
@@ -97,7 +97,7 @@ def notify_all_services(message: str, **kwargs):
         await asyncio.gather(*(svc.send(message, **kwargs) for svc in services))
     try:
         asyncio.run(_notify())
-    except Exception as e:
+    except RuntimeError as e:
         logger.error(f"notify_all_services failed: {e}")
 
 # --- Advanced Notification Service: Ready for Integration ---

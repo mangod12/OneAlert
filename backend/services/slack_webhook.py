@@ -19,7 +19,7 @@ class SlackNotificationService:
         try:
             async with httpx.AsyncClient() as client:
                 await client.post(self.webhook_url, json=payload)
-        except Exception as e:
+        except httpx.HTTPError as e:
             logger.error(f"Slack notification failed: {e}")
 
 class WebhookNotificationService:
@@ -34,5 +34,5 @@ class WebhookNotificationService:
         try:
             async with httpx.AsyncClient() as client:
                 await client.post(self.webhook_url, json=payload)
-        except Exception as e:
+        except httpx.HTTPError as e:
             logger.error(f"Webhook notification failed: {e}")
