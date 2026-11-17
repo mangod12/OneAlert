@@ -34,3 +34,37 @@ async def get_epss_score(cve_id: str) -> dict | None:
             }
     except (httpx.HTTPError, ValueError, TypeError):
         return None
+
+async def get_epss_scores(cve_ids: list[str]) -> dict[str, dict]:
+    """Fetch EPSS scores for multiple CVEs in a single API call.
+
+    Returns:
+        dict mapping CVE ID to {'score': float, 'percentile': float};
+        CVEs without EPSS data are omitted.
+    """
+    ids = [cve for cve in cve_ids if cve]
+    if not ids:
+        return {}
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(EPSS_API_URL, params={"cve": ",".join(ids)})
+            if response.status_code != 200:
+                return {}
+            data = response.json()
+            scores: dict[str, dict] = {}
+            for entry in data.get("data", []):
+                cve = entry.get("cve")
+                if not cve:
+                    continue
+                try:
+                    scores[cve] = {
+                        "score": float(entry.get("epss", 0)),
+                        "percentile": float(entry.get("percentile", 0)),
+                    }
+                except (ValueError, TypeError):
+                    continue
+            return scores
+    except httpx.HTTPError:
+        return {}
+

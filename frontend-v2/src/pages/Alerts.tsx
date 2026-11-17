@@ -28,6 +28,7 @@ export function Alerts() {
   const [error, setError] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [exporting, setExporting] = useState(false);
+  const [epssScores, setEpssScores] = useState<Record<string, { score: number; percentile: number }>>({});
 
   const exportCsv = async () => {
     if (exporting) return;
@@ -79,6 +80,21 @@ export function Alerts() {
   useEffect(() => {
     fetchAlerts();
   }, [fetchAlerts]);
+
+  // Fetch EPSS exploit probabilities for the visible CVEs in one batch call.
+  // Decorative triage signal: failures are ignored so the list still renders.
+  useEffect(() => {
+    const cveIds = Array.from(new Set(alerts.map(a => a.cve_id).filter(Boolean)));
+    if (cveIds.length === 0) {
+      setEpssScores({});
+      return;
+    }
+    let cancelled = false;
+    apiClient.get('/alerts/epss-batch', { params: { cve_ids: cveIds.join(',') } })
+      .then(res => { if (!cancelled) setEpssScores(res.data.scores ?? {}); })
+      .catch(() => { if (!cancelled) setEpssScores({}); });
+    return () => { cancelled = true; };
+  }, [alerts]);
 
   useEffect(() => {
     apiClient.get('/assets/', { params: { size: 100 } })
@@ -280,7 +296,17 @@ export function Alerts() {
                       aria-label={`Select alert ${alert.cve_id}`}
                     />
                   </td>
-                  <td className="px-4 py-3 font-mono text-primary-300">{alert.cve_id}</td>
+                  <td className="px-4 py-3 font-mono text-primary-300">
+                    {alert.cve_id}
+                    {alert.cve_id && epssScores[alert.cve_id] && (
+                      <span
+                        className={`mt-0.5 block text-xs font-sans ${epssScores[alert.cve_id].score >= 0.5 ? 'text-danger' : epssScores[alert.cve_id].score >= 0.2 ? 'text-warning' : 'text-surface-500'}`}
+                        title={`EPSS exploit probability ${(epssScores[alert.cve_id].score * 100).toFixed(1)}%, ${(epssScores[alert.cve_id].percentile * 100).toFixed(0)}th percentile (FIRST.org)`}
+                      >
+                        EPSS {(epssScores[alert.cve_id].score * 100).toFixed(0)}%
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <StatusBadge tone={alertSeverityTones[alert.severity] ?? 'neutral'}>{alert.severity}</StatusBadge>
                   </td>
