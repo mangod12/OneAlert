@@ -85,13 +85,13 @@ describe('Events page', () => {
     await screen.findByText('ET SCAN SSH brute force');
     fireEvent.click(screen.getByRole('button', { name: /^high/i }));
     await waitFor(() => {
-      expect(mockGet).toHaveBeenCalledWith('/events/', { params: { page: 1, size: 50, severity: 'high' } });
+      expect(mockGet).toHaveBeenCalledWith('/events/', { params: { page: 1, size: 50, severity: 'high', sort: 'timestamp_desc' } });
     });
     expect(screen.getByRole('button', { name: /^high/i }).getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(screen.getByRole('button', { name: /^high/i }));
     await waitFor(() => {
       expect(mockGet).toHaveBeenCalledTimes(10);
-      expect(mockGet).toHaveBeenNthCalledWith(8, '/events/', { params: { page: 1, size: 50 } });
+      expect(mockGet).toHaveBeenNthCalledWith(8, '/events/', { params: { page: 1, size: 50, sort: 'timestamp_desc' } });
     });
   });
 
@@ -177,7 +177,7 @@ describe('Event type filter', () => {
     const select = await screen.findByLabelText('Filter by event type');
     fireEvent.change(select, { target: { value: 'port_scan' } });
     await waitFor(() => {
-      expect(mockGet).toHaveBeenCalledWith('/events/', { params: { page: 1, size: 50, event_type: 'port_scan' } });
+      expect(mockGet).toHaveBeenCalledWith('/events/', { params: { page: 1, size: 50, event_type: 'port_scan', sort: 'timestamp_desc' } });
     });
   });
 });
@@ -188,7 +188,7 @@ describe('IP search', () => {
     await screen.findByText('ET SCAN SSH brute force');
     fireEvent.change(screen.getByLabelText('Search by IP address'), { target: { value: '10.0.0' } });
     await waitFor(() => {
-      expect(mockGet).toHaveBeenCalledWith('/events/', { params: { page: 1, size: 50, ip: '10.0.0' } });
+      expect(mockGet).toHaveBeenCalledWith('/events/', { params: { page: 1, size: 50, ip: '10.0.0', sort: 'timestamp_desc' } });
     });
   });
 });
@@ -208,7 +208,18 @@ describe('Sensor filter', () => {
     const select = await screen.findByLabelText('Filter by sensor type');
     fireEvent.change(select, { target: { value: 'zeek' } });
     await waitFor(() => {
-      expect(mockGet).toHaveBeenCalledWith('/events/', { params: { page: 1, size: 50, source_type: 'zeek' } });
+      expect(mockGet).toHaveBeenCalledWith('/events/', { params: { page: 1, size: 50, source_type: 'zeek', sort: 'timestamp_desc' } });
+    });
+  });
+});
+
+describe('Sort control', () => {
+  it('sends the chosen sort order to the API', async () => {
+    render(<Events />);
+    const select = await screen.findByLabelText('Sort events');
+    fireEvent.change(select, { target: { value: 'severity_desc' } });
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith('/events/', { params: { page: 1, size: 50, sort: 'severity_desc' } });
     });
   });
 });

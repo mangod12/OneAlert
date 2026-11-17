@@ -4,6 +4,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from sqlalchemy import case as sql_case
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -134,6 +135,11 @@ async def list_events(
     dest_ip: str | None = Query(None),
     source_type: str | None = Query(None),
     ip: str | None = Query(None, description="Substring match against source or destination IP"),
+    sort: str = Query(
+        "timestamp_desc",
+        pattern="^(timestamp_desc|timestamp_asc|severity_desc|severity_asc)$",
+        description="Sort order"
+    ),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -167,7 +173,18 @@ async def list_events(
         count_q = count_q.filter(ip_match)
 
     total = (await db.execute(count_q)).scalar_one()
-    query = query.order_by(SecurityEvent.timestamp.desc()).offset(skip).limit(size)
+    severity_rank = sql_case(
+        {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0},
+        value=SecurityEvent.severity,
+        else_=2
+    )
+    order_columns = {
+        "timestamp_desc": [SecurityEvent.timestamp.desc()],
+        "timestamp_asc": [SecurityEvent.timestamp.asc()],
+        "severity_desc": [severity_rank.desc(), SecurityEvent.timestamp.desc()],
+        "severity_asc": [severity_rank.asc(), SecurityEvent.timestamp.desc()],
+    }
+    query = query.order_by(*order_columns[sort]).offset(skip).limit(size)
     result = await db.execute(query)
     events = result.scalars().all()
 
