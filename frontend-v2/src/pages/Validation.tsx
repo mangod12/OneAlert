@@ -114,7 +114,7 @@ export function Validation() {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Analyze" title="Purple-Team Validation" description="Test detection controls against simulated ATT&CK techniques and expose measurable coverage gaps." actions={
+      <PageHeader eyebrow="Act" title="Purple-Team Validation" description="Test detection controls against simulated ATT&CK techniques and expose measurable coverage gaps." actions={
         <button onClick={() => setShowCreate(!showCreate)}
           className="flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-400 text-surface-950 rounded-lg text-sm font-medium transition-colors">
           <Plus className="w-4 h-4" /> New Validation
