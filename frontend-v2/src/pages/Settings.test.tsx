@@ -8,6 +8,7 @@ vi.mock('../api/client', () => ({
     get: vi.fn(),
     post: vi.fn(),
     patch: vi.fn(),
+    delete: vi.fn(),
   },
   SESSION_EXPIRED_EVENT: 'onealert:session-expired',
 }));
@@ -36,7 +37,10 @@ const notFound = () => { const e = new Error('nf') as Error & { response?: { sta
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mockGet.mockImplementation(notFound);
+  mockGet.mockImplementation(async (url: string) => {
+    if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
+    return notFound();
+  });
   useAuthStore.setState({
     user: { ...analyst } as never,
     isAuthenticated: true,
