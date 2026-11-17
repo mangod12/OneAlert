@@ -21,6 +21,7 @@ export function Alerts() {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [cveSearch, setCveSearch] = useState('');
   const [assetFilter, setAssetFilter] = useState('');
+  const [assignedFilter, setAssignedFilter] = useState('');
   const [assetOptions, setAssetOptions] = useState<{ id: number; name: string }[]>([]);
   const [sort, setSort] = useState('created_at_desc');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -36,6 +37,7 @@ export function Alerts() {
       if (statusFilter) params.status = statusFilter;
       if (cveSearch) params.search = cveSearch;
       if (assetFilter) params.asset_id = Number(assetFilter);
+      if (assignedFilter) params.assigned = assignedFilter;
       params.sort = sort;
 
       const res = await apiClient.get<AlertListResponse>('/alerts/', { params });
@@ -47,7 +49,7 @@ export function Alerts() {
     } finally {
       setLoading(false);
     }
-  }, [page, severityFilter, statusFilter, cveSearch, assetFilter, sort]);
+  }, [page, severityFilter, statusFilter, cveSearch, assetFilter, assignedFilter, sort]);
 
   useEffect(() => {
     fetchAlerts();
@@ -162,6 +164,16 @@ export function Alerts() {
           <option value="pending">Pending</option>
           <option value="acknowledged">Acknowledged</option>
           <option value="resolved">Resolved</option>
+        </select>
+        <select
+          aria-label="Filter by assignee"
+          value={assignedFilter}
+          onChange={(e) => { setAssignedFilter(e.target.value); setPage(1); }}
+          className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+        >
+          <option value="">Anyone</option>
+          <option value="me">Assigned to me</option>
+          <option value="unassigned">Unassigned</option>
         </select>
         <select
           aria-label="Sort alerts"

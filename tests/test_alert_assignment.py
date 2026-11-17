@@ -165,3 +165,34 @@ class TestAlertAssignment:
         assert resp.status_code == 200, resp.text
         listing = client.get("/api/v1/alerts/", headers=owner)
         assert listing.json()["alerts"][0]["status"] == "acknowledged"
+
+
+class TestAlertAssignmentFilter:
+    def _setup(self, client):
+        owner = _register_and_login(client, "owner@example.com")
+        member = _register_and_login(client, "member@example.com")
+        owner_id = _user_id(client, owner)
+        member_id = _user_id(client, member)
+        _share_org(owner_id, member_id)
+        alert_id = _seed_alert(owner_id)
+        resp = client.patch(f"/api/v1/alerts/{alert_id}", json={"assigned_to_id": member_id}, headers=owner)
+        assert resp.status_code == 200, resp.text
+        # a second, unassigned alert
+        _seed_alert(owner_id)
+        return owner, member_id
+
+    def test_filter_me_returns_only_my_alerts(self, client):
+        owner, member_id = self._setup(client)
+        resp = client.get("/api/v1/alerts/", params={"assigned": "me"}, headers=owner)
+        assert resp.status_code == 200
+        rows = resp.json()["alerts"]
+        assert all(r["assigned_to_id"] is not None for r in rows) or len(rows) == 0
+        assert resp.json()["total"] == 0  # both alerts: one assigned to member, one unassigned
+
+    def test_filter_unassigned_excludes_assigned(self, client):
+        owner, member_id = self._setup(client)
+        resp = client.get("/api/v1/alerts/", params={"assigned": "unassigned"}, headers=owner)
+        assert resp.status_code == 200
+        rows = resp.json()["alerts"]
+        assert resp.json()["total"] == 1
+        assert rows[0]["assigned_to_id"] is None
