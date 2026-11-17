@@ -34,7 +34,7 @@ export function Alerts() {
       const params: Record<string, string | number> = { page, size: 15 };
       if (severityFilter) params.severity = severityFilter;
       if (statusFilter) params.status = statusFilter;
-      if (cveSearch) params.cve_id = cveSearch;
+      if (cveSearch) params.search = cveSearch;
       if (assetFilter) params.asset_id = Number(assetFilter);
       params.sort = sort;
 
@@ -116,8 +116,8 @@ export function Alerts() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
           <input
             type="text"
-            aria-label="Search by CVE ID"
-            placeholder="Search CVE..."
+            aria-label="Search by CVE or title"
+            placeholder="Search CVE or title..."
             value={cveSearch}
             onChange={(e) => { setCveSearch(e.target.value); setPage(1); }}
             className="pl-9 pr-4 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"

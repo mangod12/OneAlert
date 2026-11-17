@@ -7,7 +7,7 @@ Provides endpoints for viewing, acknowledging, and getting statistics on securit
 from datetime import UTC
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -36,6 +36,7 @@ async def list_alerts(
     status: AlertStatus | None = Query(None, description="Filter by status"),
     asset_id: int | None = Query(None, description="Filter by asset ID"),
     cve_id: str | None = Query(None, description="Filter by CVE ID"),
+    search: str | None = Query(None, description="Case-insensitive substring match against CVE ID or title"),
     sort: str = Query(
         "created_at_desc",
         pattern="^(created_at_desc|created_at_asc|cvss_desc|cvss_asc)$",
@@ -73,6 +74,13 @@ async def list_alerts(
     if cve_id:
         query = query.filter(Alert.cve_id == cve_id)
         count_base_query = count_base_query.filter(Alert.cve_id == cve_id)
+    if search:
+        search_match = or_(
+            Alert.cve_id.ilike(f"%{search}%"),
+            Alert.title.ilike(f"%{search}%"),
+        )
+        query = query.filter(search_match)
+        count_base_query = count_base_query.filter(search_match)
 
     # Finalize count query using a subquery for explicitness and to avoid deprecation warnings
     final_count_query = select(func.count()).select_from(count_base_query.subquery())
