@@ -13,7 +13,7 @@ const alert: Alert = {
   id: 1, cve_id: 'CVE-2026-0001', title: 'RouterOS RCE', description: 'Remote code execution.',
   severity: 'critical', status: 'acknowledged', source: 'NVD', cvss_score: 9.8, asset_id: 10,
   asset_name: 'edge-router-01', asset_vendor: 'Acme', asset_product: 'RouterOS',
-  remediation: 'Patch to 7.1', created_at: '2026-11-10T08:00:00Z', acknowledged_at: null,
+  remediation: 'Patch to 7.1', created_at: '2026-11-10T08:00:00Z', acknowledged_at: null, assigned_to_id: null, assigned_to_email: null,
 };
 
 const get = vi.mocked(apiClient.get);
@@ -29,7 +29,7 @@ describe('AlertDetail', () => {
       if (url === '/alerts/1/remediations') return { data: [] };
       throw new Error(`unexpected ${url}`);
     });
-    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} />);
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onAssigned={() => {}} />);
     await waitFor(() => expect(screen.getByText('42.0%')).toBeTruthy());
     expect(screen.getByText(/higher than 97% of CVEs/)).toBeTruthy();
   });
@@ -40,7 +40,7 @@ describe('AlertDetail', () => {
       if (url === '/alerts/1/remediations') return { data: [] };
       throw new Error(`unexpected ${url}`);
     });
-    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} />);
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onAssigned={() => {}} />);
     await waitFor(() => expect(screen.getByText('EPSS data not available')).toBeTruthy());
   });
 
@@ -57,7 +57,7 @@ describe('AlertDetail', () => {
       ] };
       throw new Error(`unexpected ${url}`);
     });
-    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} />);
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onAssigned={() => {}} />);
     await waitFor(() => expect(screen.getByText('Apply the vendor patch.')).toBeTruthy());
     const items = screen.getAllByRole('listitem');
     expect(items[0].textContent).toContain('Apply the vendor patch.');
@@ -70,9 +70,9 @@ describe('AlertDetail', () => {
 
   it('renders without EPSS or remediation sections when both requests fail', async () => {
     get.mockRejectedValue(new Error('offline'));
-    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} />);
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onAssigned={() => {}} />);
     expect(screen.getByText('RouterOS RCE')).toBeTruthy();
-    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
     expect(screen.queryByText(/Exploit probability/)).toBeNull();
     expect(screen.queryByText('Remediation plan')).toBeNull();
   });
@@ -94,7 +94,7 @@ describe('Escalate to investigation', () => {
       if (url === '/cases/42/alerts/1') return { data: {} };
       throw new Error(`unexpected ${url}`);
     });
-    render(<MemoryRouter><AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} /></MemoryRouter>);
+    render(<MemoryRouter><AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onAssigned={() => {}} /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: /open investigation/i }));
     const dialog = await screen.findByRole('dialog', { name: 'Open investigation' });
     expect((dialog.querySelector('#escalate-title') as HTMLInputElement).value).toBe('Investigate CVE-2026-0001 on edge-router-01');
@@ -108,11 +108,51 @@ describe('Escalate to investigation', () => {
   it('shows an inline error and stays open when creation fails', async () => {
     mockDetailGets();
     post.mockRejectedValue({ isAxiosError: true, response: { status: 500, data: {} } });
-    render(<MemoryRouter><AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} /></MemoryRouter>);
+    render(<MemoryRouter><AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onAssigned={() => {}} /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: /open investigation/i }));
     const dialog = await screen.findByRole('dialog', { name: 'Open investigation' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Open investigation' }));
     expect(await screen.findByRole('alert')).toBeTruthy();
     expect(screen.getByRole('dialog', { name: 'Open investigation' })).toBeTruthy();
+  });
+
+  it('assigns the alert to an org member and reports the change', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null } };
+      if (url === '/alerts/1/remediations') return { data: [] };
+      if (url === '/orgs/me/members') return { data: [
+        { id: 1, email: 'analyst@example.com', full_name: 'Analyst One', is_active: true },
+        { id: 2, email: 'soc-lead@example.com', full_name: 'Sam Oclead', is_active: true },
+        { id: 3, email: 'idle@example.com', full_name: null, is_active: false },
+      ] };
+      throw new Error(`unexpected ${url}`);
+    });
+    const patch = vi.mocked(apiClient.patch);
+    patch.mockResolvedValue({ data: {} });
+    const onAssigned = vi.fn();
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onAssigned={onAssigned} />);
+    const select = await screen.findByLabelText('Assigned to');
+    // inactive member is not offered
+    expect(within(select as HTMLElement).queryByText(/idle@example.com/)).toBeNull();
+    fireEvent.change(select, { target: { value: '2' } });
+    await waitFor(() => expect(patch).toHaveBeenCalledWith('/alerts/1', { assigned_to_id: 2 }));
+    await waitFor(() => expect(onAssigned).toHaveBeenCalledWith(1, 2, 'soc-lead@example.com'));
+  });
+
+  it('shows an inline error when assignment fails', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null } };
+      if (url === '/alerts/1/remediations') return { data: [] };
+      if (url === '/orgs/me/members') return { data: [
+        { id: 2, email: 'soc-lead@example.com', full_name: 'Sam Oclead', is_active: true },
+      ] };
+      throw new Error(`unexpected ${url}`);
+    });
+    const patch = vi.mocked(apiClient.patch);
+    patch.mockRejectedValue({ isAxiosError: true, response: { status: 400, data: { detail: 'Assignee must be an active member of your organization' } } });
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onAssigned={() => {}} />);
+    const select = await screen.findByLabelText('Assigned to');
+    fireEvent.change(select, { target: { value: '2' } });
+    expect((await screen.findAllByRole('alert')).length).toBeGreaterThan(0);
   });
 });
