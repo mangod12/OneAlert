@@ -1,4 +1,5 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import type { Alert } from '../api/types';
@@ -16,6 +17,7 @@ const alert: Alert = {
 };
 
 const get = vi.mocked(apiClient.get);
+const post = vi.mocked(apiClient.post);
 
 beforeEach(() => { vi.resetAllMocks(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -73,5 +75,44 @@ describe('AlertDetail', () => {
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
     expect(screen.queryByText(/Exploit probability/)).toBeNull();
     expect(screen.queryByText('Remediation plan')).toBeNull();
+  });
+});
+
+describe('Escalate to investigation', () => {
+  function mockDetailGets() {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: null, epss_percentile: null } };
+      if (url === '/alerts/1/remediations') return { data: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+  }
+
+  it('creates a case, links the alert, and navigates to the case', async () => {
+    mockDetailGets();
+    post.mockImplementation(async (url: string) => {
+      if (url === '/cases/') return { data: { id: 42 } };
+      if (url === '/cases/42/alerts/1') return { data: {} };
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<MemoryRouter><AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: /open investigation/i }));
+    const dialog = await screen.findByRole('dialog', { name: 'Open investigation' });
+    expect((dialog.querySelector('#escalate-title') as HTMLInputElement).value).toBe('Investigate CVE-2026-0001 on edge-router-01');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open investigation' }));
+    await waitFor(() => {
+      expect(post).toHaveBeenCalledWith('/cases/', { title: 'Investigate CVE-2026-0001 on edge-router-01', summary: null, severity: 'critical' });
+      expect(post).toHaveBeenCalledWith('/cases/42/alerts/1');
+    });
+  });
+
+  it('shows an inline error and stays open when creation fails', async () => {
+    mockDetailGets();
+    post.mockRejectedValue({ isAxiosError: true, response: { status: 500, data: {} } });
+    render(<MemoryRouter><AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: /open investigation/i }));
+    const dialog = await screen.findByRole('dialog', { name: 'Open investigation' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open investigation' }));
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Open investigation' })).toBeTruthy();
   });
 });
