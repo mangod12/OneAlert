@@ -126,3 +126,28 @@ describe('Status filter', () => {
     });
   });
 });
+
+describe('Response plan CSV export', () => {
+  it('downloads the CSV honoring the active status filter', async () => {
+    const createUrl = vi.fn(() => 'blob:plans');
+    const revokeUrl = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', { value: createUrl, configurable: true });
+    Object.defineProperty(URL, 'revokeObjectURL', { value: revokeUrl, configurable: true });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    get.mockImplementation(async (url: string) => {
+      if (url === '/response-plans/') return { data: { data: [plan], total: 1 } };
+      if (url === '/response-plans/pending-approvals') return { data: { data: [] } };
+      if (url === '/response-plans/export') return { data: new Blob(['id,status'], { type: 'text/csv' }) };
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<ResponsePlans />);
+    const button = await screen.findByRole('button', { name: /export csv/i });
+    fireEvent.change(screen.getByRole('combobox', { name: /filter plans by status/i }), { target: { value: 'approved' } });
+    await screen.findByRole('button', { name: /export csv/i });
+    fireEvent.click(button);
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/response-plans/export', { params: { status: 'approved' }, responseType: 'blob' }));
+    await waitFor(() => expect(createUrl).toHaveBeenCalled());
+    expect(click).toHaveBeenCalled();
+    expect(revokeUrl).toHaveBeenCalled();
+  });
+});

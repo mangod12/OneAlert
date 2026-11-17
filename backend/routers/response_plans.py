@@ -1,8 +1,11 @@
 """Response plans router — approval workflow, plan lifecycle, action execution."""
 
+import csv
+import io
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,6 +54,49 @@ async def list_response_plans(
         "page": page,
         "size": size,
     }
+
+
+@router.get("/export")
+async def export_response_plans(
+    status_filter: str | None = Query(None, alias="status"),
+    case_id: int | None = Query(None),
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Export the user's response plans as CSV, honoring list filters."""
+    query = select(ResponsePlan).where(ResponsePlan.user_id == current_user.id)
+    if status_filter:
+        query = query.filter(ResponsePlan.status == status_filter)
+    if case_id:
+        query = query.filter(ResponsePlan.case_id == case_id)
+    plans = (await db.execute(
+        query.order_by(ResponsePlan.created_at.desc())
+    )).scalars().all()
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([
+        "id", "case_id", "status", "autonomy_level", "created_by",
+        "action_count", "approved_by", "approved_at", "created_at",
+    ])
+    for plan in plans:
+        writer.writerow([
+            plan.id,
+            plan.case_id,
+            plan.status,
+            plan.autonomy_level,
+            plan.created_by,
+            len(plan.actions or []),
+            plan.approved_by if plan.approved_by is not None else "",
+            plan.approved_at.isoformat() if plan.approved_at else "",
+            plan.created_at.isoformat() if plan.created_at else "",
+        ])
+    buffer.seek(0)
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=response-plans.csv"},
+    )
 
 
 @router.get("/pending-approvals")
