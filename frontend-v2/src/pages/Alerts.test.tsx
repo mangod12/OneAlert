@@ -73,13 +73,21 @@ describe('Alerts page', () => {
   it('refetches with the severity filter applied', async () => {
     render(<Alerts />);
     await screen.findByText('CVE-2026-0001');
-    const severitySelect = screen.getAllByRole('combobox')[0];
+    const severitySelect = screen.getByRole('combobox', { name: 'Filter by severity' });
     fireEvent.change(severitySelect, { target: { value: 'high' } });
     await waitFor(() => {
       expect(mockGet).toHaveBeenLastCalledWith('/alerts/', {
         params: { page: 1, size: 15, severity: 'high' },
       });
     });
+  });
+
+  it('labels the search input and both filter selects for assistive tech', async () => {
+    render(<Alerts />);
+    await screen.findByText('CVE-2026-0001');
+    expect(screen.getByRole('textbox', { name: 'Search by CVE ID' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: 'Filter by severity' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: 'Filter by status' })).toBeTruthy();
   });
 
   it('opens the detail panel on row click and closes it', async () => {
