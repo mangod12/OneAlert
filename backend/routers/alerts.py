@@ -6,7 +6,7 @@ Provides endpoints for viewing, acknowledging, and getting statistics on securit
 
 import csv
 import io
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -15,10 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from backend.database.db import get_async_db
-from backend.models.alert import (  # Import AlertRead
+from backend.models.alert import (
+    # Import AlertRead
     Alert,
     AlertListResponse,
     AlertRead,
+    AlertSnoozeRequest,
     AlertStats,
     AlertStatus,
     AlertUpdate,
@@ -42,6 +44,10 @@ async def list_alerts(
     search: str | None = Query(None, description="Case-insensitive substring match against CVE ID or title"),
     assigned: str | None = Query(
         None, pattern="^(me|unassigned)$", description="Filter by assignment: 'me' or 'unassigned'"
+    ),
+    snoozed: str = Query(
+        "active", pattern="^(active|all|only)$",
+        description="Snooze visibility: 'active' hides snoozed alerts, 'all' includes them, 'only' returns snoozed"
     ),
     sort: str = Query(
         "created_at_desc",
@@ -95,6 +101,13 @@ async def list_alerts(
     elif assigned == "unassigned":
         query = query.filter(Alert.assigned_to_id.is_(None))
         count_base_query = count_base_query.filter(Alert.assigned_to_id.is_(None))
+    if snoozed == "active":
+        not_snoozed = or_(Alert.snoozed_until.is_(None), Alert.snoozed_until <= datetime.now(UTC))
+        query = query.filter(not_snoozed)
+        count_base_query = count_base_query.filter(not_snoozed)
+    elif snoozed == "only":
+        query = query.filter(Alert.snoozed_until > datetime.now(UTC))
+        count_base_query = count_base_query.filter(Alert.snoozed_until > datetime.now(UTC))
 
     # Finalize count query using a subquery for explicitness and to avoid deprecation warnings
     final_count_query = select(func.count()).select_from(count_base_query.subquery())
@@ -362,6 +375,7 @@ async def acknowledge_alert(
 
     alert.status = AlertStatus.ACKNOWLEDGED
     alert.acknowledged_at = datetime.now(UTC)
+    alert.snoozed_until = None
 
     await db.commit()
     await db.refresh(alert)
@@ -391,6 +405,7 @@ async def resolve_alert(
         )
 
     alert.status = AlertStatus.RESOLVED
+    alert.snoozed_until = None
 
     await db.commit()
     await db.refresh(alert)
@@ -425,6 +440,64 @@ async def reopen_alert(
     await db.refresh(alert)
 
     return {"message": "Alert reopened successfully"}
+
+
+@router.post("/{alert_id}/snooze")
+async def snooze_alert(
+    alert_id: int,
+    payload: AlertSnoozeRequest,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Snooze an alert for a number of hours, hiding it from the default list until then."""
+    result = await db.execute(
+        select(Alert).where(
+            Alert.id == alert_id,
+            Alert.user_id == current_user.id
+        )
+    )
+    alert = result.scalar_one_or_none()
+
+    if not alert:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Alert not found"
+        )
+
+    alert.snoozed_until = datetime.now(UTC) + timedelta(hours=payload.hours)
+
+    await db.commit()
+    await db.refresh(alert)
+
+    return {"message": "Alert snoozed successfully", "snoozed_until": alert.snoozed_until.isoformat()}
+
+
+@router.delete("/{alert_id}/snooze")
+async def unsnooze_alert(
+    alert_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Clear an alert snooze, returning it to the default list."""
+    result = await db.execute(
+        select(Alert).where(
+            Alert.id == alert_id,
+            Alert.user_id == current_user.id
+        )
+    )
+    alert = result.scalar_one_or_none()
+
+    if not alert:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Alert not found"
+        )
+
+    alert.snoozed_until = None
+
+    await db.commit()
+
+    return {"message": "Snooze cleared successfully"}
 
 
 @router.get("/{alert_id}/remediations")
