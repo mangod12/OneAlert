@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +26,13 @@ class DetectionRuleCreate(BaseModel):
     description: str | None = None
     mitre_techniques: list | None = None
     confidence: str = "medium"
+
+
+class DetectionRuleUpdate(BaseModel):
+    name: str | None = Field(None, max_length=200)
+    description: str | None = None
+    confidence: str | None = Field(None, pattern="^(low|medium|high)$")
+    enabled: bool | None = None
 
 
 @router.post("/")
@@ -138,3 +145,30 @@ async def list_detection_rules(
         .order_by(DetectionRule.created_at.desc())
     )
     return result.scalars().all()
+
+
+@router.patch("/detections/{rule_id}", response_model=DetectionRuleResponse)
+async def update_detection_rule(
+    rule_id: int,
+    update: DetectionRuleUpdate,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Update a detection rule's name, description, confidence, or enabled state."""
+    rule = await db.get(DetectionRule, rule_id)
+    if not rule or rule.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Detection rule not found")
+    if update.name is not None:
+        name = update.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Name cannot be empty")
+        rule.name = name
+    if update.description is not None:
+        rule.description = update.description
+    if update.confidence is not None:
+        rule.confidence = update.confidence
+    if update.enabled is not None:
+        rule.enabled = update.enabled
+    await db.commit()
+    await db.refresh(rule)
+    return DetectionRuleResponse.model_validate(rule)

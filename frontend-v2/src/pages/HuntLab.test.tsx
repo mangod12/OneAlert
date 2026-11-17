@@ -6,6 +6,7 @@ vi.mock('../api/client', () => ({
   default: {
     get: vi.fn(),
     post: vi.fn(),
+    patch: vi.fn(),
   },
 }));
 
@@ -13,6 +14,7 @@ import apiClient from '../api/client';
 
 const mockGet = vi.mocked(apiClient.get);
 const mockPost = vi.mocked(apiClient.post);
+const mockPatch = vi.mocked(apiClient.patch);
 
 const session = {
   id: 5,
@@ -121,6 +123,22 @@ describe('Detection rules', () => {
       description: null,
       confidence: 'high',
     }));
+  });
+
+  it('disables and re-enables a rule via the API', async () => {
+    mockWithRules();
+    mockPatch.mockImplementation(async (url: string, data?: unknown) => {
+      const body = data as { enabled: boolean };
+      const rule = rules.find(r => url.endsWith(`/detections/${r.id}`))!;
+      return { data: { ...rule, enabled: body.enabled } };
+    });
+    render(<HuntLab />);
+    const disableBtn = await screen.findByRole('button', { name: 'Disable rule Modbus write to PLC' });
+    fireEvent.click(disableBtn);
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/hunt/detections/1', { enabled: false }));
+    expect(await screen.findByRole('button', { name: 'Enable rule Modbus write to PLC' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Enable rule Modbus write to PLC' }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/hunt/detections/1', { enabled: true }));
   });
 
   it('posts nothing when a manual rule is missing its content', async () => {
