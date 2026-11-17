@@ -129,3 +129,23 @@ export interface ProtocolData {
   protocol: string;
   count: number;
 }
+
+export interface EpssScore {
+  cve_id?: string;
+  epss_score: number | null;
+  epss_percentile: number | null;
+  message?: string;
+}
+
+export interface RemediationAction {
+  id: number;
+  alert_id: number;
+  action_type: string;
+  description: string;
+  estimated_downtime_minutes: number | null;
+  requires_maintenance_window: boolean;
+  priority: number;
+  status: string;
+  ai_confidence: number;
+  created_at: string;
+}
