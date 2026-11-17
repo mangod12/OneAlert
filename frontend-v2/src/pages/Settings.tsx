@@ -38,6 +38,9 @@ export function Settings() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviting, setInviting] = useState(false);
   const [teamMessage, setTeamMessage] = useState<{ text: string; error: boolean } | null>(null);
+  const [creatingOrg, setCreatingOrg] = useState(false);
+  const [orgName, setOrgName] = useState('');
+  const [orgSlug, setOrgSlug] = useState('');
 
   const fetchTeam = async () => {
     try {
@@ -61,6 +64,29 @@ export function Settings() {
   useEffect(() => {
     void fetchTeam();
   }, []);
+
+  const handleCreateOrg = async () => {
+    const name = orgName.trim();
+    const slug = orgSlug.trim().toLowerCase();
+    if (!name || !slug || creatingOrg) return;
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
+      setTeamMessage({ text: 'The slug can only use lowercase letters, numbers and hyphens, and must start with a letter or number.', error: true });
+      return;
+    }
+    setCreatingOrg(true);
+    setTeamMessage(null);
+    try {
+      await apiClient.post('/orgs/', { name, slug });
+      setOrgName('');
+      setOrgSlug('');
+      setTeamMessage({ text: `${name} created. You are its admin.`, error: false });
+      await Promise.all([fetchTeam(), fetchUser()]);
+    } catch (error: unknown) {
+      setTeamMessage({ text: getApiErrorMessage(error, 'The organization could not be created.'), error: true });
+    } finally {
+      setCreatingOrg(false);
+    }
+  };
 
   const handleInvite = async () => {
     const email = inviteEmail.trim();
@@ -154,11 +180,26 @@ export function Settings() {
 
           <Panel title="Team" description={org ? `${org.name} · ${members.length} of ${org.max_users} seats used` : 'People with access to this workspace.'} action={<Users className="h-4 w-4 text-primary-300" />}>
             <div className="p-5">
-              {noOrg && <p className="text-sm text-surface-400">This account does not belong to an organization, so there is no team to manage.</p>}
+              {teamMessage && <div role={teamMessage.error ? 'alert' : 'status'} className={`mb-3 rounded-md border px-3 py-2 text-xs ${teamMessage.error ? 'border-danger/30 bg-danger/10 text-danger' : 'border-success/30 bg-success/10 text-success'}`}>{teamMessage.text}</div>}
+              {noOrg && (
+                <div>
+                  <p className="text-sm text-surface-400">This account does not belong to an organization yet. Create one to share the workspace with your team.</p>
+                  <form className="mt-3 space-y-2" onSubmit={event => { event.preventDefault(); void handleCreateOrg(); }}>
+                    <div>
+                      <label htmlFor="org-name" className="sr-only">Organization name</label>
+                      <input id="org-name" type="text" autoComplete="off" placeholder="Organization name" value={orgName} onChange={event => setOrgName(event.target.value)} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
+                    </div>
+                    <div>
+                      <label htmlFor="org-slug" className="sr-only">Organization slug</label>
+                      <input id="org-slug" type="text" autoComplete="off" placeholder="url-slug" value={orgSlug} onChange={event => setOrgSlug(event.target.value)} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
+                    </div>
+                    <button type="submit" disabled={creatingOrg || !orgName.trim() || !orgSlug.trim()} className="min-h-9 rounded-md bg-primary-500 px-4 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">{creatingOrg ? 'Creating…' : 'Create organization'}</button>
+                  </form>
+                </div>
+              )}
               {!noOrg && (
                 <>
                   {org && <div className="mb-3 flex items-center gap-2"><StatusBadge tone="info">{org.plan}</StatusBadge></div>}
-                  {teamMessage && <div role={teamMessage.error ? 'alert' : 'status'} className={`mb-3 rounded-md border px-3 py-2 text-xs ${teamMessage.error ? 'border-danger/30 bg-danger/10 text-danger' : 'border-success/30 bg-success/10 text-success'}`}>{teamMessage.text}</div>}
                   <ul className="divide-y divide-surface-800">
                     {members.map(member => (
                       <li key={member.id} className="flex items-center justify-between gap-3 py-2 text-sm">

@@ -127,3 +127,41 @@ describe('Team panel', () => {
     expect(await screen.findByText(/does not belong to an organization/)).toBeTruthy();
   });
 });
+
+describe('Organization creation', () => {
+  it('creates an organization with a normalized slug and refreshes team and profile', async () => {
+    const org = { id: 9, name: 'New SOC', slug: 'new-soc', plan: 'free', max_assets: 10, max_users: 2, created_at: '2026-11-17T00:00:00Z' };
+    let created = false;
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
+      if (created && url === '/orgs/me') return { data: org };
+      if (created && url === '/orgs/me/members') return { data: [] };
+      return notFound();
+    });
+    mockPost.mockImplementation(async (url: string) => {
+      if (url === '/orgs/') { created = true; return { data: org }; }
+      return { data: true };
+    });
+    const fetchUser = vi.fn();
+    useAuthStore.setState({ fetchUser } as never);
+    render(<Settings />);
+    await screen.findByText(/does not belong to an organization/);
+    fireEvent.change(screen.getByLabelText('Organization name'), { target: { value: 'New SOC' } });
+    fireEvent.change(screen.getByLabelText('Organization slug'), { target: { value: 'New-SOC' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create organization' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/orgs/', { name: 'New SOC', slug: 'new-soc' }));
+    expect(await screen.findByText(/New SOC created/)).toBeTruthy();
+    expect(fetchUser).toHaveBeenCalled();
+    expect(await screen.findByText(/New SOC · 0 of 2 seats used/)).toBeTruthy();
+  });
+
+  it('rejects an invalid slug without posting', async () => {
+    render(<Settings />);
+    await screen.findByText(/does not belong to an organization/);
+    fireEvent.change(screen.getByLabelText('Organization name'), { target: { value: 'New SOC' } });
+    fireEvent.change(screen.getByLabelText('Organization slug'), { target: { value: '-bad slug!' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create organization' }));
+    expect(await screen.findByText(/lowercase letters, numbers and hyphens/)).toBeTruthy();
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+});
