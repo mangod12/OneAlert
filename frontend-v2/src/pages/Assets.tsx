@@ -8,6 +8,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { criticalityTones } from '../components/ui/tones';
 import { useDialogFocus } from '../components/ui/useDialogFocus';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { toast } from '../components/Toast';
 
 export function Assets() {
@@ -21,6 +22,7 @@ export function Assets() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
+  const [pendingDelete, setPendingDelete] = useState<Asset | null>(null);
 
   const fetchAssets = useCallback(async () => {
     setLoading(true);
@@ -42,17 +44,22 @@ export function Assets() {
     fetchAssets();
   }, [fetchAssets]);
 
-  const handleDelete = async (id: number) => {
-    if (deletingIds.has(id) || !confirm('Delete this asset from the managed inventory?')) return;
-    setDeletingIds(current => new Set(current).add(id));
+  const requestDelete = (asset: Asset) => {
+    if (!deletingIds.has(asset.id)) setPendingDelete(asset);
+  };
+
+  const handleDelete = async (asset: Asset) => {
+    if (deletingIds.has(asset.id)) return;
+    setDeletingIds(current => new Set(current).add(asset.id));
     try {
-      await apiClient.delete(`/assets/${id}`);
+      await apiClient.delete(`/assets/${asset.id}`);
+      setPendingDelete(null);
       await fetchAssets();
       toast('Asset deleted.', 'success');
     } catch (err: unknown) {
       toast(getApiErrorMessage(err, 'Asset could not be deleted.'), 'error');
     } finally {
-      setDeletingIds(current => { const next = new Set(current); next.delete(id); return next; });
+      setDeletingIds(current => { const next = new Set(current); next.delete(asset.id); return next; });
     }
   };
 
@@ -126,7 +133,7 @@ export function Assets() {
                     <Edit2 className="w-3.5 h-3.5" />
                   </button>
                   <button
-                    onClick={() => handleDelete(asset.id)}
+                    onClick={() => requestDelete(asset)}
                     disabled={deletingIds.has(asset.id)}
                     className="p-1.5 text-surface-500 hover:text-danger transition-colors"
                     aria-label={`Delete ${asset.name}`}
@@ -149,6 +156,18 @@ export function Assets() {
           ))
         )}
       </div>}
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete asset?"
+          description={`${pendingDelete.name} will be removed from the managed inventory. This cannot be undone.`}
+          confirmLabel="Delete asset"
+          tone="danger"
+          busy={deletingIds.has(pendingDelete.id)}
+          onCancel={() => { if (!deletingIds.has(pendingDelete.id)) setPendingDelete(null); }}
+          onConfirm={() => { void handleDelete(pendingDelete); }}
+        />
+      )}
 
       {showModal && (
         <AssetModal
