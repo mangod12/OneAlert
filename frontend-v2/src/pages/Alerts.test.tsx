@@ -68,6 +68,7 @@ describe('Alerts page', () => {
     mockGet.mockImplementation(async (url: string) => {
       if (url === '/assets/') return { data: { assets: [], total: 0 } };
       if (url === '/alerts/epss-batch') return { data: { scores: {} } };
+      if (url === '/alerts/kev-batch') return { data: { entries: {} } };
       if (url === '/orgs/me/members') return { data: [] };
       alertCalls += 1;
       if (alertCalls === 1) throw { isAxiosError: true, response: { status: 500, data: {} } };
@@ -269,6 +270,33 @@ describe('EPSS badges', () => {
     expect(await screen.findByText('CVE-2026-0001')).toBeTruthy();
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/alerts/epss-batch', { params: { cve_ids: 'CVE-2026-0001' } }));
     expect(screen.queryByText(/EPSS/)).toBeNull();
+  });
+});
+
+describe('KEV badges', () => {
+  it('marks CVEs listed in the CISA KEV catalog', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/alerts/epss-batch') return Promise.resolve({ data: { scores: {} } });
+      if (url === '/alerts/kev-batch') return Promise.resolve({ data: { entries: { 'CVE-2026-0001': { date_added: '2026-05-01', due_date: '2026-05-22', known_ransomware_campaign_use: 'Known' } } } });
+      if (url === '/assets/') return Promise.resolve({ data: { assets: [] } });
+      return Promise.resolve(listResponse([makeAlert()]));
+    });
+    render(<Alerts />);
+    expect(await screen.findByText('KEV listed')).toBeTruthy();
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/alerts/kev-batch', { params: { cve_ids: 'CVE-2026-0001' } }));
+  });
+
+  it('renders the list without KEV badges when the lookup fails', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/alerts/epss-batch') return Promise.resolve({ data: { scores: {} } });
+      if (url === '/alerts/kev-batch') return Promise.reject(new Error('upstream down'));
+      if (url === '/assets/') return Promise.resolve({ data: { assets: [] } });
+      return Promise.resolve(listResponse([makeAlert()]));
+    });
+    render(<Alerts />);
+    expect(await screen.findByText('CVE-2026-0001')).toBeTruthy();
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/alerts/kev-batch', { params: { cve_ids: 'CVE-2026-0001' } }));
+    expect(screen.queryByText('KEV listed')).toBeNull();
   });
 });
 
