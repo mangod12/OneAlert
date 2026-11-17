@@ -60,6 +60,7 @@ export function Events() {
   const [eventTypeFilter, setEventTypeFilter] = useState('');
   const [eventTypes, setEventTypes] = useState<string[]>([]);
   const [ipSearch, setIpSearch] = useState('');
+  const [sourceTypeFilter, setSourceTypeFilter] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [sources, setSources] = useState<EventSource[]>([]);
   const [showUpload, setShowUpload] = useState(false);
@@ -73,6 +74,7 @@ export function Events() {
       if (severityFilter) params.severity = severityFilter;
       if (eventTypeFilter) params.event_type = eventTypeFilter;
       if (ipSearch.trim()) params.ip = ipSearch.trim();
+      if (sourceTypeFilter) params.source_type = sourceTypeFilter;
       const [evtResult, statsResult, sourcesResult] = await Promise.allSettled([
         apiClient.get('/events/', { params }),
         apiClient.get('/events/stats'),
@@ -90,7 +92,7 @@ export function Events() {
     } finally {
       setLoading(false);
     }
-  }, [page, severityFilter, eventTypeFilter, ipSearch]);
+  }, [page, severityFilter, eventTypeFilter, ipSearch, sourceTypeFilter]);
 
   useEffect(() => { void fetchEvents(); }, [fetchEvents]);
 
@@ -193,6 +195,19 @@ export function Events() {
           onChange={e => { setPage(1); setIpSearch(e.target.value); }}
           className="bg-surface-800 border border-surface-700 text-surface-200 text-xs rounded px-2 py-1.5 w-44 placeholder:text-surface-500"
         />
+      </div>
+      <div className="flex items-center gap-2">
+        <label htmlFor="event-source-filter" className="text-xs text-surface-400">Sensor</label>
+        <select
+          id="event-source-filter"
+          aria-label="Filter by sensor type"
+          value={sourceTypeFilter}
+          onChange={e => { setPage(1); setSourceTypeFilter(e.target.value); }}
+          className="bg-surface-800 border border-surface-700 text-surface-200 text-xs rounded px-2 py-1.5"
+        >
+          <option value="">All sensors</option>
+          {[...new Set(sources.map(s => s.source_type))].map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
       </div>
       {eventTypes.length > 0 && (
         <div className="flex items-center gap-2">
