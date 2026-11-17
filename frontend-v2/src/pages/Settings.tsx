@@ -1,11 +1,26 @@
-import { useState } from 'react';
-import { Bell, KeyRound, Settings as SettingsIcon, Shield, UserRound } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Bell, KeyRound, Settings as SettingsIcon, Shield, UserPlus, UserRound, Users } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Panel } from '../components/ui/Panel';
 import { StatusBadge } from '../components/ui/StatusBadge';
+
+interface Org {
+  id: number;
+  name: string;
+  slug: string;
+  plan: string;
+  max_users: number;
+}
+
+interface OrgMember {
+  id: number;
+  email: string;
+  full_name: string | null;
+  is_active: boolean;
+}
 
 export function Settings() {
   const { user, fetchUser } = useAuthStore();
@@ -16,6 +31,52 @@ export function Settings() {
   const [verifying, setVerifying] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+  const [org, setOrg] = useState<Org | null>(null);
+  const [noOrg, setNoOrg] = useState(false);
+  const [members, setMembers] = useState<OrgMember[]>([]);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviting, setInviting] = useState(false);
+  const [teamMessage, setTeamMessage] = useState<{ text: string; error: boolean } | null>(null);
+
+  const fetchTeam = async () => {
+    try {
+      const orgResponse = await apiClient.get<Org>('/orgs/me');
+      setOrg(orgResponse.data);
+      setNoOrg(false);
+      const membersResponse = await apiClient.get<OrgMember[]>('/orgs/me/members');
+      setMembers(membersResponse.data);
+    } catch (error: unknown) {
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status === 404) {
+        setNoOrg(true);
+        setOrg(null);
+        setMembers([]);
+      } else {
+        setTeamMessage({ text: getApiErrorMessage(error, 'Team information could not be loaded.'), error: true });
+      }
+    }
+  };
+
+  useEffect(() => {
+    void fetchTeam();
+  }, []);
+
+  const handleInvite = async () => {
+    const email = inviteEmail.trim();
+    if (!email || inviting) return;
+    setInviting(true);
+    setTeamMessage(null);
+    try {
+      await apiClient.post('/orgs/me/invite', null, { params: { email } });
+      setInviteEmail('');
+      setTeamMessage({ text: `${email} was added to ${org?.name ?? 'the organization'}.`, error: false });
+      await fetchTeam();
+    } catch (error: unknown) {
+      setTeamMessage({ text: getApiErrorMessage(error, 'The invite could not be completed.'), error: true });
+    } finally {
+      setInviting(false);
+    }
+  };
 
   const handleSaveIntegrations = async () => {
     if (!slackUrl && !webhookUrl) {
@@ -88,6 +149,50 @@ export function Settings() {
               ].map(([label, value]) => <div key={label} className="flex items-center justify-between gap-4 py-3 text-sm"><dt className="text-surface-400">{label}</dt><dd className="truncate text-right font-medium text-surface-200">{value}</dd></div>)}
               <div className="flex items-center justify-between gap-4 py-3 text-sm"><dt className="text-surface-400">Role</dt><dd><StatusBadge tone="info">{user?.role || 'analyst'}</StatusBadge></dd></div>
             </dl>
+          </Panel>
+
+          <Panel title="Team" description={org ? `${org.name} · ${members.length} of ${org.max_users} seats used` : 'People with access to this workspace.'} action={<Users className="h-4 w-4 text-primary-300" />}>
+            <div className="p-5">
+              {noOrg && <p className="text-sm text-surface-400">This account does not belong to an organization, so there is no team to manage.</p>}
+              {!noOrg && (
+                <>
+                  {org && <div className="mb-3 flex items-center gap-2"><StatusBadge tone="info">{org.plan}</StatusBadge></div>}
+                  {teamMessage && <div role={teamMessage.error ? 'alert' : 'status'} className={`mb-3 rounded-md border px-3 py-2 text-xs ${teamMessage.error ? 'border-danger/30 bg-danger/10 text-danger' : 'border-success/30 bg-success/10 text-success'}`}>{teamMessage.text}</div>}
+                  <ul className="divide-y divide-surface-800">
+                    {members.map(member => (
+                      <li key={member.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-surface-200">{member.full_name || member.email}</p>
+                          {member.full_name && <p className="truncate text-xs text-surface-500">{member.email}</p>}
+                        </div>
+                        <StatusBadge tone={member.is_active ? 'success' : 'neutral'}>{member.is_active ? 'Active' : 'Inactive'}</StatusBadge>
+                      </li>
+                    ))}
+                  </ul>
+                  {user?.role === 'admin' && (
+                    <form className="mt-4 flex items-center gap-2 border-t border-surface-800 pt-4" onSubmit={event => { event.preventDefault(); void handleInvite(); }}>
+                      <label htmlFor="invite-email" className="sr-only">Email to invite</label>
+                      <input
+                        id="invite-email"
+                        type="email"
+                        autoComplete="off"
+                        placeholder="teammate@example.com"
+                        value={inviteEmail}
+                        onChange={event => setInviteEmail(event.target.value)}
+                        className="min-w-0 flex-1 rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500"
+                      />
+                      <button
+                        type="submit"
+                        disabled={inviting || !inviteEmail.trim()}
+                        className="inline-flex min-h-9 items-center gap-1.5 rounded-md bg-primary-500 px-3 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50"
+                      >
+                        <UserPlus className="h-4 w-4" /> {inviting ? 'Adding…' : 'Add member'}
+                      </button>
+                    </form>
+                  )}
+                </>
+              )}
+            </div>
           </Panel>
 
           <Panel title="Multi-factor authentication" description="TOTP adds a second verification step to password sign-in." action={<Shield className="h-4 w-4 text-success" />}>
