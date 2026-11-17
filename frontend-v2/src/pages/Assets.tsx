@@ -33,6 +33,7 @@ export function Assets() {
   const [vendorFilter, setVendorFilter] = useState('');
   const [vendorOptions, setVendorOptions] = useState<string[]>([]);
   const [criticalityFilter, setCriticalityFilter] = useState('');
+  const [otFilter, setOtFilter] = useState('');
 
   const fetchAssets = useCallback(async () => {
     setLoading(true);
@@ -43,6 +44,7 @@ export function Assets() {
       if (typeFilter) params.asset_type = typeFilter;
       if (vendorFilter) params.vendor = vendorFilter;
       if (criticalityFilter) params.criticality = criticalityFilter;
+      if (otFilter) params.is_ot = otFilter;
       const res = await apiClient.get<AssetListResponse>('/assets/', { params });
       setAssets(res.data.assets);
       setTotal(res.data.total);
@@ -51,7 +53,7 @@ export function Assets() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, typeFilter, vendorFilter, criticalityFilter]);
+  }, [page, search, typeFilter, vendorFilter, criticalityFilter, otFilter]);
 
   const [assetTypes, setAssetTypes] = useState<string[]>(FALLBACK_ASSET_TYPES);
 
@@ -161,6 +163,16 @@ export function Assets() {
           <option value="high">High</option>
           <option value="medium">Medium</option>
           <option value="low">Low</option>
+        </select>
+        <select
+          aria-label="Filter by OT or IT"
+          value={otFilter}
+          onChange={(e) => { setOtFilter(e.target.value); setPage(1); }}
+          className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+        >
+          <option value="">OT and IT</option>
+          <option value="true">OT only</option>
+          <option value="false">IT only</option>
         </select>
       </div>
 
