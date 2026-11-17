@@ -12,7 +12,7 @@ schemas for user-related API operations (registration, login, profile, etc).
 from datetime import datetime
 
 from fastapi import Depends
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import relationship
@@ -46,6 +46,10 @@ class User(Base):
 
     # Organization (multi-tenancy)
     org_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+
+    # Per-user email notification preferences
+    email_notifications_enabled = Column(Boolean, nullable=False, server_default="1")
+    notify_min_severity = Column(String, nullable=False, server_default="low")
     organization = relationship("Organization", back_populates="users")
 
     # Slack and webhook URLs
@@ -118,6 +122,25 @@ class UserUpdate(BaseModel):
         return validate_new_password(value) if value is not None else value
 
     model_config = {"from_attributes": True}
+
+
+SEVERITY_LEVELS = ("low", "medium", "high", "critical")
+
+
+class NotificationPreferences(BaseModel):
+    """Per-user email notification preferences."""
+    email_notifications_enabled: bool
+    notify_min_severity: str
+
+    model_config = {"from_attributes": True}
+
+
+class NotificationPreferencesUpdate(BaseModel):
+    """Partial update for notification preferences."""
+    email_notifications_enabled: bool | None = None
+    notify_min_severity: str | None = Field(
+        default=None, pattern="^(low|medium|high|critical)$"
+    )
 
 
 class UserResponse(BaseModel):

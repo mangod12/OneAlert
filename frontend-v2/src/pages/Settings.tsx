@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bell, KeyRound, Pencil, Settings as SettingsIcon, Shield, UserPlus, UserRound, Users } from 'lucide-react';
+import { Bell, KeyRound, Mail, Pencil, Settings as SettingsIcon, Shield, UserPlus, UserRound, Users } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
@@ -41,6 +41,10 @@ export function Settings() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviting, setInviting] = useState(false);
   const [teamMessage, setTeamMessage] = useState<{ text: string; error: boolean } | null>(null);
+  const [notifEnabled, setNotifEnabled] = useState(true);
+  const [notifMinSeverity, setNotifMinSeverity] = useState('low');
+  const [notifSaving, setNotifSaving] = useState(false);
+  const [notifMessage, setNotifMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [creatingOrg, setCreatingOrg] = useState(false);
   const [orgName, setOrgName] = useState('');
   const [orgSlug, setOrgSlug] = useState('');
@@ -64,6 +68,41 @@ export function Settings() {
       } else {
         setTeamMessage({ text: getApiErrorMessage(error, 'Team information could not be loaded.'), error: true });
       }
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await apiClient.get<{ email_notifications_enabled: boolean; notify_min_severity: string }>('/auth/me/notification-preferences');
+        if (cancelled) return;
+        setNotifEnabled(res.data.email_notifications_enabled);
+        setNotifMinSeverity(res.data.notify_min_severity);
+      } catch {
+        if (!cancelled) setNotifMessage({ text: 'Notification preferences could not be loaded.', error: true });
+      }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleSaveNotifications = async () => {
+    if (notifSaving) return;
+    setNotifSaving(true);
+    setNotifMessage(null);
+    try {
+      const res = await apiClient.patch<{ email_notifications_enabled: boolean; notify_min_severity: string }>('/auth/me/notification-preferences', {
+        email_notifications_enabled: notifEnabled,
+        notify_min_severity: notifMinSeverity,
+      });
+      setNotifEnabled(res.data.email_notifications_enabled);
+      setNotifMinSeverity(res.data.notify_min_severity);
+      setNotifMessage({ text: 'Notification preferences saved.', error: false });
+    } catch (error: unknown) {
+      setNotifMessage({ text: getApiErrorMessage(error, 'The notification preferences could not be saved.'), error: true });
+    } finally {
+      setNotifSaving(false);
     }
   };
 
@@ -337,6 +376,42 @@ export function Settings() {
         </div>
 
         <div className="space-y-4">
+        <Panel title="Email notifications" description="Choose which new alerts trigger an email to you." action={<Mail className="h-4 w-4 text-warning" />}>
+          <form className="space-y-5 p-5" onSubmit={event => { event.preventDefault(); void handleSaveNotifications(); }}>
+            <label className="flex items-center gap-3 text-sm text-surface-200">
+              <input
+                type="checkbox"
+                checked={notifEnabled}
+                onChange={event => setNotifEnabled(event.target.checked)}
+                className="h-4 w-4 rounded border-surface-600 bg-surface-950 text-primary-500 focus:ring-2 focus:ring-primary-500"
+              />
+              Email me about new alerts
+            </label>
+            <div>
+              <label htmlFor="notif-min-severity" className="mb-1.5 block text-sm font-medium text-surface-300">Minimum severity</label>
+              <select
+                id="notif-min-severity"
+                value={notifMinSeverity}
+                onChange={event => setNotifMinSeverity(event.target.value)}
+                disabled={!notifEnabled}
+                className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2.5 text-sm text-surface-100 disabled:opacity-50"
+              >
+                <option value="low">Low and above</option>
+                <option value="medium">Medium and above</option>
+                <option value="high">High and above</option>
+                <option value="critical">Critical only</option>
+              </select>
+              <p className="mt-1.5 text-xs text-surface-500">Alerts below this severity still appear in the app but do not trigger an email.</p>
+            </div>
+            {notifMessage && (
+              <p role={notifMessage.error ? 'alert' : 'status'} className={notifMessage.error ? 'text-sm text-danger' : 'text-sm text-primary-400'}>{notifMessage.text}</p>
+            )}
+            <div className="flex items-center justify-end gap-4 border-t border-surface-800 pt-4">
+              <button type="submit" disabled={notifSaving} className="min-h-9 rounded-md bg-primary-500 px-4 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">{notifSaving ? 'Saving…' : 'Save preferences'}</button>
+            </div>
+          </form>
+        </Panel>
+
         <Panel title="Notification integrations" description="Credentials are write-only. Existing values are never returned to the browser." action={<Bell className="h-4 w-4 text-warning" />}>
           <form className="space-y-5 p-5" onSubmit={event => { event.preventDefault(); void handleSaveIntegrations(); }}>
             <div>
