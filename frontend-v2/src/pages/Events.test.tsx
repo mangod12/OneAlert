@@ -193,6 +193,26 @@ describe('IP search', () => {
   });
 });
 
+describe('Sensor filter', () => {
+  it('offers the distinct sensor types and filters the list', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/events/') return { data: { events: [makeEvent()], total: 1 } };
+      if (url === '/events/stats') return { data: { data: STATS } };
+      if (url === '/events/sources') return { data: [
+        { id: 1, name: 'dmz-suricata', source_type: 'suricata', status: 'active', event_count: 1200, last_event_at: null, created_at: '2026-11-01T00:00:00Z' },
+        { id: 2, name: 'zeek-default', source_type: 'zeek', status: 'active', event_count: 40, last_event_at: null, created_at: '2026-11-02T00:00:00Z' },
+      ] };
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<Events />);
+    const select = await screen.findByLabelText('Filter by sensor type');
+    fireEvent.change(select, { target: { value: 'zeek' } });
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith('/events/', { params: { page: 1, size: 50, source_type: 'zeek' } });
+    });
+  });
+});
+
 describe('Telemetry sources', () => {
   it('lists sources with counts, last-seen and status', async () => {
     mockGet.mockImplementation(async (url: string) => {
