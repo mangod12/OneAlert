@@ -420,3 +420,56 @@ class TestCrossOrgIsolation:
         # Bob sees his own org
         resp = client.get("/api/v1/orgs/me", headers=h2)
         assert resp.json()["slug"] == "bob-org"
+
+
+class TestOrganizationMemberRemoval:
+    """Tests for DELETE /me/members/{user_id}."""
+
+    def _org_with_member(self, client):
+        """Create an org with an admin and one invited member; return headers and member id."""
+        admin_h = register_and_login(client, "admin@example.com")
+        client.post("/api/v1/orgs/", json={
+            "name": "Team Org", "slug": "team-org",
+        }, headers=admin_h)
+        member_h = register_and_login(client, "member@example.com")
+        client.post("/api/v1/orgs/me/invite", params={"email": "member@example.com"}, headers=admin_h)
+        members = client.get("/api/v1/orgs/me/members", headers=admin_h).json()
+        member_id = next(m["id"] for m in members if m["email"] == "member@example.com")
+        return admin_h, member_h, member_id
+
+    def test_admin_removes_member(self, client):
+        admin_h, member_h, member_id = self._org_with_member(client)
+        resp = client.delete(f"/api/v1/orgs/me/members/{member_id}", headers=admin_h)
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        # Removed member no longer belongs to an org
+        assert client.get("/api/v1/orgs/me", headers=member_h).status_code == 404
+        # And no longer appears in the member list
+        members = client.get("/api/v1/orgs/me/members", headers=admin_h).json()
+        assert [m["email"] for m in members] == ["admin@example.com"]
+
+    def test_admin_cannot_remove_self(self, client):
+        admin_h, _, _ = self._org_with_member(client)
+        members = client.get("/api/v1/orgs/me/members", headers=admin_h).json()
+        admin_id = next(m["id"] for m in members if m["email"] == "admin@example.com")
+        resp = client.delete(f"/api/v1/orgs/me/members/{admin_id}", headers=admin_h)
+        assert resp.status_code == 400
+
+    def test_non_admin_cannot_remove(self, client):
+        _, member_h, member_id = self._org_with_member(client)
+        resp = client.delete(f"/api/v1/orgs/me/members/{member_id}", headers=member_h)
+        assert resp.status_code == 403
+
+    def test_remove_member_from_another_org(self, client):
+        admin_h, _, _ = self._org_with_member(client)
+        other_h = register_and_login(client, "other@example.com")
+        client.post("/api/v1/orgs/", json={"name": "Other Org", "slug": "other-org"}, headers=other_h)
+        other_members = client.get("/api/v1/orgs/me/members", headers=other_h).json()
+        other_id = other_members[0]["id"]
+        resp = client.delete(f"/api/v1/orgs/me/members/{other_id}", headers=admin_h)
+        assert resp.status_code == 404
+
+    def test_remove_nonexistent_member(self, client):
+        admin_h, _, _ = self._org_with_member(client)
+        resp = client.delete("/api/v1/orgs/me/members/9999", headers=admin_h)
+        assert resp.status_code == 404
