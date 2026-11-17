@@ -4,7 +4,7 @@ import { CheckCircle, XCircle, Play, Clock, Shield } from 'lucide-react';
 import clsx from 'clsx';
 import { toast } from '../components/Toast';
 import { getApiErrorMessage } from '../api/errors';
-import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { EmptyState, ErrorState, LoadingSurface, RetryButton, DegradedBanner } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
 
 interface ResponseAction {
@@ -52,25 +52,25 @@ const STATUS_STYLES: Record<string, string> = {
 export function ResponsePlans() {
   const [plans, setPlans] = useState<ResponsePlan[]>([]);
   const [pending, setPending] = useState<PendingApproval[]>([]);
-  const [selectedPlan, setSelectedPlan] = useState<ResponsePlan | null>(null);
+  const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+  const selectedPlan = plans.find(plan => plan.id === selectedPlanId) ?? null;
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [errors, setErrors] = useState<string[]>([]);
   const [workingPlan, setWorkingPlan] = useState<number | null>(null);
 
   const fetchPlans = async () => {
-    try {
-      const res = await apiClient.get('/response-plans/');
-      setPlans(res.data.data || []);
-      setError('');
-    } catch (err) { setError(getApiErrorMessage(err, 'Response plans could not be loaded.')); }
-    finally { setLoading(false); }
-  };
-
-  const fetchPending = async () => {
-    try {
-      const res = await apiClient.get('/response-plans/pending-approvals');
-      setPending(res.data.data || []);
-    } catch (err) { setError(getApiErrorMessage(err, 'Pending approvals could not be loaded.')); }
+    setLoading(true);
+    const [planResult, approvalResult] = await Promise.allSettled([
+      apiClient.get('/response-plans/'),
+      apiClient.get('/response-plans/pending-approvals'),
+    ]);
+    const nextErrors: string[] = [];
+    if (planResult.status === 'fulfilled') setPlans(planResult.value.data.data || []);
+    else nextErrors.push(getApiErrorMessage(planResult.reason, 'Response plans could not be loaded.'));
+    if (approvalResult.status === 'fulfilled') setPending(approvalResult.value.data.data || []);
+    else nextErrors.push(getApiErrorMessage(approvalResult.reason, 'Pending approvals could not be loaded.'));
+    setErrors(nextErrors);
+    setLoading(false);
   };
 
   const approvePlan = async (planId: number) => {
@@ -79,7 +79,7 @@ export function ResponsePlans() {
     try {
       await apiClient.post(`/response-plans/${planId}/approve`);
       toast('Plan approved', 'success');
-      await Promise.all([fetchPlans(), fetchPending()]);
+      await fetchPlans();
     } catch (err) { toast(getApiErrorMessage(err, 'Failed to approve plan.'), 'error'); }
     finally { setWorkingPlan(null); }
   };
@@ -90,7 +90,7 @@ export function ResponsePlans() {
     try {
       await apiClient.post(`/response-plans/${planId}/reject`, { reason: 'Manual rejection' });
       toast('Plan rejected', 'warning');
-      await Promise.all([fetchPlans(), fetchPending()]);
+      await fetchPlans();
     } catch (err) { toast(getApiErrorMessage(err, 'Failed to reject plan.'), 'error'); }
     finally { setWorkingPlan(null); }
   };
@@ -106,13 +106,15 @@ export function ResponsePlans() {
     finally { setWorkingPlan(null); }
   };
 
-  useEffect(() => { fetchPlans(); fetchPending(); }, []);
+  useEffect(() => { void fetchPlans(); }, []);
 
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="Act" title="Response Plans" description="Review, approve, and execute guarded response actions with a durable human decision trail." />
 
-      {error && plans.length === 0 ? <ErrorState title="Response plans unavailable" description={error} action={<RetryButton onClick={() => { fetchPlans(); fetchPending(); }} />} /> : null}
+      {errors.length > 0 && (plans.length > 0 || pending.length > 0)
+        ? <DegradedBanner messages={errors} onRetry={() => void fetchPlans()} />
+        : errors.length > 0 && <ErrorState title="Response plans unavailable" description={errors.join(' · ')} action={<RetryButton onClick={() => void fetchPlans()} />} />}
       {loading && <LoadingSurface label="Loading response plans" />}
 
       {/* Pending Approvals */}
@@ -133,12 +135,12 @@ export function ResponsePlans() {
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <button disabled={workingPlan === a.plan_id} onClick={() => approvePlan(a.plan_id)}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-success hover:bg-success/80 text-surface-950 rounded text-xs font-medium transition-colors">
+                  <button disabled={workingPlan !== null || loading || errors.length > 0} onClick={() => approvePlan(a.plan_id)}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-success hover:bg-success/80 text-surface-950 rounded text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40">
                     <CheckCircle className="w-3.5 h-3.5" /> Approve
                   </button>
-                  <button disabled={workingPlan === a.plan_id} onClick={() => rejectPlan(a.plan_id)}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-danger hover:bg-danger/80 text-surface-950 rounded text-xs font-medium transition-colors">
+                  <button disabled={workingPlan !== null || loading || errors.length > 0} onClick={() => rejectPlan(a.plan_id)}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-danger hover:bg-danger/80 text-surface-950 rounded text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40">
                     <XCircle className="w-3.5 h-3.5" /> Reject
                   </button>
                 </div>
@@ -152,7 +154,7 @@ export function ResponsePlans() {
       <div className="oa-panel p-6">
         <h2 className="text-lg font-semibold text-surface-50 mb-4">All Response Plans</h2>
         {plans.length === 0 ? (
-          <EmptyState title="No response plans" description="Run the agent pipeline to generate a guarded response plan." />
+          !loading && errors.length === 0 && <EmptyState title="No response plans" description="Run the agent pipeline to generate a guarded response plan." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -170,8 +172,8 @@ export function ResponsePlans() {
               <tbody>
                 {plans.map(p => (
                   <tr key={p.id} tabIndex={0} className="border-b border-surface-800 hover:bg-surface-800/50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500"
-                    onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedPlan(selectedPlan?.id === p.id ? null : p); } }}
-                    onClick={() => setSelectedPlan(selectedPlan?.id === p.id ? null : p)}>
+                    onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedPlanId(selectedPlanId === p.id ? null : p.id); } }}
+                    onClick={() => setSelectedPlanId(selectedPlanId === p.id ? null : p.id)}>
                     <td className="p-3 text-surface-300">#{p.id}</td>
                     <td className="p-3 text-surface-300">Case #{p.case_id}</td>
                     <td className="p-3 text-surface-300">{p.actions?.length || 0}</td>
@@ -184,8 +186,8 @@ export function ResponsePlans() {
                     <td className="p-3 text-surface-500 text-xs">{new Date(p.created_at).toLocaleString()}</td>
                     <td className="p-3">
                       {p.status === 'approved' && (
-                        <button disabled={workingPlan === p.id} onClick={e => { e.stopPropagation(); executePlan(p.id); }}
-                          className="flex items-center gap-1 px-2 py-1 bg-primary-500 hover:bg-primary-400 text-surface-950 rounded text-xs transition-colors">
+                        <button disabled={workingPlan !== null || loading || errors.length > 0} onClick={e => { e.stopPropagation(); executePlan(p.id); }}
+                          className="flex items-center gap-1 px-2 py-1 bg-primary-500 hover:bg-primary-400 text-surface-950 rounded text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40">
                           <Play className="w-3 h-3" /> Execute
                         </button>
                       )}
