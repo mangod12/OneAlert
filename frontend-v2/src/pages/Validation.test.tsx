@@ -91,6 +91,19 @@ describe('Validation run confirmation', () => {
   });
 });
 
+describe('Run status filter', () => {
+  it('sends the chosen status to the API', async () => {
+    const get = vi.mocked(apiClient.get);
+    render(<Validation />);
+    const select = await screen.findByLabelText('Filter runs by status');
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/validation/runs', { params: {} }));
+    fireEvent.change(select, { target: { value: 'failed' } });
+    await waitFor(() => {
+      expect(get).toHaveBeenCalledWith('/validation/runs', { params: { status: 'failed' } });
+    });
+  });
+});
+
 describe('Validation coverage panel', () => {
   const coverage = [
     { technique_id: 'T1110', technique_name: 'Brute Force', total_tests: 4, detections: 3, detection_rate: 75 },
