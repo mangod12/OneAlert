@@ -4,7 +4,11 @@ Provides CRUD operations for assets that users want to monitor for vulnerabiliti
 """
 
 
+import csv
+import io
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import case as sql_case
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -110,6 +114,68 @@ async def list_assets(
         total=total,
         page=page,
         size=size
+    )
+
+
+@router.get("/export")
+async def export_assets(
+    asset_type: str | None = Query(None, description="Filter by asset type"),
+    vendor: str | None = Query(None, description="Filter by vendor"),
+    criticality: str | None = Query(None, description="Filter by criticality"),
+    is_ot: bool | None = Query(None, description="Filter to OT assets (true) or non-OT assets (false)"),
+    search: str | None = Query(None, description="Search in name, vendor, or product"),
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Export the filtered asset inventory as CSV (same filters as the list, max 5000 rows)."""
+    query = select(Asset).where(Asset.user_id == current_user.id)
+
+    if vendor:
+        query = query.filter(Asset.vendor == vendor)
+    if criticality:
+        query = query.filter(Asset.criticality == criticality)
+    if asset_type:
+        query = query.filter(Asset.asset_type == asset_type)
+    if is_ot is not None:
+        query = query.filter(Asset.is_ot_asset == is_ot)
+    if search:
+        query = query.where(
+            Asset.name.ilike(f"%{search}%")
+            | Asset.vendor.ilike(f"%{search}%")
+            | Asset.product.ilike(f"%{search}%")
+        )
+
+    query = query.order_by(Asset.created_at.desc()).limit(5000)
+    rows = (await db.execute(query)).scalars().all()
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([
+        "id", "name", "asset_type", "vendor", "product", "version",
+        "criticality", "is_ot_asset", "network_zone", "primary_protocol",
+        "serial_number", "last_known_ip", "created_at",
+    ])
+    for asset in rows:
+        writer.writerow([
+            asset.id,
+            asset.name,
+            asset.asset_type.value if hasattr(asset.asset_type, "value") else asset.asset_type,
+            asset.vendor or "",
+            asset.product or "",
+            asset.version or "",
+            asset.criticality or "",
+            "true" if asset.is_ot_asset else "false",
+            asset.network_zone or "",
+            asset.primary_protocol or "",
+            asset.serial_number or "",
+            asset.last_known_ip or "",
+            asset.created_at.isoformat() if asset.created_at else "",
+        ])
+    buffer.seek(0)
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=assets.csv"},
     )
 
 
