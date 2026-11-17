@@ -3,7 +3,7 @@ import apiClient from '../api/client';
 import type { Asset, AssetCreate, AssetListResponse } from '../api/types';
 import { Plus, Search, Server, Trash2, Edit2 } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
-import { ErrorState, RetryButton } from '../components/ui/AsyncState';
+import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { criticalityTones } from '../components/ui/tones';
@@ -97,8 +97,8 @@ export function Assets() {
 
       {error ? <ErrorState title="Asset inventory unavailable" description={error} action={<RetryButton onClick={() => void fetchAssets()} />} /> : <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {loading ? (
-          <div className="col-span-full flex items-center justify-center h-32">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-400"></div>
+          <div className="col-span-full">
+            <LoadingSurface rows={3} label="Loading asset inventory" />
           </div>
         ) : assets.length === 0 ? (
           <div className="col-span-full text-center py-12 text-surface-500">

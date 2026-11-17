@@ -7,7 +7,7 @@ import { getApiErrorMessage } from '../api/errors';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { alertSeverityTones, alertStatusTones } from '../components/ui/tones';
-import { ErrorState, RetryButton } from '../components/ui/AsyncState';
+import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { toast } from '../components/Toast';
 
 export function Alerts() {
@@ -137,8 +137,8 @@ export function Alerts() {
       {/* Table */}
       {error ? <ErrorState title="Alerts unavailable" description={error} action={<RetryButton onClick={() => void fetchAlerts()} />} /> : <div className="oa-panel overflow-x-auto">
         {loading ? (
-          <div className="flex items-center justify-center h-32">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-400"></div>
+          <div className="p-4">
+            <LoadingSurface rows={5} label="Loading alerts" />
           </div>
         ) : alerts.length === 0 ? (
           <div className="p-8 text-center text-surface-500">
