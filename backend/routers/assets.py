@@ -41,6 +41,7 @@ async def list_assets(
     size: int = Query(10, ge=1, le=100, description="Page size"),
     asset_type: str | None = Query(None, description="Filter by asset type"),
     vendor: str | None = Query(None, description="Filter by vendor"),
+    criticality: str | None = Query(None, description="Filter by criticality"),
     search: str | None = Query(None, description="Search in name, vendor, or product"),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
@@ -54,6 +55,9 @@ async def list_assets(
     if vendor:
         query = query.filter(Asset.vendor == vendor)
         count_query = count_query.filter(Asset.vendor == vendor) # Apply to count_query as well
+    if criticality:
+        query = query.filter(Asset.criticality == criticality)
+        count_query = count_query.filter(Asset.criticality == criticality) # Apply to count_query as well
     if asset_type:
         query = query.filter(Asset.asset_type == asset_type)
         count_query = count_query.filter(Asset.asset_type == asset_type) # Apply to count_query as well

@@ -32,6 +32,7 @@ export function Assets() {
   const [typeFilter, setTypeFilter] = useState('');
   const [vendorFilter, setVendorFilter] = useState('');
   const [vendorOptions, setVendorOptions] = useState<string[]>([]);
+  const [criticalityFilter, setCriticalityFilter] = useState('');
 
   const fetchAssets = useCallback(async () => {
     setLoading(true);
@@ -41,6 +42,7 @@ export function Assets() {
       if (search) params.search = search;
       if (typeFilter) params.asset_type = typeFilter;
       if (vendorFilter) params.vendor = vendorFilter;
+      if (criticalityFilter) params.criticality = criticalityFilter;
       const res = await apiClient.get<AssetListResponse>('/assets/', { params });
       setAssets(res.data.assets);
       setTotal(res.data.total);
@@ -49,7 +51,7 @@ export function Assets() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, typeFilter, vendorFilter]);
+  }, [page, search, typeFilter, vendorFilter, criticalityFilter]);
 
   const [assetTypes, setAssetTypes] = useState<string[]>(FALLBACK_ASSET_TYPES);
 
@@ -148,6 +150,18 @@ export function Assets() {
             {vendorOptions.map(v => <option key={v} value={v}>{v}</option>)}
           </select>
         )}
+        <select
+          aria-label="Filter by criticality"
+          value={criticalityFilter}
+          onChange={(e) => { setCriticalityFilter(e.target.value); setPage(1); }}
+          className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+        >
+          <option value="">All criticality</option>
+          <option value="critical">Critical</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
       </div>
 
       {error ? <ErrorState title="Asset inventory unavailable" description={error} action={<RetryButton onClick={() => void fetchAssets()} />} /> : <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

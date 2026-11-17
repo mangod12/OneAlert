@@ -58,6 +58,15 @@ describe('Assets page', () => {
     });
   });
 
+  it('filters by criticality from the dropdown', async () => {
+    render(<Assets />);
+    const select = await screen.findByRole('combobox', { name: 'Filter by criticality' });
+    fireEvent.change(select, { target: { value: 'high' } });
+    await waitFor(() => {
+      expect(get).toHaveBeenCalledWith('/assets/', { params: { page: 1, size: 15, criticality: 'high' } });
+    });
+  });
+
   it('filters by asset type from the dropdown', async () => {
     render(<Assets />);
     await screen.findByText('Plant gateway');
