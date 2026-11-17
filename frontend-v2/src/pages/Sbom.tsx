@@ -43,18 +43,22 @@ export function Sbom() {
   const [componentsLoading, setComponentsLoading] = useState(false);
   const [componentsError, setComponentsError] = useState('');
   const [componentSearch, setComponentSearch] = useState('');
+  const [vulnerableOnly, setVulnerableOnly] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Sbom | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [showUpload, setShowUpload] = useState(false);
   const componentQuery = componentSearch.trim().toLowerCase();
-  const visibleComponents = componentQuery
+  const searchedComponents = componentQuery
     ? components.filter(c =>
         c.name.toLowerCase().includes(componentQuery)
         || (c.version ?? '').toLowerCase().includes(componentQuery)
         || (c.supplier ?? '').toLowerCase().includes(componentQuery)
       )
     : components;
+  const visibleComponents = vulnerableOnly
+    ? searchedComponents.filter(c => c.has_known_vulnerability > 0)
+    : searchedComponents;
   const [uploading, setUploading] = useState(false);
 
   const fetchSboms = useCallback(async () => {
@@ -209,10 +213,19 @@ export function Sbom() {
                                 onChange={(e) => setComponentSearch(e.target.value)}
                                 className="w-64 px-3 py-1.5 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
                               />
+                              <label className="flex items-center gap-2 text-xs text-surface-300">
+                                <input
+                                  type="checkbox"
+                                  checked={vulnerableOnly}
+                                  onChange={(e) => setVulnerableOnly(e.target.checked)}
+                                  className="h-4 w-4 rounded border-surface-600 bg-surface-950 text-primary-500 focus:ring-2 focus:ring-primary-500"
+                                />
+                                Vulnerable only
+                              </label>
                               <span className="text-xs text-surface-500">{visibleComponents.length} of {components.length} components</span>
                             </div>
                             {visibleComponents.length === 0 ? (
-                              <p className="text-sm text-surface-500">No components match that search.</p>
+                              <p className="text-sm text-surface-500">No components match the current filters.</p>
                             ) : (
                           <table className="w-full text-sm">
                             <thead>
