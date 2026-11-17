@@ -32,5 +32,5 @@ async def get_epss_score(cve_id: str) -> dict | None:
                 "score": float(entry.get("epss", 0)),
                 "percentile": float(entry.get("percentile", 0)),
             }
-    except Exception:
+    except (httpx.HTTPError, ValueError, TypeError):
         return None

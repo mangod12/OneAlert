@@ -97,7 +97,7 @@ class ICSCertFeedService:
 
                 logger.info(f"Fetched {len(vulnerabilities)} CISA KEV vulnerabilities")
 
-        except Exception as e:
+        except (httpx.HTTPError, ValueError) as e:
             logger.error(f"Error fetching CISA KEV: {e}")
 
         return advisories
@@ -186,7 +186,7 @@ class ICSCertFeedService:
             # For now, return empty or cached results
             logger.info("Sampled NVD for OT-related CVEs")
 
-        except Exception as e:
+        except (httpx.HTTPError, ValueError) as e:
             logger.error(f"Error fetching general CVEs: {e}")
 
         return advisories

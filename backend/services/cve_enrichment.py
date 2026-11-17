@@ -40,6 +40,6 @@ class CVEEnrichmentService:
                         "remediation": references[0].get("url") if references else None
                     }
                 return {}
-        except Exception as e:
+        except (httpx.HTTPError, ValueError, TypeError, IndexError) as e:
             logger.error(f"CVE enrichment failed for {cve_id}: {e}")
             return {}

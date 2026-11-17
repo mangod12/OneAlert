@@ -1,5 +1,6 @@
 """Tests for the EPSS (Exploit Prediction Scoring System) service."""
 
+import httpx
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
@@ -73,7 +74,7 @@ async def test_network_error_returns_none():
     """Network errors should be handled gracefully and return None."""
     with patch("backend.services.epss_service.httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
-        mock_client.get.side_effect = Exception("Connection timeout")
+        mock_client.get.side_effect = httpx.ConnectError("Connection timeout")
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client_cls.return_value = mock_client

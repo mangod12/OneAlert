@@ -21,5 +21,5 @@ def enrich_cve(cve_id: str) -> dict:
             'cvss_vector': cvss.get('vectorString'),
             'exploitability': base_metric.get('exploitabilityScore'),
         }
-    except Exception as e:
+    except (requests.RequestException, ValueError, TypeError, KeyError) as e:
         return {'error': str(e)}
