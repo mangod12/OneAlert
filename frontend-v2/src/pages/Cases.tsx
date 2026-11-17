@@ -64,6 +64,7 @@ export function Cases() {
   const [creatingCase, setCreatingCase] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [severityFilter, setSeverityFilter] = useState('');
+  const [assignedFilter, setAssignedFilter] = useState('');
   const [sort, setSort] = useState('created_at_desc');
   const [page, setPage] = useState(1);
 
@@ -76,6 +77,7 @@ export function Cases() {
           size: 20,
           ...(statusFilter ? { status: statusFilter } : {}),
           ...(severityFilter ? { severity: severityFilter } : {}),
+          ...(assignedFilter ? { assigned: assignedFilter } : {}),
           sort,
         },
       });
@@ -129,7 +131,7 @@ export function Cases() {
     }
   };
 
-  useEffect(() => { fetchCases(); }, [statusFilter, severityFilter, sort, page]);
+  useEffect(() => { fetchCases(); }, [statusFilter, severityFilter, assignedFilter, sort, page]);
 
   const changeCaseStatus = async (c: CaseItem, status: string) => {
     if (updatingStatusId !== null || status === c.status) return;
@@ -242,6 +244,12 @@ export function Cases() {
             <option value="medium">Medium</option>
             <option value="high">High</option>
             <option value="critical">Critical</option>
+          </select>
+          <label htmlFor="case-assigned-filter" className="sr-only">Filter by assignee</label>
+          <select id="case-assigned-filter" value={assignedFilter} onChange={e => { setPage(1); setAssignedFilter(e.target.value); }} className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200">
+            <option value="">Anyone</option>
+            <option value="me">Assigned to me</option>
+            <option value="unassigned">Unassigned</option>
           </select>
           <label htmlFor="case-sort" className="sr-only">Sort investigations</label>
           <select id="case-sort" value={sort} onChange={e => { setPage(1); setSort(e.target.value); }} className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200">

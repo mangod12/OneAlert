@@ -35,6 +35,9 @@ async def list_cases(
     size: int = Query(20, ge=1, le=100),
     severity: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
+    assigned: str | None = Query(
+        None, pattern="^(me|unassigned)$", description="Filter by assignment: 'me' or 'unassigned'"
+    ),
     sort: str = Query(
         "created_at_desc",
         pattern="^(created_at_desc|created_at_asc|severity_desc|severity_asc)$",
@@ -55,6 +58,12 @@ async def list_cases(
     if status_filter:
         query = query.filter(Case.status == status_filter)
         count_q = count_q.filter(Case.status == status_filter)
+    if assigned == "me":
+        query = query.filter(Case.assigned_to_id == current_user.id)
+        count_q = count_q.filter(Case.assigned_to_id == current_user.id)
+    elif assigned == "unassigned":
+        query = query.filter(Case.assigned_to_id.is_(None))
+        count_q = count_q.filter(Case.assigned_to_id.is_(None))
 
     total = (await db.execute(count_q)).scalar_one()
     severity_rank = sql_case(
