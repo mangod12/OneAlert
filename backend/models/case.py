@@ -186,4 +186,5 @@ class AgentRunResponse(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     result_summary: str | None = None
-    model_config = {"from_attributes": True}
+    # model_used legitimately lives under the model_ prefix here
+    model_config = {"from_attributes": True, "protected_namespaces": ()}

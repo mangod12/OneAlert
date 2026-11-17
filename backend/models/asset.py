@@ -124,7 +124,8 @@ class AssetBase(BaseModel):
     criticality: str | None = "medium"
     discovery_method: str | None = None
 
-    model_config = {"from_attributes": True}
+    # model_number legitimately lives under the model_ prefix here
+    model_config = {"from_attributes": True, "protected_namespaces": ()}
 
 
 class AssetCreate(AssetBase):
@@ -155,7 +156,8 @@ class AssetUpdate(BaseModel):
     criticality: str | None = None
     discovery_method: str | None = None
 
-    model_config = {"from_attributes": True}
+    # model_number legitimately lives under the model_ prefix here
+    model_config = {"from_attributes": True, "protected_namespaces": ()}
 
 
 class AssetResponse(AssetBase):
