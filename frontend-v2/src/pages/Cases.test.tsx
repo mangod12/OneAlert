@@ -103,3 +103,43 @@ describe('Cases page', () => {
     });
   });
 });
+
+describe('Case search', () => {
+  function mockList() {
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/cases/') return { data: { cases: [makeCase()], total: 1 } };
+      if (url === '/cases/search') return { data: { success: true, data: [
+        { case_id: 1, title: 'Credential dumping on edge router', score: 0.82, snippet: 'Multiple brute force alerts correlated.' },
+      ], query: 'brute force' } };
+      throw new Error(`unexpected ${url}`);
+    });
+  }
+
+  it('searches in plain language and links results to their case', async () => {
+    mockList();
+    render(<MemoryRouter><Cases /></MemoryRouter>);
+    await screen.findByText('Credential dumping on edge router');
+    fireEvent.change(screen.getByLabelText('Search investigations'), { target: { value: 'brute force' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/search', { params: { q: 'brute force' } }));
+    expect(await screen.findByText('1 result for this search')).toBeTruthy();
+    expect(screen.getByText('82% match')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /clear/i }));
+    expect(screen.queryByText('1 result for this search')).toBeNull();
+  });
+
+  it('shows an empty result state without touching the case list', async () => {
+    mockList();
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/cases/') return { data: { cases: [makeCase()], total: 1 } };
+      if (url === '/cases/search') return { data: { success: true, data: [], query: 'ransomware' } };
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<MemoryRouter><Cases /></MemoryRouter>);
+    await screen.findByText('Credential dumping on edge router');
+    fireEvent.change(screen.getByLabelText('Search investigations'), { target: { value: 'ransomware' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByText('No investigations match that search.')).toBeTruthy();
+    expect(screen.getByText('Credential dumping on edge router')).toBeTruthy();
+  });
+});
