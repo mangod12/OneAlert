@@ -34,20 +34,22 @@ def upgrade() -> None:
     op.create_index('ix_organizations_id', 'organizations', ['id'])
     op.create_index('ix_organizations_slug', 'organizations', ['slug'], unique=True)
 
-    # Add org_id column to users table
-    op.add_column('users', sa.Column('org_id', sa.Integer(), nullable=True))
-    op.create_foreign_key(
-        'fk_users_org_id',
-        'users',
-        'organizations',
-        ['org_id'],
-        ['id'],
-    )
+    # Add org_id column to users table. Batch mode keeps this working on
+    # SQLite (copy-and-move) and is a passthrough on PostgreSQL.
+    with op.batch_alter_table('users') as batch_op:
+        batch_op.add_column(sa.Column('org_id', sa.Integer(), nullable=True))
+        batch_op.create_foreign_key(
+            'fk_users_org_id',
+            'organizations',
+            ['org_id'],
+            ['id'],
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint('fk_users_org_id', 'users', type_='foreignkey')
-    op.drop_column('users', 'org_id')
+    with op.batch_alter_table('users') as batch_op:
+        batch_op.drop_constraint('fk_users_org_id', type_='foreignkey')
+        batch_op.drop_column('org_id')
     op.drop_index('ix_organizations_slug', table_name='organizations')
     op.drop_index('ix_organizations_id', table_name='organizations')
     op.drop_table('organizations')
