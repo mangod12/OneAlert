@@ -44,21 +44,26 @@ describe('Assets page', () => {
     }));
   });
 
-  it('does not delete an asset when confirmation is declined', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('asks for confirmation and does not delete when cancelled', async () => {
     render(<Assets />);
     fireEvent.click(await screen.findByRole('button', { name: 'Delete Plant gateway' }));
-    expect(confirm).toHaveBeenCalledTimes(1);
+    const dialog = within(await screen.findByRole('dialog'));
+    expect(dialog.getByText('Delete asset?')).toBeTruthy();
+    expect(dialog.getByText(/Plant gateway will be removed/)).toBeTruthy();
+    fireEvent.click(dialog.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(remove).not.toHaveBeenCalled();
   });
 
   it('deletes a confirmed asset and refreshes inventory', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<Assets />);
     fireEvent.click(await screen.findByRole('button', { name: 'Delete Plant gateway' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    fireEvent.click(dialog.getByRole('button', { name: 'Delete asset' }));
     await waitFor(() => {
       expect(remove).toHaveBeenCalledWith('/assets/7');
       expect(get).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole('dialog')).toBeNull();
     });
   });
 
