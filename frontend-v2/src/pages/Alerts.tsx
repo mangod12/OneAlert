@@ -105,6 +105,7 @@ export function Alerts() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
           <input
             type="text"
+            aria-label="Search by CVE ID"
             placeholder="Search CVE..."
             value={cveSearch}
             onChange={(e) => { setCveSearch(e.target.value); setPage(1); }}
@@ -112,6 +113,7 @@ export function Alerts() {
           />
         </div>
         <select
+          aria-label="Filter by severity"
           value={severityFilter}
           onChange={(e) => { setSeverityFilter(e.target.value); setPage(1); }}
           className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -123,6 +125,7 @@ export function Alerts() {
           <option value="low">Low</option>
         </select>
         <select
+          aria-label="Filter by status"
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
           className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
