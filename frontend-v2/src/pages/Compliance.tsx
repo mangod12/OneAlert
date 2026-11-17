@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import apiClient from '../api/client';
 import { ShieldCheck } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
+import { toast } from '../components/Toast';
 import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
@@ -47,13 +48,19 @@ const statusTones: Record<string, 'success' | 'danger' | 'warning' | 'neutral'> 
   compliant: 'success',
   non_compliant: 'danger',
   partial: 'warning',
+  not_applicable: 'neutral',
+  not_assessed: 'neutral',
 };
 
 const statusLabels: Record<string, string> = {
   compliant: 'Compliant',
   non_compliant: 'Non-compliant',
   partial: 'Partial',
+  not_applicable: 'Not applicable',
+  not_assessed: 'Not assessed',
 };
+
+const assessmentStatuses = ['compliant', 'partial', 'non_compliant', 'not_applicable', 'not_assessed'] as const;
 
 export function Compliance() {
   const [frameworks, setFrameworks] = useState<Framework[]>([]);
@@ -65,6 +72,7 @@ export function Compliance() {
   const [assessments, setAssessments] = useState<Map<number, Assessment>>(new Map());
   const [controlsLoading, setControlsLoading] = useState(false);
   const [controlsError, setControlsError] = useState('');
+  const [savingIds, setSavingIds] = useState<Set<number>>(new Set());
 
   const fetchOverview = useCallback(async () => {
     setLoading(true);
@@ -108,6 +116,21 @@ export function Compliance() {
       setControlsError(getApiErrorMessage(err, 'Framework controls could not be loaded.'));
     } finally {
       setControlsLoading(false);
+    }
+  };
+
+  const changeStatus = async (assessment: Assessment, status: string) => {
+    if (savingIds.has(assessment.id) || assessment.status === status) return;
+    const previous = assessment.status;
+    setSavingIds(current => new Set(current).add(assessment.id));
+    setAssessments(current => new Map(current).set(assessment.control_id, { ...assessment, status }));
+    try {
+      await apiClient.patch(`/compliance/assessments/${assessment.id}`, { status });
+    } catch (err: unknown) {
+      setAssessments(current => new Map(current).set(assessment.control_id, { ...assessment, status: previous }));
+      toast(getApiErrorMessage(err, 'Assessment status could not be updated.'), 'error');
+    } finally {
+      setSavingIds(current => { const next = new Set(current); next.delete(assessment.id); return next; });
     }
   };
 
@@ -199,9 +222,22 @@ export function Compliance() {
                         <td className="px-4 py-3 text-surface-400 text-xs">{control.category ?? '-'}</td>
                         <td className="px-4 py-3">
                           {assessment ? (
-                            <StatusBadge tone={statusTones[assessment.status] ?? 'neutral'}>
-                              {statusLabels[assessment.status] ?? assessment.status}
-                            </StatusBadge>
+                            <label className="flex items-center gap-2">
+                              <StatusBadge tone={statusTones[assessment.status] ?? 'neutral'}>
+                                {statusLabels[assessment.status] ?? assessment.status}
+                              </StatusBadge>
+                              <select
+                                aria-label={`Set status for ${control.control_id}`}
+                                value={assessment.status}
+                                disabled={savingIds.has(assessment.id)}
+                                onChange={(e) => void changeStatus(assessment, e.target.value)}
+                                className="rounded border border-surface-700 bg-surface-950 px-1.5 py-1 text-xs text-surface-300 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-40"
+                              >
+                                {assessmentStatuses.map(status => (
+                                  <option key={status} value={status}>{statusLabels[status]}</option>
+                                ))}
+                              </select>
+                            </label>
                           ) : (
                             <StatusBadge tone="neutral">Not assessed</StatusBadge>
                           )}

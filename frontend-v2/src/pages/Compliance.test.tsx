@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { Compliance } from './Compliance';
 
-vi.mock('../api/client', () => ({ default: { get: vi.fn() } }));
+vi.mock('../api/client', () => ({ default: { get: vi.fn(), patch: vi.fn() } }));
 
 const get = vi.mocked(apiClient.get);
+const patch = vi.mocked(apiClient.patch);
 
 const frameworks = [
   { id: 1, name: 'NIST CSF', version: '2.0', description: null },
@@ -33,7 +34,7 @@ function mockOverview() {
   });
 }
 
-beforeEach(() => { vi.resetAllMocks(); mockOverview(); });
+beforeEach(() => { vi.resetAllMocks(); mockOverview(); patch.mockResolvedValue({ data: {} }); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe('Compliance page', () => {
@@ -51,8 +52,8 @@ describe('Compliance page', () => {
     fireEvent.click(await screen.findByText('NIST CSF'));
     await screen.findByText('PR.AC-1');
     expect(screen.getByText('Identities are managed')).toBeTruthy();
-    expect(screen.getByText('Compliant')).toBeTruthy();
-    expect(screen.getByText('Not assessed')).toBeTruthy();
+    expect((screen.getByRole('combobox', { name: 'Set status for PR.AC-1' }) as HTMLSelectElement).value).toBe('compliant');
+    expect(screen.getAllByText('Not assessed').length).toBeGreaterThan(0);
     expect(screen.getByText('Networks are monitored')).toBeTruthy();
   });
 
@@ -68,5 +69,32 @@ describe('Compliance page', () => {
     get.mockRejectedValue(new Error('offline'));
     render(<Compliance />);
     await screen.findByText('Compliance unavailable');
+  });
+});
+describe('Assessment status updates', () => {
+  it('updates an assessment status and saves it to the API', async () => {
+    render(<Compliance />);
+    fireEvent.click(await screen.findByText('NIST CSF'));
+    const select = await screen.findByRole('combobox', { name: 'Set status for PR.AC-1' });
+    fireEvent.change(select, { target: { value: 'partial' } });
+    await waitFor(() => expect(patch).toHaveBeenCalledWith('/compliance/assessments/5', { status: 'partial' }));
+    expect((select as HTMLSelectElement).value).toBe('partial');
+  });
+
+  it('reverts the status and shows an error when the update fails', async () => {
+    patch.mockRejectedValue(new Error('offline'));
+    render(<Compliance />);
+    fireEvent.click(await screen.findByText('NIST CSF'));
+    const select = await screen.findByRole('combobox', { name: 'Set status for PR.AC-1' });
+    fireEvent.change(select, { target: { value: 'non_compliant' } });
+    await waitFor(() => expect(patch).toHaveBeenCalled());
+    await waitFor(() => expect((select as HTMLSelectElement).value).toBe('compliant'));
+  });
+
+  it('offers no editor for controls that have never been assessed', async () => {
+    render(<Compliance />);
+    fireEvent.click(await screen.findByText('NIST CSF'));
+    await screen.findByText('DE.CM-1');
+    expect(screen.queryByRole('combobox', { name: 'Set status for DE.CM-1' })).toBeNull();
   });
 });
