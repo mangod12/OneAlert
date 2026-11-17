@@ -74,7 +74,14 @@ export function MitreMap() {
             <h2 className="text-lg font-semibold text-surface-50">Overall Coverage</h2>
             <span className="text-3xl font-bold text-primary-400">{coverage.coverage_percentage}%</span>
           </div>
-          <div className="w-full h-3 bg-surface-700 rounded-full overflow-hidden">
+          <div
+            className="w-full h-3 bg-surface-700 rounded-full overflow-hidden"
+            role="progressbar"
+            aria-label="Overall ATT&CK coverage"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={coverage.coverage_percentage}
+          >
             <div
               className="h-full bg-primary-500 rounded-full transition-all"
               style={{ width: `${coverage.coverage_percentage}%` }}
@@ -102,7 +109,14 @@ export function MitreMap() {
               <p className="text-xs text-surface-500 font-mono">{id}</p>
               <p className="text-sm font-medium text-surface-50 mt-1">{tactic.name}</p>
               <div className="mt-2">
-                <div className="w-full h-1.5 bg-surface-700 rounded-full overflow-hidden">
+                <div
+                  className="w-full h-1.5 bg-surface-700 rounded-full overflow-hidden"
+                  role="progressbar"
+                  aria-label={`${tactic.name} coverage`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={tactic.percentage}
+                >
                   <div className="h-full bg-primary-500 rounded-full" style={{ width: `${tactic.percentage}%` }} />
                 </div>
                 <p className="text-xs text-surface-400 mt-1">{tactic.covered}/{tactic.total}</p>
@@ -123,6 +137,7 @@ export function MitreMap() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search techniques..."
+              aria-label="Search techniques"
               className="pl-9 pr-4 py-2 bg-surface-900 border border-surface-600 rounded-lg text-surface-50 text-sm placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
