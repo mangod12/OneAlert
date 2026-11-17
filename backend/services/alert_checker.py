@@ -15,6 +15,7 @@ from backend.database.db import AsyncSessionLocal
 from backend.models.alert import Alert, AlertStatus, Severity
 from backend.models.asset import Asset
 from backend.models.audit_log import AuditLog
+from backend.models.notification import Notification
 from backend.models.user import User
 from backend.services.cve_enrichment import CVEEnrichmentService
 from backend.services.cve_scraper import cve_scraper
@@ -306,6 +307,14 @@ class AlertChecker:
             db.add(alert)
             await db.flush()  # Get the ID
 
+            db.add(Notification(
+                user_id=user.id,
+                kind="alert_created",
+                title=f"New {cve.get('severity', 'unknown')} alert on {asset.name}",
+                body=alert.title,
+                link="/app/alerts",
+            ))
+
             # Send email alert
             if _should_email_user(user, cve.get('severity')):
                 await email_service.send_vulnerability_alert(user, asset, alert, cve)
@@ -354,6 +363,14 @@ class AlertChecker:
 
             db.add(alert)
             await db.flush()  # Get the ID
+
+            db.add(Notification(
+                user_id=user.id,
+                kind="alert_created",
+                title=f"New {advisory.get('severity', 'unknown')} advisory on {asset.name}",
+                body=alert.title,
+                link="/app/alerts",
+            ))
 
             # Send email alert
             if _should_email_user(user, advisory.get('severity')):

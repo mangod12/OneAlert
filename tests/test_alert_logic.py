@@ -8,6 +8,7 @@ from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from backend.services.alert_checker import AlertChecker
 from backend.models.user import User
 from backend.models.organization import Organization  # noqa: F401 - registers SQLAlchemy relationship target
+from backend.models.discovered_device import NetworkSensor  # noqa: F401 - registers SQLAlchemy relationship target
 from backend.models.asset import Asset, AssetType
 
 
@@ -204,10 +205,17 @@ class TestAlertChecker:
         
         await alert_checker._create_alert_from_cve(mock_db, mock_user, mock_asset, cve_data)
         
-        # Verify alert was added to database
-        mock_db.add.assert_called_once()
+        # Verify alert and in-app notification were added to database
+        assert mock_db.add.call_count == 2
+        from backend.models.notification import Notification
+        added_kinds = [type(call.args[0]).__name__ for call in mock_db.add.call_args_list]
+        assert added_kinds == ["Alert", "Notification"]
+        notification = mock_db.add.call_args_list[1].args[0]
+        assert isinstance(notification, Notification)
+        assert notification.user_id == mock_user.id
+        assert notification.kind == "alert_created"
         mock_db.flush.assert_called_once()
-        
+
         # Verify email was sent
         mock_email_service.send_vulnerability_alert.assert_called_once()
     
@@ -238,10 +246,12 @@ class TestAlertChecker:
             mock_db, mock_user, mock_asset, advisory_data
         )
         
-        # Verify alert was added to database
-        mock_db.add.assert_called_once()
+        # Verify alert and in-app notification were added to database
+        assert mock_db.add.call_count == 2
+        added_kinds = [type(call.args[0]).__name__ for call in mock_db.add.call_args_list]
+        assert added_kinds == ["Alert", "Notification"]
         mock_db.flush.assert_called_once()
-        
+
         # Verify email was sent
         mock_email_service.send_vendor_advisory_alert.assert_called_once()
     
