@@ -57,6 +57,8 @@ export function Events() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [severityFilter, setSeverityFilter] = useState('');
+  const [eventTypeFilter, setEventTypeFilter] = useState('');
+  const [eventTypes, setEventTypes] = useState<string[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [sources, setSources] = useState<EventSource[]>([]);
   const [showUpload, setShowUpload] = useState(false);
@@ -68,6 +70,7 @@ export function Events() {
     try {
       const params: Record<string, string | number> = { page, size: 50 };
       if (severityFilter) params.severity = severityFilter;
+      if (eventTypeFilter) params.event_type = eventTypeFilter;
       const [evtResult, statsResult, sourcesResult] = await Promise.allSettled([
         apiClient.get('/events/', { params }),
         apiClient.get('/events/stats'),
@@ -85,9 +88,13 @@ export function Events() {
     } finally {
       setLoading(false);
     }
-  }, [page, severityFilter]);
+  }, [page, severityFilter, eventTypeFilter]);
 
   useEffect(() => { void fetchEvents(); }, [fetchEvents]);
+
+  useEffect(() => {
+    apiClient.get('/events/types').then(res => setEventTypes(res.data.types ?? [])).catch(() => {});
+  }, []);
 
   const handleUpload = async (file: File, sourceType: string) => {
     if (uploading) return;
@@ -167,6 +174,23 @@ export function Events() {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* Event type filter */}
+      {eventTypes.length > 0 && (
+        <div className="flex items-center gap-2">
+          <label htmlFor="event-type-filter" className="text-xs text-surface-400">Type</label>
+          <select
+            id="event-type-filter"
+            aria-label="Filter by event type"
+            value={eventTypeFilter}
+            onChange={e => { setPage(1); setEventTypeFilter(e.target.value); }}
+            className="bg-surface-800 border border-surface-700 text-surface-200 text-xs rounded px-2 py-1.5"
+          >
+            <option value="">All types</option>
+            {eventTypes.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
         </div>
       )}
 

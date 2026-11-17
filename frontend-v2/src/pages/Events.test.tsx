@@ -89,8 +89,8 @@ describe('Events page', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /^high/i }));
     await waitFor(() => {
-      expect(mockGet).toHaveBeenCalledTimes(9);
-      expect(mockGet).toHaveBeenNthCalledWith(7, '/events/', { params: { page: 1, size: 50 } });
+      expect(mockGet).toHaveBeenCalledTimes(10);
+      expect(mockGet).toHaveBeenNthCalledWith(8, '/events/', { params: { page: 1, size: 50 } });
     });
   });
 
@@ -160,6 +160,24 @@ describe('Event upload', () => {
     expect(await screen.findByText('Choose a file to upload.')).toBeTruthy();
     expect(mockPost).not.toHaveBeenCalled();
     expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+});
+
+describe('Event type filter', () => {
+  it('populates types from the API and filters the event list', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/events/') return { data: { events: [makeEvent()], total: 1 } };
+      if (url === '/events/stats') return { data: { data: STATS } };
+      if (url === '/events/types') return { data: { types: ['port_scan', 'dns'] } };
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<Events />);
+    await screen.findByText('ET SCAN SSH brute force');
+    const select = await screen.findByLabelText('Filter by event type');
+    fireEvent.change(select, { target: { value: 'port_scan' } });
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith('/events/', { params: { page: 1, size: 50, event_type: 'port_scan' } });
+    });
   });
 });
 
