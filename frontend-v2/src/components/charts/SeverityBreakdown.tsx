@@ -29,7 +29,10 @@ export function SeverityBreakdown({ stats }: Props) {
 
   const total = data.reduce((sum, d) => sum + d.value, 0);
 
+  const summary = data.map(d => `${d.value} ${d.name.toLowerCase()}`).join(', ');
+
   return (
+    <div role="img" aria-label={`Alert severity distribution: ${summary}`}>
     <ResponsiveContainer width="100%" height={250}>
       <PieChart>
         <Pie
@@ -63,5 +66,6 @@ export function SeverityBreakdown({ stats }: Props) {
         />
       </PieChart>
     </ResponsiveContainer>
+    </div>
   );
 }
