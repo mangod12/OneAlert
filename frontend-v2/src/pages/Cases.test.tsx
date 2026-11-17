@@ -218,8 +218,39 @@ describe('Case filters', () => {
     renderCases();
     await screen.findByText('Credential dumping on edge router');
     fireEvent.change(screen.getByLabelText('Filter by status'), { target: { value: 'open' } });
-    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/', { params: { size: 50, status: 'open' } }));
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/', { params: { page: 1, size: 20, status: 'open' } }));
     fireEvent.change(screen.getByLabelText('Filter by severity'), { target: { value: 'high' } });
-    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/', { params: { size: 50, status: 'open', severity: 'high' } }));
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/', { params: { page: 1, size: 20, status: 'open', severity: 'high' } }));
+  });
+});
+
+describe('Cases pagination', () => {
+  it('requests the next page and shows the page position', async () => {
+    mockGet.mockResolvedValue({ data: { cases: [makeCase()], total: 45 } });
+    renderCases();
+    expect(await screen.findByText('Page 1 of 3')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith('/cases/', expect.objectContaining({
+        params: expect.objectContaining({ page: 2, size: 20 }),
+      }));
+    });
+  });
+
+  it('resets to page 1 when a filter changes', async () => {
+    mockGet.mockResolvedValue({ data: { cases: [makeCase()], total: 45 } });
+    renderCases();
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith('/cases/', expect.objectContaining({
+        params: expect.objectContaining({ page: 2 }),
+      }));
+    });
+    fireEvent.change(screen.getByLabelText('Filter by status'), { target: { value: 'open' } });
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith('/cases/', expect.objectContaining({
+        params: expect.objectContaining({ page: 1, status: 'open' }),
+      }));
+    });
   });
 });

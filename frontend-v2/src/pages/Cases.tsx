@@ -59,13 +59,15 @@ export function Cases() {
   const [creatingCase, setCreatingCase] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [severityFilter, setSeverityFilter] = useState('');
+  const [page, setPage] = useState(1);
 
   const fetchCases = async () => {
     setError(null);
     try {
       const res = await apiClient.get('/cases/', {
         params: {
-          size: 50,
+          page,
+          size: 20,
           ...(statusFilter ? { status: statusFilter } : {}),
           ...(severityFilter ? { severity: severityFilter } : {}),
         },
@@ -120,7 +122,7 @@ export function Cases() {
     }
   };
 
-  useEffect(() => { fetchCases(); }, [statusFilter, severityFilter]);
+  useEffect(() => { fetchCases(); }, [statusFilter, severityFilter, page]);
 
   const runSearch = async () => {
     const q = searchQuery.trim();
@@ -203,7 +205,7 @@ export function Cases() {
       {!loading && !error && (
         <div className="flex flex-wrap items-center gap-2">
           <label htmlFor="case-status-filter" className="sr-only">Filter by status</label>
-          <select id="case-status-filter" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200">
+          <select id="case-status-filter" value={statusFilter} onChange={e => { setPage(1); setStatusFilter(e.target.value); }} className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200">
             <option value="">All statuses</option>
             <option value="open">Open</option>
             <option value="investigating">Investigating</option>
@@ -212,7 +214,7 @@ export function Cases() {
             <option value="false_positive">False positive</option>
           </select>
           <label htmlFor="case-severity-filter" className="sr-only">Filter by severity</label>
-          <select id="case-severity-filter" value={severityFilter} onChange={e => setSeverityFilter(e.target.value)} className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200">
+          <select id="case-severity-filter" value={severityFilter} onChange={e => { setPage(1); setSeverityFilter(e.target.value); }} className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200">
             <option value="">All severities</option>
             <option value="info">Info</option>
             <option value="low">Low</option>
@@ -313,6 +315,18 @@ export function Cases() {
               </div>
             </Link>
           ))}
+        </div>
+      )}
+
+      {!loading && !error && cases.length > 0 && (
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-surface-500">Page {page} of {Math.max(1, Math.ceil(total / 20))}</span>
+          <div className="flex gap-2">
+            <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}
+              className="px-3 py-1 text-xs bg-surface-700 text-surface-300 rounded disabled:opacity-30">Prev</button>
+            <button onClick={() => setPage(page + 1)} disabled={page >= Math.ceil(total / 20)}
+              className="px-3 py-1 text-xs bg-surface-700 text-surface-300 rounded disabled:opacity-30">Next</button>
+          </div>
         </div>
       )}
 
