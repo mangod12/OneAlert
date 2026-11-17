@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { AuditLog } from './AuditLog';
@@ -18,7 +18,7 @@ const runs = [
 beforeEach(() => {
   vi.resetAllMocks();
   get.mockImplementation(async (url: string) => {
-    if (url === '/auth/audit-logs') return { data: logs };
+    if (url === '/auth/audit-logs') return { data: { logs, total: logs.length } };
     if (url === '/cases/agents/runs') return { data: runs };
     throw new Error(`unexpected ${url}`);
   });
@@ -39,12 +39,40 @@ describe('AuditLog agent activity', () => {
 
   it('still shows the audit table when the agent ledger is unavailable', async () => {
     get.mockImplementation(async (url: string) => {
-      if (url === '/auth/audit-logs') return { data: logs };
+      if (url === '/auth/audit-logs') return { data: { logs, total: logs.length } };
       throw new Error('offline');
     });
     render(<AuditLog />);
     await screen.findByText('case.status_changed');
     await waitFor(() => expect(get).toHaveBeenCalledWith('/cases/agents/runs'));
     expect(screen.queryByText('Agent activity')).toBeNull();
+  });
+});
+
+describe('AuditLog action search and pagination', () => {
+  it('sends the action substring to the API', async () => {
+    render(<AuditLog />);
+    const input = await screen.findByLabelText('Search audit actions');
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/auth/audit-logs', { params: { page: 1, size: 50 } }));
+    fireEvent.change(input, { target: { value: 'status' } });
+    await waitFor(() => {
+      expect(get).toHaveBeenCalledWith('/auth/audit-logs', { params: { page: 1, size: 50, action: 'status' } });
+    });
+  });
+
+  it('paginates server-side', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/auth/audit-logs') return { data: { logs, total: 120 } };
+      if (url === '/cases/agents/runs') return { data: runs };
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<AuditLog />);
+    await screen.findByText('Page 1 of 3');
+    expect(screen.getByText('120 entries')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => {
+      expect(get).toHaveBeenCalledWith('/auth/audit-logs', { params: { page: 2, size: 50 } });
+    });
+    expect(screen.getByRole('button', { name: 'Prev' })).toHaveProperty('disabled', false);
   });
 });

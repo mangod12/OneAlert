@@ -8,10 +8,10 @@ import secrets
 import time
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, ConfigDict, HttpUrl, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
@@ -362,9 +362,15 @@ async def verify_mfa(
     return True
 
 
-@router.get("/audit-logs", response_model=list[dict])
-async def get_audit_logs(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_async_db)):
-    """Admin: Get audit logs scoped to the admin's organization."""
+@router.get("/audit-logs")
+async def get_audit_logs(
+    action: str | None = Query(None, max_length=100),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=200),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Admin: Get audit logs scoped to the admin's organization, with action filtering and pagination."""
     if not current_user.role or current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
 
@@ -373,29 +379,36 @@ async def get_audit_logs(current_user: User = Depends(get_current_user), db: Asy
         org_user_ids = (await db.execute(
             select(User.id).where(User.org_id == current_user.org_id)
         )).scalars().all()
-        result = await db.execute(
-            select(AuditLog)
-            .where(AuditLog.user_id.in_(org_user_ids))
-            .order_by(AuditLog.timestamp.desc())
-            .limit(500)
-        )
+        scope = AuditLog.user_id.in_(org_user_ids)
     else:
-        result = await db.execute(
-            select(AuditLog)
-            .where(AuditLog.user_id == current_user.id)
-            .order_by(AuditLog.timestamp.desc())
-            .limit(500)
-        )
+        scope = AuditLog.user_id == current_user.id
+    if action:
+        escaped = action.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        scope = scope & (AuditLog.action.ilike(f"%{escaped}%", escape="\\"))
+
+    total = (await db.execute(
+        select(func.count()).select_from(AuditLog).where(scope)
+    )).scalar_one()
+    result = await db.execute(
+        select(AuditLog)
+        .where(scope)
+        .order_by(AuditLog.timestamp.desc())
+        .offset((page - 1) * size)
+        .limit(size)
+    )
     logs = result.scalars().all()
-    return [
-        {
-            "id": log.id,
-            "user_id": log.user_id,
-            "action": log.action,
-            "target_type": log.target_type,
-            "target_id": log.target_id,
-            "detail": log.detail,
-            "timestamp": log.timestamp.isoformat() if log.timestamp else None
-        }
-        for log in logs
-    ]
+    return {
+        "total": total,
+        "logs": [
+            {
+                "id": log.id,
+                "user_id": log.user_id,
+                "action": log.action,
+                "target_type": log.target_type,
+                "target_id": log.target_id,
+                "detail": log.detail,
+                "timestamp": log.timestamp.isoformat() if log.timestamp else None
+            }
+            for log in logs
+        ],
+    }

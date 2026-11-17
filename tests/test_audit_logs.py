@@ -1,4 +1,4 @@
-"""Tests for GET /api/v1/auth/audit-logs ordering and limit."""
+"""Tests for GET /api/v1/auth/audit-logs ordering, filtering and pagination."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -99,17 +99,49 @@ class TestAuditLogOrdering:
         _add_logs("admin@example.com", 3)
         res = client.get("/api/v1/auth/audit-logs", headers=headers)
         assert res.status_code == 200
-        actions = [log["action"] for log in res.json()]
+        body = res.json()
+        assert body["total"] == 3
+        actions = [log["action"] for log in body["logs"]]
         assert actions == ["action_2", "action_1", "action_0"]
 
-    def test_capped_at_500(self, client):
+    def test_pagination(self, client):
         headers = _register_admin_and_login(client, "admin2@example.com")
-        _add_logs("admin2@example.com", 505)
+        _add_logs("admin2@example.com", 120)
         res = client.get("/api/v1/auth/audit-logs", headers=headers)
         assert res.status_code == 200
-        logs = res.json()
-        assert len(logs) == 500
-        assert logs[0]["action"] == "action_504"
+        body = res.json()
+        assert body["total"] == 120
+        assert len(body["logs"]) == 50
+        assert body["logs"][0]["action"] == "action_119"
+        res2 = client.get("/api/v1/auth/audit-logs", params={"page": 3}, headers=headers)
+        assert res2.status_code == 200
+        body2 = res2.json()
+        assert body2["total"] == 120
+        assert len(body2["logs"]) == 20
+        assert body2["logs"][0]["action"] == "action_19"
+        res3 = client.get("/api/v1/auth/audit-logs", params={"size": 200}, headers=headers)
+        assert res3.status_code == 200
+        assert len(res3.json()["logs"]) == 120
+
+    def test_action_filter(self, client):
+        headers = _register_admin_and_login(client, "admin3@example.com")
+        _add_logs("admin3@example.com", 25)
+        res = client.get("/api/v1/auth/audit-logs", params={"action": "action_2"}, headers=headers)
+        assert res.status_code == 200
+        body = res.json()
+        # action_2 and action_20..action_24 match the substring, newest first
+        assert body["total"] == 6
+        actions = [log["action"] for log in body["logs"]]
+        assert actions == ["action_24", "action_23", "action_22", "action_21", "action_20", "action_2"]
+
+    def test_action_filter_escapes_wildcards(self, client):
+        headers = _register_admin_and_login(client, "admin4@example.com")
+        _add_logs("admin4@example.com", 5)
+        res = client.get("/api/v1/auth/audit-logs", params={"action": "_"}, headers=headers)
+        assert res.status_code == 200
+        body = res.json()
+        # Underscore is escaped, so it matches literally: every action contains "_"
+        assert body["total"] == 5
 
     def test_non_admin_forbidden(self, client):
         reg = client.post("/api/v1/auth/register", json={
