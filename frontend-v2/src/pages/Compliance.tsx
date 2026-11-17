@@ -73,6 +73,18 @@ export function Compliance() {
   const [controlsLoading, setControlsLoading] = useState(false);
   const [controlsError, setControlsError] = useState('');
   const [savingIds, setSavingIds] = useState<Set<number>>(new Set());
+  const [controlSearch, setControlSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+
+  const filteredControls = controls.filter(control => {
+    const effectiveStatus = assessments.get(control.id)?.status ?? 'not_assessed';
+    if (statusFilter && effectiveStatus !== statusFilter) return false;
+    if (controlSearch.trim()) {
+      const needle = controlSearch.trim().toLowerCase();
+      return control.control_id.toLowerCase().includes(needle) || control.title.toLowerCase().includes(needle);
+    }
+    return true;
+  });
 
   const fetchOverview = useCallback(async () => {
     setLoading(true);
@@ -197,6 +209,29 @@ export function Compliance() {
           ) : controlsError ? (
             <ErrorState title="Controls unavailable" description={controlsError} action={<RetryButton onClick={() => void openFramework(selected)} />} />
           ) : (
+            <>
+            <div className="flex flex-wrap items-center gap-3 border-b border-surface-700 px-4 py-3">
+              <input
+                type="text"
+                aria-label="Search controls"
+                placeholder="Search by ID or title"
+                value={controlSearch}
+                onChange={(e) => setControlSearch(e.target.value)}
+                className="w-64 rounded-md border border-surface-600 bg-surface-950 px-3 py-1.5 text-sm text-surface-100 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              <select
+                aria-label="Filter controls by status"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="rounded-md border border-surface-600 bg-surface-950 px-2 py-1.5 text-sm text-surface-100"
+              >
+                <option value="">All statuses</option>
+                {assessmentStatuses.map(status => (
+                  <option key={status} value={status}>{statusLabels[status] ?? status}</option>
+                ))}
+              </select>
+              <span className="text-xs text-surface-500">{filteredControls.length} of {controls.length} controls</span>
+            </div>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-surface-700 text-surface-400">
@@ -208,12 +243,12 @@ export function Compliance() {
                 </tr>
               </thead>
               <tbody>
-                {controls.length === 0 ? (
+                {filteredControls.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-surface-500">No controls in this framework.</td>
+                    <td colSpan={5} className="px-4 py-8 text-center text-surface-500">{controls.length === 0 ? 'No controls in this framework.' : 'No controls match the current filters.'}</td>
                   </tr>
                 ) : (
-                  controls.map(control => {
+                  filteredControls.map(control => {
                     const assessment = assessments.get(control.id);
                     return (
                       <tr key={control.id} className="border-b border-surface-700/50 hover:bg-surface-800 transition-colors">
@@ -251,6 +286,7 @@ export function Compliance() {
                 )}
               </tbody>
             </table>
+            </>
           )}
         </div>
       )}
