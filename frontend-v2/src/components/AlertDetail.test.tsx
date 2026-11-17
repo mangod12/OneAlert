@@ -29,7 +29,7 @@ describe('AlertDetail', () => {
       if (url === '/alerts/1/remediations') return { data: [] };
       throw new Error(`unexpected ${url}`);
     });
-    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onAssigned={() => {}} />);
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onAssigned={() => {}} />);
     await waitFor(() => expect(screen.getByText('42.0%')).toBeTruthy());
     expect(screen.getByText(/higher than 97% of CVEs/)).toBeTruthy();
   });
@@ -40,7 +40,7 @@ describe('AlertDetail', () => {
       if (url === '/alerts/1/remediations') return { data: [] };
       throw new Error(`unexpected ${url}`);
     });
-    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onAssigned={() => {}} />);
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onAssigned={() => {}} />);
     await waitFor(() => expect(screen.getByText('EPSS data not available')).toBeTruthy());
   });
 
@@ -57,7 +57,7 @@ describe('AlertDetail', () => {
       ] };
       throw new Error(`unexpected ${url}`);
     });
-    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onAssigned={() => {}} />);
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onAssigned={() => {}} />);
     await waitFor(() => expect(screen.getByText('Apply the vendor patch.')).toBeTruthy());
     const items = screen.getAllByRole('listitem');
     expect(items[0].textContent).toContain('Apply the vendor patch.');
@@ -70,7 +70,7 @@ describe('AlertDetail', () => {
 
   it('renders without EPSS or remediation sections when both requests fail', async () => {
     get.mockRejectedValue(new Error('offline'));
-    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onAssigned={() => {}} />);
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onAssigned={() => {}} />);
     expect(screen.getByText('RouterOS RCE')).toBeTruthy();
     await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
     expect(screen.queryByText(/Exploit probability/)).toBeNull();
@@ -94,7 +94,7 @@ describe('Escalate to investigation', () => {
       if (url === '/cases/42/alerts/1') return { data: {} };
       throw new Error(`unexpected ${url}`);
     });
-    render(<MemoryRouter><AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onAssigned={() => {}} /></MemoryRouter>);
+    render(<MemoryRouter><AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onAssigned={() => {}} /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: /open investigation/i }));
     const dialog = await screen.findByRole('dialog', { name: 'Open investigation' });
     expect((dialog.querySelector('#escalate-title') as HTMLInputElement).value).toBe('Investigate CVE-2026-0001 on edge-router-01');
@@ -108,7 +108,7 @@ describe('Escalate to investigation', () => {
   it('shows an inline error and stays open when creation fails', async () => {
     mockDetailGets();
     post.mockRejectedValue({ isAxiosError: true, response: { status: 500, data: {} } });
-    render(<MemoryRouter><AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onAssigned={() => {}} /></MemoryRouter>);
+    render(<MemoryRouter><AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onAssigned={() => {}} /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: /open investigation/i }));
     const dialog = await screen.findByRole('dialog', { name: 'Open investigation' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Open investigation' }));
@@ -130,7 +130,7 @@ describe('Escalate to investigation', () => {
     const patch = vi.mocked(apiClient.patch);
     patch.mockResolvedValue({ data: {} });
     const onAssigned = vi.fn();
-    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onAssigned={onAssigned} />);
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onAssigned={onAssigned} />);
     const select = await screen.findByLabelText('Assigned to');
     // inactive member is not offered
     expect(within(select as HTMLElement).queryByText(/idle@example.com/)).toBeNull();
@@ -150,9 +150,35 @@ describe('Escalate to investigation', () => {
     });
     const patch = vi.mocked(apiClient.patch);
     patch.mockRejectedValue({ isAxiosError: true, response: { status: 400, data: { detail: 'Assignee must be an active member of your organization' } } });
-    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onAssigned={() => {}} />);
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onAssigned={() => {}} />);
     const select = await screen.findByLabelText('Assigned to');
     fireEvent.change(select, { target: { value: '2' } });
     expect((await screen.findAllByRole('alert')).length).toBeGreaterThan(0);
+  });
+});
+
+describe('Resolve action', () => {
+  it('shows Resolve Alert for non-resolved alerts and calls onResolve', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null, message: 'EPSS data not available' } };
+      if (url === '/alerts/1/remediations') return { data: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+    const onResolve = vi.fn();
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={onResolve} onAssigned={() => {}} />);
+    const button = await screen.findByRole('button', { name: /resolve alert/i });
+    fireEvent.click(button);
+    expect(onResolve).toHaveBeenCalledWith(1);
+  });
+
+  it('hides Resolve Alert when the alert is already resolved', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null, message: 'EPSS data not available' } };
+      if (url === '/alerts/1/remediations') return { data: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<AlertDetail alert={{ ...alert, status: 'resolved' }} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onAssigned={() => {}} />);
+    await waitFor(() => expect(screen.getByText('RouterOS RCE')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: /resolve alert/i })).toBeNull();
   });
 });

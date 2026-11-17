@@ -143,6 +143,33 @@ export function Alerts() {
     else toast(`${ids.length} alerts acknowledged.`, 'success');
   };
 
+  const handleResolve = async (alertId: number) => {
+    if (pendingIds.has(alertId)) return;
+    setPendingIds(current => new Set(current).add(alertId));
+    try {
+      await apiClient.post(`/alerts/${alertId}/resolve`);
+      await fetchAlerts();
+      setSelectedAlert(null);
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'Alert could not be resolved.'), 'error');
+    } finally {
+      setPendingIds(current => { const next = new Set(current); next.delete(alertId); return next; });
+    }
+  };
+
+  const handleBulkResolve = async () => {
+    const ids = Array.from(selectedIds).filter(id => !pendingIds.has(id));
+    if (ids.length === 0) return;
+    setPendingIds(current => new Set([...current, ...ids]));
+    const results = await Promise.allSettled(ids.map(id => apiClient.post(`/alerts/${id}/resolve`)));
+    const failedIds = ids.filter((_, index) => results[index].status === 'rejected');
+    setSelectedIds(new Set(failedIds));
+    setPendingIds(current => { const next = new Set(current); ids.forEach(id => next.delete(id)); return next; });
+    await fetchAlerts();
+    if (failedIds.length > 0) toast(`${failedIds.length} alerts could not be resolved and remain selected.`, 'error');
+    else toast(`${ids.length} alerts resolved.`, 'success');
+  };
+
   const handleBulkAssign = async (value: string) => {
     if (value === '' || bulkAssigning) return;
     const assigneeId = value === 'none' ? null : Number(value);
@@ -198,6 +225,14 @@ export function Alerts() {
             >
               <CheckCircle className="w-4 h-4" />
               Acknowledge ({selectedIds.size})
+            </button>
+            <button
+              onClick={handleBulkResolve}
+              disabled={Array.from(selectedIds).some(id => pendingIds.has(id))}
+              className="flex min-h-9 items-center gap-2 rounded-md border border-surface-600 px-3.5 text-sm font-semibold text-success hover:border-success/50 disabled:opacity-50"
+            >
+              <CheckCircle className="w-4 h-4" />
+              Resolve ({selectedIds.size})
             </button>
           </div>
         ) : undefined
@@ -405,6 +440,7 @@ export function Alerts() {
           alert={selectedAlert}
           onClose={() => setSelectedAlert(null)}
           onAcknowledge={handleAcknowledge}
+          onResolve={handleResolve}
           onAssigned={handleAssigned}
         />
       )}
