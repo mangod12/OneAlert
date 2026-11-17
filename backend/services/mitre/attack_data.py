@@ -28,38 +28,110 @@ TACTICS = {
 
 # Top techniques relevant to OT/ICS + Enterprise
 TECHNIQUES = {
-    "T1078": {"name": "Valid Accounts", "tactics": ["TA0001", "TA0003", "TA0004", "TA0005"], "description": "Use of legitimate credentials"},
-    "T1190": {"name": "Exploit Public-Facing Application", "tactics": ["TA0001"], "description": "Exploit vulnerabilities in internet-facing apps"},
-    "T1133": {"name": "External Remote Services", "tactics": ["TA0001", "TA0003"], "description": "Use of VPN, RDP, or other remote services"},
-    "T1059": {"name": "Command and Scripting Interpreter", "tactics": ["TA0002"], "description": "Use of command-line or script interpreters"},
-    "T1053": {"name": "Scheduled Task/Job", "tactics": ["TA0002", "TA0003"], "description": "Abuse of task schedulers for execution"},
-    "T1021": {"name": "Remote Services", "tactics": ["TA0008"], "description": "Use of remote services for lateral movement"},
-    "T1021.001": {"name": "Remote Desktop Protocol", "tactics": ["TA0008"], "description": "Use of RDP for lateral movement"},
-    "T1021.002": {"name": "SMB/Windows Admin Shares", "tactics": ["TA0008"], "description": "Use of SMB shares for lateral movement"},
-    "T1046": {"name": "Network Service Discovery", "tactics": ["TA0007"], "description": "Scanning for network services"},
+    "T1078": {
+        "name": "Valid Accounts",
+        "tactics": ["TA0001", "TA0003", "TA0004", "TA0005"],
+        "description": "Use of legitimate credentials",
+    },
+    "T1190": {
+        "name": "Exploit Public-Facing Application",
+        "tactics": ["TA0001"],
+        "description": "Exploit vulnerabilities in internet-facing apps",
+    },
+    "T1133": {
+        "name": "External Remote Services",
+        "tactics": ["TA0001", "TA0003"],
+        "description": "Use of VPN, RDP, or other remote services",
+    },
+    "T1059": {
+        "name": "Command and Scripting Interpreter",
+        "tactics": ["TA0002"],
+        "description": "Use of command-line or script interpreters",
+    },
+    "T1053": {
+        "name": "Scheduled Task/Job",
+        "tactics": ["TA0002", "TA0003"],
+        "description": "Abuse of task schedulers for execution",
+    },
+    "T1021": {
+        "name": "Remote Services",
+        "tactics": ["TA0008"],
+        "description": "Use of remote services for lateral movement",
+    },
+    "T1021.001": {
+        "name": "Remote Desktop Protocol",
+        "tactics": ["TA0008"],
+        "description": "Use of RDP for lateral movement",
+    },
+    "T1021.002": {
+        "name": "SMB/Windows Admin Shares",
+        "tactics": ["TA0008"],
+        "description": "Use of SMB shares for lateral movement",
+    },
+    "T1046": {
+        "name": "Network Service Discovery",
+        "tactics": ["TA0007"],
+        "description": "Scanning for network services",
+    },
     "T1040": {"name": "Network Sniffing", "tactics": ["TA0006", "TA0007"], "description": "Capture of network traffic"},
     "T1110": {"name": "Brute Force", "tactics": ["TA0006"], "description": "Brute force credential attacks"},
     "T1003": {"name": "OS Credential Dumping", "tactics": ["TA0006"], "description": "Dump credentials from the OS"},
-    "T1071": {"name": "Application Layer Protocol", "tactics": ["TA0011"], "description": "Use of standard protocols for C2"},
+    "T1071": {
+        "name": "Application Layer Protocol",
+        "tactics": ["TA0011"],
+        "description": "Use of standard protocols for C2",
+    },
     "T1071.001": {"name": "Web Protocols", "tactics": ["TA0011"], "description": "Use of HTTP/HTTPS for C2"},
     "T1071.004": {"name": "DNS", "tactics": ["TA0011"], "description": "Use of DNS for C2"},
-    "T1048": {"name": "Exfiltration Over Alternative Protocol", "tactics": ["TA0010"], "description": "Use of non-standard protocols for data theft"},
-    "T1041": {"name": "Exfiltration Over C2 Channel", "tactics": ["TA0010"], "description": "Data exfiltration over existing C2"},
+    "T1048": {
+        "name": "Exfiltration Over Alternative Protocol",
+        "tactics": ["TA0010"],
+        "description": "Use of non-standard protocols for data theft",
+    },
+    "T1041": {
+        "name": "Exfiltration Over C2 Channel",
+        "tactics": ["TA0010"],
+        "description": "Data exfiltration over existing C2",
+    },
     "T1486": {"name": "Data Encrypted for Impact", "tactics": ["TA0040"], "description": "Ransomware encryption"},
     "T1489": {"name": "Service Stop", "tactics": ["TA0040"], "description": "Stop critical services"},
     "T1562": {"name": "Impair Defenses", "tactics": ["TA0005"], "description": "Disable security tools"},
     "T1098": {"name": "Account Manipulation", "tactics": ["TA0003"], "description": "Modify accounts for persistence"},
-    "T1105": {"name": "Ingress Tool Transfer", "tactics": ["TA0011"], "description": "Transfer tools to compromised host"},
+    "T1105": {
+        "name": "Ingress Tool Transfer",
+        "tactics": ["TA0011"],
+        "description": "Transfer tools to compromised host",
+    },
     "T1090": {"name": "Proxy", "tactics": ["TA0011"], "description": "Use of proxy for C2"},
-    "T1027": {"name": "Obfuscated Files or Information", "tactics": ["TA0005"], "description": "Obfuscation to evade detection"},
+    "T1027": {
+        "name": "Obfuscated Files or Information",
+        "tactics": ["TA0005"],
+        "description": "Obfuscation to evade detection",
+    },
     # ICS-specific techniques
-    "T0800": {"name": "Activate Firmware Update Mode", "tactics": ["TA0107"], "description": "Force device into firmware update mode"},
+    "T0800": {
+        "name": "Activate Firmware Update Mode",
+        "tactics": ["TA0107"],
+        "description": "Force device into firmware update mode",
+    },
     "T0836": {"name": "Modify Parameter", "tactics": ["TA0107"], "description": "Modify PLC/RTU parameters"},
     "T0843": {"name": "Program Download", "tactics": ["TA0107"], "description": "Download new program to PLC"},
-    "T0855": {"name": "Unauthorized Command Message", "tactics": ["TA0107"], "description": "Send unauthorized commands to ICS devices"},
+    "T0855": {
+        "name": "Unauthorized Command Message",
+        "tactics": ["TA0107"],
+        "description": "Send unauthorized commands to ICS devices",
+    },
     "T0826": {"name": "Loss of Availability", "tactics": ["TA0107"], "description": "Cause loss of ICS availability"},
-    "T0831": {"name": "Manipulation of Control", "tactics": ["TA0107"], "description": "Manipulate physical process control"},
-    "T0886": {"name": "Remote Services (ICS)", "tactics": ["TA0100", "TA0104"], "description": "Use of remote services in ICS"},
+    "T0831": {
+        "name": "Manipulation of Control",
+        "tactics": ["TA0107"],
+        "description": "Manipulate physical process control",
+    },
+    "T0886": {
+        "name": "Remote Services (ICS)",
+        "tactics": ["TA0100", "TA0104"],
+        "description": "Use of remote services in ICS",
+    },
 }
 
 # Keyword → technique mapping for rule-based mapping
