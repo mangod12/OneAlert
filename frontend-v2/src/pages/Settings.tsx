@@ -8,10 +8,12 @@ import { Panel } from '../components/ui/Panel';
 import { StatusBadge } from '../components/ui/StatusBadge';
 
 export function Settings() {
-  const { user } = useAuthStore();
+  const { user, fetchUser } = useAuthStore();
   const [slackUrl, setSlackUrl] = useState('');
   const [webhookUrl, setWebhookUrl] = useState('');
   const [mfaUri, setMfaUri] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
+  const [verifying, setVerifying] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
 
@@ -42,8 +44,30 @@ export function Settings() {
     try {
       const response = await apiClient.post<{ provisioning_uri: string }>('/auth/me/mfa/setup');
       setMfaUri(response.data.provisioning_uri);
+      setMfaCode('');
     } catch (error: unknown) {
       setMessage({ text: getApiErrorMessage(error, 'MFA setup could not be started.'), error: true });
+    }
+  };
+
+  const handleVerifyMFA = async () => {
+    if (!mfaCode.trim() || verifying) return;
+    setVerifying(true);
+    setMessage(null);
+    try {
+      const response = await apiClient.post<boolean>('/auth/me/mfa/verify', { code: mfaCode.trim() });
+      if (response.data) {
+        setMfaUri(null);
+        setMfaCode('');
+        setMessage({ text: 'MFA is now enabled for this account.', error: false });
+        await fetchUser();
+      } else {
+        setMessage({ text: 'That code did not match. Check your authenticator and try again.', error: true });
+      }
+    } catch (error: unknown) {
+      setMessage({ text: getApiErrorMessage(error, 'MFA verification could not be completed.'), error: true });
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -69,7 +93,33 @@ export function Settings() {
           <Panel title="Multi-factor authentication" description="TOTP adds a second verification step to password sign-in." action={<Shield className="h-4 w-4 text-success" />}>
             <div className="p-5">
               {user?.mfa_enabled ? <StatusBadge tone="success">MFA enabled</StatusBadge> : <button type="button" onClick={handleSetupMFA} className="inline-flex min-h-9 items-center gap-2 rounded-md bg-primary-500 px-3.5 text-sm font-semibold text-surface-950 hover:bg-primary-400"><KeyRound className="h-4 w-4" /> Enable MFA</button>}
-              {mfaUri && <div className="mt-4 rounded-md border border-surface-700 bg-surface-950 p-4"><p className="mb-2 text-xs text-surface-400">Add this provisioning URI to your authenticator, then finish verification.</p><code className="block break-all text-xs text-primary-300">{mfaUri}</code></div>}
+              {mfaUri && (
+                <div className="mt-4 space-y-3 rounded-md border border-surface-700 bg-surface-950 p-4">
+                  <p className="text-xs text-surface-400">Add this provisioning URI to your authenticator, then enter its 6-digit code to finish. MFA stays off until the first code verifies.</p>
+                  <code className="block break-all text-xs text-primary-300">{mfaUri}</code>
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="mfa-code" className="sr-only">Authenticator code</label>
+                    <input
+                      id="mfa-code"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      placeholder="6-digit code"
+                      value={mfaCode}
+                      onChange={event => setMfaCode(event.target.value)}
+                      className="w-32 rounded-md border border-surface-600 bg-surface-900 px-3 py-2 text-sm text-surface-100 placeholder-surface-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleVerifyMFA()}
+                      disabled={verifying || !mfaCode.trim()}
+                      className="rounded-md bg-primary-500 px-3 py-2 text-xs font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50"
+                    >
+                      {verifying ? 'Verifying…' : 'Verify and enable'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </Panel>
         </div>

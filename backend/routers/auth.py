@@ -309,7 +309,11 @@ async def update_my_integrations(
 
 @router.post("/me/mfa/setup")
 async def setup_mfa(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_async_db)):
-    """Enable MFA for the current user and return the TOTP provisioning URI."""
+    """Start MFA setup: store a pending secret and return its provisioning URI.
+
+    MFA stays disabled until the first code verifies via /me/mfa/verify, so a
+    user who abandons setup is never locked out of password sign-in.
+    """
     import pyotp
     if current_user.mfa_enabled and current_user.mfa_secret:
         totp = pyotp.TOTP(current_user.mfa_secret)
@@ -321,13 +325,12 @@ async def setup_mfa(current_user: User = Depends(get_current_user), db: AsyncSes
         }
     secret = pyotp.random_base32()
     current_user.mfa_secret = secret
-    current_user.mfa_enabled = True
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
     totp = pyotp.TOTP(secret)
     return {
-        "mfa_enabled": True,
+        "mfa_enabled": False,
         "provisioning_uri": totp.provisioning_uri(
             name=current_user.email, issuer_name="OneAlert"
         ),
@@ -340,13 +343,23 @@ class MFAVerifyRequest(BaseModel):
 
 
 @router.post("/me/mfa/verify", response_model=bool)
-async def verify_mfa(body: MFAVerifyRequest, current_user: User = Depends(get_current_user)):
-    """Verify a TOTP code for the current user."""
+async def verify_mfa(
+    body: MFAVerifyRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Verify a TOTP code; enables MFA on the first successful verification."""
     import pyotp
-    if not current_user.mfa_enabled or not current_user.mfa_secret:
+    if not current_user.mfa_secret:
         return False
     totp = pyotp.TOTP(current_user.mfa_secret)
-    return totp.verify(body.code)
+    if not totp.verify(body.code):
+        return False
+    if not current_user.mfa_enabled:
+        current_user.mfa_enabled = True
+        db.add(current_user)
+        await db.commit()
+    return True
 
 
 @router.get("/audit-logs", response_model=list[dict])
