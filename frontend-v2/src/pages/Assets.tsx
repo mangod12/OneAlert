@@ -2,10 +2,11 @@ import { useEffect, useState, useCallback } from 'react';
 import apiClient from '../api/client';
 import type { Asset, AssetCreate, AssetListResponse } from '../api/types';
 import { Plus, Search, Server, Trash2, Edit2 } from 'lucide-react';
-import clsx from 'clsx';
 import { getApiErrorMessage } from '../api/errors';
 import { ErrorState, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
+import { StatusBadge } from '../components/ui/StatusBadge';
+import { criticalityTones } from '../components/ui/tones';
 import { toast } from '../components/Toast';
 
 export function Assets() {
@@ -134,23 +135,10 @@ export function Assets() {
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
-                <span className="px-2 py-0.5 bg-surface-700 rounded text-xs text-surface-300">
-                  {asset.asset_type}
-                </span>
-                {asset.is_ot_asset && (
-                  <span className="px-2 py-0.5 bg-warning/10 text-warning border border-warning/20 rounded text-xs">
-                    OT
-                  </span>
-                )}
+                <StatusBadge tone="neutral">{asset.asset_type}</StatusBadge>
+                {asset.is_ot_asset && <StatusBadge tone="warning">OT</StatusBadge>}
                 {asset.criticality && (
-                  <span className={clsx(
-                    'px-2 py-0.5 rounded text-xs border',
-                    asset.criticality === 'high' ? 'bg-danger/10 text-danger border-danger/20' :
-                    asset.criticality === 'medium' ? 'bg-warning/10 text-warning border-warning/20' :
-                    'bg-success/10 text-success border-success/20'
-                  )}>
-                    {asset.criticality}
-                  </span>
+                  <StatusBadge tone={criticalityTones[asset.criticality] ?? 'neutral'}>{asset.criticality}</StatusBadge>
                 )}
               </div>
               {asset.version && (

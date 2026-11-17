@@ -30,3 +30,9 @@ export const caseStatusTones: Record<string, BadgeTone> = {
   resolved: 'success',
   closed: 'neutral',
 };
+
+export const criticalityTones: Record<string, BadgeTone> = {
+  high: 'danger',
+  medium: 'warning',
+  low: 'success',
+};
