@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import apiClient from '../api/client';
-import { Network, Lock, LockOpen } from 'lucide-react';
+import { Network, Lock, LockOpen, Plus } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -35,6 +35,15 @@ export function Topology() {
   const [stats, setStats] = useState<TopologyStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [sourceIp, setSourceIp] = useState('');
+  const [targetIp, setTargetIp] = useState('');
+  const [protocol, setProtocol] = useState('');
+  const [port, setPort] = useState('');
+  const [direction, setDirection] = useState('bidirectional');
+  const [encrypted, setEncrypted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [formMessage, setFormMessage] = useState<{ text: string; error: boolean } | null>(null);
 
   const fetchTopology = useCallback(async () => {
     setLoading(true);
@@ -56,6 +65,49 @@ export function Topology() {
 
   useEffect(() => { void fetchTopology(); }, [fetchTopology]);
 
+  const resetForm = () => {
+    setAdding(false);
+    setSourceIp('');
+    setTargetIp('');
+    setProtocol('');
+    setPort('');
+    setDirection('bidirectional');
+    setEncrypted(false);
+  };
+
+  const handleAddConnection = async () => {
+    if (saving) return;
+    const trimmedPort = port.trim();
+    const parsedPort = trimmedPort ? Number(trimmedPort) : null;
+    if (!sourceIp.trim() || !targetIp.trim() || !protocol.trim()) {
+      setFormMessage({ text: 'Source IP, target IP and protocol are required.', error: true });
+      return;
+    }
+    if (trimmedPort && (!Number.isInteger(parsedPort) || (parsedPort as number) < 0 || (parsedPort as number) > 65535)) {
+      setFormMessage({ text: 'Port must be a whole number between 0 and 65535.', error: true });
+      return;
+    }
+    setSaving(true);
+    setFormMessage(null);
+    try {
+      await apiClient.post('/topology/connections', {
+        source_ip: sourceIp.trim(),
+        target_ip: targetIp.trim(),
+        protocol: protocol.trim(),
+        port: parsedPort,
+        direction,
+        is_encrypted: encrypted,
+      });
+      setFormMessage({ text: 'Connection recorded. The topology has been refreshed.', error: false });
+      resetForm();
+      await fetchTopology();
+    } catch (err: unknown) {
+      setFormMessage({ text: getApiErrorMessage(err, 'The connection could not be recorded.'), error: true });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) return <LoadingSurface rows={4} label="Loading network topology" />;
   if (error) return <ErrorState title="Topology unavailable" description={error} action={<RetryButton onClick={() => void fetchTopology()} />} />;
 
@@ -76,7 +128,7 @@ export function Topology() {
       {nodes.length === 0 && edges.length === 0 ? (
         <div className="oa-panel p-12 text-center text-surface-500">
           <Network className="w-10 h-10 mx-auto mb-3 opacity-50" />
-          <p>No topology observed yet. Connections appear as sensors report traffic.</p>
+          <p>No topology observed yet. Connections appear as sensors report traffic, or add one manually below.</p>
         </div>
       ) : (
         <>
@@ -161,6 +213,58 @@ export function Topology() {
           )}
         </>
       )}
+      <div className="oa-panel rounded-md p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-surface-100">Add connection</h2>
+            <p className="mt-0.5 text-xs text-surface-500">Record an observed connection manually, for example from a firewall log or a one-off scan.</p>
+          </div>
+          {!adding && (
+            <button type="button" onClick={() => { setAdding(true); setFormMessage(null); }} className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-primary-500/40 px-3 text-sm font-semibold text-primary-300 hover:bg-primary-500/10">
+              <Plus className="h-4 w-4" /> Add connection
+            </button>
+          )}
+        </div>
+        {formMessage && <div role={formMessage.error ? 'alert' : 'status'} className={`mt-3 rounded-md border px-3 py-2 text-xs ${formMessage.error ? 'border-danger/30 bg-danger/10 text-danger' : 'border-success/30 bg-success/10 text-success'}`}>{formMessage.text}</div>}
+        {adding && (
+          <form className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" onSubmit={event => { event.preventDefault(); void handleAddConnection(); }}>
+            <div>
+              <label htmlFor="conn-source" className="mb-1 block text-xs font-medium text-surface-300">Source IP *</label>
+              <input id="conn-source" type="text" autoComplete="off" value={sourceIp} onChange={e => setSourceIp(e.target.value)} placeholder="10.0.1.12" className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
+            </div>
+            <div>
+              <label htmlFor="conn-target" className="mb-1 block text-xs font-medium text-surface-300">Target IP *</label>
+              <input id="conn-target" type="text" autoComplete="off" value={targetIp} onChange={e => setTargetIp(e.target.value)} placeholder="10.0.2.40" className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
+            </div>
+            <div>
+              <label htmlFor="conn-protocol" className="mb-1 block text-xs font-medium text-surface-300">Protocol *</label>
+              <input id="conn-protocol" type="text" autoComplete="off" value={protocol} onChange={e => setProtocol(e.target.value)} placeholder="modbus" className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
+            </div>
+            <div>
+              <label htmlFor="conn-port" className="mb-1 block text-xs font-medium text-surface-300">Port</label>
+              <input id="conn-port" type="text" inputMode="numeric" autoComplete="off" value={port} onChange={e => setPort(e.target.value)} placeholder="502" className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
+            </div>
+            <div>
+              <label htmlFor="conn-direction" className="mb-1 block text-xs font-medium text-surface-300">Direction</label>
+              <select id="conn-direction" value={direction} onChange={e => setDirection(e.target.value)} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100">
+                <option value="bidirectional">Bidirectional</option>
+                <option value="outbound">Outbound</option>
+                <option value="inbound">Inbound</option>
+              </select>
+            </div>
+            <div className="flex items-end pb-2">
+              <label htmlFor="conn-encrypted" className="flex items-center gap-2 text-sm text-surface-300">
+                <input id="conn-encrypted" type="checkbox" checked={encrypted} onChange={e => setEncrypted(e.target.checked)} className="h-4 w-4 rounded border-surface-600 bg-surface-950" />
+                Encrypted
+              </label>
+            </div>
+            <div className="flex items-center gap-2 sm:col-span-2 lg:col-span-3">
+              <button type="submit" disabled={saving} className="min-h-9 rounded-md bg-primary-500 px-4 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">{saving ? 'Recording…' : 'Record connection'}</button>
+              <button type="button" onClick={resetForm} className="rounded-md border border-surface-600 px-3 py-2 text-sm text-surface-300 hover:bg-surface-800">Cancel</button>
+            </div>
+          </form>
+        )}
+      </div>
     </div>
   );
 }
