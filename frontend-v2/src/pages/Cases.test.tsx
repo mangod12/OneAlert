@@ -212,3 +212,14 @@ describe('Case search', () => {
     expect(screen.getByText('Credential dumping on edge router')).toBeTruthy();
   });
 });
+
+describe('Case filters', () => {
+  it('refetches with the selected status and severity', async () => {
+    renderCases();
+    await screen.findByText('Credential dumping on edge router');
+    fireEvent.change(screen.getByLabelText('Filter by status'), { target: { value: 'open' } });
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/', { params: { size: 50, status: 'open' } }));
+    fireEvent.change(screen.getByLabelText('Filter by severity'), { target: { value: 'high' } });
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/', { params: { size: 50, status: 'open', severity: 'high' } }));
+  });
+});
