@@ -10,8 +10,19 @@ interface Props {
 
 export function AlertTrend({ alerts }: Props) {
   const data = useMemo(() => buildTrendData(alerts), [alerts]);
+  const totals = data.reduce(
+    (acc, day) => ({
+      critical: acc.critical + day.critical,
+      high: acc.high + day.high,
+      medium: acc.medium + day.medium,
+      low: acc.low + day.low,
+    }),
+    { critical: 0, high: 0, medium: 0, low: 0 }
+  );
+  const summary = `${totals.critical} critical, ${totals.high} high, ${totals.medium} medium, ${totals.low} low`;
 
   return (
+    <div role="img" aria-label={`Alert activity over the last 7 days: ${summary}`}>
     <ResponsiveContainer width="100%" height={250}>
       <BarChart data={data}>
         <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
@@ -28,5 +39,6 @@ export function AlertTrend({ alerts }: Props) {
         <Bar dataKey="low" stackId="a" fill={chartColors.low} name="Low" />
       </BarChart>
     </ResponsiveContainer>
+    </div>
   );
 }
