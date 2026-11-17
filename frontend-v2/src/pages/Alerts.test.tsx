@@ -90,7 +90,7 @@ describe('Alerts page', () => {
   it('labels the search input and both filter selects for assistive tech', async () => {
     render(<Alerts />);
     await screen.findByText('CVE-2026-0001');
-    expect(screen.getByRole('textbox', { name: 'Search by CVE ID' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: 'Search by CVE or title' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: 'Filter by severity' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: 'Filter by status' })).toBeTruthy();
   });
@@ -106,6 +106,17 @@ describe('Alerts page', () => {
     await waitFor(() => {
       expect(mockGet).toHaveBeenCalledWith('/alerts/', {
         params: { page: 1, size: 15, asset_id: 10, sort: 'created_at_desc' },
+      });
+    });
+  });
+
+  it('sends the search text as a substring query', async () => {
+    render(<Alerts />);
+    const input = await screen.findByRole('textbox', { name: 'Search by CVE or title' });
+    fireEvent.change(input, { target: { value: 'routeros' } });
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith('/alerts/', {
+        params: { page: 1, size: 15, search: 'routeros', sort: 'created_at_desc' },
       });
     });
   });
