@@ -1,7 +1,7 @@
 """Billing service for Stripe integration."""
 
 import os
-
+from typing import Optional
 from backend.models.subscription import PLAN_LIMITS
 
 # Stripe price IDs (would be configured in env vars in production)
@@ -19,7 +19,7 @@ PLAN_PRICES = {
 }
 
 
-def get_plan_info(plan: str) -> dict | None:
+def get_plan_info(plan: str) -> Optional[dict]:
     """Get plan details including limits and pricing."""
     limits = PLAN_LIMITS.get(plan)
     if not limits:

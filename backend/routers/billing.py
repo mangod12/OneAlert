@@ -5,28 +5,28 @@ Provides endpoints for plan listing, subscription management,
 Stripe checkout session creation, webhook handling, and usage tracking.
 """
 
-import logging
 import os
-
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from typing import List
 
 from backend.database.db import get_async_db
-from backend.models.asset import Asset
-from backend.models.organization import Organization
 from backend.models.subscription import (
-    PLAN_LIMITS,
-    CheckoutRequest,
-    PlanInfo,
     Subscription,
+    PlanInfo,
+    CheckoutRequest,
+    PLAN_LIMITS,
 )
 from backend.models.user import User
+from backend.models.asset import Asset
+from backend.models.organization import Organization
 from backend.routers.auth import get_active_user
 from backend.services.billing_service import (
+    get_plan_info,
     PLAN_PRICES,
     STRIPE_PRICE_IDS,
-    get_plan_info,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ def _require_org_admin(current_user: User) -> None:
         )
 
 
-@router.get("/plans", response_model=list[PlanInfo])
+@router.get("/plans", response_model=List[PlanInfo])
 async def list_plans():
     """List all available plans with pricing and limits."""
     plans = []
