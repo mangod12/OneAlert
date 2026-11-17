@@ -70,6 +70,7 @@ describe('Alerts page', () => {
       if (url === '/alerts/epss-batch') return { data: { scores: {} } };
       if (url === '/alerts/kev-batch') return { data: { entries: {} } };
       if (url === '/orgs/me/members') return { data: [] };
+      if (url === '/alerts/views/') return { data: [] };
       alertCalls += 1;
       if (alertCalls === 1) throw { isAxiosError: true, response: { status: 500, data: {} } };
       return listResponse([makeAlert()]);

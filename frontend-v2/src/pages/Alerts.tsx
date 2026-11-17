@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import apiClient from '../api/client';
 import type { Alert, AlertListResponse } from '../api/types';
 import { AlertDetail } from '../components/AlertDetail';
+import { SavedViewsMenu, type SavedViewFilters } from '../components/SavedViewsMenu';
 import { Search, Filter, CheckCircle, ChevronRight, Download } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -259,6 +260,25 @@ export function Alerts() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
+        <SavedViewsMenu
+          currentFilters={{
+            ...(severityFilter ? { severity: severityFilter } : {}),
+            ...(statusFilter ? { status: statusFilter } : {}),
+            ...(cveSearch ? { search: cveSearch } : {}),
+            ...(assetFilter ? { asset_id: Number(assetFilter) } : {}),
+            ...(assignedFilter ? { assigned: assignedFilter } : {}),
+            sort,
+          }}
+          onApply={(filters: SavedViewFilters) => {
+            setSeverityFilter(filters.severity ?? '');
+            setStatusFilter(filters.status ?? '');
+            setCveSearch(filters.search ?? '');
+            setAssetFilter(filters.asset_id != null ? String(filters.asset_id) : '');
+            setAssignedFilter(filters.assigned ?? '');
+            setSort(filters.sort ?? 'created_at_desc');
+            setPage(1);
+          }}
+        />
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
           <input
