@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import {
-  Activity, Bell, BriefcaseMedical, ClipboardList, FileCheck,
+  Activity, Bell, BriefcaseMedical, ClipboardList, ShieldCheck, FileCheck,
   LayoutDashboard, LogOut, Network, Search, Server, Settings, Shield,
   Swords, Target, X,
 } from 'lucide-react';
@@ -28,6 +28,7 @@ const navigation = [
     { to: '/validation', icon: Swords, label: 'Validation' },
   ] },
   { label: 'Govern', items: [
+    { to: '/compliance', icon: ShieldCheck, label: 'Compliance' },
     { to: '/audit-log', icon: ClipboardList, label: 'Audit Log' },
     { to: '/settings', icon: Settings, label: 'Settings' },
   ] },

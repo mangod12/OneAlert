@@ -1,0 +1,223 @@
+import { useCallback, useEffect, useState } from 'react';
+import apiClient from '../api/client';
+import { ShieldCheck } from 'lucide-react';
+import { getApiErrorMessage } from '../api/errors';
+import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { PageHeader } from '../components/ui/PageHeader';
+import { StatusBadge } from '../components/ui/StatusBadge';
+
+interface Framework {
+  id: number;
+  name: string;
+  version: string;
+  description: string | null;
+}
+
+interface ComplianceSummary {
+  framework_id: number;
+  framework_name: string;
+  total_controls: number;
+  compliant: number;
+  non_compliant: number;
+  partial: number;
+  not_assessed: number;
+  compliance_percentage: number;
+}
+
+interface Control {
+  id: number;
+  framework_id: number;
+  control_id: string;
+  title: string;
+  description: string | null;
+  category: string | null;
+}
+
+interface Assessment {
+  id: number;
+  control_id: number;
+  status: string;
+  evidence_type: string | null;
+  evidence_detail: string | null;
+  assessed_at: string;
+  assessed_by: string;
+}
+
+const statusTones: Record<string, 'success' | 'danger' | 'warning' | 'neutral'> = {
+  compliant: 'success',
+  non_compliant: 'danger',
+  partial: 'warning',
+};
+
+const statusLabels: Record<string, string> = {
+  compliant: 'Compliant',
+  non_compliant: 'Non-compliant',
+  partial: 'Partial',
+};
+
+export function Compliance() {
+  const [frameworks, setFrameworks] = useState<Framework[]>([]);
+  const [summaries, setSummaries] = useState<ComplianceSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [selected, setSelected] = useState<number | null>(null);
+  const [controls, setControls] = useState<Control[]>([]);
+  const [assessments, setAssessments] = useState<Map<number, Assessment>>(new Map());
+  const [controlsLoading, setControlsLoading] = useState(false);
+  const [controlsError, setControlsError] = useState('');
+
+  const fetchOverview = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [frameworksRes, summaryRes] = await Promise.all([
+        apiClient.get<Framework[]>('/compliance/frameworks'),
+        apiClient.get<ComplianceSummary[]>('/compliance/summary'),
+      ]);
+      setFrameworks(frameworksRes.data);
+      setSummaries(summaryRes.data);
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Compliance posture could not be loaded.'));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void fetchOverview(); }, [fetchOverview]);
+
+  const openFramework = async (frameworkId: number) => {
+    if (selected === frameworkId) { setSelected(null); return; }
+    setSelected(frameworkId);
+    setControlsLoading(true);
+    setControlsError('');
+    try {
+      const [controlsRes, assessmentsRes] = await Promise.all([
+        apiClient.get<Control[]>(`/compliance/frameworks/${frameworkId}/controls`),
+        apiClient.get<Assessment[]>('/compliance/assessments'),
+      ]);
+      setControls(controlsRes.data);
+      const latest = new Map<number, Assessment>();
+      for (const assessment of assessmentsRes.data) {
+        const existing = latest.get(assessment.control_id);
+        if (!existing || existing.assessed_at < assessment.assessed_at) latest.set(assessment.control_id, assessment);
+      }
+      setAssessments(latest);
+    } catch (err: unknown) {
+      setControls([]);
+      setAssessments(new Map());
+      setControlsError(getApiErrorMessage(err, 'Framework controls could not be loaded.'));
+    } finally {
+      setControlsLoading(false);
+    }
+  };
+
+  if (loading) return <LoadingSurface rows={4} label="Loading compliance posture" />;
+  if (error) return <ErrorState title="Compliance unavailable" description={error} action={<RetryButton onClick={() => void fetchOverview()} />} />;
+
+  const summaryFor = (id: number) => summaries.find(s => s.framework_id === id);
+
+  return (
+    <div className="space-y-6">
+      <PageHeader eyebrow="Govern" title="Compliance" description="Control coverage and assessment posture across your frameworks." />
+
+      {frameworks.length === 0 ? (
+        <div className="oa-panel p-12 text-center text-surface-500">
+          <ShieldCheck className="w-10 h-10 mx-auto mb-3 opacity-50" />
+          <p>No compliance frameworks are configured yet.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {frameworks.map(framework => {
+            const summary = summaryFor(framework.id);
+            const pct = summary ? Math.round(summary.compliance_percentage) : 0;
+            const isOpen = selected === framework.id;
+            return (
+              <button
+                key={framework.id}
+                type="button"
+                onClick={() => void openFramework(framework.id)}
+                aria-expanded={isOpen}
+                className={`oa-panel rounded-md p-5 text-left transition-colors hover:border-primary-500/40 ${isOpen ? 'border-primary-500/50' : ''}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h2 className="text-sm font-semibold text-surface-50">{framework.name}</h2>
+                    <p className="text-xs text-surface-500 mt-0.5">{framework.version}</p>
+                  </div>
+                  <span className="text-2xl font-bold text-primary-400">{pct}%</span>
+                </div>
+                <div
+                  role="progressbar"
+                  aria-valuenow={pct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label={`${framework.name} compliance`}
+                  className="mt-3 h-2 w-full overflow-hidden rounded-full bg-surface-700"
+                >
+                  <div className="h-full rounded-full bg-primary-500 transition-all" style={{ width: `${pct}%` }} />
+                </div>
+                {summary && (
+                  <p className="mt-2 text-xs text-surface-400">
+                    {summary.compliant} compliant · {summary.partial} partial · {summary.non_compliant} non-compliant · {summary.not_assessed} not assessed
+                  </p>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {selected != null && (
+        <div className="oa-panel overflow-hidden rounded-md">
+          {controlsLoading ? (
+            <LoadingSurface rows={4} label="Loading framework controls" />
+          ) : controlsError ? (
+            <ErrorState title="Controls unavailable" description={controlsError} action={<RetryButton onClick={() => void openFramework(selected)} />} />
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-surface-700 text-surface-400">
+                  <th className="px-4 py-3 text-left">Control</th>
+                  <th className="px-4 py-3 text-left">Title</th>
+                  <th className="px-4 py-3 text-left">Category</th>
+                  <th className="px-4 py-3 text-left">Status</th>
+                  <th className="px-4 py-3 text-left">Assessed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {controls.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-surface-500">No controls in this framework.</td>
+                  </tr>
+                ) : (
+                  controls.map(control => {
+                    const assessment = assessments.get(control.id);
+                    return (
+                      <tr key={control.id} className="border-b border-surface-700/50 hover:bg-surface-800 transition-colors">
+                        <td className="px-4 py-3 font-mono text-xs text-primary-300">{control.control_id}</td>
+                        <td className="px-4 py-3 text-surface-200">{control.title}</td>
+                        <td className="px-4 py-3 text-surface-400 text-xs">{control.category ?? '-'}</td>
+                        <td className="px-4 py-3">
+                          {assessment ? (
+                            <StatusBadge tone={statusTones[assessment.status] ?? 'neutral'}>
+                              {statusLabels[assessment.status] ?? assessment.status}
+                            </StatusBadge>
+                          ) : (
+                            <StatusBadge tone="neutral">Not assessed</StatusBadge>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-surface-500 text-xs">
+                          {assessment ? new Date(assessment.assessed_at).toLocaleDateString() : '-'}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

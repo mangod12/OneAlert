@@ -18,6 +18,7 @@ const MitreMap = lazy(() => import('./pages/MitreMap').then(module => ({ default
 const HuntLab = lazy(() => import('./pages/HuntLab').then(module => ({ default: module.HuntLab })));
 const Settings = lazy(() => import('./pages/Settings').then(module => ({ default: module.Settings })));
 const AuditLog = lazy(() => import('./pages/AuditLog').then(module => ({ default: module.AuditLog })));
+const Compliance = lazy(() => import('./pages/Compliance').then(module => ({ default: module.Compliance })));
 const ResponsePlans = lazy(() => import('./pages/ResponsePlans').then(module => ({ default: module.ResponsePlans })));
 const Validation = lazy(() => import('./pages/Validation').then(module => ({ default: module.Validation })));
 
@@ -56,6 +57,7 @@ function App() {
           <Route path="/response-plans" element={<ResponsePlans />} />
           <Route path="/validation" element={<Validation />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/compliance" element={<Compliance />} />
           <Route path="/audit-log" element={<AuditLog />} />
         </Route>
         <Route path="*" element={<Navigate to="/" />} />
