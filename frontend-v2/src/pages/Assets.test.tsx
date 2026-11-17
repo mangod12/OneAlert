@@ -44,6 +44,15 @@ describe('Assets page', () => {
     }));
   });
 
+  it('filters by asset type from the dropdown', async () => {
+    render(<Assets />);
+    await screen.findByText('Plant gateway');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter by asset type' }), { target: { value: 'plc' } });
+    await waitFor(() => {
+      expect(get).toHaveBeenCalledWith('/assets/', { params: { page: 1, size: 15, asset_type: 'plc' } });
+    });
+  });
+
   it('asks for confirmation and does not delete when cancelled', async () => {
     render(<Assets />);
     fireEvent.click(await screen.findByRole('button', { name: 'Delete Plant gateway' }));

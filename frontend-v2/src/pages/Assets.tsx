@@ -29,6 +29,7 @@ export function Assets() {
   const [saving, setSaving] = useState(false);
   const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
   const [pendingDelete, setPendingDelete] = useState<Asset | null>(null);
+  const [typeFilter, setTypeFilter] = useState('');
 
   const fetchAssets = useCallback(async () => {
     setLoading(true);
@@ -36,6 +37,7 @@ export function Assets() {
     try {
       const params: Record<string, string | number> = { page, size: 15 };
       if (search) params.search = search;
+      if (typeFilter) params.asset_type = typeFilter;
       const res = await apiClient.get<AssetListResponse>('/assets/', { params });
       setAssets(res.data.assets);
       setTotal(res.data.total);
@@ -44,7 +46,7 @@ export function Assets() {
     } finally {
       setLoading(false);
     }
-  }, [page, search]);
+  }, [page, search, typeFilter]);
 
   const [assetTypes, setAssetTypes] = useState<string[]>(FALLBACK_ASSET_TYPES);
 
@@ -108,16 +110,27 @@ export function Assets() {
         </button>
       } />
 
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
-        <input
-          type="text"
-          aria-label="Search assets"
-          placeholder="Search assets..."
-          value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          className="w-full pl-9 pr-4 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
-        />
+      <div className="flex items-center gap-3">
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
+          <input
+            type="text"
+            aria-label="Search assets"
+            placeholder="Search assets..."
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            className="w-full pl-9 pr-4 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          />
+        </div>
+        <select
+          aria-label="Filter by asset type"
+          value={typeFilter}
+          onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}
+          className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+        >
+          <option value="">All types</option>
+          {assetTypes.map(t => <option key={t} value={t}>{assetTypeLabel(t)}</option>)}
+        </select>
       </div>
 
       {error ? <ErrorState title="Asset inventory unavailable" description={error} action={<RetryButton onClick={() => void fetchAssets()} />} /> : <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
