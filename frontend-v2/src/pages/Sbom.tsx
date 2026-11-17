@@ -42,10 +42,19 @@ export function Sbom() {
   const [components, setComponents] = useState<SbomComponent[]>([]);
   const [componentsLoading, setComponentsLoading] = useState(false);
   const [componentsError, setComponentsError] = useState('');
+  const [componentSearch, setComponentSearch] = useState('');
   const [pendingDelete, setPendingDelete] = useState<Sbom | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [showUpload, setShowUpload] = useState(false);
+  const componentQuery = componentSearch.trim().toLowerCase();
+  const visibleComponents = componentQuery
+    ? components.filter(c =>
+        c.name.toLowerCase().includes(componentQuery)
+        || (c.version ?? '').toLowerCase().includes(componentQuery)
+        || (c.supplier ?? '').toLowerCase().includes(componentQuery)
+      )
+    : components;
   const [uploading, setUploading] = useState(false);
 
   const fetchSboms = useCallback(async () => {
@@ -71,6 +80,7 @@ export function Sbom() {
   const toggleExpand = async (sbom: Sbom) => {
     if (expanded === sbom.id) { setExpanded(null); return; }
     setExpanded(sbom.id);
+    setComponentSearch('');
     setComponentsLoading(true);
     setComponentsError('');
     try {
@@ -189,6 +199,21 @@ export function Sbom() {
                         ) : components.length === 0 ? (
                           <p className="text-sm text-surface-500">No components in this SBOM.</p>
                         ) : (
+                          <div>
+                            <div className="mb-3 flex items-center gap-3">
+                              <input
+                                type="text"
+                                aria-label="Search components"
+                                placeholder="Search components..."
+                                value={componentSearch}
+                                onChange={(e) => setComponentSearch(e.target.value)}
+                                className="w-64 px-3 py-1.5 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                              />
+                              <span className="text-xs text-surface-500">{visibleComponents.length} of {components.length} components</span>
+                            </div>
+                            {visibleComponents.length === 0 ? (
+                              <p className="text-sm text-surface-500">No components match that search.</p>
+                            ) : (
                           <table className="w-full text-sm">
                             <thead>
                               <tr className="text-surface-500 text-xs">
@@ -200,7 +225,7 @@ export function Sbom() {
                               </tr>
                             </thead>
                             <tbody>
-                              {components.map(component => (
+                              {visibleComponents.map(component => (
                                 <tr key={component.id} className="border-t border-surface-700/40">
                                   <td className="py-1.5 text-surface-200">{component.name}</td>
                                   <td className="py-1.5 text-surface-400 text-xs">{component.version ?? '-'}</td>
@@ -217,6 +242,8 @@ export function Sbom() {
                               ))}
                             </tbody>
                           </table>
+                            )}
+                          </div>
                         )}
                       </td>
                     </tr>

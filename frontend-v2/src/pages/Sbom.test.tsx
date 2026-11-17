@@ -48,6 +48,18 @@ describe('SBOM page', () => {
     expect(screen.getByText('busybox')).toBeTruthy();
   });
 
+  it('filters expanded components by search', async () => {
+    render(<Sbom />);
+    fireEvent.click(await screen.findByText('Plant gateway'));
+    await screen.findByText('openssl');
+    fireEvent.change(screen.getByLabelText('Search components'), { target: { value: 'busy' } });
+    expect(screen.queryByText('openssl')).toBeNull();
+    expect(screen.getByText('busybox')).toBeTruthy();
+    expect(screen.getByText('1 of 2 components')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Search components'), { target: { value: 'zzz' } });
+    expect(screen.getByText('No components match that search.')).toBeTruthy();
+  });
+
   it('deletes an SBOM through the confirm dialog', async () => {
     render(<Sbom />);
     fireEvent.click(await screen.findByRole('button', { name: 'Delete SBOM for Plant gateway' }));
