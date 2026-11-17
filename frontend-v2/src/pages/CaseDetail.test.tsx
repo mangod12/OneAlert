@@ -36,9 +36,26 @@ function mockLoad(status = 'open') {
   mockGet.mockImplementation(url => {
     if (url.endsWith('/alerts')) return Promise.resolve({ data: [] });
     if (url.endsWith('/events')) return Promise.resolve({ data: [] });
+    if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: blastRadius } });
+    if (url.endsWith('/similar')) return Promise.resolve({ data: { success: true, data: similarCases } });
     return Promise.resolve({ data: { ...caseData, status } });
   });
 }
+
+const blastRadius = {
+  case_id: 7,
+  nodes: [
+    { id: 'case-7', type: 'case', label: 'Suspicious lateral movement', severity: 'high' },
+    { id: 'asset-3', type: 'asset', label: 'scada-historian', asset_type: 'server', zone: 'plant', is_ot: true, criticality: 'high' },
+    { id: 'ip-10.0.4.9', type: 'ip', label: '10.0.4.9', direction: 'source' },
+  ],
+  edges: [],
+  summary: { total_nodes: 3, assets_affected: 1, ips_involved: 1, techniques_used: 0 },
+};
+
+const similarCases = [
+  { case_id: 4, title: 'Prior brute force campaign', similarity: 0.73, shared_techniques: ['T1110', 'T1021'] },
+];
 
 function renderDetail() {
   return render(
@@ -81,5 +98,49 @@ describe('Case status transitions', () => {
     await waitFor(() => expect(mockPatch).toHaveBeenCalled());
     // Still showing the open-case actions; no crash, badge unchanged.
     expect(await screen.findByRole('button', { name: 'Start investigating' })).toBeTruthy();
+  });
+});
+
+describe('Blast radius and similar investigations', () => {
+  it('shows affected assets, IP counts and similar cases', async () => {
+    mockLoad();
+    renderDetail();
+    await screen.findByText('Blast Radius');
+    expect(screen.getByText('1 assets affected')).toBeTruthy();
+    expect(screen.getByText('1 IPs involved')).toBeTruthy();
+    expect(screen.getByText('scada-historian')).toBeTruthy();
+    expect(screen.getByText('10.0.4.9')).toBeTruthy();
+    await screen.findByText('Similar Investigations');
+    const link = screen.getByRole('link', { name: /Prior brute force campaign/ });
+    expect(link.getAttribute('href')).toBe('/cases/4');
+    expect(screen.getByText('73% similar')).toBeTruthy();
+    expect(screen.getByText(/T1110, T1021/)).toBeTruthy();
+  });
+
+  it('hides both panels when the case has no graph or similar cases', async () => {
+    mockGet.mockImplementation(url => {
+      if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: { ...blastRadius, nodes: blastRadius.nodes.slice(0, 1), summary: { total_nodes: 1, assets_affected: 0, ips_involved: 0, techniques_used: 0 } } } });
+      if (url.endsWith('/similar')) return Promise.resolve({ data: { success: true, data: [] } });
+      if (url.endsWith('/alerts') || url.endsWith('/events')) return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: caseData });
+    });
+    renderDetail();
+    await screen.findByText('Suspicious lateral movement');
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/7/similar'));
+    expect(screen.queryByText('Blast Radius')).toBeNull();
+    expect(screen.queryByText('Similar Investigations')).toBeNull();
+  });
+
+  it('keeps the page intact when the graph and similar requests fail', async () => {
+    mockGet.mockImplementation(url => {
+      if (url.endsWith('/blast-radius') || url.endsWith('/similar')) return Promise.reject(new Error('offline'));
+      if (url.endsWith('/alerts') || url.endsWith('/events')) return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: caseData });
+    });
+    renderDetail();
+    await screen.findByText('Suspicious lateral movement');
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/7/similar'));
+    expect(screen.queryByText('Blast Radius')).toBeNull();
+    expect(screen.getByText('Investigation Timeline')).toBeTruthy();
   });
 });

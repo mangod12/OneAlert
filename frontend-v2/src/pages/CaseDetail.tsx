@@ -1,7 +1,7 @@
 import { useCallback, useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import apiClient from '../api/client';
-import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target } from 'lucide-react';
+import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { toast } from '../components/Toast';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -60,6 +60,14 @@ interface CaseData {
   timeline: TimelineEntry[];
 }
 interface RelatedAlert { id: number; severity: string; cve_id?: string | null; title: string; }
+interface BlastRadiusNode { id: string; type: string; label: string; asset_type?: string; zone?: string | null; is_ot?: boolean; criticality?: string | null; direction?: string; }
+interface BlastRadius {
+  case_id: number;
+  nodes: BlastRadiusNode[];
+  edges: Array<{ from: string; to: string; label: string }>;
+  summary: { total_nodes: number; assets_affected: number; ips_involved: number; techniques_used: number };
+}
+interface SimilarCase { case_id: number; title: string; similarity: number; shared_techniques: string[]; }
 interface RelatedEvent { id: number; severity: string; event_type: string; source_ip?: string | null; dest_ip?: string | null; signature?: string | null; }
 
 export function CaseDetail() {
@@ -71,6 +79,8 @@ export function CaseDetail() {
   const [error, setError] = useState('');
   const [degraded, setDegraded] = useState<string[]>([]);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [blastRadius, setBlastRadius] = useState<BlastRadius | null>(null);
+  const [similarCases, setSimilarCases] = useState<SimilarCase[]>([]);
 
   const changeStatus = async (status: string) => {
     if (updatingStatus) return;
@@ -85,8 +95,9 @@ export function CaseDetail() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [caseResult, alertsResult, eventsResult] = await Promise.allSettled([
+    const [caseResult, alertsResult, eventsResult, blastResult, similarResult] = await Promise.allSettled([
       apiClient.get(`/cases/${caseId}`), apiClient.get(`/cases/${caseId}/alerts`), apiClient.get(`/cases/${caseId}/events`),
+      apiClient.get(`/cases/${caseId}/blast-radius`), apiClient.get(`/cases/${caseId}/similar`),
     ]);
     if (caseResult.status === 'rejected') {
       setError(getApiErrorMessage(caseResult.reason, 'This case could not be loaded.'));
@@ -100,6 +111,10 @@ export function CaseDetail() {
     else { setAlerts([]); partial.push('Linked alerts unavailable'); }
     if (eventsResult.status === 'fulfilled') setEvents(eventsResult.value.data);
     else { setEvents([]); partial.push('Linked events unavailable'); }
+    if (blastResult.status === 'fulfilled') setBlastRadius(blastResult.value.data?.data ?? null);
+    else setBlastRadius(null);
+    if (similarResult.status === 'fulfilled') setSimilarCases(similarResult.value.data?.data ?? []);
+    else setSimilarCases([]);
     setDegraded(partial);
     setLoading(false);
   }, [caseId]);
@@ -196,6 +211,62 @@ export function CaseDetail() {
                 {t.id}: {t.name}
                 {t.confidence && <span className="ml-2 text-primary-500 text-xs">({Math.round(t.confidence * 100)}%)</span>}
               </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Blast Radius */}
+      {blastRadius && (blastRadius.summary.assets_affected > 0 || blastRadius.summary.ips_involved > 0) && (
+        <div className="oa-panel p-6">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-surface-50 mb-3">
+            <Network className="w-5 h-5 text-primary-400" /> Blast Radius
+          </h2>
+          <div className="flex flex-wrap gap-4 mb-4 text-sm text-surface-400">
+            <span>{blastRadius.summary.assets_affected} assets affected</span>
+            <span>{blastRadius.summary.ips_involved} IPs involved</span>
+            <span>{blastRadius.summary.techniques_used} techniques used</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {blastRadius.nodes.filter(n => n.type === 'asset').map(n => (
+              <span key={n.id} className="rounded-md border border-surface-700 bg-surface-800/50 px-3 py-1.5 text-sm text-surface-200">
+                {n.label}
+                {n.zone && <span className="ml-2 text-xs text-surface-500">{n.zone}</span>}
+                {n.is_ot && <span className="ml-2 text-xs text-warning">OT</span>}
+                {n.criticality && <span className="ml-2 text-xs text-surface-500">{n.criticality}</span>}
+              </span>
+            ))}
+            {blastRadius.nodes.filter(n => n.type === 'ip').map(n => (
+              <span key={n.id} className="rounded-md border border-surface-700 bg-surface-800/50 px-3 py-1.5 font-mono text-xs text-surface-300">
+                {n.label}
+                {n.direction && <span className="ml-2 text-surface-500">{n.direction}</span>}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Similar Investigations */}
+      {similarCases.length > 0 && (
+        <div className="oa-panel p-6">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-surface-50 mb-3">
+            <GitBranch className="w-5 h-5 text-primary-400" /> Similar Investigations
+          </h2>
+          <div className="space-y-2">
+            {similarCases.map(similar => (
+              <Link
+                key={similar.case_id}
+                to={`/cases/${similar.case_id}`}
+                className="block rounded-md border border-surface-700 bg-surface-800/50 p-3 transition-colors hover:border-primary-500/40"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-surface-100">{similar.title}</span>
+                  <span className="shrink-0 text-xs text-primary-300">{Math.round(similar.similarity * 100)}% similar</span>
+                </div>
+                {similar.shared_techniques.length > 0 && (
+                  <p className="mt-1 text-xs text-surface-500">Shared techniques: {similar.shared_techniques.join(', ')}</p>
+                )}
+              </Link>
             ))}
           </div>
         </div>
