@@ -135,6 +135,7 @@ async def list_events(
     dest_ip: str | None = Query(None),
     source_type: str | None = Query(None),
     ip: str | None = Query(None, description="Substring match against source or destination IP"),
+    signature: str | None = Query(None, description="Substring match against the event signature"),
     sort: str = Query(
         "timestamp_desc",
         pattern="^(timestamp_desc|timestamp_asc|severity_desc|severity_asc)$",
@@ -171,6 +172,10 @@ async def list_events(
         )
         query = query.filter(ip_match)
         count_q = count_q.filter(ip_match)
+    if signature:
+        sig_match = SecurityEvent.signature.ilike(f"%{signature}%")
+        query = query.filter(sig_match)
+        count_q = count_q.filter(sig_match)
 
     total = (await db.execute(count_q)).scalar_one()
     severity_rank = sql_case(

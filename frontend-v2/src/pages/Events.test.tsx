@@ -213,6 +213,17 @@ describe('Sensor filter', () => {
   });
 });
 
+describe('Signature search', () => {
+  it('sends the signature substring to the API', async () => {
+    render(<Events />);
+    const input = await screen.findByLabelText('Search by signature');
+    fireEvent.change(input, { target: { value: 'brute force' } });
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith('/events/', { params: { page: 1, size: 50, signature: 'brute force', sort: 'timestamp_desc' } });
+    });
+  });
+});
+
 describe('Sort control', () => {
   it('sends the chosen sort order to the API', async () => {
     render(<Events />);
