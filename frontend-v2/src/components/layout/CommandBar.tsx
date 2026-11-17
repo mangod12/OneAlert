@@ -1,4 +1,5 @@
 import { Menu, Radio, ShieldCheck } from 'lucide-react';
+import { NotificationBell } from './NotificationBell';
 import { useLocation } from 'react-router-dom';
 import type { RefObject } from 'react';
 
@@ -37,6 +38,7 @@ export function CommandBar({ onOpenNavigation, menuButtonRef }: { onOpenNavigati
         </div>
       </div>
       <div className="flex items-center gap-2 sm:gap-3">
+        <NotificationBell />
         <div className="hidden items-center gap-2 rounded-md border border-surface-800 bg-surface-900 px-2.5 py-1.5 text-[11px] text-surface-400 sm:flex">
           <Radio className="h-3.5 w-3.5 text-success" aria-hidden="true" />
           Telemetry workspace
