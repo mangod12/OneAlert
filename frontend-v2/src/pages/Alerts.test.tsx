@@ -194,6 +194,18 @@ describe('Alerts page', () => {
       expect(mockPost).toHaveBeenCalledWith('/alerts/2/acknowledge');
     });
   });
+  it('bulk-resolves selected alerts', async () => {
+    const alerts = [makeAlert({ id: 1, cve_id: 'CVE-2026-0001' }), makeAlert({ id: 2, cve_id: 'CVE-2026-0002' })];
+    mockGet.mockResolvedValue(listResponse(alerts));
+    render(<Alerts />);
+    await screen.findByText('CVE-2026-0002');
+    fireEvent.click(screen.getByRole('checkbox', { name: /select all alerts/i }));
+    fireEvent.click(screen.getByRole('button', { name: /resolve \(2\)/i }));
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/alerts/1/resolve');
+      expect(mockPost).toHaveBeenCalledWith('/alerts/2/resolve');
+    });
+  });
 });
 
 describe('Assignee filter', () => {

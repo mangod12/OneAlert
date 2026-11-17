@@ -20,6 +20,7 @@ interface Props {
   alert: Alert;
   onClose: () => void;
   onAcknowledge: (id: number) => void;
+  onResolve: (id: number) => void;
   onAssigned: (id: number, assigneeId: number | null, assigneeEmail: string | null) => void;
 }
 
@@ -30,7 +31,7 @@ interface OrgMember {
   is_active: boolean;
 }
 
-export function AlertDetail({ alert, onClose, onAcknowledge, onAssigned }: Props) {
+export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onAssigned }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus(dialogRef, onClose);
   const [epss, setEpss] = useState<EpssScore | null>(null);
@@ -202,6 +203,14 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onAssigned }: Props
                 className="w-full py-2.5 bg-primary-500 hover:bg-primary-400 text-surface-950 rounded-lg font-medium transition-colors"
               >
                 Acknowledge Alert
+              </button>
+            )}
+            {alert.status !== 'resolved' && (
+              <button
+                onClick={() => onResolve(alert.id)}
+                className="flex items-center justify-center gap-2 w-full py-2.5 bg-surface-800 hover:bg-surface-700 text-success rounded-lg font-medium transition-colors"
+              >
+                Resolve Alert
               </button>
             )}
             <a

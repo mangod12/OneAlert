@@ -35,6 +35,7 @@ class AlertStatus(StrEnum):
     SENT = "sent"
     FAILED = "failed"
     ACKNOWLEDGED = "acknowledged"
+    RESOLVED = "resolved"
 
 
 class Alert(Base):

@@ -333,6 +333,35 @@ async def acknowledge_alert(
     return {"message": "Alert acknowledged successfully"}
 
 
+@router.post("/{alert_id}/resolve")
+async def resolve_alert(
+    alert_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Mark an alert as resolved."""
+    result = await db.execute(
+        select(Alert).where(
+            Alert.id == alert_id,
+            Alert.user_id == current_user.id
+        )
+    )
+    alert = result.scalar_one_or_none()
+
+    if not alert:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Alert not found"
+        )
+
+    alert.status = AlertStatus.RESOLVED
+
+    await db.commit()
+    await db.refresh(alert)
+
+    return {"message": "Alert resolved successfully"}
+
+
 @router.get("/{alert_id}/remediations")
 async def get_alert_remediations(
     alert_id: int,
