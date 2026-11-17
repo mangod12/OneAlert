@@ -29,6 +29,7 @@ export function Alerts() {
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [exporting, setExporting] = useState(false);
   const [epssScores, setEpssScores] = useState<Record<string, { score: number; percentile: number }>>({});
+  const [kevEntries, setKevEntries] = useState<Record<string, { date_added: string | null; due_date: string | null; known_ransomware_campaign_use: string | null }>>({});
   const [members, setMembers] = useState<Array<{ id: number; email: string; is_active: boolean }>>([]);
   const [bulkAssigning, setBulkAssigning] = useState(false);
 
@@ -89,12 +90,16 @@ export function Alerts() {
     const cveIds = Array.from(new Set(alerts.map(a => a.cve_id).filter(Boolean)));
     if (cveIds.length === 0) {
       setEpssScores({});
+      setKevEntries({});
       return;
     }
     let cancelled = false;
     apiClient.get('/alerts/epss-batch', { params: { cve_ids: cveIds.join(',') } })
       .then(res => { if (!cancelled) setEpssScores(res.data.scores ?? {}); })
       .catch(() => { if (!cancelled) setEpssScores({}); });
+    apiClient.get('/alerts/kev-batch', { params: { cve_ids: cveIds.join(',') } })
+      .then(res => { if (!cancelled) setKevEntries(res.data.entries ?? {}); })
+      .catch(() => { if (!cancelled) setKevEntries({}); });
     return () => { cancelled = true; };
   }, [alerts]);
 
@@ -383,6 +388,14 @@ export function Alerts() {
                         title={`EPSS exploit probability ${(epssScores[alert.cve_id].score * 100).toFixed(1)}%, ${(epssScores[alert.cve_id].percentile * 100).toFixed(0)}th percentile (FIRST.org)`}
                       >
                         EPSS {(epssScores[alert.cve_id].score * 100).toFixed(0)}%
+                      </span>
+                    )}
+                    {alert.cve_id && kevEntries[alert.cve_id] && (
+                      <span
+                        className="mt-0.5 block text-xs font-sans font-semibold text-danger"
+                        title={`Listed in CISA's Known Exploited Vulnerabilities catalog on ${kevEntries[alert.cve_id].date_added ?? 'unknown date'}${kevEntries[alert.cve_id].due_date ? `, remediation due ${kevEntries[alert.cve_id].due_date}` : ''}${kevEntries[alert.cve_id].known_ransomware_campaign_use === 'Known' ? '; used in ransomware campaigns' : ''}`}
+                      >
+                        KEV listed
                       </span>
                     )}
                   </td>

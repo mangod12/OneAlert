@@ -227,6 +227,33 @@ async def get_epss_batch(
     return {"scores": scores}
 
 
+@router.get("/kev-batch")
+async def get_kev_batch(
+    cve_ids: str = Query(..., description="Comma-separated CVE IDs (max 100, deduplicated)"),
+    current_user: User = Depends(get_active_user),
+):
+    """Batch CISA KEV catalog lookup for alert triage views.
+
+    KEV data is public (CISA); no alert records are exposed here.
+    """
+    from backend.services.kev_service import get_kev_entries
+
+    ids: list[str] = []
+    seen: set[str] = set()
+    for raw in cve_ids.split(","):
+        cve = raw.strip()
+        if cve and cve not in seen:
+            seen.add(cve)
+            ids.append(cve)
+    if not ids:
+        raise HTTPException(status_code=422, detail="No CVE IDs provided")
+    if len(ids) > 100:
+        raise HTTPException(status_code=422, detail="At most 100 CVE IDs per request")
+
+    entries = await get_kev_entries(ids)
+    return {"entries": entries}
+
+
 @router.get("/{alert_id}", response_model=AlertRead) # Use AlertRead as the response_model
 async def get_alert(
     alert_id: int,
