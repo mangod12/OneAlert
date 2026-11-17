@@ -17,6 +17,7 @@ import apiClient from '../api/client';
 
 const mockGet = vi.mocked(apiClient.get);
 const mockPost = vi.mocked(apiClient.post);
+const mockPatch = vi.mocked(apiClient.patch);
 
 const analyst = {
   id: 1,
@@ -125,6 +126,38 @@ describe('Team panel', () => {
   it('shows the no-organization note when the account has no org', async () => {
     render(<Settings />);
     expect(await screen.findByText(/does not belong to an organization/)).toBeTruthy();
+  });
+
+  it('renames the organization as an admin and refreshes the panel', async () => {
+    useAuthStore.setState({ user: { ...admin } as never });
+    let currentName = org.name;
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/orgs/me') return { data: { ...org, name: currentName } };
+      if (url === '/orgs/me/members') return { data: members };
+      throw new Error(`unexpected ${url}`);
+    });
+    mockPatch.mockImplementation(async (url: string, body?: unknown) => {
+      if (url === '/orgs/me') {
+        currentName = (body as { name?: string } | undefined)?.name ?? currentName;
+        return { data: { ...org, name: currentName } };
+      }
+      return { data: true };
+    });
+    render(<Settings />);
+    await screen.findByText(/Acme SOC · 2 of 5 seats used/);
+    fireEvent.click(screen.getByRole('button', { name: /rename organization/i }));
+    fireEvent.change(screen.getByLabelText('New organization name'), { target: { value: 'Renamed SOC' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/orgs/me', { name: 'Renamed SOC' }));
+    expect(await screen.findByText('Organization renamed to Renamed SOC.')).toBeTruthy();
+    expect(await screen.findByText(/Renamed SOC · 2 of 5 seats used/)).toBeTruthy();
+  });
+
+  it('hides the rename action for non-admins', async () => {
+    mockTeam();
+    render(<Settings />);
+    await screen.findByText('Analyst One');
+    expect(screen.queryByRole('button', { name: /rename organization/i })).toBeNull();
   });
 });
 
