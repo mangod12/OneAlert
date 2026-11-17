@@ -13,6 +13,7 @@ const routeMeta: Array<{ match: (path: string) => boolean; section: string; titl
   { match: path => path === '/hunt', section: 'Analyze', title: 'Hunt lab' },
   { match: path => path === '/response-plans', section: 'Act', title: 'Response plans' },
   { match: path => path === '/validation', section: 'Act', title: 'Purple-team validation' },
+  { match: path => path === '/compliance', section: 'Govern', title: 'Compliance' },
   { match: path => path === '/audit-log', section: 'Govern', title: 'Audit log' },
   { match: path => path === '/settings', section: 'Govern', title: 'Settings' },
   { match: path => path === '/', section: 'Command', title: 'Security operations' },
