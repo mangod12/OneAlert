@@ -5,12 +5,13 @@ This module defines SQLAlchemy ORM models for compliance frameworks (IEC 62443,
 NIST CSF 2.0, etc.), their controls, and user assessments against those controls.
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
-from sqlalchemy.sql import func
-from backend.database.db import Base
-from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
+
+from pydantic import BaseModel
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.sql import func
+
+from backend.database.db import Base
 
 
 class ComplianceFramework(Base):
@@ -54,7 +55,7 @@ class FrameworkResponse(BaseModel):
     id: int
     name: str
     version: str
-    description: Optional[str] = None
+    description: str | None = None
     model_config = {"from_attributes": True}
 
 
@@ -63,8 +64,8 @@ class ControlResponse(BaseModel):
     framework_id: int
     control_id: str
     title: str
-    description: Optional[str] = None
-    category: Optional[str] = None
+    description: str | None = None
+    category: str | None = None
     model_config = {"from_attributes": True}
 
 
@@ -73,8 +74,8 @@ class AssessmentResponse(BaseModel):
     user_id: int
     control_id: int
     status: str
-    evidence_type: Optional[str] = None
-    evidence_detail: Optional[str] = None
+    evidence_type: str | None = None
+    evidence_detail: str | None = None
     assessed_at: datetime
     assessed_by: str
     model_config = {"from_attributes": True}
@@ -82,8 +83,8 @@ class AssessmentResponse(BaseModel):
 
 class AssessmentUpdate(BaseModel):
     status: str
-    evidence_type: Optional[str] = None
-    evidence_detail: Optional[str] = None
+    evidence_type: str | None = None
+    evidence_detail: str | None = None
     model_config = {"from_attributes": True}
 
 

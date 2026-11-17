@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from backend.routers.auth import get_current_user
+
 from backend.dependencies.user_dependencies import require_role
 from backend.models.alert import get_alerts
+from backend.routers.auth import get_current_user
 
 router = APIRouter()
 templates = Jinja2Templates(directory="backend/templates")

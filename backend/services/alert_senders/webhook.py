@@ -1,5 +1,7 @@
 import requests
+
 from .base import AlertSenderBase
+
 
 class WebhookAlertSender(AlertSenderBase):
     def __init__(self, url: str):

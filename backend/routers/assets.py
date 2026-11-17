@@ -3,14 +3,14 @@ Assets router for managing user-tracked devices and software.
 Provides CRUD operations for assets that users want to monitor for vulnerabilities.
 """
 
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 
 from backend.database.db import get_async_db
+from backend.models.asset import Asset, AssetCreate, AssetListResponse, AssetResponse, AssetUpdate
 from backend.models.user import User
-from backend.models.asset import Asset, AssetCreate, AssetUpdate, AssetResponse, AssetListResponse
 from backend.routers.auth import get_active_user
 
 router = APIRouter()
@@ -27,11 +27,11 @@ async def create_asset(
         user_id=current_user.id,
         **asset_data.model_dump()
     )
-    
+
     db.add(db_asset)
     await db.commit()
     await db.refresh(db_asset)
-    
+
     return db_asset
 
 
@@ -39,9 +39,9 @@ async def create_asset(
 async def list_assets(
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
-    asset_type: Optional[str] = Query(None, description="Filter by asset type"),
-    vendor: Optional[str] = Query(None, description="Filter by vendor"),
-    search: Optional[str] = Query(None, description="Search in name, vendor, or product"),
+    asset_type: str | None = Query(None, description="Filter by asset type"),
+    vendor: str | None = Query(None, description="Filter by vendor"),
+    search: str | None = Query(None, description="Search in name, vendor, or product"),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -49,7 +49,7 @@ async def list_assets(
     # Build query
     query = select(Asset).where(Asset.user_id == current_user.id)
     count_query = select(func.count()).select_from(Asset).where(Asset.user_id == current_user.id)  # Base count query
-    
+
     # Apply filters
     if vendor:
         query = query.filter(Asset.vendor == vendor)
@@ -65,18 +65,18 @@ async def list_assets(
         )
         query = query.where(search_filter)
         count_query = count_query.where(search_filter)  # Apply search filter to count_query as well
-    
+
     # Get total count
     total = (await db.execute(count_query)).scalar_one()  # Ensure count_query also has user_id filter if needed and is properly formed.
-    
+
     # Apply pagination
     offset = (page - 1) * size
     query = query.offset(offset).limit(size).order_by(Asset.created_at.desc())
-    
+
     # Execute query
     result = await db.execute(query)
     assets = result.scalars().all()
-    
+
     return AssetListResponse(
         assets=assets,
         total=total,
@@ -99,13 +99,13 @@ async def get_asset(
         )
     )
     asset = result.scalar_one_or_none()
-    
+
     if not asset:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Asset not found"
         )
-    
+
     return asset
 
 
@@ -124,21 +124,21 @@ async def update_asset(
         )
     )
     asset = result.scalar_one_or_none()
-    
+
     if not asset:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Asset not found"
         )
-    
+
     # Update asset fields
     update_data = asset_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(asset, field, value)
-    
+
     await db.commit()
     await db.refresh(asset)
-    
+
     return asset
 
 
@@ -156,18 +156,18 @@ async def delete_asset(
         )
     )
     asset = result.scalar_one_or_none()
-    
+
     if not asset:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Asset not found"
         )
-    
+
     await db.delete(asset)
     await db.commit()
 
 
-@router.get("/types/", response_model=List[str])
+@router.get("/types/", response_model=list[str])
 async def get_asset_types():
     """Get available asset types."""
     from backend.models.asset import AssetType

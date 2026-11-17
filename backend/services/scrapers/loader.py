@@ -1,14 +1,16 @@
-import os
-import importlib
-import pkgutil
 import asyncio
-from typing import List, Dict, Any
-from .base import ScraperBase
+import importlib
+import os
+import pkgutil
+from typing import Any
+
 from backend.logging_config import logger
+
+from .base import ScraperBase
 
 SCRAPER_PACKAGE = __package__
 
-async def run_all_scrapers() -> List[Dict[str, Any]]:
+async def run_all_scrapers() -> list[dict[str, Any]]:
     """
     Dynamically load and run all scrapers in this package asynchronously.
     Returns a list of all found vulnerabilities.
@@ -32,4 +34,4 @@ async def run_all_scrapers() -> List[Dict[str, Any]]:
         else:
             logger.info(f"{scraper.name} found {len(result)} vulnerabilities.")
             results.extend(result)
-    return results 
+    return results

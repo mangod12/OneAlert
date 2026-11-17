@@ -8,13 +8,14 @@ along with Pydantic schemas for API request/response validation.
 - The `SBOMComponent` class tracks individual software components within an SBOM.
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
-from sqlalchemy.sql import func
-from sqlalchemy.orm import relationship
-from backend.database.db import Base
-from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
+
+from pydantic import BaseModel
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+
+from backend.database.db import Base
 
 
 class SBOM(Base):
@@ -67,7 +68,7 @@ class SBOMResponse(BaseModel):
     id: int
     asset_id: int
     format: str
-    version: Optional[str] = None
+    version: str | None = None
     source: str
     component_count: int
     vulnerability_count: int
@@ -82,11 +83,11 @@ class SBOMComponentResponse(BaseModel):
     id: int
     sbom_id: int
     name: str
-    version: Optional[str] = None
-    supplier: Optional[str] = None
-    purl: Optional[str] = None
-    cpe: Optional[str] = None
-    license: Optional[str] = None
+    version: str | None = None
+    supplier: str | None = None
+    purl: str | None = None
+    cpe: str | None = None
+    license: str | None = None
     has_known_vulnerability: int
 
     model_config = {"from_attributes": True}

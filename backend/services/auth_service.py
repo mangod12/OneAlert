@@ -3,11 +3,12 @@ Authentication service for JWT token management and password hashing.
 Handles token creation, verification, and password security.
 """
 
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
+
 import jwt
 from jwt.exceptions import PyJWTError as JWTError
 from passlib.context import CryptContext
+
 from backend.config import settings
 
 # Password hashing context
@@ -41,22 +42,22 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(validate_new_password(password))
 
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     """Create a JWT access token."""
     to_encode = data.copy()
-    
+
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
-    
+        expire = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
+
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
-    
+
     return encoded_jwt
 
 
-def verify_token(token: str) -> Optional[str]:
+def verify_token(token: str) -> str | None:
     """Verify JWT token and return the email."""
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])

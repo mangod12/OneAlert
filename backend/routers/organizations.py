@@ -5,10 +5,10 @@ Provides endpoints for creating, viewing, updating organizations and
 managing organization membership (inviting users, listing members).
 """
 
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import List
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
 from backend.models.organization import Organization, OrgCreate, OrgResponse, OrgUpdate
@@ -192,7 +192,7 @@ async def invite_user_to_org(
     }
 
 
-@router.get("/me/members", response_model=List[UserResponse])
+@router.get("/me/members", response_model=list[UserResponse])
 async def list_org_members(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),

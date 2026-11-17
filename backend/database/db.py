@@ -15,12 +15,16 @@ Key components:
 - `get_async_db()`: FastAPI dependency for asynchronous database sessions.
 """
 
+from collections.abc import AsyncGenerator  # For typing asynchronous generators
+
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import declarative_base # Standard import for declarative base
-from backend.config import settings # Application settings, including DATABASE_URL
-from typing import AsyncGenerator # For typing asynchronous generators
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import (
+    declarative_base,  # Standard import for declarative base
+    sessionmaker,
+)
+
+from backend.config import settings  # Application settings, including DATABASE_URL
 
 # `Base` is the superclass for all SQLAlchemy ORM models.
 # Models inherit from this to be mapped to database tables.
@@ -34,7 +38,7 @@ _async_engine = None  # For asynchronous operations
 def get_engine():
     """
     Returns the synchronous SQLAlchemy engine.
-    
+
     Creates the engine on its first call based on `settings.database_url`.
     Includes specific connect arguments for SQLite to allow multi-threaded access.
     """
@@ -55,7 +59,7 @@ def get_engine():
 def get_async_engine():
     """
     Returns the asynchronous SQLAlchemy engine.
-    
+
     Creates the engine on its first call based on `settings.async_database_url`.
     Raises an error if `async_database_url` is not configured.
     Includes specific connect arguments for aiosqlite.
@@ -65,14 +69,14 @@ def get_async_engine():
         if not settings.async_database_url:
             # This check ensures that the async database URL was properly derived or set.
             raise ValueError("ASYNC_DATABASE_URL is not set in settings. Ensure config.py derived it.")
-        
+
         if settings.async_database_url.startswith("sqlite+aiosqlite"):
             # For async SQLite with aiosqlite driver.
             _async_engine = create_async_engine(
                 settings.async_database_url,
                 connect_args={"check_same_thread": False} # Specific to SQLite
             )
-        else: 
+        else:
             # For other async drivers like asyncpg (PostgreSQL).
             _async_engine = create_async_engine(settings.async_database_url)
     return _async_engine
@@ -89,7 +93,7 @@ def get_async_session_local():
     """Returns an async_sessionmaker for asynchronous sessions, bound to the async engine."""
     async_engine_instance = get_async_engine() # Ensures async engine is initialized
     return async_sessionmaker(
-        bind=async_engine_instance, 
+        bind=async_engine_instance,
         class_=AsyncSession, # Specifies the session class to use
         expire_on_commit=False # Prevents SQLAlchemy from expiring instances after commit
     )
@@ -106,7 +110,7 @@ async_engine = get_async_engine()
 def get_db():
     """
     FastAPI dependency that provides a synchronous database session.
-    
+
     Ensures the session is closed after the request is handled, even if errors occur.
     It re-fetches `SessionLocal` to ensure it uses the latest engine configuration,
     though this is typically stable.
@@ -122,7 +126,7 @@ def get_db():
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
     """
     FastAPI dependency that provides an asynchronous database session.
-    
+
     Ensures the session is closed after the request is handled.
     Uses `AsyncGenerator` for proper async context management with `yield`.
     """

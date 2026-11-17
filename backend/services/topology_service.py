@@ -1,9 +1,10 @@
 """Network topology graph construction from connections and devices."""
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from backend.models.network_connection import NetworkConnection
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from backend.models.discovered_device import DiscoveredDevice
+from backend.models.network_connection import NetworkConnection
 
 
 async def build_topology_graph(user_id: int, db: AsyncSession) -> dict:
@@ -57,16 +58,14 @@ async def build_topology_graph(user_id: int, db: AsyncSession) -> dict:
                 }
 
     # Build edges
-    edges = []
-    for conn in connections:
-        edges.append({
-            "source": conn.source_ip,
-            "target": conn.target_ip,
-            "protocol": conn.protocol,
-            "is_encrypted": conn.is_encrypted,
-            "port": conn.port,
-            "bytes_transferred": conn.bytes_transferred,
-        })
+    edges = [{
+        "source": conn.source_ip,
+        "target": conn.target_ip,
+        "protocol": conn.protocol,
+        "is_encrypted": conn.is_encrypted,
+        "port": conn.port,
+        "bytes_transferred": conn.bytes_transferred,
+    } for conn in connections]
 
     return {
         "nodes": list(nodes.values()),

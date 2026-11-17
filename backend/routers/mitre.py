@@ -1,15 +1,18 @@
 """MITRE ATT&CK router — coverage, techniques, and mapping."""
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
-from backend.models.user import User
 from backend.models.case import Case
+from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.services.mitre.attack_data import (
-    TACTICS, TECHNIQUES, search_techniques, compute_coverage,
+    TACTICS,
+    TECHNIQUES,
+    compute_coverage,
+    search_techniques,
 )
 
 router = APIRouter()

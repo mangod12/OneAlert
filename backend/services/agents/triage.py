@@ -1,18 +1,18 @@
 """Triage Agent — correlates alerts + events into investigation cases."""
 
+import json
 import logging
 import time
-import json
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
 from backend.models.alert import Alert
-from backend.models.security_event import SecurityEvent
 from backend.models.case import Case, CaseAlert, CaseEvent, CaseTimeline
+from backend.models.security_event import SecurityEvent
 from backend.services.agents.base import BaseAgent
 from backend.services.ai.provider import AIMessage
-from backend.services.ai.router import get_ai_provider, TASK_TRIAGE
+from backend.services.ai.router import TASK_TRIAGE, get_ai_provider
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ class TriageAgent(BaseAgent):
         Returns: {"cases_created": N, "alerts_triaged": N, "events_triaged": N}
         """
         hours_back = kwargs.get("hours_back", 24)
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours_back)
+        cutoff = datetime.now(UTC) - timedelta(hours=hours_back)
 
         # Step 1: Gather unprocessed alerts
         start = time.time()
@@ -143,7 +143,7 @@ class TriageAgent(BaseAgent):
 
             # Try to attach to existing group
             matched = False
-            for existing_key, group in ip_map.items():
+            for group in ip_map.values():
                 if keys & group["ips"]:
                     group["events"].append(event)
                     group["ips"] |= keys
@@ -263,16 +263,18 @@ class TriageAgent(BaseAgent):
 
         if alerts:
             parts.append("=== ALERTS ===")
-            for a in alerts[:20]:
-                parts.append(f"- [{a.severity}] {a.title} | CVE: {a.cve_id or 'N/A'} | Asset ID: {a.asset_id} | CVSS: {a.cvss_score or 'N/A'}")
+            parts.extend(
+                f"- [{a.severity}] {a.title} | CVE: {a.cve_id or 'N/A'} | Asset ID: {a.asset_id} | CVSS: {a.cvss_score or 'N/A'}"
+                for a in alerts[:20]
+            )
 
         if events:
             parts.append("\n=== SECURITY EVENTS ===")
-            for e in events[:50]:
-                parts.append(
-                    f"- [{e.severity}] {e.event_type} | {e.source_ip}:{e.source_port or ''} → {e.dest_ip}:{e.dest_port or ''} | "
-                    f"sig: {e.signature or 'N/A'} | cat: {e.category or 'N/A'}"
-                )
+            parts.extend(
+                f"- [{e.severity}] {e.event_type} | {e.source_ip}:{e.source_port or ''} → {e.dest_ip}:{e.dest_port or ''} | "
+                f"sig: {e.signature or 'N/A'} | cat: {e.category or 'N/A'}"
+                for e in events[:50]
+            )
 
         return "\n".join(parts)
 

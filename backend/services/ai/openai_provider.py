@@ -1,9 +1,10 @@
 """OpenAI-compatible AI provider. Works with OpenAI, Groq, Together, vLLM, Ollama, etc."""
 
-import httpx
 import logging
 
-from backend.services.ai.provider import AIProvider, AIMessage, AIResponse
+import httpx
+
+from backend.services.ai.provider import AIMessage, AIProvider, AIResponse
 
 logger = logging.getLogger(__name__)
 

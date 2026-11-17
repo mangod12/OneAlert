@@ -9,13 +9,15 @@ schemas for organization-related API operations (create, update, list, invite).
   request/response validation and serialization.
 """
 
-from sqlalchemy import Column, Integer, String, DateTime
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import Column, DateTime, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+
 from backend.database.db import Base
-from pydantic import BaseModel, ConfigDict
-from typing import Literal, Optional
-from datetime import datetime
 
 
 class Organization(Base):
@@ -59,5 +61,5 @@ class OrgResponse(BaseModel):
 
 class OrgUpdate(BaseModel):
     """Schema for organization updates."""
-    name: Optional[str] = None
+    name: str | None = None
     model_config = ConfigDict(from_attributes=True, extra="forbid")

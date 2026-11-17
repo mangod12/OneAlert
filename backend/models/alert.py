@@ -9,17 +9,18 @@ schemas for alert-related API operations (create, read, etc).
 - The Pydantic models (`AlertBase`, `AlertCreate`, `AlertRead`) are used for request/response validation and serialization.
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Float
+from datetime import datetime
+from enum import StrEnum
+
+from pydantic import BaseModel  # Ensure compatibility with Pydantic v2
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+
 from backend.database.db import Base
-from pydantic import BaseModel  # Ensure compatibility with Pydantic v2
-from typing import Optional, List
-from datetime import datetime
-from enum import Enum
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
     """Vulnerability severity levels."""
     LOW = "low"
     MEDIUM = "medium"
@@ -27,7 +28,7 @@ class Severity(str, Enum):
     CRITICAL = "critical"
 
 
-class AlertStatus(str, Enum):
+class AlertStatus(StrEnum):
     """Alert status enumeration."""
     PENDING = "pending"
     SENT = "sent"
@@ -83,21 +84,21 @@ class Alert(Base):
 # Pydantic models for API
 class AlertBase(BaseModel):
     """Base alert schema."""
-    cve_id: Optional[str] = None
-    vendor_advisory_id: Optional[str] = None
+    cve_id: str | None = None
+    vendor_advisory_id: str | None = None
     title: str
-    description: Optional[str] = None
+    description: str | None = None
     severity: Severity
-    cvss_score: Optional[float] = None
-    source_url: Optional[str] = None
-    
+    cvss_score: float | None = None
+    source_url: str | None = None
+
     model_config = {"from_attributes": True}
 
 
 class AlertCreate(AlertBase):
     """Schema for alert creation."""
     asset_id: int
-    
+
     model_config = {"from_attributes": True}
 
 
@@ -107,19 +108,19 @@ class AlertRead(AlertBase):
     user_id: int
     asset_id: int
     status: AlertStatus
-    sent_at: Optional[datetime] = None
-    acknowledged_at: Optional[datetime] = None
+    sent_at: datetime | None = None
+    acknowledged_at: datetime | None = None
     created_at: datetime
-    updated_at: Optional[datetime] = None
-    
+    updated_at: datetime | None = None
+
     model_config = {"from_attributes": True}
 
 
 class AlertUpdate(BaseModel):
     """Schema for alert updates."""
-    status: Optional[AlertStatus] = None
-    acknowledged_at: Optional[datetime] = None
-    
+    status: AlertStatus | None = None
+    acknowledged_at: datetime | None = None
+
     model_config = {"from_attributes": True}
 
 
@@ -129,26 +130,26 @@ class AlertResponse(AlertBase):
     user_id: int
     asset_id: int
     status: AlertStatus
-    sent_at: Optional[datetime] = None
-    acknowledged_at: Optional[datetime] = None
+    sent_at: datetime | None = None
+    acknowledged_at: datetime | None = None
     created_at: datetime
-    updated_at: Optional[datetime] = None
-    
+    updated_at: datetime | None = None
+
     model_config = {"from_attributes": True}
 
 
 class AlertWithAsset(AlertResponse):
     """Alert response with asset information."""
     asset_name: str
-    asset_vendor: Optional[str] = None
-    asset_product: Optional[str] = None
-    
+    asset_vendor: str | None = None
+    asset_product: str | None = None
+
     model_config = {"from_attributes": True }
 
 
 class AlertListResponse(BaseModel):
     """Schema for alert list response."""
-    alerts: List[AlertWithAsset]
+    alerts: list[AlertWithAsset]
     total: int
     page: int
     size: int
@@ -166,7 +167,7 @@ class AlertStats(BaseModel):
     low_alerts: int
     pending_alerts: int
     acknowledged_alerts: int
-    
+
     model_config = {"from_attributes": True }
 
 

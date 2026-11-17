@@ -37,7 +37,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Lint backend
-        run: pip install ruff && ruff check backend/
+        run: pip install ruff==0.17.5 && ruff check backend/
 
       - name: Compile backend
         run: python -m compileall backend/
@@ -77,6 +77,10 @@ jobs:
       - name: Lint frontend
         working-directory: frontend-v2
         run: npx eslint .
+
+      - name: Test frontend
+        working-directory: frontend-v2
+        run: npm test
 
       - name: Type check and build
         working-directory: frontend-v2

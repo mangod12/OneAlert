@@ -8,21 +8,21 @@ Provides endpoints for:
 - Connection statistics (protocol breakdown, encryption status)
 """
 
-from typing import List
+
 from fastapi import APIRouter, Depends, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 
 from backend.database.db import get_async_db
-from backend.models.user import User
 from backend.models.network_connection import (
-    NetworkConnection,
     ConnectionCreate,
     ConnectionResponse,
+    NetworkConnection,
     TopologyGraph,
 )
-from backend.services.topology_service import build_topology_graph
+from backend.models.user import User
 from backend.routers.auth import get_active_user
+from backend.services.topology_service import build_topology_graph
 
 router = APIRouter()
 
@@ -44,9 +44,9 @@ async def create_connection(
     return db_conn
 
 
-@router.post("/connections/batch", response_model=List[ConnectionResponse], status_code=status.HTTP_201_CREATED)
+@router.post("/connections/batch", response_model=list[ConnectionResponse], status_code=status.HTTP_201_CREATED)
 async def batch_create_connections(
-    connections: List[ConnectionCreate],
+    connections: list[ConnectionCreate],
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -65,7 +65,7 @@ async def batch_create_connections(
     return db_conns
 
 
-@router.get("/connections", response_model=List[ConnectionResponse])
+@router.get("/connections", response_model=list[ConnectionResponse])
 async def list_connections(
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),

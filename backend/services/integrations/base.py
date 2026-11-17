@@ -6,7 +6,6 @@ import socket
 from abc import ABC, abstractmethod
 from urllib.parse import urlsplit
 
-
 INTEGRATION_REQUEST_ERROR = "Integration request failed"
 
 
@@ -62,9 +61,7 @@ class BaseIntegration(ABC):
     @abstractmethod
     async def send_alert(self, alert_data: dict) -> dict:
         """Send an alert to the integration."""
-        pass
 
     @abstractmethod
     async def test_connection(self) -> dict:
         """Test the integration connection."""
-        pass

@@ -1,17 +1,24 @@
 """Cases router — investigation cases created by AI triage agent."""
 
-from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 
 from backend.database.db import get_async_db
-from backend.models.user import User
 from backend.models.case import (
-    Case, CaseAlert, CaseEvent, CaseTimeline, AgentRun,
-    CaseResponse, CaseListResponse, CaseDetailResponse,
-    TimelineEntryResponse, AgentRunResponse,
+    AgentRun,
+    AgentRunResponse,
+    Case,
+    CaseAlert,
+    CaseDetailResponse,
+    CaseEvent,
+    CaseListResponse,
+    CaseResponse,
+    CaseTimeline,
+    TimelineEntryResponse,
 )
+from backend.models.user import User
 from backend.routers.auth import get_active_user
 
 router = APIRouter()
@@ -21,8 +28,8 @@ router = APIRouter()
 async def list_cases(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
-    severity: Optional[str] = Query(None),
-    status_filter: Optional[str] = Query(None, alias="status"),
+    severity: str | None = Query(None),
+    status_filter: str | None = Query(None, alias="status"),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -115,8 +122,8 @@ async def get_case(
 @router.patch("/{case_id}")
 async def update_case(
     case_id: int,
-    status_update: Optional[str] = None,
-    severity: Optional[str] = None,
+    status_update: str | None = None,
+    severity: str | None = None,
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):

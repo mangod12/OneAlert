@@ -4,7 +4,6 @@ Covers the most common ICS/OT and Enterprise tactics and techniques.
 Full matrix can be loaded from MITRE's STIX data if needed.
 """
 
-from typing import Optional
 
 # Enterprise + ICS Tactics
 TACTICS = {
@@ -98,7 +97,7 @@ KEYWORD_MAP = {
 }
 
 
-def get_tactic(tactic_id: str) -> Optional[dict]:
+def get_tactic(tactic_id: str) -> dict | None:
     """Get tactic info by ID."""
     info = TACTICS.get(tactic_id)
     if info:
@@ -106,7 +105,7 @@ def get_tactic(tactic_id: str) -> Optional[dict]:
     return None
 
 
-def get_technique(technique_id: str) -> Optional[dict]:
+def get_technique(technique_id: str) -> dict | None:
     """Get technique info by ID."""
     info = TECHNIQUES.get(technique_id)
     if info:

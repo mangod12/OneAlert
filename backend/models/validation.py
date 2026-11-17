@@ -1,13 +1,14 @@
 """Purple-team validation models — test runs, steps, and control results."""
 
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean
+from datetime import datetime
+
+from pydantic import BaseModel
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.types import JSON
+
 from backend.database.db import Base
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
 
 
 class ValidationRun(Base):
@@ -73,14 +74,14 @@ class ControlResult(Base):
 class ValidationRunResponse(BaseModel):
     id: int
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     status: str
     mode: str
-    scope: Optional[dict] = None
+    scope: dict | None = None
     mitre_techniques: list = []
-    results_summary: Optional[dict] = None
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    results_summary: dict | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
     created_at: datetime
     model_config = {"from_attributes": True}
 
@@ -94,18 +95,18 @@ class ValidationStepResponse(BaseModel):
     test_type: str
     status: str
     simulated: bool
-    actual_result: Optional[str] = None
-    duration_ms: Optional[int] = None
-    executed_at: Optional[datetime] = None
+    actual_result: str | None = None
+    duration_ms: int | None = None
+    executed_at: datetime | None = None
     model_config = {"from_attributes": True}
 
 
 class ValidationRunCreate(BaseModel):
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     mode: str = "dry_run"
-    scope: Optional[dict] = None
-    mitre_techniques: List[str] = []
+    scope: dict | None = None
+    mitre_techniques: list[str] = []
 
 
 class ControlResultResponse(BaseModel):
@@ -114,6 +115,6 @@ class ControlResultResponse(BaseModel):
     control_type: str
     expected: bool
     detected: bool
-    detection_time_ms: Optional[int] = None
-    details: Optional[str] = None
+    detection_time_ms: int | None = None
+    details: str | None = None
     model_config = {"from_attributes": True}

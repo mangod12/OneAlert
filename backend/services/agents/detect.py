@@ -2,14 +2,14 @@
 
 import logging
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 
 from backend.models.security_event import SecurityEvent
 from backend.services.agents.base import BaseAgent
 from backend.services.ai.provider import AIMessage
-from backend.services.ai.router import get_ai_provider, TASK_DETECT
+from backend.services.ai.router import TASK_DETECT, get_ai_provider
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class DetectAgent(BaseAgent):
 
     async def run(self, **kwargs) -> dict:
         hours_back = kwargs.get("hours_back", 24)
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours_back)
+        cutoff = datetime.now(UTC) - timedelta(hours=hours_back)
 
         # Step 1: Aggregate event statistics
         start = time.time()

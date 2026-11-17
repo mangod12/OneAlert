@@ -1,16 +1,20 @@
 """Validation router — purple-team validation runs, steps, and control results."""
 
-from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import Integer, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, Integer
 
 from backend.database.db import get_async_db
 from backend.models.user import User
 from backend.models.validation import (
-    ValidationRun, ValidationStep, ControlResult,
-    ValidationRunResponse, ValidationStepResponse, ControlResultResponse,
+    ControlResult,
+    ControlResultResponse,
+    ValidationRun,
     ValidationRunCreate,
+    ValidationRunResponse,
+    ValidationStep,
+    ValidationStepResponse,
 )
 from backend.routers.auth import get_active_user
 
@@ -21,7 +25,7 @@ router = APIRouter()
 async def list_validation_runs(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
-    status_filter: Optional[str] = Query(None, alias="status"),
+    status_filter: str | None = Query(None, alias="status"),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):

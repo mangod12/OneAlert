@@ -1,13 +1,13 @@
 """Purple-Team Agent — runs simulated ATT&CK technique validations against detection controls."""
 
 import logging
-import time
 import random
-from datetime import datetime, timezone
+import time
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
-from backend.models.validation import ValidationRun, ValidationStep, ControlResult
+from backend.models.validation import ControlResult, ValidationRun, ValidationStep
 from backend.services.agents.base import BaseAgent
 
 logger = logging.getLogger(__name__)
@@ -108,7 +108,7 @@ class PurpleAgent(BaseAgent):
             return {"error": "Production mode requires human approval before execution"}
 
         vrun.status = "running"
-        vrun.started_at = datetime.now(timezone.utc)
+        vrun.started_at = datetime.now(UTC)
         await self.db.flush()
 
         await self.log_step("start_validation", f"Run {run_id}: {len(techniques)} techniques, mode={mode}")
@@ -145,7 +145,7 @@ class PurpleAgent(BaseAgent):
                 step.status = "completed"
                 step.actual_result = result
                 step.duration_ms = int((time.time() - start) * 1000) + random.randint(50, 500)
-                step.executed_at = datetime.now(timezone.utc)
+                step.executed_at = datetime.now(UTC)
 
                 self.db.add(step)
                 await self.db.flush()
@@ -173,7 +173,7 @@ class PurpleAgent(BaseAgent):
 
         # Finalize run
         vrun.status = "completed"
-        vrun.completed_at = datetime.now(timezone.utc)
+        vrun.completed_at = datetime.now(UTC)
         vrun.results_summary = {
             "tested": tested,
             "detected": detected,

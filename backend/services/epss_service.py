@@ -3,14 +3,13 @@
 Fetches exploit probability scores from FIRST.org API.
 """
 
-import httpx
-from typing import Optional
 
+import httpx
 
 EPSS_API_URL = "https://api.first.org/data/v1/epss"
 
 
-async def get_epss_score(cve_id: str) -> Optional[dict]:
+async def get_epss_score(cve_id: str) -> dict | None:
     """Fetch EPSS score for a CVE.
 
     Returns:

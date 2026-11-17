@@ -1,10 +1,11 @@
 """Integration configuration model for SIEM/SOAR integrations."""
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON, Boolean
-from sqlalchemy.sql import func
-from backend.database.db import Base
-from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
+
+from pydantic import BaseModel
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy.sql import func
+
+from backend.database.db import Base
 
 
 class IntegrationConfig(Base):
@@ -40,7 +41,7 @@ class IntegrationConfigResponse(BaseModel):
 
 
 class IntegrationConfigUpdate(BaseModel):
-    name: Optional[str] = None
-    config: Optional[dict] = None
-    is_active: Optional[bool] = None
+    name: str | None = None
+    config: dict | None = None
+    is_active: bool | None = None
     model_config = {"from_attributes": True}

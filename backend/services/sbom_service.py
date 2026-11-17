@@ -4,10 +4,9 @@ Supports CycloneDX JSON and SPDX JSON formats, extracting component metadata
 such as name, version, supplier, purl, cpe, license, and SHA-256 hashes.
 """
 
-from typing import List
 
 
-def parse_cyclonedx(data: dict) -> List[dict]:
+def parse_cyclonedx(data: dict) -> list[dict]:
     """Parse CycloneDX JSON SBOM format into component list.
 
     Expected format: {"bomFormat": "CycloneDX", "components": [...]}
@@ -65,7 +64,7 @@ def parse_cyclonedx(data: dict) -> List[dict]:
     return components
 
 
-def parse_spdx(data: dict) -> List[dict]:
+def parse_spdx(data: dict) -> list[dict]:
     """Parse SPDX JSON SBOM format into component list.
 
     Expected format: {"spdxVersion": "SPDX-2.3", "packages": [...]}

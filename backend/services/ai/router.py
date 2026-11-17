@@ -3,9 +3,9 @@
 import logging
 import os
 
-from backend.services.ai.provider import AIProvider
 from backend.services.ai.anthropic_provider import AnthropicProvider
 from backend.services.ai.openai_provider import OpenAICompatibleProvider
+from backend.services.ai.provider import AIProvider
 
 logger = logging.getLogger(__name__)
 

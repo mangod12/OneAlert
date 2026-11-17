@@ -1,7 +1,7 @@
 """Action executor — executes approved response plan actions with structured logging."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -69,7 +69,7 @@ async def execute_response_plan(db: AsyncSession, plan: ResponsePlan) -> dict:
             result = {"action": action_type, "target": target, "status": "error", "detail": "Action failed"}
             logger.error("Action %s on %s failed: %s", action_type, target, type(e).__name__)
 
-        result["executed_at"] = datetime.now(timezone.utc).isoformat()
+        result["executed_at"] = datetime.now(UTC).isoformat()
         results.append(result)
 
     # Update plan status

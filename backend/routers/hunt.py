@@ -1,14 +1,15 @@
 """Hunt router — threat hunting sessions and detection rules."""
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from pydantic import BaseModel
-from datetime import datetime, timezone
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
+from backend.models.detection_rule import DetectionRule, DetectionRuleResponse, HuntSession, HuntSessionResponse
 from backend.models.user import User
-from backend.models.detection_rule import DetectionRule, HuntSession, DetectionRuleResponse, HuntSessionResponse
 from backend.routers.auth import get_active_user
 
 router = APIRouter()
@@ -50,7 +51,7 @@ async def start_hunt(
 
     # Update session
     session.status = "completed"
-    session.completed_at = datetime.now(timezone.utc)
+    session.completed_at = datetime.now(UTC)
     session.queries_run = len(result.get("query_results", []))
     session.findings_count = sum(r.get("row_count", 0) for r in result.get("query_results", []))
     session.result_data = result.get("query_results")

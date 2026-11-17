@@ -1,20 +1,22 @@
 """Security events router — ingest, upload, list, and manage event sources."""
 
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-
-from backend.database.db import get_async_db
-from backend.models.user import User
-from backend.models.security_event import (
-    SecurityEvent, EventSource,
-    EventBatchIngest, EventListResponse, EventSourceResponse,
-)
-from backend.routers.auth import get_active_user
-
 import json
 import logging
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.database.db import get_async_db
+from backend.models.security_event import (
+    EventBatchIngest,
+    EventListResponse,
+    EventSource,
+    EventSourceResponse,
+    SecurityEvent,
+)
+from backend.models.user import User
+from backend.routers.auth import get_active_user
 
 logger = logging.getLogger(__name__)
 
@@ -126,11 +128,11 @@ async def upload_events_file(
 async def list_events(
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=500),
-    severity: Optional[str] = Query(None),
-    event_type: Optional[str] = Query(None),
-    source_ip: Optional[str] = Query(None),
-    dest_ip: Optional[str] = Query(None),
-    source_type: Optional[str] = Query(None),
+    severity: str | None = Query(None),
+    event_type: str | None = Query(None),
+    source_ip: str | None = Query(None),
+    dest_ip: str | None = Query(None),
+    source_type: str | None = Query(None),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -204,8 +206,7 @@ async def event_stats(
         .where(SecurityEvent.user_id == current_user.id)
         .group_by(SecurityEvent.event_type)
     )
-    for event_type, count in type_result.all():
-        by_type[event_type] = count
+    by_type = {event_type: count for event_type, count in type_result.all()}
 
     source_count = (await db.execute(
         select(func.count(EventSource.id)).where(EventSource.user_id == current_user.id)

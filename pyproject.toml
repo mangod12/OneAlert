@@ -1,0 +1,16 @@
+[tool.ruff]
+# Billing and demo entry point are outside this maintenance scope.
+extend-exclude = ["backend/routers/billing.py", "backend/services/billing_service.py", "backend/models/subscription.py", "backend/demo.py"]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+# Intentional rule set for CI. Notable exclusions:
+# - E501: long lines (URLs, log strings) are handled in a dedicated pass.
+# - B/BLE: FastAPI Depends() defaults trip B008; blind-except needs case-by-case review.
+select = ["E", "F", "W", "I", "UP", "SIM", "PIE", "RUF", "PERF", "DTZ"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Pydantic v2 deep-copies mutable field defaults per instance; RUF012 is a false positive there.
+"backend/models/**" = ["RUF012"]

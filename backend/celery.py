@@ -1,6 +1,7 @@
 # Celery configuration for async task queue
-from celery import Celery
 import os
+
+from celery import Celery
 
 celery_app = Celery(
     "cybersec_alerts",

@@ -1,16 +1,16 @@
 """Hunt Agent — natural-language threat hunting with query generation."""
 
-import logging
-import time
 import json
+import logging
 import re
+import time
 
 from sqlalchemy import or_, select
 
+from backend.models.security_event import SecurityEvent
 from backend.services.agents.base import BaseAgent
 from backend.services.ai.provider import AIMessage
-from backend.services.ai.router import get_ai_provider, TASK_HUNT
-from backend.models.security_event import SecurityEvent
+from backend.services.ai.router import TASK_HUNT, get_ai_provider
 
 logger = logging.getLogger(__name__)
 
@@ -152,10 +152,7 @@ class HuntAgent(BaseAgent):
         query = self._build_safe_query(sql, params or {})
         result = await self.db.execute(query)
         columns = result.keys()
-        rows = []
-        for row in result.fetchall():
-            rows.append(dict(zip(columns, row)))
-        return rows
+        return [dict(zip(columns, row)) for row in result.fetchall()]
 
     def _build_safe_query(self, sql: str, params: dict) -> object:
         """Build a constrained SQLAlchemy query from validated hunt SQL."""
@@ -252,9 +249,8 @@ class HuntAgent(BaseAgent):
             return False
         if not re.search(r"\bFROM\s+security_events\b", normalized, re.IGNORECASE):
             return False
-        if not re.search(r"\buser_id\s*=\s*:user_id\b", normalized, re.IGNORECASE):
-            return False
-        return True
+        # bool() is required: callers and tests rely on a strict True/False return.
+        return bool(re.search(r"\buser_id\s*=\s*:user_id\b", normalized, re.IGNORECASE))
 
     def _fallback_queries(self, hypothesis: str) -> dict:
         """Generate basic queries when LLM is unavailable."""
