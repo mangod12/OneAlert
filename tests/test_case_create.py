@@ -139,3 +139,47 @@ class TestManualCaseCreation:
     def test_create_case_requires_auth(self, client):
         resp = client.post("/api/v1/cases/", json={"title": "Nope"})
         assert resp.status_code == 401
+
+
+class TestCaseNotes:
+    """Tests for POST /api/v1/cases/{case_id}/notes"""
+
+    def _make_case(self, client, headers, title="Case for notes") -> int:
+        resp = client.post("/api/v1/cases/", json={"title": title}, headers=headers)
+        assert resp.status_code == 201, resp.text
+        return resp.json()["id"]
+
+    def test_add_note(self, client):
+        """A note lands on the case timeline attributed to a human."""
+        headers = register_and_login(client, "analyst@example.com")
+        case_id = self._make_case(client, headers)
+
+        resp = client.post(f"/api/v1/cases/{case_id}/notes", json={
+            "content": "  Called the on-call admin; host reimaged.  ",
+        }, headers=headers)
+        assert resp.status_code == 201, resp.text
+        data = resp.json()
+        assert data["entry_type"] == "note"
+        assert data["source"] == "human"
+        assert data["content"] == "Called the on-call admin; host reimaged."
+        assert data["timestamp"]
+
+        detail = client.get(f"/api/v1/cases/{case_id}", headers=headers)
+        notes = [e for e in detail.json()["timeline"] if e["entry_type"] == "note"]
+        assert any("host reimaged" in e["content"] for e in notes)
+
+    def test_note_on_missing_or_foreign_case_is_404(self, client):
+        owner = register_and_login(client, "owner@example.com")
+        outsider = register_and_login(client, "outsider@example.com")
+        case_id = self._make_case(client, owner)
+
+        foreign = client.post(f"/api/v1/cases/{case_id}/notes", json={"content": "hi"}, headers=outsider)
+        missing = client.post("/api/v1/cases/99999/notes", json={"content": "hi"}, headers=owner)
+        assert foreign.status_code == 404
+        assert missing.status_code == 404
+
+    def test_blank_note_rejected(self, client):
+        headers = register_and_login(client, "analyst@example.com")
+        case_id = self._make_case(client, headers)
+        resp = client.post(f"/api/v1/cases/{case_id}/notes", json={"content": "   "}, headers=headers)
+        assert resp.status_code == 422, resp.text

@@ -170,6 +170,12 @@ class CaseListResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CaseNoteCreate(BaseModel):
+    """Schema for adding an investigator note to a case timeline."""
+    content: str = Field(min_length=1, max_length=2000)
+    model_config = {"extra": "forbid"}
+
+
 class TimelineEntryResponse(BaseModel):
     id: int
     timestamp: datetime

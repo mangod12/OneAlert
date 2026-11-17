@@ -15,6 +15,7 @@ from backend.models.case import (
     CaseDetailResponse,
     CaseEvent,
     CaseListResponse,
+    CaseNoteCreate,
     CaseResponse,
     CaseTimeline,
     TimelineEntryResponse,
@@ -156,6 +157,35 @@ async def get_case(
     resp.event_count = event_count
     resp.timeline = [TimelineEntryResponse.model_validate(t) for t in timeline]
     return resp
+
+
+@router.post("/{case_id}/notes", response_model=TimelineEntryResponse, status_code=status.HTTP_201_CREATED)
+async def add_case_note(
+    case_id: int,
+    note: CaseNoteCreate,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Add an investigator note to the case timeline."""
+    case = (await db.execute(
+        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    content = note.content.strip()
+    if not content:
+        raise HTTPException(status_code=422, detail="Note must not be blank")
+    entry = CaseTimeline(
+        case_id=case.id,
+        entry_type="note",
+        content=content,
+        source="human",
+    )
+    db.add(entry)
+    await db.commit()
+    await db.refresh(entry)
+    return entry
 
 
 @router.patch("/{case_id}")

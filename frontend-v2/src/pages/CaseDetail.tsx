@@ -81,6 +81,8 @@ export function CaseDetail() {
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [blastRadius, setBlastRadius] = useState<BlastRadius | null>(null);
   const [similarCases, setSimilarCases] = useState<SimilarCase[]>([]);
+  const [noteText, setNoteText] = useState('');
+  const [addingNote, setAddingNote] = useState(false);
 
   const changeStatus = async (status: string) => {
     if (updatingStatus) return;
@@ -91,6 +93,19 @@ export function CaseDetail() {
       await fetchAll();
     } catch (err) { toast(getApiErrorMessage(err, 'Case status could not be updated.'), 'error'); }
     finally { setUpdatingStatus(false); }
+  };
+
+  const addNote = async () => {
+    const content = noteText.trim();
+    if (!content || addingNote) return;
+    setAddingNote(true);
+    try {
+      await apiClient.post(`/cases/${caseId}/notes`, { content });
+      setNoteText('');
+      toast('Note added to the timeline.', 'success');
+      await fetchAll();
+    } catch (err) { toast(getApiErrorMessage(err, 'The note could not be added.'), 'error'); }
+    finally { setAddingNote(false); }
   };
 
   const fetchAll = useCallback(async () => {
@@ -278,6 +293,20 @@ export function CaseDetail() {
         <div className="lg:col-span-2">
           <div className="oa-panel p-6">
             <h2 className="text-lg font-semibold text-surface-50 mb-4">Investigation Timeline</h2>
+            <form className="mb-4 flex items-start gap-2" onSubmit={e => { e.preventDefault(); void addNote(); }}>
+              <label htmlFor="case-note" className="sr-only">Add a timeline note</label>
+              <textarea
+                id="case-note"
+                rows={2}
+                value={noteText}
+                onChange={e => setNoteText(e.target.value)}
+                placeholder="Add an investigation note…"
+                className="min-w-0 flex-1 rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500"
+              />
+              <button type="submit" disabled={addingNote || !noteText.trim()} className="min-h-9 rounded-md bg-primary-500 px-3 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">
+                {addingNote ? 'Adding…' : 'Add note'}
+              </button>
+            </form>
             {caseData.timeline.length === 0 ? (
               <p className="text-surface-500">No timeline entries yet.</p>
             ) : (

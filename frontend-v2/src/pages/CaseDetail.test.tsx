@@ -7,6 +7,7 @@ vi.mock('../api/client', () => ({
   default: {
     get: vi.fn(),
     patch: vi.fn(),
+    post: vi.fn(),
   },
 }));
 
@@ -14,6 +15,7 @@ import apiClient from '../api/client';
 
 const mockGet = vi.mocked(apiClient.get);
 const mockPatch = vi.mocked(apiClient.patch);
+const mockPost = vi.mocked(apiClient.post);
 
 const caseData = {
   id: 7,
@@ -142,5 +144,29 @@ describe('Blast radius and similar investigations', () => {
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/7/similar'));
     expect(screen.queryByText('Blast Radius')).toBeNull();
     expect(screen.getByText('Investigation Timeline')).toBeTruthy();
+  });
+});
+
+describe('Timeline notes', () => {
+  it('posts a note and refreshes the timeline', async () => {
+    mockLoad();
+    mockPost.mockResolvedValue({ data: { id: 99, entry_type: 'note', content: 'Host reimaged.', source: 'human', timestamp: '2026-11-17T09:00:00Z' } });
+    renderDetail();
+    await screen.findByText('Investigation Timeline');
+    fireEvent.change(screen.getByLabelText('Add a timeline note'), { target: { value: 'Host reimaged.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/notes', { content: 'Host reimaged.' }));
+    await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2));
+    expect((screen.getByLabelText('Add a timeline note') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('keeps Add note disabled until text is entered', async () => {
+    mockLoad();
+    renderDetail();
+    await screen.findByText('Investigation Timeline');
+    const button = screen.getByRole('button', { name: 'Add note' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Add a timeline note'), { target: { value: 'Checking pcap' } });
+    expect(button.disabled).toBe(false);
   });
 });
