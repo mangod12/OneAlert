@@ -153,3 +153,31 @@ class TestCaseAssignment:
 
         resp = client.post("/api/v1/cases/424242/assign", json={"user_id": owner_id}, headers=owner)
         assert resp.status_code == 404, resp.text
+
+
+class TestCaseAssignmentFilter:
+    def _setup(self, client):
+        owner = _register_and_login(client, "owner@example.com")
+        member = _register_and_login(client, "member@example.com")
+        owner_id = _user_id(client, owner)
+        member_id = _user_id(client, member)
+        _share_org(owner_id, member_id)
+        assigned_case = _create_case(client, owner)
+        resp = client.post(f"/api/v1/cases/{assigned_case}/assign", json={"user_id": owner_id}, headers=owner)
+        assert resp.status_code == 200, resp.text
+        _create_case(client, owner)  # unassigned
+        return owner
+
+    def test_filter_me_returns_only_my_cases(self, client):
+        owner = self._setup(client)
+        resp = client.get("/api/v1/cases/", params={"assigned": "me"}, headers=owner)
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 1
+        assert resp.json()["cases"][0]["assigned_to_email"] == "owner@example.com"
+
+    def test_filter_unassigned_excludes_assigned(self, client):
+        owner = self._setup(client)
+        resp = client.get("/api/v1/cases/", params={"assigned": "unassigned"}, headers=owner)
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 1
+        assert resp.json()["cases"][0]["assigned_to_id"] is None
