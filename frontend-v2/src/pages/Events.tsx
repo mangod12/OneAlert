@@ -1,10 +1,12 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useRef, useState, useEffect } from 'react';
 import apiClient from '../api/client';
-import { Activity } from 'lucide-react';
+import { Activity, Upload } from 'lucide-react';
 import clsx from 'clsx';
 import { getApiErrorMessage } from '../api/errors';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
+import { toast } from '../components/Toast';
+import { useDialogFocus } from '../components/ui/useDialogFocus';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { eventSeverityTones } from '../components/ui/tones';
 
@@ -46,6 +48,8 @@ export function Events() {
   const [total, setTotal] = useState(0);
   const [severityFilter, setSeverityFilter] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
+  const [showUpload, setShowUpload] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
@@ -72,9 +76,45 @@ export function Events() {
 
   useEffect(() => { void fetchEvents(); }, [fetchEvents]);
 
+  const handleUpload = async (file: File, sourceType: string) => {
+    if (uploading) return;
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await apiClient.post('/events/upload', form, {
+        params: { source_type: sourceType },
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const result = res.data?.data ?? {};
+      const ingested = result.ingested ?? 0;
+      const skipped = result.skipped ?? 0;
+      toast(`Ingested ${ingested} event${ingested === 1 ? '' : 's'} from ${file.name}${skipped ? ` (${skipped} skipped)` : ''}.`, 'success');
+      setShowUpload(false);
+      await fetchEvents();
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'The file could not be ingested. Use Suricata EVE JSON or Zeek JSON logs.'), 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Observe" title="Security Events" description={`${total} events${stats ? ` from ${stats.source_count} telemetry sources` : ''}.`} />
+      <PageHeader
+        eyebrow="Observe"
+        title="Security Events"
+        description={`${total} events${stats ? ` from ${stats.source_count} telemetry sources` : ''}.`}
+        actions={(
+          <button
+            type="button"
+            onClick={() => setShowUpload(true)}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-md bg-primary-500 px-3.5 text-sm font-semibold text-surface-950 hover:bg-primary-400"
+          >
+            <Upload className="h-4 w-4" /> Upload events
+          </button>
+        )}
+      />
 
       {errors.length > 0 && (events.length > 0 || stats) && <DegradedBanner messages={errors} onRetry={() => void fetchEvents()} />}
 
@@ -159,6 +199,87 @@ export function Events() {
           </div>
         </div>
       )}
+      {showUpload && (
+        <EventUploadDialog
+          uploading={uploading}
+          onClose={() => { if (!uploading) setShowUpload(false); }}
+          onUpload={(file, sourceType) => void handleUpload(file, sourceType)}
+        />
+      )}
+    </div>
+  );
+}
+
+function EventUploadDialog({ uploading, onClose, onUpload }: {
+  uploading: boolean;
+  onClose: () => void;
+  onUpload: (file: File, sourceType: string) => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [sourceType, setSourceType] = useState('suricata');
+  const [formError, setFormError] = useState('');
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef, () => { if (!uploading) onClose(); });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file) {
+      setFormError('Choose a file to upload.');
+      return;
+    }
+    setFormError('');
+    onUpload(file, sourceType);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-surface-950/75 backdrop-blur-sm" onClick={() => { if (!uploading) onClose(); }}></div>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="event-upload-title" className="relative w-full max-w-lg rounded-lg border border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]">
+        <h2 id="event-upload-title" className="mb-1 text-lg font-semibold text-surface-50">Upload events</h2>
+        <p className="mb-4 text-xs text-surface-500">Newline-delimited JSON or a JSON array. Up to 50,000 events per file.</p>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label htmlFor="event-upload-file" className="mb-1 block text-sm font-medium text-surface-300">Log file</label>
+            <input
+              id="event-upload-file"
+              type="file"
+              accept=".json,.log,.eve,.ndjson,application/json"
+              onChange={e => setFile(e.target.files?.[0] ?? null)}
+              className="w-full text-sm text-surface-300 file:mr-3 file:rounded-md file:border file:border-surface-600 file:bg-surface-800 file:px-3 file:py-1.5 file:text-xs file:text-surface-200"
+            />
+          </div>
+          <div>
+            <label htmlFor="event-upload-type" className="mb-1 block text-sm font-medium text-surface-300">Source type</label>
+            <select
+              id="event-upload-type"
+              value={sourceType}
+              onChange={e => setSourceType(e.target.value)}
+              className="w-full rounded-lg border border-surface-600 bg-surface-800 px-3 py-2 text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="suricata">Suricata (EVE JSON)</option>
+              <option value="zeek">Zeek (JSON logs)</option>
+            </select>
+          </div>
+          {formError && <p role="alert" className="text-xs text-danger">{formError}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={uploading}
+              className="rounded px-3 py-1.5 text-xs font-medium text-surface-300 transition-colors hover:bg-surface-800 disabled:opacity-40"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={uploading}
+              className="rounded-md bg-primary-500 px-3.5 py-1.5 text-xs font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-40"
+            >
+              {uploading ? 'Uploading...' : 'Upload'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
