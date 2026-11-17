@@ -29,6 +29,8 @@ export function Alerts() {
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [exporting, setExporting] = useState(false);
   const [epssScores, setEpssScores] = useState<Record<string, { score: number; percentile: number }>>({});
+  const [members, setMembers] = useState<Array<{ id: number; email: string; is_active: boolean }>>([]);
+  const [bulkAssigning, setBulkAssigning] = useState(false);
 
   const exportCsv = async () => {
     if (exporting) return;
@@ -102,6 +104,12 @@ export function Alerts() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    apiClient.get<Array<{ id: number; email: string; is_active: boolean }>>('/orgs/me/members')
+      .then(res => setMembers((res.data ?? []).filter(m => m.is_active)))
+      .catch(() => setMembers([]));
+  }, []);
+
   const handleAcknowledge = async (alertId: number) => {
     if (pendingIds.has(alertId)) return;
     setPendingIds(current => new Set(current).add(alertId));
@@ -135,6 +143,25 @@ export function Alerts() {
     else toast(`${ids.length} alerts acknowledged.`, 'success');
   };
 
+  const handleBulkAssign = async (value: string) => {
+    if (value === '' || bulkAssigning) return;
+    const assigneeId = value === 'none' ? null : Number(value);
+    const member = members.find(m => m.id === assigneeId) ?? null;
+    const ids = Array.from(selectedIds).filter(id => !pendingIds.has(id));
+    if (ids.length === 0) return;
+    setBulkAssigning(true);
+    setPendingIds(current => new Set([...current, ...ids]));
+    const results = await Promise.allSettled(ids.map(id => apiClient.patch(`/alerts/${id}`, { assigned_to_id: assigneeId })));
+    const failedIds = ids.filter((_, index) => results[index].status === 'rejected');
+    setSelectedIds(new Set(failedIds));
+    setPendingIds(current => { const next = new Set(current); ids.forEach(id => next.delete(id)); return next; });
+    await fetchAlerts();
+    setBulkAssigning(false);
+    const target = member ? member.email : 'Unassigned';
+    if (failedIds.length > 0) toast(`${failedIds.length} alerts could not be assigned and remain selected.`, 'error');
+    else toast(assigneeId === null ? `${ids.length} alerts unassigned.` : `${ids.length} alerts assigned to ${target}.`, 'success');
+  };
+
   const toggleSelect = (id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -148,14 +175,31 @@ export function Alerts() {
     <div className="space-y-6">
       <PageHeader eyebrow="Observe" title="Alerts" description={`${total} vulnerability and threat alerts across the monitored estate.`} actions={
         selectedIds.size > 0 ? (
-          <button
-            onClick={handleBulkAcknowledge}
-            disabled={Array.from(selectedIds).some(id => pendingIds.has(id))}
-            className="flex min-h-9 items-center gap-2 rounded-md bg-primary-500 px-3.5 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50"
-          >
-            <CheckCircle className="w-4 h-4" />
-            Acknowledge ({selectedIds.size})
-          </button>
+          <div className="flex items-center gap-2">
+            {members.length > 0 && (
+              <select
+                aria-label="Assign selected alerts"
+                value=""
+                disabled={bulkAssigning}
+                onChange={(e) => { void handleBulkAssign(e.target.value); }}
+                className="min-h-9 rounded-md border border-surface-600 bg-surface-800 px-2.5 text-sm text-surface-200 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+              >
+                <option value="" disabled>Assign {selectedIds.size} selected...</option>
+                {members.map(m => (
+                  <option key={m.id} value={m.id}>{m.email}</option>
+                ))}
+                <option value="none">Unassign</option>
+              </select>
+            )}
+            <button
+              onClick={handleBulkAcknowledge}
+              disabled={Array.from(selectedIds).some(id => pendingIds.has(id))}
+              className="flex min-h-9 items-center gap-2 rounded-md bg-primary-500 px-3.5 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50"
+            >
+              <CheckCircle className="w-4 h-4" />
+              Acknowledge ({selectedIds.size})
+            </button>
+          </div>
         ) : undefined
       } />
 
