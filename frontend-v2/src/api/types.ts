@@ -29,6 +29,8 @@ export interface Alert {
   asset_vendor: string;
   asset_product: string;
   remediation: string | null;
+  assigned_to_id: number | null;
+  assigned_to_email: string | null;
   created_at: string;
   acknowledged_at: string | null;
 }

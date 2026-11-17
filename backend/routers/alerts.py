@@ -9,7 +9,7 @@ from datetime import UTC
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from backend.database.db import get_async_db
 from backend.models.alert import (  # Import AlertRead
@@ -56,6 +56,8 @@ async def list_alerts(
         Asset.product.label("asset_product")
     ).join(
         Asset, Alert.asset_id == Asset.id
+    ).options(
+        joinedload(Alert.assignee)
     ).where(Alert.user_id == current_user.id)
 
     # Build base for count query. Filters will be added to this.
@@ -105,6 +107,7 @@ async def list_alerts(
         alert_dict["asset_name"] = row_data.asset_name
         alert_dict["asset_vendor"] = row_data.asset_vendor
         alert_dict["asset_product"] = row_data.asset_product
+        alert_dict["assigned_to_email"] = alert_instance.assignee.email if alert_instance.assignee else None
         alerts_with_assets.append(alert_dict)
 
     return AlertListResponse(
@@ -161,6 +164,26 @@ async def update_alert(
 
     # Update alert fields
     update_data = alert_update.model_dump(exclude_unset=True)
+
+    # Assignment changes validate the assignee is an active member of the same org
+    if "assigned_to_id" in update_data:
+        assignee_id = update_data["assigned_to_id"]
+        if assignee_id is not None:
+            assignee = (await db.execute(
+                select(User).where(User.id == assignee_id, User.is_active == True)  # noqa: E712
+            )).scalar_one_or_none()
+            wrong_org = (
+                current_user.org_id is not None
+                and assignee is not None
+                and assignee.org_id != current_user.org_id
+            )
+            no_org = current_user.org_id is None and assignee_id != current_user.id
+            if assignee is None or wrong_org or no_org:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Assignee must be an active member of your organization"
+                )
+
     for field, value in update_data.items():
         setattr(alert, field, value)
 

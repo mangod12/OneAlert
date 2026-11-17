@@ -30,7 +30,7 @@ function makeAlert(overrides: Partial<Alert> = {}): Alert {
     asset_product: 'RouterOS',
     remediation: null,
     created_at: '2026-11-10T08:00:00Z',
-    acknowledged_at: null,
+    acknowledged_at: null, assigned_to_id: null, assigned_to_email: null,
     ...overrides,
   };
 }

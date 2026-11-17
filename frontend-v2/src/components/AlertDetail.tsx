@@ -20,14 +20,47 @@ interface Props {
   alert: Alert;
   onClose: () => void;
   onAcknowledge: (id: number) => void;
+  onAssigned: (id: number, assigneeId: number | null, assigneeEmail: string | null) => void;
 }
 
-export function AlertDetail({ alert, onClose, onAcknowledge }: Props) {
+interface OrgMember {
+  id: number;
+  email: string;
+  full_name: string | null;
+  is_active: boolean;
+}
+
+export function AlertDetail({ alert, onClose, onAcknowledge, onAssigned }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus(dialogRef, onClose);
   const [epss, setEpss] = useState<EpssScore | null>(null);
   const [remediations, setRemediations] = useState<RemediationAction[] | null>(null);
   const [showEscalate, setShowEscalate] = useState(false);
+  const [members, setMembers] = useState<OrgMember[]>([]);
+  const [assigning, setAssigning] = useState(false);
+  const [assignError, setAssignError] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiClient.get<OrgMember[]>('/orgs/me/members')
+      .then(res => setMembers(res.data.filter(m => m.is_active)))
+      .catch(() => setMembers([]));
+  }, []);
+
+  const handleAssign = async (value: string) => {
+    if (assigning) return;
+    setAssigning(true);
+    setAssignError(null);
+    const assigneeId = value === '' ? null : Number(value);
+    try {
+      await apiClient.patch(`/alerts/${alert.id}`, { assigned_to_id: assigneeId });
+      const member = members.find(m => m.id === assigneeId) ?? null;
+      onAssigned(alert.id, assigneeId, member ? member.email : null);
+    } catch (error: unknown) {
+      setAssignError(getApiErrorMessage(error, 'The alert could not be assigned.'));
+    } finally {
+      setAssigning(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -137,6 +170,24 @@ export function AlertDetail({ alert, onClose, onAcknowledge }: Props) {
             </div>
           )}
 
+          {members.length > 0 && (
+            <div className="pt-4 border-t border-surface-700">
+              <label htmlFor="alert-assignee" className="block text-xs text-surface-500 mb-1.5">Assigned to</label>
+              <select
+                id="alert-assignee"
+                value={alert.assigned_to_id ?? ''}
+                disabled={assigning}
+                onChange={(e) => { void handleAssign(e.target.value); }}
+                className="w-full px-3 py-2 bg-surface-800 border border-surface-700 rounded-lg text-sm text-surface-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="">Unassigned</option>
+                {members.map(member => (
+                  <option key={member.id} value={member.id}>{member.full_name ? `${member.full_name} (${member.email})` : member.email}</option>
+                ))}
+              </select>
+              {assignError && <p role="alert" className="mt-1.5 text-xs text-danger-400">{assignError}</p>}
+            </div>
+          )}
           <div className="pt-4 border-t border-surface-700 space-y-3">
             <button
               onClick={() => setShowEscalate(true)}

@@ -73,6 +73,12 @@ export function Alerts() {
     }
   };
 
+  const handleAssigned = (alertId: number, assigneeId: number | null, assigneeEmail: string | null) => {
+    setAlerts(current => current.map(a => a.id === alertId ? { ...a, assigned_to_id: assigneeId, assigned_to_email: assigneeEmail } : a));
+    setSelectedAlert(current => current && current.id === alertId ? { ...current, assigned_to_id: assigneeId, assigned_to_email: assigneeEmail } : current);
+    toast(assigneeEmail ? `Alert assigned to ${assigneeEmail}.` : 'Alert unassigned.', 'success');
+  };
+
   const handleBulkAcknowledge = async () => {
     const ids = Array.from(selectedIds).filter(id => !pendingIds.has(id));
     if (ids.length === 0) return;
@@ -232,7 +238,12 @@ export function Alerts() {
                   <td className="px-4 py-3">
                     <StatusBadge tone={alertSeverityTones[alert.severity] ?? 'neutral'}>{alert.severity}</StatusBadge>
                   </td>
-                  <td className="px-4 py-3 text-surface-300">{alert.asset_name}</td>
+                  <td className="px-4 py-3 text-surface-300">
+                    {alert.asset_name}
+                    {alert.assigned_to_email && (
+                      <span className="block text-xs text-surface-500 mt-0.5">Assigned to {alert.assigned_to_email}</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <StatusBadge tone={alertStatusTones[alert.status] ?? 'neutral'}>{alert.status}</StatusBadge>
                   </td>
@@ -278,6 +289,7 @@ export function Alerts() {
           alert={selectedAlert}
           onClose={() => setSelectedAlert(null)}
           onAcknowledge={handleAcknowledge}
+          onAssigned={handleAssigned}
         />
       )}
     </div>
