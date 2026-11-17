@@ -1,11 +1,12 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { Topology } from './Topology';
 
-vi.mock('../api/client', () => ({ default: { get: vi.fn() } }));
+vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 
 const get = vi.mocked(apiClient.get);
+const post = vi.mocked(apiClient.post);
 
 const graph = {
   nodes: [
@@ -57,5 +58,51 @@ describe('Topology page', () => {
     });
     render(<Topology />);
     await screen.findByText(/No topology observed yet/);
+  });
+});
+
+describe('Add connection', () => {
+  async function openForm() {
+    render(<Topology />);
+    await screen.findAllByText('scada-historian');
+    fireEvent.click(screen.getByRole('button', { name: 'Add connection' }));
+  }
+
+  it('records a connection with the parsed port and refreshes the topology', async () => {
+    await openForm();
+    fireEvent.change(screen.getByLabelText('Source IP *'), { target: { value: '10.0.3.7' } });
+    fireEvent.change(screen.getByLabelText('Target IP *'), { target: { value: '10.0.0.1' } });
+    fireEvent.change(screen.getByLabelText('Protocol *'), { target: { value: 's7comm' } });
+    fireEvent.change(screen.getByLabelText('Port'), { target: { value: '102' } });
+    fireEvent.change(screen.getByLabelText('Direction'), { target: { value: 'outbound' } });
+    fireEvent.click(screen.getByLabelText('Encrypted'));
+    fireEvent.click(screen.getByRole('button', { name: 'Record connection' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/topology/connections', {
+      source_ip: '10.0.3.7',
+      target_ip: '10.0.0.1',
+      protocol: 's7comm',
+      port: 102,
+      direction: 'outbound',
+      is_encrypted: true,
+    }));
+    expect(await screen.findByText(/Connection recorded/)).toBeTruthy();
+  });
+
+  it('requires source, target and protocol', async () => {
+    await openForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Record connection' }));
+    expect(await screen.findByText(/Source IP, target IP and protocol are required/)).toBeTruthy();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('rejects a port outside the valid range', async () => {
+    await openForm();
+    fireEvent.change(screen.getByLabelText('Source IP *'), { target: { value: '10.0.3.7' } });
+    fireEvent.change(screen.getByLabelText('Target IP *'), { target: { value: '10.0.0.1' } });
+    fireEvent.change(screen.getByLabelText('Protocol *'), { target: { value: 's7comm' } });
+    fireEvent.change(screen.getByLabelText('Port'), { target: { value: '70000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Record connection' }));
+    expect(await screen.findByText(/between 0 and 65535/)).toBeTruthy();
+    expect(post).not.toHaveBeenCalled();
   });
 });
