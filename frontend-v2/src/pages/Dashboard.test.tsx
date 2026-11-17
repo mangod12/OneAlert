@@ -45,8 +45,9 @@ const STATS: AlertStats = {
   acknowledged_alerts: 2,
 };
 
-function mockAllFulfilled(alerts: Alert[] = [makeAlert()]) {
-  mockGet.mockImplementation((url: string) => {
+function mockAllFulfilled(alerts: Alert[] = [makeAlert()], myAlerts: Alert[] = [], myCases: Array<{ id: number; title: string; severity: string; status: string }> = []) {
+  mockGet.mockImplementation((url: string, config?: unknown) => {
+    const params = (config as { params?: Record<string, unknown> } | undefined)?.params;
     switch (url) {
       case '/alerts/stats/overview':
         return Promise.resolve({ data: STATS });
@@ -55,7 +56,12 @@ function mockAllFulfilled(alerts: Alert[] = [makeAlert()]) {
       case '/ot/discovered-devices':
         return Promise.resolve({ data: { total: 34 } });
       case '/alerts/':
+        if (params?.assigned === 'me') {
+          return Promise.resolve({ data: { alerts: myAlerts, total: myAlerts.length, page: 1, size: 5, pages: 1 } });
+        }
         return Promise.resolve({ data: { alerts, total: alerts.length, page: 1, size: 50, pages: 1 } });
+      case '/cases/':
+        return Promise.resolve({ data: { cases: myCases, total: myCases.length, page: 1, size: 5 } });
       case '/ot/devices-by-zone':
         return Promise.resolve({ data: [] });
       default:
@@ -139,5 +145,27 @@ describe('Dashboard page', () => {
     await waitFor(() => {
       expect(screen.getByText('42')).toBeTruthy();
     });
+  });
+});
+
+describe('My assignments', () => {
+  it('lists alerts and investigations assigned to the current user', async () => {
+    mockAllFulfilled(
+      [makeAlert()],
+      [makeAlert({ id: 9, title: 'Assigned critical vuln' })],
+      [{ id: 7, title: 'Assigned investigation', severity: 'high', status: 'investigating' }],
+    );
+    renderDashboard();
+    expect(await screen.findByText('My assignments')).toBeTruthy();
+    expect(screen.getByText('Assigned critical vuln')).toBeTruthy();
+    expect(screen.getByText('Assigned investigation')).toBeTruthy();
+    expect(screen.getByText('investigating')).toBeTruthy();
+  });
+
+  it('hides the panel when nothing is assigned', async () => {
+    mockAllFulfilled([makeAlert()], [], []);
+    renderDashboard();
+    await screen.findByText('42');
+    await waitFor(() => expect(screen.queryByText('My assignments')).toBeNull());
   });
 });

@@ -23,6 +23,8 @@ export function Dashboard() {
   const [totalAssets, setTotalAssets] = useState<number | null>(null);
   const [totalDiscovered, setTotalDiscovered] = useState<number | null>(null);
   const [alerts, setAlerts] = useState<Alert[] | null>(null);
+  const [myAlerts, setMyAlerts] = useState<Alert[] | null>(null);
+  const [myCases, setMyCases] = useState<Array<{ id: number; title: string; severity: string; status: string }> | null>(null);
   const [errors, setErrors] = useState<DashboardErrors>({});
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -42,6 +44,8 @@ export function Dashboard() {
         apiClient.get<{ total?: number }>('/assets/', { params: { size: 1 } }),
         apiClient.get<{ total?: number }>('/ot/discovered-devices', { params: { size: 1 } }),
         apiClient.get<AlertListResponse>('/alerts/', { params: { size: 50 } }),
+        apiClient.get<AlertListResponse>('/alerts/', { params: { size: 5, assigned: 'me' } }),
+        apiClient.get<{ cases?: Array<{ id: number; title: string; severity: string; status: string }> }>('/cases/', { params: { size: 5, assigned: 'me' } }),
       ] as const;
       const results = await Promise.allSettled(requests);
       if (!active) return;
@@ -55,6 +59,10 @@ export function Dashboard() {
       else nextErrors.devices = getApiErrorMessage(results[2].reason, 'Discovery telemetry is unavailable');
       if (results[3].status === 'fulfilled') setAlerts(results[3].value.data.alerts ?? []);
       else nextErrors.alerts = getApiErrorMessage(results[3].reason, 'Recent alert activity is unavailable');
+      if (results[4].status === 'fulfilled') setMyAlerts(results[4].value.data.alerts ?? []);
+      else setMyAlerts([]);
+      if (results[5].status === 'fulfilled') setMyCases(results[5].value.data.cases ?? []);
+      else setMyCases([]);
 
       setErrors(nextErrors);
       setLastUpdated(new Date());
@@ -137,6 +145,37 @@ export function Dashboard() {
           <div className="flex items-center justify-between border-t border-surface-800 px-4 py-3 text-xs"><span className="flex items-center gap-2 text-surface-400"><Workflow className="h-4 w-4 text-success" /> Human approval enforced</span><strong className="text-primary-200">{agentConfidence ?? '—'}{agentConfidence !== null ? '%' : ''}</strong></div>
         </Panel>
       </section>
+
+      {(myAlerts === null || myCases === null || myAlerts.length > 0 || myCases.length > 0) && (
+        <section aria-label="My assignments">
+          <Panel title="My assignments" description="Open alerts and investigations assigned to you." action={<Link to="/alerts" className="text-xs font-semibold text-primary-300 hover:text-primary-200">View alerts</Link>}>
+            <div className="grid gap-0 divide-y divide-surface-800 md:grid-cols-2 md:divide-x md:divide-y-0">
+              <div className="divide-y divide-surface-800">
+                {(myAlerts ?? []).length > 0 ? (myAlerts ?? []).map(alert => (
+                  <Link key={alert.id} to="/alerts" className="flex items-center gap-3 px-5 py-3 hover:bg-surface-800/45">
+                    <StatusBadge tone={alert.severity === 'critical' ? 'danger' : alert.severity === 'high' ? 'warning' : 'neutral'}>{alert.severity}</StatusBadge>
+                    <div className="min-w-0"><p className="truncate text-sm font-semibold text-surface-100">{alert.title}</p><p className="mt-0.5 truncate font-mono text-[11px] text-surface-500">{alert.cve_id || alert.source}</p></div>
+                    <span className="ml-auto text-xs text-surface-500">{alert.status}</span>
+                  </Link>
+                )) : (
+                  <div className="px-5 py-6 text-center text-sm text-surface-400">{myAlerts === null ? 'Loading...' : 'No alerts assigned to you.'}</div>
+                )}
+              </div>
+              <div className="divide-y divide-surface-800">
+                {(myCases ?? []).length > 0 ? (myCases ?? []).map(c => (
+                  <Link key={c.id} to={`/cases/${c.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-800/45">
+                    <StatusBadge tone={c.severity === 'critical' ? 'danger' : c.severity === 'high' ? 'warning' : 'neutral'}>{c.severity}</StatusBadge>
+                    <div className="min-w-0"><p className="truncate text-sm font-semibold text-surface-100">{c.title}</p><p className="mt-0.5 truncate text-[11px] text-surface-500">Investigation #{c.id}</p></div>
+                    <span className="ml-auto text-xs text-surface-500">{c.status}</span>
+                  </Link>
+                )) : (
+                  <div className="px-5 py-6 text-center text-sm text-surface-400">{myCases === null ? 'Loading...' : 'No investigations assigned to you.'}</div>
+                )}
+              </div>
+            </div>
+          </Panel>
+        </section>
+      )}
 
       <section className="grid gap-4 xl:grid-cols-2">
         <Panel title="Severity distribution" description="Current alert inventory by operational severity."><div className="p-4"><SeverityBreakdown stats={stats} /></div></Panel>
