@@ -2,27 +2,12 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
 import { Play, Shield, ChevronRight } from 'lucide-react';
-import clsx from 'clsx';
 import { getApiErrorMessage } from '../api/errors';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
+import { StatusBadge } from '../components/ui/StatusBadge';
+import { alertSeverityTones, caseStatusTones } from '../components/ui/tones';
 import { toast } from '../components/Toast';
-
-const severityColors: Record<string, string> = {
-  critical: 'bg-danger/10 text-danger border-danger/30',
-  high: 'bg-warning/10 text-warning border-warning/30',
-  medium: 'bg-info/10 text-info border-info/30',
-  low: 'bg-success/10 text-success border-success/30',
-  info: 'bg-surface-500/20 text-surface-400 border-surface-500/30',
-};
-
-const statusColors: Record<string, string> = {
-  open: 'bg-danger/10 text-danger',
-  investigating: 'bg-warning/10 text-warning',
-  resolved: 'bg-success/10 text-success',
-  closed: 'bg-surface-500/20 text-surface-400',
-  false_positive: 'bg-surface-500/20 text-surface-500',
-};
 
 interface CaseItem {
   id: number;
@@ -97,17 +82,13 @@ export function Cases() {
             <Link
               key={c.id}
               to={`/cases/${c.id}`}
-              className="oa-panel group block p-5 transition hover:border-primary-500/40 hover:bg-surface-800/55"
+              className="oa-panel group block min-w-0 p-5 transition hover:border-primary-500/40 hover:bg-surface-800/55"
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className={clsx('px-2 py-0.5 text-xs font-medium rounded-full border', severityColors[c.severity])}>
-                      {c.severity}
-                    </span>
-                    <span className={clsx('px-2 py-0.5 text-xs font-medium rounded-full', statusColors[c.status])}>
-                      {c.status}
-                    </span>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-2">
+                    <StatusBadge tone={alertSeverityTones[c.severity] ?? 'neutral'}>{c.severity}</StatusBadge>
+                    <StatusBadge tone={caseStatusTones[c.status] ?? 'neutral'}>{c.status}</StatusBadge>
                     {c.confidence_score && (
                       <span className="text-xs text-surface-500">
                         {Math.round(c.confidence_score * 100)}% confidence
@@ -116,7 +97,7 @@ export function Cases() {
                   </div>
                   <h3 className="text-surface-50 font-medium truncate">{c.title}</h3>
                   {c.summary && <p className="text-surface-400 text-sm mt-1 line-clamp-2">{c.summary}</p>}
-                  <div className="flex items-center gap-4 mt-3 text-xs text-surface-500">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-xs text-surface-500">
                     <span>{c.alert_count} alerts</span>
                     <span>{c.event_count} events</span>
                     {c.mitre_tactics && c.mitre_tactics.length > 0 && (

@@ -79,7 +79,7 @@ export function HuntLab() {
             onChange={e => setHypothesis(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && startHunt()}
             placeholder="e.g. Look for lateral movement from engineering workstation to PLC subnet"
-            className="flex-1 px-4 py-3 bg-surface-900 border border-surface-600 rounded-lg text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="flex-1 min-w-0 px-4 py-3 bg-surface-900 border border-surface-600 rounded-lg text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
           <button
             onClick={startHunt}
