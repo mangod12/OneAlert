@@ -57,7 +57,19 @@ describe('SBOM page', () => {
     expect(screen.getByText('busybox')).toBeTruthy();
     expect(screen.getByText('1 of 2 components')).toBeTruthy();
     fireEvent.change(screen.getByLabelText('Search components'), { target: { value: 'zzz' } });
-    expect(screen.getByText('No components match that search.')).toBeTruthy();
+    expect(screen.getByText('No components match the current filters.')).toBeTruthy();
+  });
+
+  it('filters expanded components to vulnerable ones only', async () => {
+    render(<Sbom />);
+    fireEvent.click(await screen.findByText('Plant gateway'));
+    await screen.findByText('openssl');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Vulnerable only' }));
+    expect(screen.getByText('openssl')).toBeTruthy();
+    expect(screen.queryByText('busybox')).toBeNull();
+    expect(screen.getByText('1 of 2 components')).toBeTruthy();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Vulnerable only' }));
+    expect(screen.getByText('busybox')).toBeTruthy();
   });
 
   it('deletes an SBOM through the confirm dialog', async () => {
