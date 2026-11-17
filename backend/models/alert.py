@@ -44,6 +44,7 @@ class Alert(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
+    assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     cve_id = Column(String, nullable=True)  # CVE-2023-1234
     vendor_advisory_id = Column(String, nullable=True)  # Vendor-specific ID
     title = Column(String, nullable=False)
@@ -60,7 +61,8 @@ class Alert(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relationships
-    user = relationship("User", back_populates="alerts")
+    user = relationship("User", back_populates="alerts", foreign_keys=[user_id])
+    assignee = relationship("User", foreign_keys=[assigned_to_id])
     asset = relationship("Asset", back_populates="alerts")
 
     def to_dict(self):
@@ -76,6 +78,7 @@ class Alert(Base):
             "cvss_score": self.cvss_score,
             "status": self.status.value if hasattr(self.status, 'value') else self.status,
             "remediation": self.remediation,
+            "assigned_to_id": self.assigned_to_id,
             "source_url": self.source_url,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "acknowledged_at": self.acknowledged_at.isoformat() if self.acknowledged_at else None,
@@ -121,6 +124,7 @@ class AlertUpdate(BaseModel):
     """Schema for alert updates."""
     status: AlertStatus | None = None
     acknowledged_at: datetime | None = None
+    assigned_to_id: int | None = None  # send explicit null to unassign
 
     model_config = {"from_attributes": True}
 
@@ -144,6 +148,8 @@ class AlertWithAsset(AlertResponse):
     asset_name: str
     asset_vendor: str | None = None
     asset_product: str | None = None
+    assigned_to_id: int | None = None
+    assigned_to_email: str | None = None
 
     model_config = {"from_attributes": True }
 

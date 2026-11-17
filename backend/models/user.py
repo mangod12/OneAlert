@@ -58,7 +58,7 @@ class User(Base):
 
     # Relationships
     assets = relationship("Asset", back_populates="user", cascade="all, delete-orphan")
-    alerts = relationship("Alert", back_populates="user", cascade="all, delete-orphan")
+    alerts = relationship("Alert", back_populates="user", cascade="all, delete-orphan", foreign_keys="Alert.user_id")
     network_sensors = relationship("NetworkSensor", back_populates="user", cascade="all, delete-orphan")
     discovered_devices = relationship("DiscoveredDevice", back_populates="user", cascade="all, delete-orphan")
 
