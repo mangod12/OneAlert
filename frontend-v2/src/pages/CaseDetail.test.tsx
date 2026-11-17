@@ -444,3 +444,34 @@ describe('Case assignment', () => {
     await waitFor(() => expect(mockPost).toHaveBeenCalled());
   });
 });
+
+describe('Deleting timeline notes', () => {
+  const noteEntry = { id: 21, entry_type: 'note', content: 'Note to remove', source: 'human', timestamp: '2026-11-17T09:00:00Z', metadata_json: null };
+  const actionEntry = { id: 22, entry_type: 'action', content: 'Containment ran', source: 'agent', timestamp: '2026-11-17T09:05:00Z', metadata_json: null };
+
+  it('offers delete only on note entries and deletes after confirmation', async () => {
+    mockLoadWithTimeline([noteEntry, actionEntry]);
+    mockDelete.mockResolvedValue({ data: null });
+    renderDetail();
+    await screen.findByText('Note to remove');
+    expect(screen.getAllByRole('button', { name: 'Delete note' }).length).toBe(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete note' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Delete note?')).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete note' }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/7/notes/21'));
+    await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2));
+  });
+
+  it('cancel keeps the note', async () => {
+    mockLoadWithTimeline([noteEntry]);
+    renderDetail();
+    await screen.findByText('Note to remove');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete note' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(mockDelete).not.toHaveBeenCalled();
+    expect(screen.getByText('Note to remove')).toBeTruthy();
+  });
+});
