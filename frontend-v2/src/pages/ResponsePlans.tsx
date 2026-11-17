@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect } from 'react';
 import apiClient from '../api/client';
-import { CheckCircle, XCircle, Play, Clock, Shield } from 'lucide-react';
+import { CheckCircle, XCircle, Play, Clock, Download, Shield } from 'lucide-react';
 import clsx from 'clsx';
 import { toast } from '../components/Toast';
 import { getApiErrorMessage } from '../api/errors';
@@ -53,6 +53,27 @@ const STATUS_STYLES: Record<string, string> = {
 export function ResponsePlans() {
   const [plans, setPlans] = useState<ResponsePlan[]>([]);
   const [statusFilter, setStatusFilter] = useState('');
+  const [exporting, setExporting] = useState(false);
+
+  const exportCsv = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const params: Record<string, string> = {};
+      if (statusFilter) params.status = statusFilter;
+      const res = await apiClient.get('/response-plans/export', { params, responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'response-plans.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'The export could not be downloaded.'), 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
   const [pending, setPending] = useState<PendingApproval[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const selectedPlan = plans.find(plan => plan.id === selectedPlanId) ?? null;
@@ -159,6 +180,16 @@ export function ResponsePlans() {
       <div className="oa-panel p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-surface-50">All Response Plans</h2>
+          <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => { void exportCsv(); }}
+            disabled={exporting}
+            className="flex items-center gap-1.5 rounded-md border border-surface-600 px-2.5 py-1.5 text-xs text-surface-200 hover:border-primary-500 hover:text-primary-300 disabled:opacity-50"
+          >
+            <Download className="w-3.5 h-3.5" aria-hidden="true" />
+            {exporting ? 'Exporting...' : 'Export CSV'}
+          </button>
           <label className="flex items-center gap-2 text-xs text-surface-400">
             Status
             <select
@@ -177,6 +208,7 @@ export function ResponsePlans() {
               <option value="partial">Partial</option>
             </select>
           </label>
+          </div>
         </div>
         {plans.length === 0 ? (
           !loading && errors.length === 0 && <EmptyState title="No response plans" description="Run the agent pipeline to generate a guarded response plan." />
