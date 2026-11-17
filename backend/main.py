@@ -34,6 +34,7 @@ from backend.routers import (
     organizations,
     ot,
     response_plans,
+    saved_views,
     sbom,
     sensor_ingest,
     topology,
@@ -173,6 +174,7 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 # Include routers
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(assets.router, prefix="/api/v1/assets", tags=["Assets"])
+app.include_router(saved_views.router, prefix="/api/v1/alerts/views", tags=["Alerts"])  # before /alerts/{alert_id}
 app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["Alerts"])
 app.include_router(ot.router, prefix="/api/v1/ot", tags=["OT/ICS"])
 app.include_router(sensor_ingest.router, prefix="/api/v1/ot", tags=["OT/ICS"])
