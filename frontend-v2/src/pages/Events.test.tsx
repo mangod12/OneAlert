@@ -59,6 +59,7 @@ function mockAllFulfilled(events: SecurityEvent[] = [makeEvent()]) {
   mockGet.mockImplementation((url: string) => {
     if (url === '/events/') return Promise.resolve({ data: { events, total: events.length } });
     if (url === '/events/stats') return Promise.resolve({ data: { data: STATS } });
+    if (url === '/events/export') return Promise.resolve({ data: new Blob(['id\n1']) });
     return Promise.reject(new Error(`unexpected url ${url}`));
   });
 }
@@ -276,5 +277,29 @@ describe('Escalate to investigation', () => {
       expect(mockPost).toHaveBeenCalledWith('/cases/', { title: 'Investigate: ET SCAN SSH brute force', summary: 'Brute force against web-01', severity: 'high' });
       expect(mockPost).toHaveBeenCalledWith('/cases/7/events/1');
     });
+  });
+});
+
+describe('Events CSV export', () => {
+  it('downloads the CSV with the active filters', async () => {
+    URL.createObjectURL = vi.fn(() => 'blob:events');
+    URL.revokeObjectURL = vi.fn();
+    const clicks: string[] = [];
+    const origCreate = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string, options?: ElementCreationOptions) => {
+      const el = origCreate(tag, options);
+      if (tag === 'a') {
+        Object.defineProperty(el, 'download', { set: (v: string) => clicks.push(v), configurable: true });
+        el.click = () => clicks.push('clicked');
+      }
+      return el;
+    });
+    mockAllFulfilled();
+    render(<Events />);
+    await screen.findByRole('button', { name: /export csv/i });
+    fireEvent.click(screen.getByRole('button', { name: /high/i }));
+    fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/events/export', { params: { severity: 'high' }, responseType: 'blob' }));
+    await waitFor(() => expect(clicks).toContain('events.csv'));
   });
 });
