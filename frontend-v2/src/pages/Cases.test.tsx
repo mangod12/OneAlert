@@ -7,6 +7,7 @@ vi.mock('../api/client', () => ({
   default: {
     get: vi.fn(),
     post: vi.fn(),
+    patch: vi.fn(),
   },
 }));
 
@@ -17,6 +18,7 @@ import { toast } from '../components/Toast';
 
 const mockGet = vi.mocked(apiClient.get);
 const mockPost = vi.mocked(apiClient.post);
+const mockPatch = vi.mocked(apiClient.patch);
 const mockToast = vi.mocked(toast);
 
 interface CaseItem {
@@ -210,6 +212,23 @@ describe('Case search', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
     expect(await screen.findByText('No investigations match that search.')).toBeTruthy();
     expect(screen.getByText('Credential dumping on edge router')).toBeTruthy();
+  });
+});
+
+describe('Case quick status change', () => {
+  it('updates the status from the list and toasts', async () => {
+    mockPatch.mockResolvedValue({ data: {} });
+    renderCases();
+    const select = await screen.findByLabelText('Set status for case 1');
+    expect(select).toHaveProperty('value', 'open');
+    fireEvent.change(select, { target: { value: 'investigating' } });
+    await waitFor(() => {
+      expect(mockPatch).toHaveBeenCalledWith('/cases/1', null, { params: { status_update: 'investigating' } });
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText('Set status for case 1')).toHaveProperty('value', 'investigating');
+    });
+    expect(mockToast).toHaveBeenCalledWith('Case #1 marked investigating.', 'success');
   });
 });
 
