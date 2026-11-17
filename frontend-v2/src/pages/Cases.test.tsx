@@ -10,10 +10,14 @@ vi.mock('../api/client', () => ({
   },
 }));
 
+vi.mock('../components/Toast', () => ({ toast: vi.fn() }));
+
 import apiClient from '../api/client';
+import { toast } from '../components/Toast';
 
 const mockGet = vi.mocked(apiClient.get);
 const mockPost = vi.mocked(apiClient.post);
+const mockToast = vi.mocked(toast);
 
 interface CaseItem {
   id: number;
@@ -101,6 +105,45 @@ describe('Cases page', () => {
       expect(mockPost).toHaveBeenCalledWith('/cases/auto-triage', null, { params: { hours_back: 72 } });
       expect(mockGet).toHaveBeenCalledTimes(2);
     });
+  });
+});
+
+describe('Agent pipeline', () => {
+  it('runs the pipeline for the selected lookback and shows stage summaries', async () => {
+    mockPost.mockImplementation(async (url: string) => {
+      if (url === '/cases/pipeline') {
+        return {
+          data: {
+            data: {
+              detect: { summary: 'Analyzed 12 events, found 3 findings' },
+              triage: { summary: 'Created 1 cases from 4 alerts and 12 events' },
+              total_duration_ms: 1830,
+              pipeline_status: 'completed',
+            },
+          },
+        };
+      }
+      return { data: {} };
+    });
+    renderCases();
+    await screen.findByText('Credential dumping on edge router');
+    fireEvent.change(screen.getByLabelText('Pipeline lookback'), { target: { value: '72' } });
+    fireEvent.click(screen.getByRole('button', { name: /run pipeline/i }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/pipeline', null, { params: { hours_back: 72 } }));
+    expect(await screen.findByText('Pipeline finished in 1.8s')).toBeTruthy();
+    expect(screen.getByText('Detect: Analyzed 12 events, found 3 findings')).toBeTruthy();
+    expect(screen.getByText('Triage: Created 1 cases from 4 alerts and 12 events')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /dismiss pipeline result/i }));
+    expect(screen.queryByText(/Pipeline finished/)).toBeNull();
+  });
+
+  it('shows an error toast when the pipeline fails', async () => {
+    mockPost.mockRejectedValue({ isAxiosError: true, response: { status: 500, data: {} } });
+    renderCases();
+    await screen.findByText('Credential dumping on edge router');
+    fireEvent.click(screen.getByRole('button', { name: /run pipeline/i }));
+    await waitFor(() => expect(mockToast).toHaveBeenCalledWith(expect.stringContaining('could not be run'), 'error'));
+    expect(screen.queryByText(/Pipeline finished/)).toBeNull();
   });
 });
 
