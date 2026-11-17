@@ -5,26 +5,8 @@ import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target } from 'lucide
 import { getApiErrorMessage } from '../api/errors';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { NarrativeText } from '../components/ui/NarrativeText';
 import { alertSeverityTones, caseStatusTones, eventSeverityTones } from '../components/ui/tones';
-
-function renderBold(text: string) {
-  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
-    part.startsWith('**') && part.endsWith('**')
-      ? <strong key={i} className="font-semibold text-surface-100">{part.slice(2, -2)}</strong>
-      : part
-  );
-}
-
-function NarrativeText({ text }: { text: string }) {
-  const paragraphs = text.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
-  return (
-    <div className="space-y-3">
-      {paragraphs.map((para, i) => (
-        <p key={i} className="text-surface-300 leading-relaxed">{renderBold(para)}</p>
-      ))}
-    </div>
-  );
-}
 
 const timelineIcons: Record<string, typeof Brain> = {
   ai_analysis: Brain,
