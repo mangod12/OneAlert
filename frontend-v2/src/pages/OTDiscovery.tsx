@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import type { DiscoveredDevice, OTSummary, ProtocolData } from '../api/types';
 import { Network, Wifi, AlertTriangle, Link2, Plus, Trash2 } from 'lucide-react';
@@ -35,20 +35,30 @@ export function OTDiscovery() {
   const [pendingSensorDelete, setPendingSensorDelete] = useState<NetworkSensor | null>(null);
   const [deletingSensor, setDeletingSensor] = useState(false);
   const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set());
+  const [otOnly, setOtOnly] = useState(false);
+  const [ipSearch, setIpSearch] = useState('');
+
+  const fetchDevices = useCallback(async () => {
+    const params: Record<string, string | number | boolean> = { size: 20 };
+    if (otOnly) params.ot_only = true;
+    if (ipSearch.trim()) params.ip_address = ipSearch.trim();
+    const res = await apiClient.get('/ot/discovered-devices', { params });
+    return res.data.devices || [];
+  }, [otOnly, ipSearch]);
 
   const fetchData = async () => {
     setLoading(true);
     setErrors([]);
     const [summaryResult, devicesResult, protocolsResult, sensorsResult] = await Promise.allSettled([
       apiClient.get('/ot/summary'),
-      apiClient.get('/ot/discovered-devices', { params: { size: 20 } }),
+      fetchDevices(),
       apiClient.get('/ot/devices-by-protocol'),
       apiClient.get('/ot/sensors'),
     ]);
     const nextErrors: string[] = [];
     if (summaryResult.status === 'fulfilled') setSummary(summaryResult.value.data);
     else nextErrors.push(getApiErrorMessage(summaryResult.reason, 'OT summary is unavailable'));
-    if (devicesResult.status === 'fulfilled') setDevices(devicesResult.value.data.devices || []);
+    if (devicesResult.status === 'fulfilled') setDevices(devicesResult.value);
     else nextErrors.push(getApiErrorMessage(devicesResult.reason, 'Discovered devices are unavailable'));
     if (protocolsResult.status === 'fulfilled') setProtocols(protocolsResult.value.data.protocols || []);
     else nextErrors.push(getApiErrorMessage(protocolsResult.reason, 'Protocol telemetry is unavailable'));
@@ -60,15 +70,23 @@ export function OTDiscovery() {
 
   useEffect(() => {
     void fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const firstDevicesFetch = useRef(true);
+  useEffect(() => {
+    if (firstDevicesFetch.current) { firstDevicesFetch.current = false; return; }
+    let cancelled = false;
+    void fetchDevices().then(list => { if (!cancelled) setDevices(list); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [fetchDevices]);
 
   const handlePromote = async (deviceId: number) => {
     if (pendingDevices.has(deviceId)) return;
     setPendingDevices(current => new Set(current).add(deviceId));
     try {
       await apiClient.post(`/ot/discovered-devices/${deviceId}/promote-to-asset`);
-      const res = await apiClient.get('/ot/discovered-devices', { params: { size: 20 } });
-      setDevices(res.data.devices || []);
+      setDevices(await fetchDevices());
       toast('Device promoted to the managed asset inventory.', 'success');
     } catch (error: unknown) {
       toast(getApiErrorMessage(error, 'Device could not be promoted.'), 'error');
@@ -293,8 +311,27 @@ export function OTDiscovery() {
 
       {/* Discovered Devices Table */}
       <div className="oa-panel overflow-hidden">
-        <div className="px-6 py-4 border-b border-surface-700">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-surface-700">
           <h3 className="text-lg font-semibold text-surface-50">Discovered Devices</h3>
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="text"
+              aria-label="Filter devices by IP"
+              placeholder="Filter by IP"
+              value={ipSearch}
+              onChange={(e) => setIpSearch(e.target.value)}
+              className="w-40 rounded-md border border-surface-600 bg-surface-950 px-3 py-1.5 text-sm text-surface-100 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            <label className="flex items-center gap-2 text-xs text-surface-300">
+              <input
+                type="checkbox"
+                checked={otOnly}
+                onChange={(e) => setOtOnly(e.target.checked)}
+                className="h-4 w-4 rounded border-surface-600 bg-surface-950 text-primary-500 focus:ring-2 focus:ring-primary-500"
+              />
+              OT devices only
+            </label>
+          </div>
         </div>
         {devices.length === 0 ? (
           <div className="p-8 text-center text-surface-500">

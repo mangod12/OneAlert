@@ -30,6 +30,21 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
+describe('Discovered device filters', () => {
+  it('sends the IP substring and OT-only flag to the API', async () => {
+    render(<OTDiscovery />);
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/ot/discovered-devices', { params: { size: 20 } }));
+    fireEvent.change(await screen.findByLabelText('Filter devices by IP'), { target: { value: '10.10' } });
+    await waitFor(() => {
+      expect(get).toHaveBeenCalledWith('/ot/discovered-devices', { params: { size: 20, ip_address: '10.10' } });
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'OT devices only' }));
+    await waitFor(() => {
+      expect(get).toHaveBeenCalledWith('/ot/discovered-devices', { params: { size: 20, ot_only: true, ip_address: '10.10' } });
+    });
+  });
+});
+
 describe('OT sensors', () => {
   it('lists sensors with status, location and heartbeat', async () => {
     render(<OTDiscovery />);
