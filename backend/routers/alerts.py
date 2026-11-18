@@ -33,6 +33,15 @@ from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.services.audit import add_audit_log
 
+
+def _visible_alerts(alert_id: int, current_user: User):
+    """Alerts the user may open: their own plus alerts assigned to them."""
+    return select(Alert).where(
+        Alert.id == alert_id,
+        or_(Alert.user_id == current_user.id, Alert.assigned_to_id == current_user.id),
+    )
+
+
 router = APIRouter()
 
 
@@ -75,10 +84,19 @@ async def list_alerts(
         Asset, Alert.asset_id == Asset.id
     ).options(
         joinedload(Alert.assignee)
-    ).where(Alert.user_id == current_user.id)
+    ).where(
+        Alert.assigned_to_id == current_user.id
+        if assigned == "me"
+        # "Assigned to me" spans the org, not just alerts the caller owns.
+        else Alert.user_id == current_user.id
+    )
 
     # Build base for count query. Filters will be added to this.
-    count_base_query = select(Alert.id).where(Alert.user_id == current_user.id)
+    count_base_query = select(Alert.id).where(
+        Alert.assigned_to_id == current_user.id
+        if assigned == "me"
+        else Alert.user_id == current_user.id
+    )
 
     # Apply filters to both the main query and the count base query
     if status:
@@ -100,10 +118,7 @@ async def list_alerts(
         )
         query = query.filter(search_match)
         count_base_query = count_base_query.filter(search_match)
-    if assigned == "me":
-        query = query.filter(Alert.assigned_to_id == current_user.id)
-        count_base_query = count_base_query.filter(Alert.assigned_to_id == current_user.id)
-    elif assigned == "unassigned":
+    if assigned == "unassigned":
         query = query.filter(Alert.assigned_to_id.is_(None))
         count_base_query = count_base_query.filter(Alert.assigned_to_id.is_(None))
     if snoozed == "active":
@@ -312,7 +327,7 @@ async def get_alert(
 ):
     """Get a specific alert by ID."""
     result = await db.execute(
-        select(Alert).where(Alert.id == alert_id, Alert.user_id == current_user.id)
+        _visible_alerts(alert_id, current_user)
         .options(selectinload(Alert.asset)) # Eager load asset details
     )
     alert = result.scalar_one_or_none()
@@ -416,7 +431,7 @@ async def acknowledge_alert(
     result = await db.execute(
         select(Alert).where(
             Alert.id == alert_id,
-            Alert.user_id == current_user.id
+            or_(Alert.user_id == current_user.id, Alert.assigned_to_id == current_user.id)
         )
     )
     alert = result.scalar_one_or_none()
@@ -447,7 +462,7 @@ async def resolve_alert(
     result = await db.execute(
         select(Alert).where(
             Alert.id == alert_id,
-            Alert.user_id == current_user.id
+            or_(Alert.user_id == current_user.id, Alert.assigned_to_id == current_user.id)
         )
     )
     alert = result.scalar_one_or_none()
@@ -478,7 +493,7 @@ async def reopen_alert(
     result = await db.execute(
         select(Alert).where(
             Alert.id == alert_id,
-            Alert.user_id == current_user.id
+            or_(Alert.user_id == current_user.id, Alert.assigned_to_id == current_user.id)
         )
     )
     alert = result.scalar_one_or_none()
@@ -509,7 +524,7 @@ async def snooze_alert(
     result = await db.execute(
         select(Alert).where(
             Alert.id == alert_id,
-            Alert.user_id == current_user.id
+            or_(Alert.user_id == current_user.id, Alert.assigned_to_id == current_user.id)
         )
     )
     alert = result.scalar_one_or_none()
@@ -538,7 +553,7 @@ async def unsnooze_alert(
     result = await db.execute(
         select(Alert).where(
             Alert.id == alert_id,
-            Alert.user_id == current_user.id
+            or_(Alert.user_id == current_user.id, Alert.assigned_to_id == current_user.id)
         )
     )
     alert = result.scalar_one_or_none()
@@ -564,7 +579,10 @@ async def list_alert_cases(
 ):
     """List the investigation cases that include this alert, newest first."""
     alert = await db.execute(
-        select(Alert.id).where(Alert.id == alert_id, Alert.user_id == current_user.id)
+        select(Alert.id).where(
+            Alert.id == alert_id,
+            or_(Alert.user_id == current_user.id, Alert.assigned_to_id == current_user.id),
+        )
     )
     if alert.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Alert not found")
@@ -598,7 +616,7 @@ async def get_alert_remediations(
 
     # Get alert
     result = await db.execute(
-        select(Alert).where(Alert.id == alert_id, Alert.user_id == current_user.id)
+        _visible_alerts(alert_id, current_user)
     )
     alert = result.scalar_one_or_none()
     if not alert:
@@ -639,7 +657,7 @@ async def get_alert_epss(
     from backend.services.epss_service import get_epss_score
 
     result = await db.execute(
-        select(Alert).where(Alert.id == alert_id, Alert.user_id == current_user.id)
+        _visible_alerts(alert_id, current_user)
     )
     alert = result.scalar_one_or_none()
     if not alert:

@@ -17,6 +17,7 @@ const mockGet = vi.mocked(apiClient.get);
 function makeAlert(overrides: Partial<Alert> = {}): Alert {
   return {
     id: 1,
+    user_id: 5,
     cve_id: 'CVE-2026-0001',
     title: 'Test vulnerability',
     description: 'A test description',
