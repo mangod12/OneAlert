@@ -746,7 +746,7 @@ export function Settings() {
           </form>
         </Panel>
 
-        <Panel title="Notification integrations" description="Credentials are write-only. Existing values are never returned to the browser." action={<Bell className="h-4 w-4 text-warning" />}>
+        <Panel title="Notification integrations" description="Alerts and investigation events (assignments, escalations, SLA breaches) post to these endpoints. Credentials are write-only and never returned to the browser." action={<Bell className="h-4 w-4 text-warning" />}>
           <form className="space-y-5 p-5" onSubmit={event => { event.preventDefault(); void handleSaveIntegrations(); }}>
             <div>
               <label htmlFor="slack-webhook" className="mb-1.5 block text-sm font-medium text-surface-300">Slack webhook URL</label>
