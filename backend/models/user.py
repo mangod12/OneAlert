@@ -17,6 +17,7 @@ from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, s
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from sqlalchemy.types import JSON
 
 from backend.database.db import Base, get_async_db
 from backend.services.auth_service import validate_new_password
@@ -50,6 +51,8 @@ class User(Base):
     # Per-user email notification preferences
     email_notifications_enabled = Column(Boolean, nullable=False, server_default="1")
     notify_min_severity = Column(String, nullable=False, server_default="low")
+    # in-app notification kinds hidden from the user's feed
+    muted_kinds = Column(JSON, nullable=False, server_default="[]", default=list)
     organization = relationship("Organization", back_populates="users")
 
     # Slack and webhook URLs
@@ -126,11 +129,15 @@ class UserUpdate(BaseModel):
 
 SEVERITY_LEVELS = ("low", "medium", "high", "critical")
 
+# In-app notification kinds that can be muted individually.
+KNOWN_NOTIFICATION_KINDS = ("alert_created", "case_assigned")
+
 
 class NotificationPreferences(BaseModel):
-    """Per-user email notification preferences."""
+    """Per-user notification preferences."""
     email_notifications_enabled: bool
     notify_min_severity: str
+    muted_kinds: list[str] = []
 
     model_config = {"from_attributes": True}
 
@@ -141,6 +148,17 @@ class NotificationPreferencesUpdate(BaseModel):
     notify_min_severity: str | None = Field(
         default=None, pattern="^(low|medium|high|critical)$"
     )
+    muted_kinds: list[str] | None = None
+
+    @field_validator("muted_kinds")
+    @classmethod
+    def _known_kinds_only(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return value
+        unknown = [kind for kind in value if kind not in KNOWN_NOTIFICATION_KINDS]
+        if unknown:
+            raise ValueError(f"Unknown notification kinds: {', '.join(unknown)}")
+        return value
 
 
 class UserResponse(BaseModel):

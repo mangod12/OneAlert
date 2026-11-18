@@ -117,6 +117,33 @@ class TestNotificationFeed:
         titles = [n["title"] for n in resp.json()["data"]]
         assert titles == ["unread one"]
 
+    def test_muted_kinds_hidden_from_feed(self, client):
+        headers = _register_and_login(client, "mutefeed@example.com")
+        uid = _user_id(client, headers)
+        _add_notification(uid, "a new alert", kind="alert_created")
+        _add_notification(uid, "case assigned to you", kind="case_assigned")
+
+        resp = client.patch(
+            "/api/v1/auth/me/notification-preferences",
+            json={"muted_kinds": ["case_assigned"]},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+
+        feed = client.get("/api/v1/notifications/", headers=headers).json()
+        assert [n["title"] for n in feed["data"]] == ["a new alert"]
+        assert feed["total"] == 1
+        assert feed["unread_count"] == 1
+
+        # Unmuting brings the hidden kind back.
+        client.patch(
+            "/api/v1/auth/me/notification-preferences",
+            json={"muted_kinds": []},
+            headers=headers,
+        )
+        feed = client.get("/api/v1/notifications/", headers=headers).json()
+        assert feed["total"] == 2
+
     def test_mark_read(self, client):
         headers = _register_and_login(client, "mark@example.com")
         uid = _user_id(client, headers)
