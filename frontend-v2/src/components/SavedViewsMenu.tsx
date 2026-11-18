@@ -13,33 +13,34 @@ export interface SavedViewFilters {
   sort?: string;
 }
 
-interface SavedView {
+interface SavedView<F = SavedViewFilters> {
   id: number;
   name: string;
-  filters: SavedViewFilters;
+  filters: F;
   created_at: string;
 }
 
-interface SavedViewsMenuProps {
-  currentFilters: SavedViewFilters;
-  onApply: (filters: SavedViewFilters) => void;
+interface SavedViewsMenuProps<F> {
+  basePath?: string;
+  currentFilters: F;
+  onApply: (filters: F) => void;
 }
 
-export function SavedViewsMenu({ currentFilters, onApply }: SavedViewsMenuProps) {
+export function SavedViewsMenu<F extends object = SavedViewFilters>({ basePath = '/alerts/views/', currentFilters, onApply }: SavedViewsMenuProps<F>) {
   const [open, setOpen] = useState(false);
-  const [views, setViews] = useState<SavedView[]>([]);
+  const [views, setViews] = useState<Array<SavedView<F>>>([]);
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const loadViews = useCallback(async () => {
     try {
-      const resp = await apiClient.get<SavedView[]>('/alerts/views/');
+      const resp = await apiClient.get<Array<SavedView<F>>>(basePath);
       setViews(resp.data);
     } catch {
       // The menu still opens; it just shows the last known list.
     }
-  }, []);
+  }, [basePath]);
 
   useEffect(() => {
     void loadViews();
@@ -61,7 +62,7 @@ export function SavedViewsMenu({ currentFilters, onApply }: SavedViewsMenuProps)
     if (!trimmed || saving) return;
     setSaving(true);
     try {
-      const resp = await apiClient.post<SavedView>('/alerts/views/', { name: trimmed, filters: currentFilters });
+      const resp = await apiClient.post<SavedView<F>>(basePath, { name: trimmed, filters: currentFilters });
       setViews(current => [...current, resp.data]);
       setName('');
       toast(`Saved view "${resp.data.name}"`, 'success');
@@ -74,7 +75,7 @@ export function SavedViewsMenu({ currentFilters, onApply }: SavedViewsMenuProps)
 
   const deleteView = async (view: SavedView) => {
     try {
-      await apiClient.delete(`/alerts/views/${view.id}`);
+      await apiClient.delete(`${basePath}${view.id}`);
       setViews(current => current.filter(entry => entry.id !== view.id));
     } catch (error) {
       toast(getApiErrorMessage(error, 'Could not delete the view'), 'error');

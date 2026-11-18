@@ -9,6 +9,15 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { alertSeverityTones, caseStatusTones } from '../components/ui/tones';
 import { toast } from '../components/Toast';
+import { SavedViewsMenu } from '../components/SavedViewsMenu';
+
+interface CaseViewFilters {
+  severity?: string;
+  status?: string;
+  assigned?: string;
+  overdue?: boolean;
+  sort?: string;
+}
 
 interface CaseItem {
   id: number;
@@ -238,6 +247,24 @@ export function Cases() {
 
       {!loading && !error && (
         <div className="flex flex-wrap items-center gap-2">
+          <SavedViewsMenu<CaseViewFilters>
+            basePath="/cases/views/"
+            currentFilters={{
+              ...(statusFilter ? { status: statusFilter } : {}),
+              ...(severityFilter ? { severity: severityFilter } : {}),
+              ...(assignedFilter ? { assigned: assignedFilter } : {}),
+              ...(overdueOnly ? { overdue: true } : {}),
+              sort,
+            }}
+            onApply={(filters: CaseViewFilters) => {
+              setStatusFilter(filters.status ?? '');
+              setSeverityFilter(filters.severity ?? '');
+              setAssignedFilter(filters.assigned ?? '');
+              setOverdueOnly(filters.overdue ?? false);
+              setSort(filters.sort ?? 'created_at_desc');
+              setPage(1);
+            }}
+          />
           <label htmlFor="case-status-filter" className="sr-only">Filter by status</label>
           <select id="case-status-filter" value={statusFilter} onChange={e => { setPage(1); setStatusFilter(e.target.value); }} className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200">
             <option value="">All statuses</option>
