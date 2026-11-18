@@ -32,6 +32,7 @@ from backend.models.notification import Notification
 from backend.models.response_plan import ApprovalRequest, ResponsePlan
 from backend.models.user import User
 from backend.routers.auth import get_active_user
+from backend.services.audit import add_audit_log
 
 router = APIRouter()
 
@@ -238,6 +239,14 @@ async def create_case(
         content=f"Investigation opened manually by {current_user.email}.",
         source="human",
     ))
+    add_audit_log(
+        db,
+        user_id=current_user.id,
+        action="case_created",
+        target_type="case",
+        target_id=case.id,
+        detail=f"Case '{title}' opened manually",
+    )
     await db.commit()
     await db.refresh(case)
     resp = CaseResponse.model_validate(case)
@@ -495,6 +504,14 @@ async def delete_case(
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
 
+    add_audit_log(
+        db,
+        user_id=current_user.id,
+        action="case_deleted",
+        target_type="case",
+        target_id=case.id,
+        detail=f"Case '{case.title}' deleted",
+    )
     plan_ids = select(ResponsePlan.id).where(ResponsePlan.case_id == case_id).scalar_subquery()
     await db.execute(delete(ApprovalRequest).where(ApprovalRequest.plan_id.in_(plan_ids)))
     await db.execute(delete(ResponsePlan).where(ResponsePlan.case_id == case_id))
