@@ -98,7 +98,7 @@ def _seed(session, user_id):
     ))
     session.add(Case(
         user_id=user_id, title="Insider misuse", severity="medium",
-        status="in_progress", created_at=_naive(days_ago=10),
+        status="investigating", created_at=_naive(days_ago=10),
     ))
     session.add(Case(
         user_id=user_id, title="Old phishing case", severity="low",
