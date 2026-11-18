@@ -595,6 +595,54 @@ async def get_alert_epss(
     }
 
 
+@router.get("/stats/timeline")
+async def get_alert_timeline(
+    days: int = Query(14, ge=1, le=90),
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Per-day alert counts by severity over the trailing `days`-day window."""
+    today = datetime.now(UTC).date()
+    start = today - timedelta(days=days - 1)
+    # naive UTC, matching stored timestamps
+    start_dt = datetime(start.year, start.month, start.day, tzinfo=UTC).replace(tzinfo=None)
+
+    result = await db.execute(
+        select(Alert.severity, Alert.created_at).where(
+            and_(
+                Alert.user_id == current_user.id,
+                Alert.created_at >= start_dt,
+            )
+        )
+    )
+
+    counts: dict[str, dict[str, int]] = {}
+    for severity, created_at in result.all():
+        if created_at is None:
+            continue
+        day_key = created_at.date().isoformat()
+        bucket = counts.setdefault(
+            day_key, {"critical": 0, "high": 0, "medium": 0, "low": 0}
+        )
+        sev = severity.value if isinstance(severity, Severity) else str(severity)
+        if sev in bucket:
+            bucket[sev] += 1
+
+    timeline = []
+    for i in range(days):
+        day = start + timedelta(days=i)
+        bucket = counts.get(day.isoformat(), {})
+        timeline.append({
+            "date": day.isoformat(),
+            "critical": bucket.get("critical", 0),
+            "high": bucket.get("high", 0),
+            "medium": bucket.get("medium", 0),
+            "low": bucket.get("low", 0),
+        })
+
+    return {"success": True, "days": timeline}
+
+
 @router.get("/stats/overview", response_model=AlertStats)
 async def get_alert_stats(
     current_user: User = Depends(get_active_user),

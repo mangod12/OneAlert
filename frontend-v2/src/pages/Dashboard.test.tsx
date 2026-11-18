@@ -35,6 +35,14 @@ function makeAlert(overrides: Partial<Alert> = {}): Alert {
   };
 }
 
+const TIMELINE_DAYS = Array.from({ length: 14 }, (_, i) => ({
+  date: `2026-11-${String(i + 1).padStart(2, '0')}`,
+  critical: i === 13 ? 2 : 0,
+  high: i === 13 ? 1 : 0,
+  medium: 0,
+  low: 0,
+}));
+
 const STATS: AlertStats = {
   total_alerts: 42,
   critical_alerts: 3,
@@ -64,6 +72,8 @@ function mockAllFulfilled(alerts: Alert[] = [makeAlert()], myAlerts: Alert[] = [
         return Promise.resolve({ data: { cases: myCases, total: myCases.length, page: 1, size: 5 } });
       case '/ot/devices-by-zone':
         return Promise.resolve({ data: [] });
+      case '/alerts/stats/timeline':
+        return Promise.resolve({ data: { days: TIMELINE_DAYS } });
       default:
         return Promise.reject(new Error(`unexpected url ${url}`));
     }
@@ -138,10 +148,17 @@ describe('Dashboard page', () => {
     expect(screen.queryByText('Medium noise')).toBeNull();
   });
 
+  it('uses the server 14-day timeline for the alert activity chart', async () => {
+    renderDashboard();
+    expect(await screen.findByText('Alert activity · 14 days')).toBeTruthy();
+    expect(mockGet).toHaveBeenCalledWith('/alerts/stats/timeline', { params: { days: 14 } });
+    expect(await screen.findByRole('img', { name: /Alert activity over the last 14 days/ })).toBeTruthy();
+  });
+
   it('renders the chart panels', async () => {
     renderDashboard();
     expect(await screen.findByText('Severity distribution')).toBeTruthy();
-    expect(screen.getByText('Alert activity · 7 days')).toBeTruthy();
+    expect(screen.getByText('Alert activity · 14 days')).toBeTruthy();
     await waitFor(() => {
       expect(screen.getByText('42')).toBeTruthy();
     });
