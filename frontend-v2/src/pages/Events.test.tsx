@@ -28,6 +28,15 @@ interface SecurityEvent {
   signature: string | null;
   category: string | null;
   source_type: string | null;
+  action?: string | null;
+  hostname?: string | null;
+  username?: string | null;
+  domain?: string | null;
+  url?: string | null;
+  user_agent?: string | null;
+  bytes_in?: number | null;
+  bytes_out?: number | null;
+  raw_data?: Record<string, unknown> | null;
 }
 
 function makeEvent(overrides: Partial<SecurityEvent> = {}): SecurityEvent {
@@ -113,6 +122,27 @@ describe('Events page', () => {
     mockAllFulfilled([]);
     render(<Events />);
     expect(await screen.findByText('No events ingested yet')).toBeTruthy();
+  });
+
+  it('expands a row to show event details and the raw payload', async () => {
+    mockAllFulfilled([makeEvent({
+      action: 'blocked', hostname: 'eng-ws-04', username: 'operator1',
+      bytes_in: 128, bytes_out: 4096,
+      raw_data: { event_kind: 'alert', flow_id: 123456 },
+    })]);
+    render(<Events />);
+    await screen.findByText('ET SCAN SSH brute force');
+    const toggle = screen.getByRole('button', { name: 'Show details for event 1' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: 'Hide details for event 1' }).getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText('blocked')).toBeTruthy();
+    expect(screen.getByText('eng-ws-04')).toBeTruthy();
+    expect(screen.getByText('operator1')).toBeTruthy();
+    expect(screen.getByText('128 / 4096')).toBeTruthy();
+    expect(screen.getByLabelText('Raw event payload').textContent).toContain('flow_id');
+    fireEvent.click(screen.getByRole('button', { name: 'Hide details for event 1' }));
+    expect(screen.queryByText('eng-ws-04')).toBeNull();
   });
 
   it('shows a degraded banner when stats fail but events load', async () => {
