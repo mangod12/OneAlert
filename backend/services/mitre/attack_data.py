@@ -235,4 +235,5 @@ def compute_coverage(detected_techniques: set[str]) -> dict:
         "covered_techniques": covered,
         "coverage_percentage": round(covered / total * 100, 1) if total else 0,
         "by_tactic": by_tactic,
+        "covered_ids": sorted(detected_techniques & set(TECHNIQUES.keys())),
     }

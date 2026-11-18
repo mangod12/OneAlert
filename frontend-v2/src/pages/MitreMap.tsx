@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import { getApiErrorMessage } from '../api/errors';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
+import { StatusBadge } from '../components/ui/StatusBadge';
 
 interface TacticCoverage {
   name: string;
@@ -26,9 +27,11 @@ export function MitreMap() {
     covered_techniques: number;
     coverage_percentage: number;
     by_tactic: Record<string, TacticCoverage>;
+    covered_ids?: string[];
   } | null>(null);
   const [techniques, setTechniques] = useState<Technique[]>([]);
   const [search, setSearch] = useState('');
+  const [gapsOnly, setGapsOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState<string[]>([]);
 
@@ -52,9 +55,12 @@ export function MitreMap() {
     void fetchData();
   }, []);
 
-  const filteredTechniques = search
-    ? techniques.filter(t => t.name.toLowerCase().includes(search.toLowerCase()) || t.id.toLowerCase().includes(search.toLowerCase()))
-    : techniques;
+  const coveredIds = new Set(coverage?.covered_ids ?? []);
+  const filteredTechniques = techniques.filter(t => {
+    if (gapsOnly && coveredIds.has(t.id)) return false;
+    if (!search) return true;
+    return t.name.toLowerCase().includes(search.toLowerCase()) || t.id.toLowerCase().includes(search.toLowerCase());
+  });
 
   if (loading) {
     return <LoadingSurface rows={6} label="Loading MITRE ATT&CK coverage" />;
@@ -130,16 +136,29 @@ export function MitreMap() {
       <div className="oa-panel p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-surface-50">Techniques</h2>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search techniques..."
-              aria-label="Search techniques"
-              className="pl-9 pr-4 py-2 bg-surface-900 border border-surface-600 rounded-lg text-surface-50 text-sm placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
+          <div className="flex items-center gap-3">
+            {coverage?.covered_ids && (
+              <label className="flex items-center gap-2 text-xs text-surface-300">
+                <input
+                  type="checkbox"
+                  checked={gapsOnly}
+                  onChange={e => setGapsOnly(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-surface-600 bg-surface-800 text-primary-500 focus:ring-primary-500"
+                />
+                Gaps only
+              </label>
+            )}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search techniques..."
+                aria-label="Search techniques"
+                className="pl-9 pr-4 py-2 bg-surface-900 border border-surface-600 rounded-lg text-surface-50 text-sm placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-96 overflow-y-auto">
@@ -148,6 +167,11 @@ export function MitreMap() {
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono text-primary-400">{t.id}</span>
                 <span className="text-sm text-surface-50">{t.name}</span>
+                {coverage?.covered_ids && (
+                  coveredIds.has(t.id)
+                    ? <StatusBadge tone="success">Detected</StatusBadge>
+                    : <StatusBadge tone="neutral">Gap</StatusBadge>
+                )}
               </div>
               <p className="text-xs text-surface-500 mt-1">{t.description}</p>
             </div>
