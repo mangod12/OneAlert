@@ -73,6 +73,8 @@ class TestNotificationPreferenceEndpoints:
             "email_notifications_enabled": True,
             "notify_min_severity": "low",
             "muted_kinds": [],
+            "quiet_hours_start": None,
+            "quiet_hours_end": None,
         }
 
     def test_patch_updates_both_fields(self, client):
@@ -87,6 +89,8 @@ class TestNotificationPreferenceEndpoints:
             "email_notifications_enabled": False,
             "notify_min_severity": "high",
             "muted_kinds": [],
+            "quiet_hours_start": None,
+            "quiet_hours_end": None,
         }
         confirm = client.get("/api/v1/auth/me/notification-preferences", headers=headers)
         assert confirm.json()["notify_min_severity"] == "high"
@@ -103,6 +107,8 @@ class TestNotificationPreferenceEndpoints:
             "email_notifications_enabled": True,
             "notify_min_severity": "critical",
             "muted_kinds": [],
+            "quiet_hours_start": None,
+            "quiet_hours_end": None,
         }
 
     def test_invalid_severity_rejected(self, client):
@@ -174,3 +180,93 @@ class TestShouldEmailUser:
         assert _should_email_user(self._user(minimum="critical"), "HIGH") is False
         assert _should_email_user(self._user(minimum="critical"), "unknown")
         assert _should_email_user(self._user(minimum="critical"), None)
+
+
+class TestQuietHoursGating:
+    def _user(self, start="22:00", end="06:00"):
+        return SimpleNamespace(
+            email_notifications_enabled=True,
+            notify_min_severity="low",
+            quiet_hours_start=start,
+            quiet_hours_end=end,
+        )
+
+    def test_overnight_window_suppresses_non_critical(self):
+        from datetime import time
+        user = self._user()
+        assert not _should_email_user(user, "high", now=time(23, 30))
+        assert not _should_email_user(user, "medium", now=time(3, 0))
+
+    def test_overnight_window_still_sends_critical(self):
+        from datetime import time
+        assert _should_email_user(self._user(), "critical", now=time(2, 0))
+
+    def test_outside_window_sends(self):
+        from datetime import time
+        assert _should_email_user(self._user(), "high", now=time(12, 0))
+
+    def test_same_day_window(self):
+        from datetime import time
+        user = self._user("12:00", "14:00")
+        assert not _should_email_user(user, "low", now=time(13, 0))
+        assert _should_email_user(user, "low", now=time(14, 0))
+        assert _should_email_user(user, "low", now=time(11, 59))
+
+    def test_unset_or_zero_length_window_mutes_nothing(self):
+        from datetime import time
+        no_hours = SimpleNamespace(
+            email_notifications_enabled=True, notify_min_severity="low",
+            quiet_hours_start=None, quiet_hours_end=None,
+        )
+        assert _should_email_user(no_hours, "low", now=time(2, 0))
+        zero = self._user("08:00", "08:00")
+        assert _should_email_user(zero, "low", now=time(8, 0))
+
+
+class TestQuietHours:
+    def test_roundtrip_quiet_hours(self, client):
+        headers = _register_and_login(client, "quiet@example.com")
+        resp = client.patch(
+            "/api/v1/auth/me/notification-preferences",
+            json={"quiet_hours_start": "22:00", "quiet_hours_end": "06:00"},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["quiet_hours_start"] == "22:00"
+        assert resp.json()["quiet_hours_end"] == "06:00"
+        confirm = client.get("/api/v1/auth/me/notification-preferences", headers=headers)
+        assert confirm.json()["quiet_hours_start"] == "22:00"
+
+    def test_unpaired_quiet_hours_rejected(self, client):
+        headers = _register_and_login(client, "unpaired@example.com")
+        resp = client.patch(
+            "/api/v1/auth/me/notification-preferences",
+            json={"quiet_hours_start": "22:00"},
+            headers=headers,
+        )
+        assert resp.status_code == 422
+
+    def test_clear_quiet_hours_with_null_pair(self, client):
+        headers = _register_and_login(client, "clearquiet@example.com")
+        client.patch(
+            "/api/v1/auth/me/notification-preferences",
+            json={"quiet_hours_start": "22:00", "quiet_hours_end": "06:00"},
+            headers=headers,
+        )
+        resp = client.patch(
+            "/api/v1/auth/me/notification-preferences",
+            json={"quiet_hours_start": None, "quiet_hours_end": None},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["quiet_hours_start"] is None
+        assert resp.json()["quiet_hours_end"] is None
+
+    def test_invalid_quiet_hours_format_rejected(self, client):
+        headers = _register_and_login(client, "badformat@example.com")
+        resp = client.patch(
+            "/api/v1/auth/me/notification-preferences",
+            json={"quiet_hours_start": "10pm", "quiet_hours_end": "25:00"},
+            headers=headers,
+        )
+        assert resp.status_code == 422
