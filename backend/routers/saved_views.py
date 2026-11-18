@@ -1,4 +1,4 @@
-"""Saved filter views for the alerts and cases lists."""
+"""Saved filter views for the alerts, cases and events lists."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import ValidationError
@@ -22,11 +22,17 @@ MAX_VIEWS_PER_USER = 25
 
 def _scope(request: Request) -> str:
     """Which list the view belongs to, from the mounted path."""
-    return "cases" if "/cases/" in request.url.path else "alerts"
+    path = request.url.path
+    if "/cases/" in path:
+        return "cases"
+    if "/events/" in path:
+        return "events"
+    return "alerts"
 
 
 @router.get("/alerts/views/", response_model=list[SavedViewResponse])
 @router.get("/cases/views/", response_model=list[SavedViewResponse])
+@router.get("/events/views/", response_model=list[SavedViewResponse])
 async def list_saved_views(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
@@ -43,6 +49,7 @@ async def list_saved_views(
 
 @router.post("/alerts/views/", response_model=SavedViewResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/cases/views/", response_model=SavedViewResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/events/views/", response_model=SavedViewResponse, status_code=status.HTTP_201_CREATED)
 async def create_saved_view(
     payload: SavedViewCreate,
     request: Request,
@@ -88,6 +95,7 @@ async def create_saved_view(
 
 @router.delete("/alerts/views/{view_id}", status_code=status.HTTP_204_NO_CONTENT)
 @router.delete("/cases/views/{view_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/events/views/{view_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_saved_view(
     view_id: int,
     request: Request,

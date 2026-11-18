@@ -183,3 +183,59 @@ class TestCaseScopeViews:
         assert resp.status_code == 422
         resp = _create_case_view(client, headers, filters={"not_a_filter": 1})
         assert resp.status_code == 422
+
+
+def _create_event_view(client, headers, name="Critical DNS", filters=None):
+    return client.post("/api/v1/events/views/", headers=headers, json={
+        "name": name,
+        "filters": filters if filters is not None else {
+            "severity": "critical", "event_type": "dns", "ip": "10.0.0.8",
+            "sort": "timestamp_desc",
+        },
+    })
+
+
+class TestEventScopeViews:
+    def test_create_and_list_events_views(self, client):
+        headers = _register_and_login(client, "eventviews@example.com")
+        resp = _create_event_view(client, headers)
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["scope"] == "events"
+        assert body["filters"]["event_type"] == "dns"
+        assert body["filters"]["ip"] == "10.0.0.8"
+
+        listing = client.get("/api/v1/events/views/", headers=headers)
+        assert [v["id"] for v in listing.json()] == [body["id"]]
+
+    def test_events_scope_isolated_from_alerts_and_cases(self, client):
+        headers = _register_and_login(client, "evtisolated@example.com")
+        alerts_view = _create(client, headers).json()
+        events_view = _create_event_view(client, headers).json()
+
+        events_listing = client.get("/api/v1/events/views/", headers=headers).json()
+        alerts_listing = client.get("/api/v1/alerts/views/", headers=headers).json()
+        assert [v["id"] for v in events_listing] == [events_view["id"]]
+        assert [v["id"] for v in alerts_listing] == [alerts_view["id"]]
+
+        assert client.delete(
+            f"/api/v1/events/views/{alerts_view['id']}", headers=headers
+        ).status_code == 404
+        assert client.delete(
+            f"/api/v1/alerts/views/{events_view['id']}", headers=headers
+        ).status_code == 404
+
+    def test_non_events_filter_key_rejected(self, client):
+        headers = _register_and_login(client, "strictevents@example.com")
+        resp = _create_event_view(client, headers, filters={"status": "open"})
+        assert resp.status_code == 422
+        resp = _create_event_view(client, headers, filters={"asset_id": 3})
+        assert resp.status_code == 422
+
+    def test_delete_events_view(self, client):
+        headers = _register_and_login(client, "evtdelete@example.com")
+        view = _create_event_view(client, headers).json()
+        assert client.delete(
+            f"/api/v1/events/views/{view['id']}", headers=headers
+        ).status_code == 204
+        assert client.get("/api/v1/events/views/", headers=headers).json() == []

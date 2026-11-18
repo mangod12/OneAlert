@@ -91,9 +91,10 @@ describe('Events page', () => {
     });
     expect(screen.getByRole('button', { name: /^high/i }).getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(screen.getByRole('button', { name: /^high/i }));
+    const eventListCalls = () => mockGet.mock.calls.filter(([url]) => url === '/events/');
     await waitFor(() => {
-      expect(mockGet).toHaveBeenCalledTimes(10);
-      expect(mockGet).toHaveBeenNthCalledWith(8, '/events/', { params: { page: 1, size: 50, sort: 'timestamp_desc' } });
+      expect(eventListCalls()).toHaveLength(3);
+      expect(eventListCalls()[2][1]).toEqual({ params: { page: 1, size: 50, sort: 'timestamp_desc' } });
     });
   });
 
@@ -301,5 +302,21 @@ describe('Events CSV export', () => {
     fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/events/export', { params: { severity: 'high' }, responseType: 'blob' }));
     await waitFor(() => expect(clicks).toContain('events.csv'));
+  });
+});
+
+describe('Event saved views', () => {
+  it('applies a saved view to the filters', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/events/views/') return Promise.resolve({ data: [{ id: 7, name: 'Critical DNS', filters: { severity: 'critical', event_type: 'dns', ip: '10.0.0.8', sort: 'severity_desc' }, created_at: '2026-11-18T00:00:00Z' }] });
+      if (url === '/events/') return Promise.resolve({ data: { events: [makeEvent()], total: 1 } });
+      if (url === '/events/stats') return Promise.resolve({ data: { data: STATS } });
+      if (url === '/events/sources') return Promise.resolve({ data: [] });
+      return Promise.reject(new Error(`unexpected url ${url}`));
+    });
+    render(<Events />);
+    fireEvent.click(await screen.findByRole('button', { name: /views/i }));
+    fireEvent.click(await screen.findByText('Critical DNS'));
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/events/', { params: expect.objectContaining({ severity: 'critical', event_type: 'dns', ip: '10.0.0.8', sort: 'severity_desc' }) }));
   });
 });
