@@ -8,6 +8,7 @@ from backend.database.db import get_async_db
 from backend.dependencies.user_dependencies import get_current_user
 from backend.models.alert import Alert
 from backend.models.alert_note import AlertNote, AlertNoteCreate, AlertNoteResponse
+from backend.models.audit_log import AuditLog
 from backend.models.user import User
 
 router = APIRouter()
@@ -35,6 +36,31 @@ async def list_alert_notes(
         select(AlertNote).where(AlertNote.alert_id == alert_id).order_by(AlertNote.created_at, AlertNote.id)
     )
     return list(result.scalars().all())
+
+
+@router.get("/{alert_id}/activity")
+async def list_alert_activity(
+    alert_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """List audit-trail entries for an alert, newest first (max 50)."""
+    await _owned_alert(alert_id, current_user, db)
+    result = await db.execute(
+        select(AuditLog)
+        .where(AuditLog.target_type == "alert", AuditLog.target_id == alert_id)
+        .order_by(AuditLog.timestamp.desc(), AuditLog.id.desc())
+        .limit(50)
+    )
+    return [
+        {
+            "id": log.id,
+            "action": log.action,
+            "detail": log.detail,
+            "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+        }
+        for log in result.scalars().all()
+    ]
 
 
 @router.post("/{alert_id}/notes", response_model=AlertNoteResponse, status_code=status.HTTP_201_CREATED)

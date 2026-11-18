@@ -48,6 +48,13 @@ interface AlertNote {
   created_at: string;
 }
 
+interface AlertActivity {
+  id: number;
+  action: string;
+  detail: string | null;
+  timestamp: string | null;
+}
+
 export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen, onSnooze, onAssigned }: Props) {
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
@@ -61,6 +68,7 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
   const [remediations, setRemediations] = useState<RemediationAction[] | null>(null);
   const [showEscalate, setShowEscalate] = useState(false);
   const [notes, setNotes] = useState<AlertNote[] | null>(null);
+  const [activity, setActivity] = useState<AlertActivity[] | null>(null);
   const [linkedCases, setLinkedCases] = useState<LinkedCase[] | null>(null);
   const [noteDraft, setNoteDraft] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
@@ -104,6 +112,14 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
     apiClient.get<AlertNote[]>(`/alerts/${alert.id}/notes`)
       .then(res => { if (!cancelled) setNotes(res.data); })
       .catch(() => { if (!cancelled) setNotes([]); });
+    return () => { cancelled = true; };
+  }, [alert.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient.get<AlertActivity[]>(`/alerts/${alert.id}/activity`)
+      .then(res => { if (!cancelled) setActivity(res.data); })
+      .catch(() => { if (!cancelled) setActivity([]); });
     return () => { cancelled = true; };
   }, [alert.id]);
 
@@ -302,6 +318,25 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
             </div>
             {noteError && <p role="alert" className="mt-1.5 text-xs text-danger-400">{noteError}</p>}
           </div>
+
+          {activity !== null && activity.length > 0 && (
+            <div className="pt-4 border-t border-surface-700">
+              <label className="text-xs text-surface-500 uppercase tracking-wide">Activity</label>
+              <ul className="mt-2 space-y-2">
+                {activity.map(entry => (
+                  <li key={entry.id} className="rounded-md border border-surface-700 bg-surface-800/50 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-surface-200 font-medium">{entry.action}</span>
+                      {entry.timestamp && (
+                        <span className="shrink-0 text-[11px] text-surface-500">{new Date(entry.timestamp).toLocaleString()}</span>
+                      )}
+                    </div>
+                    {entry.detail && <p className="mt-1 text-xs text-surface-400 break-words">{entry.detail}</p>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {alert.source && (
             <div>

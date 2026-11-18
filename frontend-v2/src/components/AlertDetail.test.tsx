@@ -72,7 +72,7 @@ describe('AlertDetail', () => {
     get.mockRejectedValue(new Error('offline'));
     render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />);
     expect(screen.getByText('RouterOS RCE')).toBeTruthy();
-    await waitFor(() => expect(get).toHaveBeenCalledTimes(6));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(7));
     expect(screen.queryByText(/Exploit probability/)).toBeNull();
     expect(screen.queryByText('Remediation plan')).toBeNull();
   });
@@ -363,5 +363,36 @@ describe('AlertDetail notes', () => {
     fireEvent.click(await screen.findByLabelText('Delete note 7'));
     await waitFor(() => expect(del).toHaveBeenCalledWith('/alerts/1/notes/7'));
     expect(screen.queryByText('obsolete note')).toBeNull();
+  });
+});
+
+describe('AlertDetail activity', () => {
+  it('lists audit activity for the alert', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: null, epss_percentile: null } };
+      if (url === '/alerts/1/remediations') return { data: [] };
+      if (url === '/orgs/me/members') return { data: [] };
+      if (url === '/alerts/1/notes') return { data: [] };
+      if (url === '/alerts/1/activity') return { data: [
+        { id: 3, action: 'alert_updated', detail: 'status: pending -> acknowledged', timestamp: '2026-11-18T10:00:00Z' },
+      ] };
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />);
+    expect(await screen.findByText('alert_updated')).toBeTruthy();
+    expect(screen.getByText('status: pending -> acknowledged')).toBeTruthy();
+  });
+
+  it('hides the activity section when there is no activity', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: null, epss_percentile: null } };
+      if (url === '/alerts/1/remediations') return { data: [] };
+      if (url === '/orgs/me/members') return { data: [] };
+      if (url === '/alerts/1/notes') return { data: [] };
+      if (url === '/alerts/1/activity') return { data: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />);
+    await waitFor(() => expect(screen.queryByText('Activity')).toBeNull());
   });
 });
