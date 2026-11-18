@@ -1,7 +1,7 @@
-import { useCallback, useRef, useState, useEffect } from 'react';
+import { Fragment, useCallback, useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/client';
-import { Activity, Download, Radio, Upload } from 'lucide-react';
+import { Activity, ChevronDown, ChevronRight, Download, Radio, Upload } from 'lucide-react';
 import clsx from 'clsx';
 import { getApiErrorMessage } from '../api/errors';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -42,6 +42,15 @@ interface SecurityEvent {
   signature: string | null;
   category: string | null;
   source_type: string | null;
+  action?: string | null;
+  hostname?: string | null;
+  username?: string | null;
+  domain?: string | null;
+  url?: string | null;
+  user_agent?: string | null;
+  bytes_in?: number | null;
+  bytes_out?: number | null;
+  raw_data?: Record<string, unknown> | null;
 }
 
 interface EventStats {
@@ -103,6 +112,7 @@ export function Events() {
     }
   };
   const [escalateEvent, setEscalateEvent] = useState<SecurityEvent | null>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
 
   const fetchEvents = useCallback(async () => {
@@ -342,6 +352,7 @@ export function Events() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-surface-700">
+                  <th className="text-left p-3 text-surface-400 font-medium w-8"><span className="sr-only">Details</span></th>
                   <th className="text-left p-3 text-surface-400 font-medium">Time</th>
                   <th className="text-left p-3 text-surface-400 font-medium">Severity</th>
                   <th className="text-left p-3 text-surface-400 font-medium">Type</th>
@@ -354,7 +365,19 @@ export function Events() {
               </thead>
               <tbody>
                 {events.map(e => (
-                  <tr key={e.id} className="border-b border-surface-800 hover:bg-surface-800/50">
+                  <Fragment key={e.id}>
+                  <tr className="border-b border-surface-800 hover:bg-surface-800/50">
+                    <td className="p-3">
+                      <button
+                        type="button"
+                        aria-label={`${expandedId === e.id ? 'Hide' : 'Show'} details for event ${e.id}`}
+                        aria-expanded={expandedId === e.id}
+                        onClick={() => setExpandedId(current => current === e.id ? null : e.id)}
+                        className="p-1 text-surface-500 hover:text-surface-200 transition-colors"
+                      >
+                        {expandedId === e.id ? <ChevronDown className="w-4 h-4" aria-hidden="true" /> : <ChevronRight className="w-4 h-4" aria-hidden="true" />}
+                      </button>
+                    </td>
                     <td className="p-3 text-surface-400 whitespace-nowrap text-xs tabular-nums">{new Date(e.timestamp).toLocaleString()}</td>
                     <td className="p-3">
                       <StatusBadge tone={eventSeverityTones[e.severity] ?? 'neutral'}>{e.severity}</StatusBadge>
@@ -379,6 +402,33 @@ export function Events() {
                       </button>
                     </td>
                   </tr>
+                  {expandedId === e.id && (
+                    <tr className="border-b border-surface-800 bg-surface-900/60">
+                      <td colSpan={9} className="px-6 py-4">
+                        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs sm:grid-cols-4">
+                          {[
+                            ['Action', e.action],
+                            ['Protocol', e.protocol],
+                            ['Hostname', e.hostname],
+                            ['Username', e.username],
+                            ['Domain', e.domain],
+                            ['URL', e.url],
+                            ['User agent', e.user_agent],
+                            ['Bytes in/out', e.bytes_in != null || e.bytes_out != null ? `${e.bytes_in ?? 0} / ${e.bytes_out ?? 0}` : null],
+                          ].map(([label, value]) => (
+                            <div key={label as string}>
+                              <dt className="text-surface-500">{label}</dt>
+                              <dd className="mt-0.5 break-words text-surface-200">{(value as string | null) ?? '—'}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                        {e.raw_data && (
+                          <pre aria-label="Raw event payload" className="mt-3 max-h-56 overflow-auto rounded-md border border-surface-700 bg-surface-950 p-3 text-[11px] text-surface-300">{JSON.stringify(e.raw_data, null, 2)}</pre>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
