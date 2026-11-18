@@ -27,6 +27,7 @@ from backend.models.alert import (
     Severity,
 )
 from backend.models.asset import Asset
+from backend.models.case import Case, CaseAlert
 from backend.models.notification import Notification
 from backend.models.user import User
 from backend.routers.auth import get_active_user
@@ -520,6 +521,36 @@ async def unsnooze_alert(
     await db.commit()
 
     return {"message": "Snooze cleared successfully"}
+
+
+@router.get("/{alert_id}/cases")
+async def list_alert_cases(
+    alert_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """List the investigation cases that include this alert, newest first."""
+    alert = await db.execute(
+        select(Alert.id).where(Alert.id == alert_id, Alert.user_id == current_user.id)
+    )
+    if alert.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    result = await db.execute(
+        select(Case)
+        .join(CaseAlert, CaseAlert.case_id == Case.id)
+        .where(CaseAlert.alert_id == alert_id, Case.user_id == current_user.id)
+        .order_by(Case.created_at.desc(), Case.id.desc())
+    )
+    return [
+        {
+            "id": c.id,
+            "title": c.title,
+            "status": c.status,
+            "severity": c.severity,
+            "created_at": c.created_at,
+        }
+        for c in result.scalars().all()
+    ]
 
 
 @router.get("/{alert_id}/remediations")

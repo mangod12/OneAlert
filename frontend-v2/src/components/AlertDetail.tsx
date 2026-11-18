@@ -1,7 +1,7 @@
 import type { Alert, EpssScore, RemediationAction } from '../api/types';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
-import { X, ExternalLink, Wrench, FolderOpen } from 'lucide-react';
+import { X, ExternalLink, Wrench, FolderOpen, Briefcase } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBadge } from './ui/StatusBadge';
@@ -33,6 +33,14 @@ interface OrgMember {
   is_active: boolean;
 }
 
+interface LinkedCase {
+  id: number;
+  title: string;
+  status: string;
+  severity: string;
+  created_at: string;
+}
+
 interface AlertNote {
   id: number;
   alert_id: number;
@@ -53,6 +61,7 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
   const [remediations, setRemediations] = useState<RemediationAction[] | null>(null);
   const [showEscalate, setShowEscalate] = useState(false);
   const [notes, setNotes] = useState<AlertNote[] | null>(null);
+  const [linkedCases, setLinkedCases] = useState<LinkedCase[] | null>(null);
   const [noteDraft, setNoteDraft] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
@@ -81,6 +90,14 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
       setAssigning(false);
     }
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient.get<LinkedCase[]>(`/alerts/${alert.id}/cases`)
+      .then(res => { if (!cancelled) setLinkedCases(res.data); })
+      .catch(() => { if (!cancelled) setLinkedCases([]); });
+    return () => { cancelled = true; };
+  }, [alert.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -233,6 +250,10 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
                 ))}
               </ol>
             </div>
+          )}
+
+          {linkedCases !== null && linkedCases.length > 0 && (
+            <LinkedCasesList cases={linkedCases} onClose={onClose} />
           )}
 
           <div className="pt-4 border-t border-surface-700">
@@ -391,6 +412,30 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
 interface EscalateDialogProps {
   alert: Alert;
   onCancel: () => void;
+}
+
+function LinkedCasesList({ cases, onClose }: { cases: LinkedCase[]; onClose: () => void }) {
+  const navigate = useNavigate();
+  return (
+    <div className="pt-4 border-t border-surface-700">
+      <label className="text-xs text-surface-500 uppercase tracking-wide">Investigations</label>
+      <ul className="mt-2 space-y-1.5">
+        {cases.map(c => (
+          <li key={c.id} className="flex items-center justify-between gap-2 rounded-md border border-surface-700 bg-surface-800/50 px-3 py-2">
+            <button
+              type="button"
+              onClick={() => { onClose(); navigate(`/cases/${c.id}`); }}
+              className="inline-flex min-w-0 items-center gap-2 text-left text-sm text-primary-400 hover:text-primary-300"
+            >
+              <Briefcase className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="truncate">{c.title}</span>
+            </button>
+            <StatusBadge tone="neutral">{c.status}</StatusBadge>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function EscalateDialog({ alert, onCancel }: EscalateDialogProps) {
