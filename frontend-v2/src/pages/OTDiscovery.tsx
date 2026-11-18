@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import type { DiscoveredDevice, OTSummary, ProtocolData } from '../api/types';
-import { Network, Wifi, AlertTriangle, Link2, Plus, Trash2 } from 'lucide-react';
+import { Network, Wifi, AlertTriangle, Link2, Plus, Trash2, Edit2 } from 'lucide-react';
 import clsx from 'clsx';
 import { getApiErrorMessage } from '../api/errors';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -30,6 +30,7 @@ export function OTDiscovery() {
   const [pendingDevices, setPendingDevices] = useState<Set<number>>(new Set());
   const [sensors, setSensors] = useState<NetworkSensor[]>([]);
   const [showSensorForm, setShowSensorForm] = useState(false);
+  const [editingSensor, setEditingSensor] = useState<NetworkSensor | null>(null);
   const [sensorForm, setSensorForm] = useState({ name: '', sensor_type: 'passive', location: '', network_segment: '' });
   const [savingSensor, setSavingSensor] = useState(false);
   const [pendingSensorDelete, setPendingSensorDelete] = useState<NetworkSensor | null>(null);
@@ -95,27 +96,49 @@ export function OTDiscovery() {
     }
   };
 
-  const handleCreateSensor = async (e: React.FormEvent) => {
+  const handleSaveSensor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (savingSensor) return;
     setSavingSensor(true);
     try {
-      await apiClient.post('/ot/sensors', {
-        name: sensorForm.name,
-        sensor_type: sensorForm.sensor_type,
-        location: sensorForm.location || null,
-        network_segment: sensorForm.network_segment || null,
-      });
+      if (editingSensor) {
+        const res = await apiClient.patch(`/ot/sensors/${editingSensor.id}`, {
+          name: sensorForm.name,
+          location: sensorForm.location || null,
+          network_segment: sensorForm.network_segment || null,
+        });
+        setSensors(current => current.map(item => item.id === editingSensor.id ? res.data : item));
+        toast('Sensor updated.', 'success');
+      } else {
+        await apiClient.post('/ot/sensors', {
+          name: sensorForm.name,
+          sensor_type: sensorForm.sensor_type,
+          location: sensorForm.location || null,
+          network_segment: sensorForm.network_segment || null,
+        });
+        const res = await apiClient.get('/ot/sensors');
+        setSensors(res.data || []);
+        toast('Sensor registered.', 'success');
+      }
       setShowSensorForm(false);
+      setEditingSensor(null);
       setSensorForm({ name: '', sensor_type: 'passive', location: '', network_segment: '' });
-      const res = await apiClient.get('/ot/sensors');
-      setSensors(res.data || []);
-      toast('Sensor registered.', 'success');
     } catch (error: unknown) {
-      toast(getApiErrorMessage(error, 'Sensor could not be registered.'), 'error');
+      toast(getApiErrorMessage(error, editingSensor ? 'Sensor could not be updated.' : 'Sensor could not be registered.'), 'error');
     } finally {
       setSavingSensor(false);
     }
+  };
+
+  const startEditSensor = (sensor: NetworkSensor) => {
+    setEditingSensor(sensor);
+    setSensorForm({
+      name: sensor.name,
+      sensor_type: sensor.sensor_type,
+      location: sensor.location ?? '',
+      network_segment: sensor.network_segment ?? '',
+    });
+    setShowSensorForm(true);
   };
 
   const handleToggleSensor = async (sensor: NetworkSensor) => {
@@ -162,7 +185,10 @@ export function OTDiscovery() {
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-surface-50">Sensors</h2>
           <button
-            onClick={() => setShowSensorForm(current => !current)}
+            onClick={() => {
+              if (showSensorForm) { setShowSensorForm(false); setEditingSensor(null); }
+              else { setEditingSensor(null); setSensorForm({ name: '', sensor_type: 'passive', location: '', network_segment: '' }); setShowSensorForm(true); }
+            }}
             className="flex min-h-8 items-center gap-1.5 rounded-md border border-surface-700 px-2.5 text-xs font-medium text-surface-200 hover:bg-surface-800"
           >
             <Plus className="w-3.5 h-3.5" aria-hidden="true" />
@@ -171,7 +197,10 @@ export function OTDiscovery() {
         </div>
 
         {showSensorForm && (
-          <form onSubmit={handleCreateSensor} className="mb-4 grid grid-cols-1 gap-2 rounded-md border border-surface-700 bg-surface-800/50 p-3 md:grid-cols-4">
+          <form onSubmit={handleSaveSensor} className="mb-4 grid grid-cols-1 gap-2 rounded-md border border-surface-700 bg-surface-800/50 p-3 md:grid-cols-4">
+            {editingSensor && (
+              <p className="text-xs text-surface-400 md:col-span-4">Editing sensor #{editingSensor.id} - type cannot be changed after registration.</p>
+            )}
             <input
               aria-label="Sensor name"
               placeholder="Name"
@@ -183,8 +212,9 @@ export function OTDiscovery() {
             <select
               aria-label="Sensor type"
               value={sensorForm.sensor_type}
+              disabled={editingSensor !== null}
               onChange={(e) => setSensorForm({ ...sensorForm, sensor_type: e.target.value })}
-              className="rounded-lg border border-surface-600 bg-surface-800 px-3 py-2 text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="rounded-lg border border-surface-600 bg-surface-800 px-3 py-2 text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
             >
               <option value="passive">Passive</option>
               <option value="active">Active</option>
@@ -210,7 +240,7 @@ export function OTDiscovery() {
                 disabled={savingSensor}
                 className="shrink-0 rounded-md bg-primary-500 px-3 py-2 text-xs font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-40"
               >
-                {savingSensor ? 'Saving...' : 'Save'}
+                {savingSensor ? 'Saving...' : editingSensor ? 'Update' : 'Save'}
               </button>
             </div>
           </form>
@@ -237,6 +267,13 @@ export function OTDiscovery() {
                   </p>
                 </div>
                 <div className="ml-2 flex shrink-0 items-center gap-1">
+                  <button
+                    onClick={() => startEditSensor(sensor)}
+                    aria-label={`Edit sensor ${sensor.name}`}
+                    className="p-1.5 text-surface-500 hover:text-surface-200 transition-colors"
+                  >
+                    <Edit2 className="w-4 h-4" aria-hidden="true" />
+                  </button>
                   <button
                     onClick={() => void handleToggleSensor(sensor)}
                     disabled={togglingIds.has(sensor.id)}

@@ -74,6 +74,22 @@ describe('OT sensors', () => {
     await waitFor(() => expect(patch).toHaveBeenCalledWith('/ot/sensors/1', { enabled: false }));
   });
 
+  it('edits a sensor name, location and segment without changing its type', async () => {
+    patch.mockResolvedValue({ data: { ...sensors[0], name: 'plant-floor-1b', location: 'Plant B', network_segment: 'line-3' } });
+    render(<OTDiscovery />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit sensor plant-floor-1' }));
+    expect((screen.getByLabelText('Sensor name') as HTMLInputElement).value).toBe('plant-floor-1');
+    expect((screen.getByLabelText('Sensor type') as HTMLSelectElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Sensor name'), { target: { value: 'plant-floor-1b' } });
+    fireEvent.change(screen.getByLabelText('Location'), { target: { value: 'Plant B' } });
+    fireEvent.change(screen.getByLabelText('Network segment'), { target: { value: 'line-3' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+    await waitFor(() => expect(patch).toHaveBeenCalledWith('/ot/sensors/1', {
+      name: 'plant-floor-1b', location: 'Plant B', network_segment: 'line-3',
+    }));
+    expect(await screen.findByText('plant-floor-1b')).toBeTruthy();
+  });
+
   it('deletes a sensor through the confirm dialog', async () => {
     render(<OTDiscovery />);
     fireEvent.click(await screen.findByRole('button', { name: 'Delete sensor dmz-listener' }));
