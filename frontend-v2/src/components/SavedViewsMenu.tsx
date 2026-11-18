@@ -10,6 +10,7 @@ export interface SavedViewFilters {
   search?: string;
   asset_id?: number;
   assigned?: string;
+  age?: string;
   sort?: string;
 }
 

@@ -122,6 +122,24 @@ describe('Alerts page', () => {
     expect(screen.getByRole('combobox', { name: 'Filter by status' })).toBeTruthy();
   });
 
+  it('refetches with the age filter applied', async () => {
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
+    await screen.findByText('CVE-2026-0001');
+    const ageSelect = screen.getByRole('combobox', { name: 'Filter by age' });
+    fireEvent.change(ageSelect, { target: { value: 'gt7' } });
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenLastCalledWith('/alerts/', {
+        params: { page: 1, size: 15, min_age_days: 7, sort: 'created_at_desc' },
+      });
+    });
+    fireEvent.change(ageSelect, { target: { value: '1to7' } });
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenLastCalledWith('/alerts/', {
+        params: { page: 1, size: 15, min_age_days: 1, max_age_days: 7, sort: 'created_at_desc' },
+      });
+    });
+  });
+
   it('filters by asset from the dropdown', async () => {
     mockGet.mockImplementation(async (url: string) => {
       if (url === '/assets/') return { data: { assets: [{ id: 10, name: 'edge-router-01' }], total: 1 } };
