@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import apiClient from '../api/client';
 import type { Asset, AssetCreate, AssetListResponse } from '../api/types';
-import { Plus, Search, Server, Trash2, Edit2, Download } from 'lucide-react';
+import { Plus, Search, Server, ShieldAlert, Trash2, Edit2, Download } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -275,6 +275,24 @@ export function Assets() {
               </div>
               {asset.version && (
                 <p className="text-xs text-surface-500 mt-2">v{asset.version}</p>
+              )}
+              {typeof asset.open_alert_count === 'number' && (
+                <div className="mt-2">
+                  {asset.open_alert_count > 0 ? (
+                    <Link
+                      to={`/alerts?asset_id=${asset.id}`}
+                      className="inline-flex items-center gap-1.5 text-xs text-primary-400 hover:text-primary-300"
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5" aria-hidden="true" />
+                      {asset.open_alert_count} open alert{asset.open_alert_count === 1 ? '' : 's'}
+                    </Link>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-xs text-surface-500">
+                      <ShieldAlert className="w-3.5 h-3.5" aria-hidden="true" />
+                      No open alerts
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           ))

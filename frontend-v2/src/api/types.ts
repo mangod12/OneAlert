@@ -68,6 +68,7 @@ export interface Asset {
   primary_protocol: string | null;
   criticality: string | null;
   created_at: string;
+  open_alert_count?: number | null;
 }
 
 export interface AssetCreate {

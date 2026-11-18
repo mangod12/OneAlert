@@ -36,6 +36,26 @@ describe('Assets page', () => {
     expect(screen.getByText('high')).toBeTruthy();
   });
 
+  it('links to filtered alerts when the asset has open alerts', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/assets/vendors/' || url === '/assets/types/') return { data: [] };
+      return { data: { assets: [{ ...asset, open_alert_count: 3 }], total: 1 } };
+    });
+    render(<MemoryRouter><Assets /></MemoryRouter>);
+    const link = await screen.findByRole('link', { name: '3 open alerts' });
+    expect(link.getAttribute('href')).toBe('/alerts?asset_id=7');
+  });
+
+  it('shows a quiet no-open-alerts note at zero', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/assets/vendors/' || url === '/assets/types/') return { data: [] };
+      return { data: { assets: [{ ...asset, open_alert_count: 0 }], total: 1 } };
+    });
+    render(<MemoryRouter><Assets /></MemoryRouter>);
+    expect(await screen.findByText('No open alerts')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /open alert/i })).toBeNull();
+  });
+
   it('searches the inventory with the entered query', async () => {
     render(<MemoryRouter><Assets /></MemoryRouter>);
     await screen.findByText('Plant gateway');
