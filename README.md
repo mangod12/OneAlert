@@ -119,7 +119,7 @@ Five specialized agents working as a team:
 
 - **In-app notification feed**: command-bar bell, per-kind muting, and quiet hours so below-critical email waits until morning
 - **Alert triage tools**: snooze (single or bulk), reopen, per-alert notes, assignment with automatic assignee notification
-- **Saved filter views**: named, shareable filter sets for alerts, investigations, and events
+- **Saved filter views**: named filter sets for alerts, investigations, and events
 - **Global search**: command palette across alerts, cases, assets, and events
 - **Case management**: due dates with overdue filtering, response plans on the case workspace, linked alerts and events
 - **Personal API tokens**: programmatic access with read-only scope, managed from Settings
