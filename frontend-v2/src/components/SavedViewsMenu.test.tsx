@@ -6,6 +6,7 @@ vi.mock('../api/client', () => ({
   default: {
     get: vi.fn(),
     post: vi.fn(),
+    patch: vi.fn(),
     delete: vi.fn(),
   },
 }));
@@ -17,6 +18,7 @@ import { toast } from './Toast';
 
 const mockGet = vi.mocked(apiClient.get);
 const mockPost = vi.mocked(apiClient.post);
+const mockPatch = vi.mocked(apiClient.patch);
 const mockDelete = vi.mocked(apiClient.delete);
 const mockToast = vi.mocked(toast);
 
@@ -78,6 +80,49 @@ describe('SavedViewsMenu', () => {
     await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/alerts/views/1'));
     expect(screen.queryByText('Critical pending')).toBeNull();
     expect(screen.getByText('Mine unassigned')).toBeTruthy();
+  });
+
+  it('renames a view inline', async () => {
+    mockGet.mockResolvedValue({ data: views } as never);
+    const renamed = { ...views[0], name: 'Critical triage' };
+    mockPatch.mockResolvedValue({ data: renamed } as never);
+    render(<SavedViewsMenu currentFilters={{}} onApply={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /saved views/i }));
+    fireEvent.click(await screen.findByLabelText('Rename view Critical pending'));
+    const input = await screen.findByLabelText('New name for view Critical pending');
+    fireEvent.change(input, { target: { value: 'Critical triage' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/alerts/views/1', { name: 'Critical triage' }));
+    expect(await screen.findByText('Critical triage')).toBeTruthy();
+    expect(screen.queryByText('Critical pending')).toBeNull();
+    expect(mockToast).toHaveBeenCalledWith('Renamed view to "Critical triage"', 'success');
+  });
+
+  it('escape cancels a rename without calling the API', async () => {
+    mockGet.mockResolvedValue({ data: views } as never);
+    render(<SavedViewsMenu currentFilters={{}} onApply={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /saved views/i }));
+    fireEvent.click(await screen.findByLabelText('Rename view Critical pending'));
+    const input = await screen.findByLabelText('New name for view Critical pending');
+    fireEvent.change(input, { target: { value: 'Changed mind' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.queryByLabelText('New name for view Critical pending')).toBeNull();
+    expect(await screen.findByText('Critical pending')).toBeTruthy();
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it('shows an error toast when the rename fails', async () => {
+    mockGet.mockResolvedValue({ data: views } as never);
+    mockPatch.mockRejectedValue(new Error('conflict'));
+    render(<SavedViewsMenu currentFilters={{}} onApply={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /saved views/i }));
+    fireEvent.click(await screen.findByLabelText('Rename view Critical pending'));
+    const input = await screen.findByLabelText('New name for view Critical pending');
+    fireEvent.change(input, { target: { value: 'Mine unassigned' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(mockToast).toHaveBeenCalledWith(expect.any(String), 'error'));
+    // The row stays in edit mode so the analyst can fix the name.
+    expect(screen.getByLabelText('New name for view Critical pending')).toBeTruthy();
   });
 
   it('shows the empty state', async () => {

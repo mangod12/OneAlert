@@ -11,6 +11,7 @@ from backend.models.saved_view import (
     FILTERS_MODELS,
     SavedView,
     SavedViewCreate,
+    SavedViewRename,
     SavedViewResponse,
 )
 from backend.models.user import User
@@ -18,6 +19,25 @@ from backend.models.user import User
 router = APIRouter()
 
 MAX_VIEWS_PER_USER = 25
+
+
+async def _name_conflict(
+    db: AsyncSession,
+    user_id: int,
+    scope: str,
+    name: str,
+    exclude_id: int | None = None,
+) -> bool:
+    """True when the user already has a view with this name in the scope (case-insensitive)."""
+    stmt = select(SavedView).where(
+        SavedView.user_id == user_id,
+        SavedView.scope == scope,
+        func.lower(SavedView.name) == name.lower(),
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(SavedView.id != exclude_id)
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none() is not None
 
 
 def _scope(request: Request) -> str:
@@ -72,14 +92,7 @@ async def create_saved_view(
     )
     if (existing.scalar() or 0) >= MAX_VIEWS_PER_USER:
         raise HTTPException(status_code=400, detail=f"Saved views are limited to {MAX_VIEWS_PER_USER} per user")
-    duplicate = await db.execute(
-        select(SavedView).where(
-            SavedView.user_id == current_user.id,
-            SavedView.scope == scope,
-            func.lower(SavedView.name) == name.lower(),
-        )
-    )
-    if duplicate.scalar_one_or_none() is not None:
+    if await _name_conflict(db, current_user.id, scope, name):
         raise HTTPException(status_code=409, detail="A saved view with this name already exists")
     view = SavedView(
         user_id=current_user.id,
@@ -115,3 +128,36 @@ async def delete_saved_view(
         raise HTTPException(status_code=404, detail="Saved view not found")
     await db.delete(view)
     await db.commit()
+
+
+@router.patch("/alerts/views/{view_id}", response_model=SavedViewResponse)
+@router.patch("/cases/views/{view_id}", response_model=SavedViewResponse)
+@router.patch("/events/views/{view_id}", response_model=SavedViewResponse)
+async def rename_saved_view(
+    view_id: int,
+    payload: SavedViewRename,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Rename one of the current user's saved views. Filters are unchanged."""
+    scope = _scope(request)
+    result = await db.execute(
+        select(SavedView).where(
+            SavedView.id == view_id,
+            SavedView.user_id == current_user.id,
+            SavedView.scope == scope,
+        )
+    )
+    view = result.scalar_one_or_none()
+    if view is None:
+        raise HTTPException(status_code=404, detail="Saved view not found")
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="View name cannot be blank")
+    if await _name_conflict(db, current_user.id, scope, name, exclude_id=view.id):
+        raise HTTPException(status_code=409, detail="A saved view with this name already exists")
+    view.name = name
+    await db.commit()
+    await db.refresh(view)
+    return view
