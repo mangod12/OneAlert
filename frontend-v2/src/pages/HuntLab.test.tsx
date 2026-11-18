@@ -127,6 +127,26 @@ describe('Detection rules', () => {
     }));
   });
 
+  it('edits a rule name, description and confidence with type and content fixed', async () => {
+    mockWithRules();
+    mockPatch.mockImplementation(async (_url: string, data?: unknown) => {
+      const body = data as { name: string; description: string; confidence: string };
+      return { data: { ...rules[0], ...body } };
+    });
+    render(<HuntLab />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit rule Modbus write to PLC' }));
+    expect((screen.getByLabelText('Name *') as HTMLInputElement).value).toBe('Modbus write to PLC');
+    expect((screen.getByLabelText('Type') as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Rule content *') as HTMLTextAreaElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Name *'), { target: { value: 'Modbus write v2' } });
+    fireEvent.change(screen.getByLabelText('Confidence'), { target: { value: 'medium' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update rule' }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/hunt/detections/1', {
+      name: 'Modbus write v2', description: 'Flags write function codes', confidence: 'medium',
+    }));
+    expect(await screen.findByText('Modbus write v2')).toBeTruthy();
+  });
+
   it('disables and re-enables a rule via the API', async () => {
     mockWithRules();
     mockPatch.mockImplementation(async (url: string, data?: unknown) => {
