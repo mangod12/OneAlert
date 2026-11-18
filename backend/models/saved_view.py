@@ -1,4 +1,4 @@
-"""Saved filter views: named, per-user snapshots of list filters (alerts or cases)."""
+"""Saved filter views: named, per-user snapshots of list filters (alerts, cases or events)."""
 
 from datetime import datetime
 from typing import Any
@@ -46,7 +46,19 @@ class CaseViewFilters(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-FILTERS_MODELS = {"alerts": SavedViewFilters, "cases": CaseViewFilters}
+class EventViewFilters(BaseModel):
+    """Subset of the events-list query parameters captured in a saved view."""
+
+    severity: str | None = None
+    event_type: str | None = None
+    source_type: str | None = None
+    ip: str | None = None
+    signature: str | None = None
+    sort: str | None = None
+    model_config = {"extra": "forbid"}
+
+
+FILTERS_MODELS = {"alerts": SavedViewFilters, "cases": CaseViewFilters, "events": EventViewFilters}
 
 
 class SavedViewCreate(BaseModel):

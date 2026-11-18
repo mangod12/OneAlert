@@ -9,7 +9,17 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { toast } from '../components/Toast';
 import { useDialogFocus } from '../components/ui/useDialogFocus';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { SavedViewsMenu } from '../components/SavedViewsMenu';
 import { eventSeverityTones } from '../components/ui/tones';
+
+interface EventViewFilters {
+  severity?: string;
+  event_type?: string;
+  source_type?: string;
+  ip?: string;
+  signature?: string;
+  sort?: string;
+}
 
 const severityColors: Record<string, string> = {
   critical: 'text-danger',
@@ -215,6 +225,26 @@ export function Events() {
 
       {/* Event filters */}
       <div className="flex items-center gap-4 flex-wrap">
+      <SavedViewsMenu<EventViewFilters>
+        basePath="/events/views/"
+        currentFilters={{
+          ...(severityFilter ? { severity: severityFilter } : {}),
+          ...(eventTypeFilter ? { event_type: eventTypeFilter } : {}),
+          ...(sourceTypeFilter ? { source_type: sourceTypeFilter } : {}),
+          ...(ipSearch.trim() ? { ip: ipSearch.trim() } : {}),
+          ...(signatureSearch.trim() ? { signature: signatureSearch.trim() } : {}),
+          sort,
+        }}
+        onApply={(filters: EventViewFilters) => {
+          setSeverityFilter(filters.severity ?? '');
+          setEventTypeFilter(filters.event_type ?? '');
+          setSourceTypeFilter(filters.source_type ?? '');
+          setIpSearch(filters.ip ?? '');
+          setSignatureSearch(filters.signature ?? '');
+          setSort(filters.sort ?? 'timestamp_desc');
+          setPage(1);
+        }}
+      />
       <div className="flex items-center gap-2">
         <label htmlFor="event-ip-filter" className="text-xs text-surface-400">IP</label>
         <input
