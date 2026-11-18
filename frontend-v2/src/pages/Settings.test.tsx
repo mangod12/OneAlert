@@ -42,7 +42,7 @@ beforeEach(() => {
   mockGet.mockImplementation(async (url: string) => {
     if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
     if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low' } };
-    if (url === '/auth/me/automation-preferences') return { data: { auto_escalate_incidents: false, auto_escalate_min_alerts: 3, auto_escalate_min_severity: 'high' } };
+    if (url === '/auth/me/automation-preferences') return { data: { auto_escalate_incidents: false, auto_escalate_min_alerts: 3, auto_escalate_min_severity: 'high', sla_due_dates_enabled: false, sla_days_critical: 1, sla_days_high: 3, sla_days_medium: 7, sla_days_low: 14, sla_days_info: 30 } };
     return notFound();
   });
   mockPatch.mockResolvedValue({ data: { email_notifications_enabled: false, notify_min_severity: 'high' } });
@@ -361,7 +361,7 @@ describe('Email notification preferences', () => {
       if (url === '/auth/me') return { data: { ...analyst, full_name: 'New Name', company: 'New Co' } };
       if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
       if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low' } };
-    if (url === '/auth/me/automation-preferences') return { data: { auto_escalate_incidents: false, auto_escalate_min_alerts: 3, auto_escalate_min_severity: 'high' } };
+    if (url === '/auth/me/automation-preferences') return { data: { auto_escalate_incidents: false, auto_escalate_min_alerts: 3, auto_escalate_min_severity: 'high', sla_due_dates_enabled: false, sla_days_critical: 1, sla_days_high: 3, sla_days_medium: 7, sla_days_low: 14, sla_days_info: 30 } };
       return notFound();
     });
     mockPatch.mockResolvedValue({ data: {} });

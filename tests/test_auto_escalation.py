@@ -6,14 +6,16 @@ the alert checker, case creation with linked alerts, and deduplication
 when an open investigation already covers the incident.
 """
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
+from backend.database.db import Base, get_async_db, get_db
 from backend.main import app
-from backend.database.db import get_db, get_async_db, Base
 from backend.models.alert import Alert
 from backend.models.asset import Asset
 from backend.models.case import Case, CaseAlert
@@ -21,7 +23,6 @@ from backend.models.notification import Notification
 from backend.models.user import User
 from backend.services.alert_checker import _maybe_auto_escalate
 from backend.services.auth_service import get_password_hash
-
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test_auto_escalation.db"
 engine = create_engine(
@@ -100,6 +101,12 @@ class TestAutomationPreferences:
             "auto_escalate_incidents": False,
             "auto_escalate_min_alerts": 3,
             "auto_escalate_min_severity": "high",
+            "sla_due_dates_enabled": False,
+            "sla_days_critical": 1,
+            "sla_days_high": 3,
+            "sla_days_medium": 7,
+            "sla_days_low": 14,
+            "sla_days_info": 30,
         }
 
     def test_update_roundtrip(self, client, auth_headers):
@@ -236,4 +243,39 @@ class TestCheckerAutoEscalation:
             asset = await session.get(Asset, asset_id)
             await _maybe_auto_escalate(session, user, asset)
             assert (await session.execute(select(Case).where(Case.user_id == uid))).scalars().all() == []
+            await session.rollback()
+
+
+    @pytest.mark.asyncio
+    async def test_escalated_case_gets_sla_due_date(self, client, auth_headers):
+        uid = _user_id()
+        asset_id = _seed_incident(
+            uid,
+            [("a1", "critical"), ("a2", "high"), ("a3", "high")],
+            {"auto_escalate_incidents": True, "sla_due_dates_enabled": True,
+             "sla_days_critical": 2},
+        )
+        async with AsyncTestingSessionLocal() as session:
+            user = await session.get(User, uid)
+            asset = await session.get(Asset, asset_id)
+            await _maybe_auto_escalate(session, user, asset)
+            case = (await session.execute(select(Case).where(Case.user_id == uid))).scalar_one()
+            assert case.severity == "critical"
+            assert case.due_date == datetime.now(UTC).date() + timedelta(days=2)
+            await session.rollback()
+
+    @pytest.mark.asyncio
+    async def test_escalated_case_has_no_due_date_when_sla_disabled(self, client, auth_headers):
+        uid = _user_id()
+        asset_id = _seed_incident(
+            uid,
+            [("a1", "critical"), ("a2", "high"), ("a3", "high")],
+            {"auto_escalate_incidents": True},
+        )
+        async with AsyncTestingSessionLocal() as session:
+            user = await session.get(User, uid)
+            asset = await session.get(Asset, asset_id)
+            await _maybe_auto_escalate(session, user, asset)
+            case = (await session.execute(select(Case).where(Case.user_id == uid))).scalar_one()
+            assert case.due_date is None
             await session.rollback()

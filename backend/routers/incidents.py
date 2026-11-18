@@ -13,6 +13,7 @@ from backend.models.case import Case, CaseAlert
 from backend.models.network_connection import NetworkConnection
 from backend.models.user import User
 from backend.services.audit import add_audit_log
+from backend.services.sla import sla_due_date
 
 router = APIRouter()
 
@@ -166,6 +167,7 @@ async def escalate_incident(
         summary=summary[:2000],
         severity=max_severity,
         status="open",
+        due_date=sla_due_date(current_user, max_severity),
     )
     db.add(case)
     await db.flush()

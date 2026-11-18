@@ -59,6 +59,12 @@ class User(Base):
     auto_escalate_incidents = Column(Boolean, nullable=False, server_default="0")
     auto_escalate_min_alerts = Column(Integer, nullable=False, server_default="3")
     auto_escalate_min_severity = Column(String, nullable=False, server_default="high")
+    sla_due_dates_enabled = Column(Boolean, nullable=False, server_default="0")
+    sla_days_critical = Column(Integer, nullable=False, server_default="1")
+    sla_days_high = Column(Integer, nullable=False, server_default="3")
+    sla_days_medium = Column(Integer, nullable=False, server_default="7")
+    sla_days_low = Column(Integer, nullable=False, server_default="14")
+    sla_days_info = Column(Integer, nullable=False, server_default="30")
     organization = relationship("Organization", back_populates="users")
 
     # Slack and webhook URLs
@@ -242,6 +248,12 @@ class AutomationPreferences(BaseModel):
     auto_escalate_incidents: bool
     auto_escalate_min_alerts: int
     auto_escalate_min_severity: str
+    sla_due_dates_enabled: bool
+    sla_days_critical: int
+    sla_days_high: int
+    sla_days_medium: int
+    sla_days_low: int
+    sla_days_info: int
 
     model_config = {"from_attributes": True}
 
@@ -253,3 +265,9 @@ class AutomationPreferencesUpdate(BaseModel):
     auto_escalate_min_severity: str | None = Field(
         default=None, pattern="^(low|medium|high|critical)$"
     )
+    sla_due_dates_enabled: bool | None = None
+    sla_days_critical: int | None = Field(default=None, ge=1, le=90)
+    sla_days_high: int | None = Field(default=None, ge=1, le=90)
+    sla_days_medium: int | None = Field(default=None, ge=1, le=90)
+    sla_days_low: int | None = Field(default=None, ge=1, le=90)
+    sla_days_info: int | None = Field(default=None, ge=1, le=90)

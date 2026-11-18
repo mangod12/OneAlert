@@ -326,6 +326,11 @@ async def update_automation_preferences(
         current_user.auto_escalate_min_alerts = update.auto_escalate_min_alerts
     if update.auto_escalate_min_severity is not None:
         current_user.auto_escalate_min_severity = update.auto_escalate_min_severity
+    for field in ("sla_due_dates_enabled", "sla_days_critical", "sla_days_high",
+                  "sla_days_medium", "sla_days_low", "sla_days_info"):
+        value = getattr(update, field)
+        if value is not None:
+            setattr(current_user, field, value)
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
