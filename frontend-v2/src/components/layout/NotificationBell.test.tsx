@@ -7,6 +7,7 @@ vi.mock('../../api/client', () => ({
   default: {
     get: vi.fn(),
     post: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
@@ -14,6 +15,7 @@ import apiClient from '../../api/client';
 
 const mockGet = vi.mocked(apiClient.get);
 const mockPost = vi.mocked(apiClient.post);
+const mockDelete = vi.mocked(apiClient.delete);
 
 function listResponse(items: unknown[], unread: number) {
   return { data: { success: true, data: items, total: items.length, unread_count: unread } };
@@ -92,6 +94,38 @@ describe('NotificationBell', () => {
     fireEvent.click(await screen.findByRole('button', { name: /notifications/i }));
     fireEvent.click(await screen.findByText('New critical alert on PLC-01'));
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/notifications/11/read'));
+  });
+
+  it('deletes a single notification from the list', async () => {
+    mockGet
+      .mockResolvedValueOnce(listResponse([], 1) as never)
+      .mockResolvedValueOnce(listResponse(sample, 1) as never);
+    mockDelete.mockResolvedValue({ data: { success: true } } as never);
+
+    render(<MemoryRouter><NotificationBell /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: /notifications/i }));
+    expect(await screen.findByText('Case #4 assigned to you')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete notification Case #4 assigned to you' }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/notifications/10'));
+    await waitFor(() => expect(screen.queryByText('Case #4 assigned to you')).toBeNull());
+    expect(screen.getByText('New critical alert on PLC-01')).toBeTruthy();
+  });
+
+  it('clears read notifications and keeps unread ones', async () => {
+    mockGet
+      .mockResolvedValueOnce(listResponse([], 1) as never)
+      .mockResolvedValueOnce(listResponse(sample, 1) as never);
+    mockDelete.mockResolvedValue({ data: { success: true, deleted: 1 } } as never);
+
+    render(<MemoryRouter><NotificationBell /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: /notifications/i }));
+    expect(await screen.findByText('Case #4 assigned to you')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /clear read/i }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/notifications/read'));
+    await waitFor(() => expect(screen.queryByText('Case #4 assigned to you')).toBeNull());
+    expect(screen.getByText('New critical alert on PLC-01')).toBeTruthy();
   });
 
   it('shows an empty state when there are no notifications', async () => {

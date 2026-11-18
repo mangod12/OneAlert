@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bell, CheckCheck } from 'lucide-react';
+import { Bell, CheckCheck, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../../api/client';
 
@@ -90,6 +90,26 @@ export function NotificationBell() {
     setItems(current => current?.map(item => ({ ...item, read_at: item.read_at ?? new Date().toISOString() })) ?? current);
   };
 
+  const deleteItem = async (item: AppNotification) => {
+    setItems(current => current?.filter(entry => entry.id !== item.id) ?? current);
+    if (!item.read_at) setUnread(count => Math.max(0, count - 1));
+    try {
+      await apiClient.delete(`/notifications/${item.id}`);
+    } catch {
+      void refreshUnread();
+    }
+  };
+
+  const clearRead = async () => {
+    const hadRead = items?.some(item => item.read_at) ?? false;
+    setItems(current => current?.filter(entry => !entry.read_at) ?? current);
+    try {
+      await apiClient.delete('/notifications/read');
+    } catch {
+      if (hadRead) void openPanel();
+    }
+  };
+
   const openItem = async (item: AppNotification) => {
     if (!item.read_at) {
       void apiClient.post(`/notifications/${item.id}/read`).catch(() => undefined);
@@ -123,16 +143,28 @@ export function NotificationBell() {
         <div className="absolute right-0 top-full z-40 mt-2 w-80 overflow-hidden rounded-lg border border-surface-800 bg-surface-900 shadow-xl">
           <div className="flex items-center justify-between border-b border-surface-800 px-3 py-2">
             <p className="text-xs font-bold uppercase tracking-[0.12em] text-surface-400">Notifications</p>
-            {unread > 0 && (
-              <button
-                type="button"
-                onClick={() => void markAllRead()}
-                className="flex items-center gap-1 text-[11px] font-semibold text-accent-400 hover:text-accent-300"
-              >
-                <CheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                Mark all read
-              </button>
-            )}
+            <div className="flex items-center gap-3">
+              {items?.some(item => item.read_at) && (
+                <button
+                  type="button"
+                  onClick={() => void clearRead()}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-surface-400 hover:text-surface-200"
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  Clear read
+                </button>
+              )}
+              {unread > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void markAllRead()}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-accent-400 hover:text-accent-300"
+                >
+                  <CheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                  Mark all read
+                </button>
+              )}
+            </div>
           </div>
           <ul className="max-h-80 overflow-y-auto">
             {items === null && <li className="px-3 py-4 text-center text-xs text-surface-500">Loading…</li>}
@@ -140,11 +172,11 @@ export function NotificationBell() {
               <li className="px-3 py-4 text-center text-xs text-surface-500">No notifications yet</li>
             )}
             {items?.map(item => (
-              <li key={item.id}>
+              <li key={item.id} className="group relative">
                 <button
                   type="button"
                   onClick={() => void openItem(item)}
-                  className={`flex w-full flex-col gap-0.5 px-3 py-2.5 text-left hover:bg-surface-800 ${item.read_at ? 'opacity-60' : ''}`}
+                  className={`flex w-full flex-col gap-0.5 px-3 py-2.5 pr-9 text-left hover:bg-surface-800 ${item.read_at ? 'opacity-60' : ''}`}
                 >
                   <span className="flex items-center gap-2">
                     {!item.read_at && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent-400" aria-hidden="true" />}
@@ -152,6 +184,14 @@ export function NotificationBell() {
                   </span>
                   {item.body && <span className="truncate pl-3.5 text-[11px] text-surface-400">{item.body}</span>}
                   <span className="pl-3.5 text-[10px] uppercase tracking-wide text-surface-500">{relativeTime(item.created_at)}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Delete notification ${item.title}`}
+                  onClick={() => void deleteItem(item)}
+                  className="absolute right-2 top-2.5 grid h-6 w-6 place-items-center rounded text-surface-500 opacity-0 transition-opacity hover:bg-surface-700 hover:text-surface-200 focus:opacity-100 group-hover:opacity-100"
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               </li>
             ))}
