@@ -261,3 +261,124 @@ class TestCaseAssignmentNotification:
         assert resp.status_code == 200, resp.text
         feed = client.get("/api/v1/notifications/", headers=owner).json()
         assert feed["unread_count"] == 0
+
+
+class TestCaseUpdateNotification:
+    """Owner edits to severity/due date notify the assignee (case_updated)."""
+
+    def _assigned_case(self, client):
+        # Register an owner and a member in one org; owner creates and assigns a case.
+        owner = _register_and_login(client, "owner2@example.com")
+        member = _register_and_login(client, "member2@example.com")
+        owner_id = _user_id(client, owner)
+        member_id = _user_id(client, member)
+        with _TestingSessionLocal() as db:
+            org = Organization(name="Acme", slug="acme-2")
+            db.add(org)
+            db.commit()
+            db.refresh(org)
+            for uid in (owner_id, member_id):
+                user = db.get(User, uid)
+                user.org_id = org.id
+            case = Case(user_id=owner_id, title="Odd SMB scanning", status="open", severity="high")
+            db.add(case)
+            db.commit()
+            db.refresh(case)
+            case_id = case.id
+        resp = client.post(
+            f"/api/v1/cases/{case_id}/assign", json={"user_id": member_id}, headers=owner,
+        )
+        assert resp.status_code == 200, resp.text
+        return owner, member, case_id
+
+    def test_severity_change_notifies_assignee(self, client):
+        owner, member, case_id = self._assigned_case(client)
+        resp = client.patch(
+            f"/api/v1/cases/{case_id}?severity=critical", headers=owner,
+        )
+        assert resp.status_code == 200, resp.text
+        feed = client.get("/api/v1/notifications/", headers=member).json()
+        updates = [n for n in feed["data"] if n["kind"] == "case_updated"]
+        assert len(updates) == 1
+        note = updates[0]
+        assert note["title"] == f"Case #{case_id} updated"
+        assert "severity high -> critical" in note["body"]
+        assert note["link"] == f"/app/cases/{case_id}"
+
+    def test_due_date_change_notifies_assignee(self, client):
+        owner, member, case_id = self._assigned_case(client)
+        resp = client.patch(
+            f"/api/v1/cases/{case_id}?due_date=2026-12-01", headers=owner,
+        )
+        assert resp.status_code == 200, resp.text
+        resp = client.patch(
+            f"/api/v1/cases/{case_id}?due_date=2026-12-15", headers=owner,
+        )
+        assert resp.status_code == 200, resp.text
+        feed = client.get("/api/v1/notifications/", headers=member).json()
+        updates = [n for n in feed["data"] if n["kind"] == "case_updated"]
+        assert len(updates) == 2
+        assert "due date none -> 2026-12-01" in updates[1]["body"]
+        assert "due date 2026-12-01 -> 2026-12-15" in updates[0]["body"]
+
+    def test_cleared_due_date_notifies_assignee(self, client):
+        owner, member, case_id = self._assigned_case(client)
+        client.patch(f"/api/v1/cases/{case_id}?due_date=2026-12-01", headers=owner)
+        resp = client.patch(f"/api/v1/cases/{case_id}?due_date=", headers=owner)
+        assert resp.status_code == 200, resp.text
+        feed = client.get("/api/v1/notifications/", headers=member).json()
+        updates = [n for n in feed["data"] if n["kind"] == "case_updated"]
+        assert len(updates) == 2
+        assert "due date 2026-12-01 -> cleared" in updates[0]["body"]
+
+    def test_unchanged_severity_does_not_notify(self, client):
+        owner, member, case_id = self._assigned_case(client)
+        resp = client.patch(f"/api/v1/cases/{case_id}?severity=high", headers=owner)
+        assert resp.status_code == 200, resp.text
+        feed = client.get("/api/v1/notifications/", headers=member).json()
+        updates = [n for n in feed["data"] if n["kind"] == "case_updated"]
+        assert updates == []
+
+    def test_title_change_does_not_notify(self, client):
+        owner, member, case_id = self._assigned_case(client)
+        resp = client.patch(
+            f"/api/v1/cases/{case_id}?title=Renamed%20case", headers=owner,
+        )
+        assert resp.status_code == 200, resp.text
+        feed = client.get("/api/v1/notifications/", headers=member).json()
+        updates = [n for n in feed["data"] if n["kind"] == "case_updated"]
+        assert updates == []
+
+    def test_unassigned_case_update_notifies_nobody(self, client):
+        owner = _register_and_login(client, "lonely@example.com")
+        owner_id = _user_id(client, owner)
+        with _TestingSessionLocal() as db:
+            case = Case(user_id=owner_id, title="Solo", status="open", severity="low")
+            db.add(case)
+            db.commit()
+            db.refresh(case)
+            case_id = case.id
+        resp = client.patch(f"/api/v1/cases/{case_id}?severity=high", headers=owner)
+        assert resp.status_code == 200, resp.text
+        with _TestingSessionLocal() as db:
+            count = db.query(Notification).filter(Notification.kind == "case_updated").count()
+        assert count == 0
+
+    def test_owner_self_assigned_gets_no_notification(self, client):
+        owner = _register_and_login(client, "selfy@example.com")
+        owner_id = _user_id(client, owner)
+        with _TestingSessionLocal() as db:
+            case = Case(user_id=owner_id, title="Mine", status="open", severity="medium")
+            db.add(case)
+            db.commit()
+            db.refresh(case)
+            case_id = case.id
+        resp = client.post(
+            f"/api/v1/cases/{case_id}/assign", json={"user_id": owner_id}, headers=owner,
+        )
+        assert resp.status_code == 200, resp.text
+        resp = client.patch(f"/api/v1/cases/{case_id}?severity=high", headers=owner)
+        assert resp.status_code == 200, resp.text
+        feed = client.get("/api/v1/notifications/", headers=owner).json()
+        updates = [n for n in feed["data"] if n["kind"] == "case_updated"]
+        assert updates == []
