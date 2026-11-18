@@ -11,8 +11,8 @@ const post = vi.mocked(apiClient.post);
 const del = vi.mocked(apiClient.delete);
 
 const tokens = [
-  { id: 1, name: 'CI pipeline', prefix: 'oa_ab12cd34ef', created_at: '2026-11-10T00:00:00Z', last_used_at: '2026-11-17T00:00:00Z', expires_at: null, revoked_at: null },
-  { id: 2, name: 'Old laptop', prefix: 'oa_ff00ee11dd', created_at: '2026-10-01T00:00:00Z', last_used_at: null, expires_at: '2026-11-01T00:00:00Z', revoked_at: '2026-11-05T00:00:00Z' },
+  { id: 1, name: 'CI pipeline', prefix: 'oa_ab12cd34ef', created_at: '2026-11-10T00:00:00Z', last_used_at: '2026-11-17T00:00:00Z', expires_at: null, revoked_at: null, read_only: true },
+  { id: 2, name: 'Old laptop', prefix: 'oa_ff00ee11dd', created_at: '2026-10-01T00:00:00Z', last_used_at: null, expires_at: '2026-11-01T00:00:00Z', revoked_at: '2026-11-05T00:00:00Z', read_only: false },
 ];
 
 beforeEach(() => {
@@ -47,6 +47,25 @@ describe('ApiTokensPanel', () => {
     expect(screen.getByText(/will not be shown again/i)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     expect(screen.queryByText('oa_secretvalue123')).toBeNull();
+  });
+
+  it('creates a read-only token when the checkbox is set', async () => {
+    const created = { ...tokens[0], id: 4, name: 'Reporting', token: 'oa_readonlyvalue9' };
+    post.mockResolvedValue({ data: created });
+    render(<ApiTokensPanel />);
+    await screen.findByText('CI pipeline');
+
+    fireEvent.change(screen.getByLabelText('Token name'), { target: { value: 'Reporting' } });
+    fireEvent.click(screen.getByLabelText(/read-only/i));
+    fireEvent.click(screen.getByRole('button', { name: /create token/i }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/api-tokens/', { name: 'Reporting', read_only: true }));
+  });
+
+  it('shows a read-only badge on read-only tokens', async () => {
+    render(<ApiTokensPanel />);
+    await screen.findByText('CI pipeline');
+    expect(screen.getByText('read-only')).toBeTruthy();
   });
 
   it('revokes a token after confirmation', async () => {

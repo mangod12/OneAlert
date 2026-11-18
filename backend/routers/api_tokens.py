@@ -77,6 +77,7 @@ async def create_api_token(
         prefix=prefix,
         salt=salt,
         token_hash=hash_api_token(raw, salt),
+        read_only=payload.read_only,
         expires_at=(
             _utcnow() + timedelta(days=payload.expires_in_days)
             if payload.expires_in_days is not None

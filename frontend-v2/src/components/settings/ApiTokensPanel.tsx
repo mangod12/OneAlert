@@ -15,6 +15,7 @@ interface ApiToken {
   last_used_at: string | null;
   expires_at: string | null;
   revoked_at: string | null;
+  read_only: boolean;
 }
 
 interface CreatedToken extends ApiToken {
@@ -39,6 +40,7 @@ export function ApiTokensPanel() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [expiryDays, setExpiryDays] = useState<number | null>(null);
+  const [readOnly, setReadOnly] = useState(false);
   const [creating, setCreating] = useState(false);
   const [justCreated, setJustCreated] = useState<CreatedToken | null>(null);
   const [pendingRevoke, setPendingRevoke] = useState<ApiToken | null>(null);
@@ -66,10 +68,12 @@ export function ApiTokensPanel() {
       const resp = await apiClient.post<CreatedToken>('/api-tokens/', {
         name: trimmed,
         ...(expiryDays !== null ? { expires_in_days: expiryDays } : {}),
+        ...(readOnly ? { read_only: true } : {}),
       });
       setJustCreated(resp.data);
       setName('');
       setExpiryDays(null);
+      setReadOnly(false);
       await loadTokens();
     } catch (error) {
       toast(getApiErrorMessage(error, 'The token could not be created.'), 'error');
@@ -164,6 +168,16 @@ export function ApiTokensPanel() {
               ))}
             </select>
           </div>
+          <label htmlFor="api-token-read-only" className="flex items-center gap-2 pb-2 text-xs text-surface-300">
+            <input
+              id="api-token-read-only"
+              type="checkbox"
+              checked={readOnly}
+              onChange={event => setReadOnly(event.target.checked)}
+              className="h-4 w-4 rounded border-surface-600 bg-surface-950 text-primary-500 focus:ring-2 focus:ring-primary-500"
+            />
+            Read-only (GET requests only)
+          </label>
           <button
             type="button"
             disabled={!name.trim() || creating}
@@ -190,6 +204,7 @@ export function ApiTokensPanel() {
                       {token.name}
                     </span>
                     {token.revoked_at && <StatusBadge tone="neutral">revoked</StatusBadge>}
+                    {token.read_only && <StatusBadge tone="info">read-only</StatusBadge>}
                   </div>
                   <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-surface-500">
                     <span className="font-mono">{token.prefix}...</span>

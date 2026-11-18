@@ -105,6 +105,11 @@ async def get_current_user(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Inactive user",
             )
+        if api_token.read_only and request.method not in ("GET", "HEAD", "OPTIONS"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This API token is read-only",
+            )
         api_token.last_used_at = now
         await db.commit()
         return user
