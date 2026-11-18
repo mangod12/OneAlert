@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Siren } from 'lucide-react';
+import { toast } from '../components/Toast';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -86,9 +87,23 @@ function IncidentTimeline({ assetId }: { assetId: number }) {
 }
 
 export function Incidents() {
+  const navigate = useNavigate();
   const [incidents, setIncidents] = useState<Incident[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [escalating, setEscalating] = useState<number | null>(null);
+
+  const escalate = async (assetId: number) => {
+    if (escalating !== null) return;
+    setEscalating(assetId);
+    try {
+      const res = await apiClient.post<{ id: number }>(`/incidents/${assetId}/escalate`);
+      navigate(`/cases/${res.data.id}`);
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'The incident could not be escalated.'));
+      setEscalating(null);
+    }
+  };
 
   const load = useCallback(async () => {
     setError(null);
@@ -153,12 +168,22 @@ export function Incidents() {
                 </button>
                 {isOpen && (
                   <div className="border-t border-surface-700 px-4 py-3">
-                    <Link
-                      to={`/alerts?asset_id=${incident.asset_id}`}
-                      className="text-xs font-medium text-primary-400 hover:text-primary-300"
-                    >
-                      View these alerts in the alert list
-                    </Link>
+                    <div className="flex items-center justify-between gap-3">
+                      <Link
+                        to={`/alerts?asset_id=${incident.asset_id}`}
+                        className="text-xs font-medium text-primary-400 hover:text-primary-300"
+                      >
+                        View these alerts in the alert list
+                      </Link>
+                      <button
+                        type="button"
+                        disabled={escalating !== null}
+                        onClick={() => void escalate(incident.asset_id)}
+                        className="rounded-md bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-500 disabled:opacity-40"
+                      >
+                        {escalating === incident.asset_id ? 'Escalating…' : 'Escalate to investigation'}
+                      </button>
+                    </div>
                     <ul className="mt-3 space-y-2">
                       {incident.alerts.map(alert => (
                         <li key={alert.id} className="flex flex-wrap items-center gap-2 text-sm">
