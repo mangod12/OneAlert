@@ -7,6 +7,7 @@ vi.mock('../api/client', () => ({
     get: vi.fn(),
     post: vi.fn(),
     patch: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
@@ -15,6 +16,7 @@ import apiClient from '../api/client';
 const mockGet = vi.mocked(apiClient.get);
 const mockPost = vi.mocked(apiClient.post);
 const mockPatch = vi.mocked(apiClient.patch);
+const mockDelete = vi.mocked(apiClient.delete);
 
 const session = {
   id: 5,
@@ -139,6 +141,27 @@ describe('Detection rules', () => {
     expect(await screen.findByRole('button', { name: 'Enable rule Modbus write to PLC' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Enable rule Modbus write to PLC' }));
     await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/hunt/detections/1', { enabled: true }));
+  });
+
+  it('deletes a rule through the confirm dialog', async () => {
+    mockWithRules();
+    mockDelete.mockResolvedValue({ data: {} });
+    render(<HuntLab />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete rule Modbus write to PLC' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete rule' }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/hunt/detections/1'));
+    await waitFor(() => expect(screen.queryByText('Modbus write to PLC')).toBeNull());
+    expect(screen.getByText('DNS tunneling heuristic')).toBeTruthy();
+  });
+
+  it('keeps the rule when the delete dialog is cancelled', async () => {
+    mockWithRules();
+    render(<HuntLab />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete rule Modbus write to PLC' }));
+    fireEvent.click(await screen.findByRole('button', { name: /cancel/i }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Delete rule' })).toBeNull());
+    expect(mockDelete).not.toHaveBeenCalled();
+    expect(screen.getByText('Modbus write to PLC')).toBeTruthy();
   });
 
   it('posts nothing when a manual rule is missing its content', async () => {
