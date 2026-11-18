@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import case as sql_case
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -47,6 +47,14 @@ def _severity_rank(value: str | None) -> int:
         return -1
 
 
+def _visible_cases(case_id: int, current_user: User):
+    """Cases the user may open: their own plus investigations assigned to them."""
+    return select(Case).where(
+        Case.id == case_id,
+        or_(Case.user_id == current_user.id, Case.assigned_to_id == current_user.id),
+    )
+
+
 router = APIRouter()
 
 
@@ -71,8 +79,13 @@ async def list_cases(
     """List investigation cases with pagination and filters."""
     skip = (page - 1) * size
 
-    query = select(Case).options(joinedload(Case.assignee)).where(Case.user_id == current_user.id)
-    count_q = select(func.count(Case.id)).where(Case.user_id == current_user.id)
+    if assigned == "me":
+        # "My assignments" spans the org: cases others assigned to me, not just my own.
+        query = select(Case).options(joinedload(Case.assignee)).where(Case.assigned_to_id == current_user.id)
+        count_q = select(func.count(Case.id)).where(Case.assigned_to_id == current_user.id)
+    else:
+        query = select(Case).options(joinedload(Case.assignee)).where(Case.user_id == current_user.id)
+        count_q = select(func.count(Case.id)).where(Case.user_id == current_user.id)
 
     if severity:
         query = query.filter(Case.severity == severity)
@@ -80,10 +93,7 @@ async def list_cases(
     if status_filter:
         query = query.filter(Case.status == status_filter)
         count_q = count_q.filter(Case.status == status_filter)
-    if assigned == "me":
-        query = query.filter(Case.assigned_to_id == current_user.id)
-        count_q = count_q.filter(Case.assigned_to_id == current_user.id)
-    elif assigned == "unassigned":
+    if assigned == "unassigned":
         query = query.filter(Case.assigned_to_id.is_(None))
         count_q = count_q.filter(Case.assigned_to_id.is_(None))
     if overdue:
@@ -292,7 +302,7 @@ async def get_case(
 ):
     """Get case detail with timeline."""
     case = (await db.execute(
-        select(Case).options(joinedload(Case.assignee)).where(Case.id == case_id, Case.user_id == current_user.id)
+        _visible_cases(case_id, current_user).options(joinedload(Case.assignee))
     )).scalar_one_or_none()
 
     if not case:
@@ -329,7 +339,7 @@ async def export_case_timeline(
 ):
     """Export the case timeline as CSV for incident reports."""
     case = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+        _visible_cases(case_id, current_user)
     )).scalar_one_or_none()
     if case is None:
         raise HTTPException(status_code=404, detail="Case not found")
@@ -369,7 +379,7 @@ async def add_case_note(
 ):
     """Add an investigator note to the case timeline."""
     case = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+        _visible_cases(case_id, current_user)
     )).scalar_one_or_none()
     if case is None:
         raise HTTPException(status_code=404, detail="Case not found")
@@ -472,11 +482,19 @@ async def update_case(
 ):
     """Update case status, severity, title, or summary."""
     case = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+        _visible_cases(case_id, current_user)
     )).scalar_one_or_none()
 
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+
+    if case.user_id != current_user.id and any(
+        value is not None for value in (severity, title, summary, due_date)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Assignees can update the status only; the case owner edits the details",
+        )
 
     if status_update:
         case.status = status_update
@@ -657,7 +675,7 @@ async def get_case_alerts(
     from backend.models.alert import Alert
 
     case = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+        _visible_cases(case_id, current_user)
     )).scalar_one_or_none()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
@@ -764,7 +782,7 @@ async def get_case_events(
     from backend.models.security_event import SecurityEvent
 
     case = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+        _visible_cases(case_id, current_user)
     )).scalar_one_or_none()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
