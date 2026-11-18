@@ -48,6 +48,8 @@ export function Settings() {
   const [notifEnabled, setNotifEnabled] = useState(true);
   const [notifMinSeverity, setNotifMinSeverity] = useState('low');
   const [notifMutedKinds, setNotifMutedKinds] = useState<string[]>([]);
+  const [quietStart, setQuietStart] = useState('');
+  const [quietEnd, setQuietEnd] = useState('');
   const [notifSaving, setNotifSaving] = useState(false);
   const [notifMessage, setNotifMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [pwCurrent, setPwCurrent] = useState('');
@@ -90,11 +92,13 @@ export function Settings() {
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await apiClient.get<{ email_notifications_enabled: boolean; notify_min_severity: string; muted_kinds: string[] }>('/auth/me/notification-preferences');
+        const res = await apiClient.get<{ email_notifications_enabled: boolean; notify_min_severity: string; muted_kinds: string[]; quiet_hours_start: string | null; quiet_hours_end: string | null }>('/auth/me/notification-preferences');
         if (cancelled) return;
         setNotifEnabled(res.data.email_notifications_enabled);
         setNotifMinSeverity(res.data.notify_min_severity);
         setNotifMutedKinds(res.data.muted_kinds ?? []);
+        setQuietStart(res.data.quiet_hours_start ?? '');
+        setQuietEnd(res.data.quiet_hours_end ?? '');
       } catch {
         if (!cancelled) setNotifMessage({ text: 'Notification preferences could not be loaded.', error: true });
       }
@@ -105,17 +109,25 @@ export function Settings() {
 
   const handleSaveNotifications = async () => {
     if (notifSaving) return;
+    if ((quietStart === '') !== (quietEnd === '')) {
+      setNotifMessage({ text: 'Quiet hours need both a start and an end time, or neither.', error: true });
+      return;
+    }
     setNotifSaving(true);
     setNotifMessage(null);
     try {
-      const res = await apiClient.patch<{ email_notifications_enabled: boolean; notify_min_severity: string; muted_kinds: string[] }>('/auth/me/notification-preferences', {
+      const res = await apiClient.patch<{ email_notifications_enabled: boolean; notify_min_severity: string; muted_kinds: string[]; quiet_hours_start: string | null; quiet_hours_end: string | null }>('/auth/me/notification-preferences', {
         email_notifications_enabled: notifEnabled,
         notify_min_severity: notifMinSeverity,
         muted_kinds: notifMutedKinds,
+        quiet_hours_start: quietStart === '' ? null : quietStart,
+        quiet_hours_end: quietEnd === '' ? null : quietEnd,
       });
       setNotifEnabled(res.data.email_notifications_enabled);
       setNotifMinSeverity(res.data.notify_min_severity);
       setNotifMutedKinds(res.data.muted_kinds ?? []);
+      setQuietStart(res.data.quiet_hours_start ?? '');
+      setQuietEnd(res.data.quiet_hours_end ?? '');
       setNotifMessage({ text: 'Notification preferences saved.', error: false });
     } catch (error: unknown) {
       setNotifMessage({ text: getApiErrorMessage(error, 'The notification preferences could not be saved.'), error: true });
@@ -658,6 +670,35 @@ export function Settings() {
                   {label}
                 </label>
               ))}
+            </div>
+            <div>
+              <p className="mb-1.5 text-sm font-medium text-surface-300">Quiet hours (UTC)</p>
+              <p className="mb-2 text-xs text-surface-500">No emails inside this window, even above the minimum severity. Critical alerts always come through.</p>
+              <div className="flex items-center gap-3">
+                <label htmlFor="quiet-start" className="text-xs text-surface-400">From</label>
+                <input
+                  id="quiet-start"
+                  type="time"
+                  value={quietStart}
+                  onChange={event => setQuietStart(event.target.value)}
+                  disabled={!notifEnabled}
+                  className="rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 disabled:opacity-50"
+                />
+                <label htmlFor="quiet-end" className="text-xs text-surface-400">Until</label>
+                <input
+                  id="quiet-end"
+                  type="time"
+                  value={quietEnd}
+                  onChange={event => setQuietEnd(event.target.value)}
+                  disabled={!notifEnabled}
+                  className="rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 disabled:opacity-50"
+                />
+                {(quietStart || quietEnd) && (
+                  <button type="button" onClick={() => { setQuietStart(''); setQuietEnd(''); }} className="text-xs text-surface-400 hover:text-surface-200">
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
             {notifMessage && (
               <p role={notifMessage.error ? 'alert' : 'status'} className={notifMessage.error ? 'text-sm text-danger' : 'text-sm text-primary-400'}>{notifMessage.text}</p>

@@ -12,7 +12,7 @@ schemas for user-related API operations (registration, login, profile, etc).
 from datetime import datetime
 
 from fastapi import Depends
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import relationship
@@ -53,6 +53,8 @@ class User(Base):
     notify_min_severity = Column(String, nullable=False, server_default="low")
     # in-app notification kinds hidden from the user's feed
     muted_kinds = Column(JSON, nullable=False, server_default="[]", default=list)
+    quiet_hours_start = Column(String, nullable=True)  # "22:00" local wall clock
+    quiet_hours_end = Column(String, nullable=True)    # "06:00"; null pair = quiet hours off
     organization = relationship("Organization", back_populates="users")
 
     # Slack and webhook URLs
@@ -159,8 +161,13 @@ class NotificationPreferences(BaseModel):
     email_notifications_enabled: bool
     notify_min_severity: str
     muted_kinds: list[str] = []
+    quiet_hours_start: str | None = None
+    quiet_hours_end: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+QUIET_HOURS_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"
 
 
 class NotificationPreferencesUpdate(BaseModel):
@@ -170,6 +177,14 @@ class NotificationPreferencesUpdate(BaseModel):
         default=None, pattern="^(low|medium|high|critical)$"
     )
     muted_kinds: list[str] | None = None
+    quiet_hours_start: str | None = Field(default=None, pattern=QUIET_HOURS_PATTERN)
+    quiet_hours_end: str | None = Field(default=None, pattern=QUIET_HOURS_PATTERN)
+
+    @model_validator(mode="after")
+    def _quiet_hours_paired(self):
+        if (self.quiet_hours_start is None) != (self.quiet_hours_end is None):
+            raise ValueError("Quiet hours need both a start and an end time")
+        return self
 
     @field_validator("muted_kinds")
     @classmethod

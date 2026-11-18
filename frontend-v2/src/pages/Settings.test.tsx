@@ -263,6 +263,8 @@ describe('Email notification preferences', () => {
       email_notifications_enabled: false,
       notify_min_severity: 'high',
       muted_kinds: [],
+      quiet_hours_start: null,
+      quiet_hours_end: null,
     }));
     await screen.findByText('Notification preferences saved.');
   });
@@ -277,6 +279,8 @@ describe('Email notification preferences', () => {
       email_notifications_enabled: true,
       notify_min_severity: 'low',
       muted_kinds: ['case_assigned', 'alert_assigned'],
+      quiet_hours_start: null,
+      quiet_hours_end: null,
     }));
   });
 
@@ -286,6 +290,55 @@ describe('Email notification preferences', () => {
     await screen.findByRole('checkbox', { name: /email me about new alerts/i });
     fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
     await screen.findByRole('alert');
+  });
+
+  it('loads and saves quiet hours', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low', muted_kinds: [], quiet_hours_start: '22:00', quiet_hours_end: '06:00' } };
+      if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
+      return notFound();
+    });
+    render(<Settings />);
+    const from = await screen.findByLabelText('From') as HTMLInputElement;
+    const until = screen.getByLabelText('Until') as HTMLInputElement;
+    expect(from.value).toBe('22:00');
+    expect(until.value).toBe('06:00');
+    fireEvent.change(from, { target: { value: '23:00' } });
+    fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/auth/me/notification-preferences', {
+      email_notifications_enabled: true,
+      notify_min_severity: 'low',
+      muted_kinds: [],
+      quiet_hours_start: '23:00',
+      quiet_hours_end: '06:00',
+    }));
+  });
+
+  it('requires both quiet hour times before saving', async () => {
+    render(<Settings />);
+    const from = await screen.findByLabelText('From');
+    fireEvent.change(from, { target: { value: '22:00' } });
+    fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
+    expect(await screen.findByText(/both a start and an end time/)).toBeTruthy();
+    expect(mockPatch).not.toHaveBeenCalledWith('/auth/me/notification-preferences', expect.anything());
+  });
+
+  it('clear sends a null pair', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low', muted_kinds: [], quiet_hours_start: '22:00', quiet_hours_end: '06:00' } };
+      if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
+      return notFound();
+    });
+    render(<Settings />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear' }));
+    fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/auth/me/notification-preferences', {
+      email_notifications_enabled: true,
+      notify_min_severity: 'low',
+      muted_kinds: [],
+      quiet_hours_start: null,
+      quiet_hours_end: null,
+    }));
   });
 
   it('changes the account password', async () => {

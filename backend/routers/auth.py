@@ -295,6 +295,10 @@ async def update_notification_preferences(
         current_user.notify_min_severity = update.notify_min_severity
     if update.muted_kinds is not None:
         current_user.muted_kinds = update.muted_kinds
+    if "quiet_hours_start" in update.model_fields_set and "quiet_hours_end" in update.model_fields_set:
+        # Both present: either a new window or an explicit null pair to clear it.
+        current_user.quiet_hours_start = update.quiet_hours_start
+        current_user.quiet_hours_end = update.quiet_hours_end
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
