@@ -1,7 +1,7 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import apiClient from '../api/client';
-import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil, Trash2, Download } from 'lucide-react';
+import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil, Trash2, Download, Shield } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { toast } from '../components/Toast';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -74,6 +74,7 @@ interface BlastRadius {
 }
 interface SimilarCase { case_id: number; title: string; similarity: number; shared_techniques: string[]; }
 interface RelatedEvent { id: number; severity: string; event_type: string; source_ip?: string | null; dest_ip?: string | null; signature?: string | null; }
+interface CasePlan { id: number; status: string; autonomy_level: string; created_by: string; created_at: string; actions: unknown[]; }
 
 export function CaseDetail() {
   const { caseId } = useParams<{ caseId: string }>();
@@ -86,6 +87,7 @@ export function CaseDetail() {
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [blastRadius, setBlastRadius] = useState<BlastRadius | null>(null);
   const [similarCases, setSimilarCases] = useState<SimilarCase[]>([]);
+  const [plans, setPlans] = useState<CasePlan[]>([]);
   const [noteText, setNoteText] = useState('');
   const [addingNote, setAddingNote] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
@@ -281,9 +283,10 @@ export function CaseDetail() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [caseResult, alertsResult, eventsResult, blastResult, similarResult] = await Promise.allSettled([
+    const [caseResult, alertsResult, eventsResult, blastResult, similarResult, plansResult] = await Promise.allSettled([
       apiClient.get(`/cases/${caseId}`), apiClient.get(`/cases/${caseId}/alerts`), apiClient.get(`/cases/${caseId}/events`),
       apiClient.get(`/cases/${caseId}/blast-radius`), apiClient.get(`/cases/${caseId}/similar`),
+      apiClient.get('/response-plans/', { params: { case_id: caseId } }),
     ]);
     if (caseResult.status === 'rejected') {
       setError(getApiErrorMessage(caseResult.reason, 'This case could not be loaded.'));
@@ -301,6 +304,8 @@ export function CaseDetail() {
     else setBlastRadius(null);
     if (similarResult.status === 'fulfilled') setSimilarCases(similarResult.value.data?.data ?? []);
     else setSimilarCases([]);
+    if (plansResult.status === 'fulfilled') setPlans(plansResult.value.data?.data ?? []);
+    else { setPlans([]); partial.push('Response plans unavailable'); }
     setDegraded(partial);
     setLoading(false);
   }, [caseId]);
@@ -496,6 +501,31 @@ export function CaseDetail() {
                 {similar.shared_techniques.length > 0 && (
                   <p className="mt-1 text-xs text-surface-500">Shared techniques: {similar.shared_techniques.join(', ')}</p>
                 )}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Response Plans */}
+      {plans.length > 0 && (
+        <div className="oa-panel p-6">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-surface-50 mb-3">
+            <Shield className="w-5 h-5 text-primary-400" /> Response Plans
+          </h2>
+          <div className="space-y-2">
+            {plans.map(plan => (
+              <Link
+                key={plan.id}
+                to="/response-plans"
+                className="flex items-center justify-between gap-3 rounded-md border border-surface-700 bg-surface-800/50 p-3 transition-colors hover:border-primary-500/40"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="text-sm font-medium text-surface-100">Plan #{plan.id}</span>
+                  <StatusBadge tone={plan.status === 'approved' || plan.status === 'completed' ? 'success' : plan.status === 'rejected' ? 'danger' : plan.status === 'pending_approval' ? 'warning' : plan.status === 'executing' ? 'info' : 'neutral'}>{plan.status.replace('_', ' ')}</StatusBadge>
+                  <span className="text-xs text-surface-500">{plan.actions?.length ?? 0} actions · {plan.autonomy_level} · {plan.created_by}</span>
+                </div>
+                <span className="shrink-0 text-xs text-surface-500">{new Date(plan.created_at).toLocaleDateString()}</span>
               </Link>
             ))}
           </div>
