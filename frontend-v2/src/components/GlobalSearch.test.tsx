@@ -8,6 +8,7 @@ vi.mock('../api/client', () => ({ default: { get: vi.fn() } }));
 const get = vi.mocked(apiClient.get);
 
 const results = {
+  incidents: [{ asset_id: 11, asset_name: 'plant-historian', alert_count: 3, max_severity: 'critical' }],
   alerts: [{ id: 7, title: 'Ransomware behavior on historian', severity: 'critical', status: 'pending' }],
   cases: [{ id: 3, title: 'Ransomware outbreak investigation', status: 'open', severity: 'high' }],
   assets: [{ id: 11, name: 'plant-historian', vendor: 'Acme', asset_type: 'historian' }],
@@ -39,7 +40,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 async function typeQuery(text: string) {
-  const input = await screen.findByRole('combobox', { name: /Search alerts, investigations and assets/ });
+  const input = await screen.findByRole('combobox', { name: /Search incidents, alerts, investigations and assets/ });
   fireEvent.change(input, { target: { value: text } });
   await screen.findByText('Ransomware behavior on historian');
   return input;
@@ -50,11 +51,13 @@ describe('GlobalSearch', () => {
     renderPalette();
     await typeQuery('ransomware');
     await waitFor(() => expect(get).toHaveBeenCalledWith('/search', { params: { q: 'ransomware' } }));
+    expect(screen.getByText('Incidents')).toBeTruthy();
     expect(screen.getByText('Alerts')).toBeTruthy();
     expect(screen.getByText('Investigations')).toBeTruthy();
     expect(screen.getByText('Assets')).toBeTruthy();
     expect(screen.getByText('Ransomware outbreak investigation')).toBeTruthy();
-    expect(screen.getByText('plant-historian')).toBeTruthy();
+    expect(screen.getAllByText('plant-historian')).toHaveLength(2); // incident + asset
+    expect(screen.getByText(/3 active alerts/)).toBeTruthy();
   });
 
   it('navigates to the case workspace on click', async () => {
@@ -68,6 +71,7 @@ describe('GlobalSearch', () => {
   it('keyboard navigation moves through results and Enter opens the deep link', async () => {
     renderPalette();
     const input = await typeQuery('ransomware');
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
     fireEvent.keyDown(input, { key: 'ArrowDown' });
     fireEvent.keyDown(input, { key: 'ArrowDown' });
     fireEvent.keyDown(input, { key: 'Enter' });
@@ -84,14 +88,22 @@ describe('GlobalSearch', () => {
   it('shows the empty state when nothing matches', async () => {
     get.mockResolvedValue({ data: { data: { alerts: [], cases: [], assets: [] } } });
     renderPalette();
-    const input = await screen.findByRole('combobox', { name: /Search alerts, investigations and assets/ });
+    const input = await screen.findByRole('combobox', { name: /Search incidents, alerts, investigations and assets/ });
     fireEvent.change(input, { target: { value: 'nothing-here' } });
-    expect(await screen.findByText(/No alerts, investigations or assets match/)).toBeTruthy();
+    expect(await screen.findByText(/No incidents, alerts, investigations or assets match/)).toBeTruthy();
+  });
+
+  it('navigates to the incidents page from an incident hit', async () => {
+    const onClose = renderPalette();
+    await typeQuery('ransomware');
+    fireEvent.click(screen.getByText(/3 active alerts/));
+    expect(onClose).toHaveBeenCalled();
+    expect(screen.getByTestId('location').textContent).toBe('/incidents');
   });
 
   it('Escape closes the palette', async () => {
     const onClose = renderPalette();
-    const input = await screen.findByRole('combobox', { name: /Search alerts, investigations and assets/ });
+    const input = await screen.findByRole('combobox', { name: /Search incidents, alerts, investigations and assets/ });
     fireEvent.keyDown(input, { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
   });
