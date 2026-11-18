@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Activity, AlertTriangle, ArrowUpRight, Bot, Clock, Crosshair,
   Radar, Server, ShieldAlert, ShieldCheck, Timer, Workflow,
@@ -21,6 +21,7 @@ import { formatDuration } from '../utils/formatDuration';
 type DashboardErrors = Partial<Record<'stats' | 'assets' | 'devices' | 'alerts', string>>;
 
 export function Dashboard() {
+  const navigate = useNavigate();
   const [stats, setStats] = useState<AlertStats | null>(null);
   const [totalAssets, setTotalAssets] = useState<number | null>(null);
   const [totalDiscovered, setTotalDiscovered] = useState<number | null>(null);
@@ -193,7 +194,7 @@ export function Dashboard() {
       )}
 
       <section className="grid gap-4 xl:grid-cols-2">
-        <Panel title="Severity distribution" description="Current alert inventory by operational severity."><div className="p-4"><SeverityBreakdown stats={stats} /></div></Panel>
+        <Panel title="Severity distribution" description="Current alert inventory by operational severity. Select a slice to filter the alert list."><div className="p-4"><SeverityBreakdown stats={stats} onSelect={(severity) => navigate(`/alerts?severity=${severity}`)} /></div></Panel>
         <Panel title={`Alert activity · ${timeline && timeline.length > 0 ? timeline.length : 7} days`} description="Daily volume grouped by severity."><div className="p-4"><AlertTrend alerts={alerts ?? []} timeline={timeline} /></div></Panel>
       </section>
 

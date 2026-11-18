@@ -122,6 +122,28 @@ describe('Alerts page', () => {
     expect(screen.getByRole('combobox', { name: 'Filter by status' })).toBeTruthy();
   });
 
+  it('applies filter query params from deep links', async () => {
+    render(<MemoryRouter initialEntries={['/alerts?asset_id=10&severity=critical&status=pending']}><Alerts /></MemoryRouter>);
+    await screen.findByText('CVE-2026-0001');
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith('/alerts/', {
+        params: { page: 1, size: 15, severity: 'critical', status: 'pending', asset_id: 10, sort: 'created_at_desc' },
+      });
+    });
+    expect(screen.getByRole('combobox', { name: 'Filter by severity' })).toHaveProperty('value', 'critical');
+    expect(screen.getByRole('combobox', { name: 'Filter by status' })).toHaveProperty('value', 'pending');
+  });
+
+  it('ignores invalid filter query params', async () => {
+    render(<MemoryRouter initialEntries={['/alerts?severity=bogus&asset_id=abc']}><Alerts /></MemoryRouter>);
+    await screen.findByText('CVE-2026-0001');
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith('/alerts/', {
+        params: { page: 1, size: 15, sort: 'created_at_desc' },
+      });
+    });
+  });
+
   it('refetches with the age filter applied', async () => {
     render(<MemoryRouter><Alerts /></MemoryRouter>);
     await screen.findByText('CVE-2026-0001');
