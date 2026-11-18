@@ -262,4 +262,28 @@ describe('Email notification preferences', () => {
     fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
     await screen.findByRole('alert');
   });
+
+  it('changes the account password', async () => {
+    mockPost.mockResolvedValue({ data: null });
+    render(<Settings />);
+    fireEvent.change(await screen.findByLabelText(/current password/i), { target: { value: 'old-password-1' } });
+    fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: 'new-password-2' } });
+    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'new-password-2' } });
+    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/auth/me/change-password', {
+      current_password: 'old-password-1',
+      new_password: 'new-password-2',
+    }));
+    await screen.findByText('Password updated.');
+  });
+
+  it('blocks mismatched new passwords before posting', async () => {
+    render(<Settings />);
+    fireEvent.change(await screen.findByLabelText(/current password/i), { target: { value: 'old-password-1' } });
+    fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: 'new-password-2' } });
+    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'different-3' } });
+    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
+    await screen.findByText('New passwords do not match.');
+    expect(mockPost).not.toHaveBeenCalledWith('/auth/me/change-password', expect.anything());
+  });
 });
