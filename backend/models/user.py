@@ -55,6 +55,8 @@ class User(Base):
     muted_kinds = Column(JSON, nullable=False, server_default="[]", default=list)
     quiet_hours_start = Column(String, nullable=True)  # "22:00" local wall clock
     quiet_hours_end = Column(String, nullable=True)    # "06:00"; null pair = quiet hours off
+    digest_enabled = Column(Boolean, nullable=False, server_default="0")
+    digest_hour_utc = Column(Integer, nullable=False, server_default="7")  # hour the daily digest goes out
     # Incident auto-escalation: open an investigation when an asset gets noisy enough
     auto_escalate_incidents = Column(Boolean, nullable=False, server_default="0")
     auto_escalate_min_alerts = Column(Integer, nullable=False, server_default="3")
@@ -176,6 +178,8 @@ class NotificationPreferences(BaseModel):
     muted_kinds: list[str] = []
     quiet_hours_start: str | None = None
     quiet_hours_end: str | None = None
+    digest_enabled: bool
+    digest_hour_utc: int
 
     model_config = {"from_attributes": True}
 
@@ -192,6 +196,8 @@ class NotificationPreferencesUpdate(BaseModel):
     muted_kinds: list[str] | None = None
     quiet_hours_start: str | None = Field(default=None, pattern=QUIET_HOURS_PATTERN)
     quiet_hours_end: str | None = Field(default=None, pattern=QUIET_HOURS_PATTERN)
+    digest_enabled: bool | None = None
+    digest_hour_utc: int | None = Field(default=None, ge=0, le=23)
 
     @model_validator(mode="after")
     def _quiet_hours_paired(self):

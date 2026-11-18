@@ -75,6 +75,8 @@ class TestNotificationPreferenceEndpoints:
             "muted_kinds": [],
             "quiet_hours_start": None,
             "quiet_hours_end": None,
+            "digest_enabled": False,
+            "digest_hour_utc": 7,
         }
 
     def test_patch_updates_both_fields(self, client):
@@ -91,6 +93,8 @@ class TestNotificationPreferenceEndpoints:
             "muted_kinds": [],
             "quiet_hours_start": None,
             "quiet_hours_end": None,
+            "digest_enabled": False,
+            "digest_hour_utc": 7,
         }
         confirm = client.get("/api/v1/auth/me/notification-preferences", headers=headers)
         assert confirm.json()["notify_min_severity"] == "high"
@@ -109,6 +113,8 @@ class TestNotificationPreferenceEndpoints:
             "muted_kinds": [],
             "quiet_hours_start": None,
             "quiet_hours_end": None,
+            "digest_enabled": False,
+            "digest_hour_utc": 7,
         }
 
     def test_invalid_severity_rejected(self, client):

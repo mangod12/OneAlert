@@ -52,6 +52,8 @@ export function Settings() {
   const [notifMutedKinds, setNotifMutedKinds] = useState<string[]>([]);
   const [quietStart, setQuietStart] = useState('');
   const [quietEnd, setQuietEnd] = useState('');
+  const [digestEnabled, setDigestEnabled] = useState(false);
+  const [digestHour, setDigestHour] = useState('7');
   const [notifSaving, setNotifSaving] = useState(false);
   const [notifMessage, setNotifMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [pwCurrent, setPwCurrent] = useState('');
@@ -94,13 +96,15 @@ export function Settings() {
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await apiClient.get<{ email_notifications_enabled: boolean; notify_min_severity: string; muted_kinds: string[]; quiet_hours_start: string | null; quiet_hours_end: string | null }>('/auth/me/notification-preferences');
+        const res = await apiClient.get<{ email_notifications_enabled: boolean; notify_min_severity: string; muted_kinds: string[]; quiet_hours_start: string | null; quiet_hours_end: string | null; digest_enabled: boolean; digest_hour_utc: number }>('/auth/me/notification-preferences');
         if (cancelled) return;
         setNotifEnabled(res.data.email_notifications_enabled);
         setNotifMinSeverity(res.data.notify_min_severity);
         setNotifMutedKinds(res.data.muted_kinds ?? []);
         setQuietStart(res.data.quiet_hours_start ?? '');
         setQuietEnd(res.data.quiet_hours_end ?? '');
+        setDigestEnabled(res.data.digest_enabled);
+        setDigestHour(String(res.data.digest_hour_utc));
       } catch {
         if (!cancelled) setNotifMessage({ text: 'Notification preferences could not be loaded.', error: true });
       }
@@ -118,18 +122,22 @@ export function Settings() {
     setNotifSaving(true);
     setNotifMessage(null);
     try {
-      const res = await apiClient.patch<{ email_notifications_enabled: boolean; notify_min_severity: string; muted_kinds: string[]; quiet_hours_start: string | null; quiet_hours_end: string | null }>('/auth/me/notification-preferences', {
+      const res = await apiClient.patch<{ email_notifications_enabled: boolean; notify_min_severity: string; muted_kinds: string[]; quiet_hours_start: string | null; quiet_hours_end: string | null; digest_enabled: boolean; digest_hour_utc: number }>('/auth/me/notification-preferences', {
         email_notifications_enabled: notifEnabled,
         notify_min_severity: notifMinSeverity,
         muted_kinds: notifMutedKinds,
         quiet_hours_start: quietStart === '' ? null : quietStart,
         quiet_hours_end: quietEnd === '' ? null : quietEnd,
+        digest_enabled: digestEnabled,
+        digest_hour_utc: parseInt(digestHour, 10),
       });
       setNotifEnabled(res.data.email_notifications_enabled);
       setNotifMinSeverity(res.data.notify_min_severity);
       setNotifMutedKinds(res.data.muted_kinds ?? []);
       setQuietStart(res.data.quiet_hours_start ?? '');
       setQuietEnd(res.data.quiet_hours_end ?? '');
+      setDigestEnabled(res.data.digest_enabled);
+      setDigestHour(String(res.data.digest_hour_utc));
       setNotifMessage({ text: 'Notification preferences saved.', error: false });
     } catch (error: unknown) {
       setNotifMessage({ text: getApiErrorMessage(error, 'The notification preferences could not be saved.'), error: true });
@@ -672,6 +680,33 @@ export function Settings() {
                   {label}
                 </label>
               ))}
+            </div>
+            <div>
+              <label className="flex items-center gap-3 text-sm text-surface-200">
+                <input
+                  type="checkbox"
+                  checked={digestEnabled}
+                  onChange={event => setDigestEnabled(event.target.checked)}
+                  disabled={!notifEnabled}
+                  className="h-4 w-4 rounded border-surface-600 bg-surface-950 text-primary-500 focus:ring-2 focus:ring-primary-500"
+                />
+                Send me a daily digest
+              </label>
+              <div className="mt-2">
+                <label htmlFor="digest-hour" className="mb-1.5 block text-xs font-medium text-surface-300">Send at (UTC hour)</label>
+                <select
+                  id="digest-hour"
+                  value={digestHour}
+                  onChange={event => setDigestHour(event.target.value)}
+                  disabled={!notifEnabled || !digestEnabled}
+                  className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 disabled:opacity-50"
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={String(h)}>{`${String(h).padStart(2, '0')}:00 UTC`}</option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-xs text-surface-500">A morning summary of open and overdue investigations plus fresh critical and high alerts. Quiet days get no email.</p>
+              </div>
             </div>
             <div>
               <p className="mb-1.5 text-sm font-medium text-surface-300">Quiet hours (UTC)</p>
