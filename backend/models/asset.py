@@ -166,6 +166,7 @@ class AssetResponse(AssetBase):
     user_id: int
     created_at: datetime
     updated_at: datetime | None = None
+    open_alert_count: int | None = None
 
     model_config = {"from_attributes": True}
 

@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
+from backend.models.alert import Alert, AlertStatus
 from backend.models.asset import Asset, AssetCreate, AssetListResponse, AssetResponse, AssetUpdate
 from backend.models.user import User
 from backend.routers.auth import get_active_user
@@ -109,8 +110,29 @@ async def list_assets(
     result = await db.execute(query)
     assets = result.scalars().all()
 
+    # Open (pending or acknowledged) alert counts per asset on this page.
+    asset_ids = [asset.id for asset in assets]
+    open_counts: dict[int, int] = {}
+    if asset_ids:
+        count_rows = await db.execute(
+            select(Alert.asset_id, func.count())
+            .where(
+                Alert.user_id == current_user.id,
+                Alert.asset_id.in_(asset_ids),
+                Alert.status.in_([AlertStatus.PENDING, AlertStatus.ACKNOWLEDGED]),
+            )
+            .group_by(Alert.asset_id)
+        )
+        open_counts = {row[0]: row[1] for row in count_rows.all()}
+    items = [
+        AssetResponse.model_validate(asset).model_copy(
+            update={"open_alert_count": open_counts.get(asset.id, 0)}
+        )
+        for asset in assets
+    ]
+
     return AssetListResponse(
-        assets=assets,
+        assets=items,
         total=total,
         page=page,
         size=size
