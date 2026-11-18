@@ -54,6 +54,14 @@ export interface AlertStats {
   acknowledged_alerts: number;
 }
 
+export interface ResponseMetrics {
+  days: number;
+  acknowledged_count: number;
+  resolved_count: number;
+  mtta_seconds: number | null;
+  mttr_seconds: number | null;
+}
+
 export interface Asset {
   id: number;
   name: string;

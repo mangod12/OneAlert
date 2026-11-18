@@ -57,6 +57,7 @@ class Alert(Base):
     status = Column(String, default=AlertStatus.PENDING)
     sent_at = Column(DateTime(timezone=True), nullable=True)
     acknowledged_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
     snoozed_until = Column(DateTime(timezone=True), nullable=True)
     source_url = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -84,6 +85,7 @@ class Alert(Base):
             "source_url": self.source_url,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "acknowledged_at": self.acknowledged_at.isoformat() if self.acknowledged_at else None,
+            "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
             "snoozed_until": self.snoozed_until.isoformat() if self.snoozed_until else None,
         }
 
@@ -117,6 +119,7 @@ class AlertRead(AlertBase):
     status: AlertStatus
     sent_at: datetime | None = None
     acknowledged_at: datetime | None = None
+    resolved_at: datetime | None = None
     snoozed_until: datetime | None = None
     created_at: datetime
     updated_at: datetime | None = None
@@ -147,6 +150,7 @@ class AlertResponse(AlertBase):
     status: AlertStatus
     sent_at: datetime | None = None
     acknowledged_at: datetime | None = None
+    resolved_at: datetime | None = None
     snoozed_until: datetime | None = None
     created_at: datetime
     updated_at: datetime | None = None

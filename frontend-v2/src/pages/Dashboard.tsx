@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Activity, AlertTriangle, ArrowUpRight, Bot, Crosshair,
-  Radar, Server, ShieldAlert, ShieldCheck, Workflow,
+  Activity, AlertTriangle, ArrowUpRight, Bot, Clock, Crosshair,
+  Radar, Server, ShieldAlert, ShieldCheck, Timer, Workflow,
 } from 'lucide-react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
-import type { AlertStats, Alert, AlertListResponse } from '../api/types';
+import type { AlertStats, Alert, AlertListResponse, ResponseMetrics } from '../api/types';
 import { KPICard } from '../components/KPICard';
 import { SeverityBreakdown } from '../components/charts/SeverityBreakdown';
 import { AlertTrend } from '../components/charts/AlertTrend';
@@ -16,6 +16,7 @@ import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../comp
 import { PageHeader } from '../components/ui/PageHeader';
 import { Panel } from '../components/ui/Panel';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { formatDuration } from '../utils/formatDuration';
 
 type DashboardErrors = Partial<Record<'stats' | 'assets' | 'devices' | 'alerts', string>>;
 
@@ -25,6 +26,7 @@ export function Dashboard() {
   const [totalDiscovered, setTotalDiscovered] = useState<number | null>(null);
   const [alerts, setAlerts] = useState<Alert[] | null>(null);
   const [timeline, setTimeline] = useState<TimelineDay[] | null>(null);
+  const [responseMetrics, setResponseMetrics] = useState<ResponseMetrics | null>(null);
   const [myAlerts, setMyAlerts] = useState<Alert[] | null>(null);
   const [myCases, setMyCases] = useState<Array<{ id: number; title: string; severity: string; status: string }> | null>(null);
   const [errors, setErrors] = useState<DashboardErrors>({});
@@ -49,6 +51,7 @@ export function Dashboard() {
         apiClient.get<AlertListResponse>('/alerts/', { params: { size: 5, assigned: 'me' } }),
         apiClient.get<{ cases?: Array<{ id: number; title: string; severity: string; status: string }> }>('/cases/', { params: { size: 5, assigned: 'me' } }),
         apiClient.get<{ days?: TimelineDay[] }>('/alerts/stats/timeline', { params: { days: 14 } }),
+        apiClient.get<ResponseMetrics>('/alerts/stats/response-metrics', { params: { days: 30 } }),
       ] as const;
       const results = await Promise.allSettled(requests);
       if (!active) return;
@@ -68,6 +71,8 @@ export function Dashboard() {
       else setMyCases([]);
       if (results[6].status === 'fulfilled') setTimeline(results[6].value.data.days ?? []);
       else setTimeline(null);
+      if (results[7].status === 'fulfilled') setResponseMetrics(results[7].value.data);
+      else setResponseMetrics(null);
 
       setErrors(nextErrors);
       setLastUpdated(new Date());
@@ -120,6 +125,11 @@ export function Dashboard() {
         <KPICard title="Critical exposure" value={criticalAlerts ?? '—'} icon={AlertTriangle} color="danger" detail={stats ? `${highAlerts} high severity` : 'Data unavailable'} />
         <KPICard title="Managed assets" value={totalAssets ?? '—'} icon={Server} color="success" detail="Inventory scope" />
         <KPICard title="Discovered devices" value={totalDiscovered ?? '—'} icon={Activity} color="warning" detail="Passive telemetry" />
+      </section>
+
+      <section aria-label="Response readiness" className="grid grid-cols-2 gap-3">
+        <KPICard title="Mean time to acknowledge" value={formatDuration(responseMetrics?.mtta_seconds ?? null)} icon={Clock} color="info" detail={responseMetrics ? `${responseMetrics.acknowledged_count} acknowledged · ${responseMetrics.days}d` : 'Data unavailable'} />
+        <KPICard title="Mean time to resolve" value={formatDuration(responseMetrics?.mttr_seconds ?? null)} icon={Timer} color="success" detail={responseMetrics ? `${responseMetrics.resolved_count} resolved · ${responseMetrics.days}d` : 'Data unavailable'} />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(20rem,0.65fr)]">

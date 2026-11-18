@@ -74,6 +74,8 @@ function mockAllFulfilled(alerts: Alert[] = [makeAlert()], myAlerts: Alert[] = [
         return Promise.resolve({ data: [] });
       case '/alerts/stats/timeline':
         return Promise.resolve({ data: { days: TIMELINE_DAYS } });
+      case '/alerts/stats/response-metrics':
+        return Promise.resolve({ data: { days: 30, acknowledged_count: 8, resolved_count: 5, mtta_seconds: 5400, mttr_seconds: 18000 } });
       default:
         return Promise.reject(new Error(`unexpected url ${url}`));
     }
