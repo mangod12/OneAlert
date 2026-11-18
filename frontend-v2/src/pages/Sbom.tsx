@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { Download, Package, Trash2, Upload } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
@@ -33,6 +33,8 @@ interface SbomComponent {
   has_known_vulnerability: number;
 }
 
+const COPYLEFT_RE = /gpl|sspl|cddl|epl|eupl|cc-by-sa/i;
+
 export function Sbom() {
   const [sboms, setSboms] = useState<Sbom[]>([]);
   const [assetNames, setAssetNames] = useState<Map<number, string>>(new Map());
@@ -61,6 +63,22 @@ export function Sbom() {
       setExportingId(null);
     }
   };
+  const licenseSummary = useMemo(() => {
+    if (components.length === 0) return null;
+    const counts = new Map<string, number>();
+    let licensed = 0;
+    let copyleft = 0;
+    for (const c of components) {
+      const name = (c.license ?? '').trim();
+      if (!name) continue;
+      licensed += 1;
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+      if (COPYLEFT_RE.test(name)) copyleft += 1;
+    }
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    return { licensed, copyleft, top };
+  }, [components]);
+
   const [componentSearch, setComponentSearch] = useState('');
   const [vulnerableOnly, setVulnerableOnly] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Sbom | null>(null);
@@ -223,6 +241,16 @@ export function Sbom() {
                           <p className="text-sm text-surface-500">No components in this SBOM.</p>
                         ) : (
                           <div>
+                            {licenseSummary && licenseSummary.top.length > 0 && (
+                              <div className="mb-3 flex flex-wrap items-center gap-2 text-xs" aria-label="License summary">
+                                <span className="text-surface-400">{licenseSummary.licensed} of {components.length} components licensed</span>
+                                {licenseSummary.top.slice(0, 5).map(([name, count]) => (
+                                  <span key={name} className="rounded-full border border-surface-600 bg-surface-800 px-2 py-0.5 text-surface-300">{name} · {count}</span>
+                                ))}
+                                {licenseSummary.top.length > 5 && <span className="text-surface-500">+{licenseSummary.top.length - 5} more</span>}
+                                {licenseSummary.copyleft > 0 && <StatusBadge tone="warning">{licenseSummary.copyleft} copyleft</StatusBadge>}
+                              </div>
+                            )}
                             <div className="mb-3 flex items-center gap-3">
                               <input
                                 type="text"
