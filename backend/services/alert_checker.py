@@ -7,7 +7,7 @@ import asyncio
 import logging
 import os
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from datetime import time as _time
 
 from sqlalchemy import func, select
@@ -18,6 +18,7 @@ from backend.models.alert import Alert, AlertStatus, Severity
 from backend.models.asset import Asset
 from backend.models.audit_log import AuditLog
 from backend.models.notification import Notification
+from backend.models.suppression_rule import AlertSuppressionRule, rule_matches
 from backend.models.user import User
 from backend.services.cve_enrichment import CVEEnrichmentService
 from backend.services.cve_scraper import cve_scraper
@@ -88,6 +89,29 @@ async def _notify_incident_formed(db: AsyncSession, user: User, asset: Asset) ->
             body="2 active alerts now hit this asset. Review the correlated incident.",
             link="/app/incidents",
         ))
+
+
+
+async def _apply_suppression_rules(db: AsyncSession, user: User, alert: Alert) -> None:
+    """Snooze a freshly created alert when an enabled suppression rule matches it."""
+    rules = (await db.execute(
+        select(AlertSuppressionRule).where(
+            AlertSuppressionRule.user_id == user.id,
+            AlertSuppressionRule.enabled.is_(True),
+        )
+    )).scalars().all()
+    if not rules:
+        return
+    severity = alert.severity
+    severity = severity.value if hasattr(severity, "value") else (str(severity) if severity else None)
+    for rule in rules:
+        if rule_matches(rule, cve_id=alert.cve_id, asset_id=alert.asset_id, severity=severity, title=alert.title):
+            alert.snoozed_until = datetime.now(UTC) + timedelta(hours=rule.duration_hours)
+            db.add(AuditLog(
+                user_id=user.id, action="alert_suppressed", target_type="alert", target_id=alert.id,
+                detail=f"Snoozed for {rule.duration_hours}h by suppression rule '{rule.name}'",
+            ))
+            return  # first matching rule wins
 
 
 # Notification service instances (read from env)
@@ -354,6 +378,7 @@ class AlertChecker:
 
             db.add(alert)
             await db.flush()  # Get the ID
+            await _apply_suppression_rules(db, user, alert)
             await _notify_incident_formed(db, user, asset)
 
             db.add(Notification(
@@ -412,6 +437,7 @@ class AlertChecker:
 
             db.add(alert)
             await db.flush()  # Get the ID
+            await _apply_suppression_rules(db, user, alert)
             await _notify_incident_formed(db, user, asset)
 
             db.add(Notification(
@@ -595,6 +621,7 @@ class AlertChecker:
 
             db.add(alert)
             await db.flush()  # Get the ID
+            await _apply_suppression_rules(db, user, alert)
             await _notify_incident_formed(db, user, asset)
 
             # For CISA KEV (known exploited), increase urgency

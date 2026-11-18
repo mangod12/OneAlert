@@ -42,6 +42,7 @@ from backend.routers import (
     sbom,
     search,
     sensor_ingest,
+    suppression_rules,
     topology,
     validation,
 )
@@ -200,6 +201,7 @@ app.include_router(response_plans.router, prefix="/api/v1/response-plans", tags=
 app.include_router(validation.router, prefix="/api/v1/validation", tags=["Purple-Team Validation"])
 app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["Notifications"])
 app.include_router(search.router, prefix="/api/v1/search", tags=["Search"])
+app.include_router(suppression_rules.router, prefix="/api/v1/suppression-rules", tags=["Suppression Rules"])
 app.include_router(reports.router, prefix="/api/v1/reports", tags=["Reports"])
 
 

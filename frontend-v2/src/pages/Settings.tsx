@@ -7,6 +7,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { SiemIntegrationsPanel } from '../components/settings/SiemIntegrationsPanel';
 import { ApiTokensPanel } from '../components/settings/ApiTokensPanel';
+import { SuppressionRulesPanel } from '../components/settings/SuppressionRulesPanel';
 import { Panel } from '../components/ui/Panel';
 import { StatusBadge } from '../components/ui/StatusBadge';
 
@@ -726,6 +727,8 @@ export function Settings() {
             </div>
           </form>
         </Panel>
+
+        <SuppressionRulesPanel />
 
         <SiemIntegrationsPanel />
 
