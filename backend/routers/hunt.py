@@ -122,6 +122,22 @@ async def get_hunt(
     }
 
 
+@router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_hunt(
+    session_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Delete a hunt session and its stored results."""
+    session = (await db.execute(
+        select(HuntSession).where(HuntSession.id == session_id, HuntSession.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Hunt session not found")
+    await db.delete(session)
+    await db.commit()
+
+
 # --- Detection Rules ---
 
 @router.post("/detections")
