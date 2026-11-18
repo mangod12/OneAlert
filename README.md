@@ -14,8 +14,8 @@
   </p>
   <p align="center">
     <a href="https://github.com/mangod12/OneAlert/actions/workflows/ci.yml"><img src="https://github.com/mangod12/OneAlert/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-    <img src="https://img.shields.io/badge/tests-330%2B%20passing-brightgreen" alt="Tests">
-    <img src="https://img.shields.io/badge/AI%20Agents-6%20active-blueviolet" alt="AI Agents">
+    <img src="https://img.shields.io/badge/tests-1%2C090%2B%20passing-brightgreen" alt="Tests">
+    <img src="https://img.shields.io/badge/AI%20Agents-5%20active-blueviolet" alt="AI Agents">
     <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
     <img src="https://img.shields.io/badge/Python-3.11%2B-blue" alt="Python">
     <img src="https://img.shields.io/badge/React-19-61DAFB" alt="React">
@@ -41,7 +41,7 @@
 
 <p align="center">
   <img src="docs/screenshots/dashboard.png" alt="Dashboard" width="100%">
-  <br><em>Security posture dashboard with KPIs, severity breakdown, and risk heatmap</em>
+  <br><em>Security posture dashboard with KPIs, response metrics, severity breakdown, and risk heatmap</em>
 </p>
 
 <table>
@@ -96,7 +96,7 @@ Enterprise SOC tools cost $300K-$800K/yr. SMB manufacturers with PLCs, SCADA sys
 
 ### AI Agent Pipeline
 
-Six specialized agents working as a team:
+Five specialized agents working as a team:
 
 | Agent | What It Does |
 |-------|-------------|
@@ -105,7 +105,6 @@ Six specialized agents working as a team:
 | **Hunt Agent** | Takes natural-language hypotheses, generates SQL queries, outputs Sigma rules |
 | **Response Agent** | Generates response plans with ordered containment actions |
 | **Purple Agent** | Simulates ATT&CK techniques to validate detection coverage |
-| **Compliance Agent** | Maps platform data to IEC 62443 and NIST CSF controls |
 
 ### Governed Autonomy
 
@@ -115,6 +114,19 @@ Six specialized agents working as a team:
 - **Policy engine**: Action approval rules by zone, asset type, and autonomy level
 - **Approval workflow**: Approve/reject response plans via REST API before execution
 - **Action executor**: 12 action types (notify, block IP, isolate host, quarantine VLAN, etc.)
+
+### Analyst Workflow and Operations
+
+- **In-app notification feed**: command-bar bell, per-kind muting, and quiet hours so below-critical email waits until morning
+- **Alert triage tools**: snooze (single or bulk), reopen, per-alert notes, assignment with automatic assignee notification
+- **Saved filter views**: named, shareable filter sets for alerts, investigations, and events
+- **Global search**: command palette across alerts, cases, assets, and events
+- **Case management**: due dates with overdue filtering, response plans on the case workspace, linked alerts and events
+- **Personal API tokens**: programmatic access with read-only scope, managed from Settings
+- **Exports**: CSV for alerts, investigations, validation results, and compliance posture
+- **Audit trail**: filterable audit log by actor and date range
+- **Account security**: TOTP MFA at sign-in, password change and profile editing from Settings
+- **SIEM integrations**: editable Splunk, Sentinel, ServiceNow, and PagerDuty configs with secrets masked in API responses
 
 ### PII and Secret Redaction
 
@@ -279,7 +291,7 @@ CVE Alerts (NVD/CISA/ICS-CERT) ──► Triage Agent (correlation + MITRE)
 | Database | PostgreSQL (prod), SQLite (dev) |
 | Auth | JWT + GitHub OAuth + TOTP MFA |
 | Deploy | Docker, Azure Container Apps |
-| CI | GitHub Actions, 330+ tests (309 pytest + 22 Playwright E2E) |
+| CI | GitHub Actions, 1,090+ tests (700+ pytest, 320+ Vitest, 74 Playwright E2E) |
 
 ---
 
@@ -326,11 +338,13 @@ backend/
 └── services/              # CVE, compliance, billing, notifications
 
 frontend-v2/src/
-├── pages/                 # Dashboard, Cases, Events, HuntLab, MitreMap, ResponsePlans, Validation
+├── pages/                 # Dashboard, Alerts, Assets, AuditLog, Cases, CaseDetail, Compliance,
+│                          # Events, HuntLab, MitreMap, OTDiscovery, ResponsePlans, Sbom,
+│                          # Settings, Topology, Validation
 ├── components/            # Charts, layout, shared UI
 └── stores/                # Zustand auth state
 
-tests/                     # 309 pytest tests
+tests/                     # 700+ pytest tests
 tests/e2e/                 # Playwright E2E against the deployed app
 docs/                      # AI_CONTEXT, ARCHITECTURE, CODEMAP, VISION
 ```
@@ -341,7 +355,7 @@ docs/                      # AI_CONTEXT, ARCHITECTURE, CODEMAP, VISION
 
 | Capability | OneAlert | Wazuh | SecurityOnion | OSSEC | Caldera |
 |------------|:--------:|:-----:|:-------------:|:-----:|:-------:|
-| AI-powered triage | Yes (6 agents) | No | No | No | No |
+| AI-powered triage | Yes (5 agents) | No | No | No | No |
 | MITRE ATT&CK mapping | Auto-mapped | Manual rules | Manual | No | Yes |
 | OT/ICS protocol support | Modbus, S7, EtherNet/IP | Limited | Zeek-based | No | No |
 | Natural-language threat hunting | Yes | No | No | No | No |
