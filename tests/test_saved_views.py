@@ -239,3 +239,82 @@ class TestEventScopeViews:
             f"/api/v1/events/views/{view['id']}", headers=headers
         ).status_code == 204
         assert client.get("/api/v1/events/views/", headers=headers).json() == []
+
+
+class TestRenameView:
+    def test_rename_keeps_filters(self, client):
+        headers = _register_and_login(client, "rename@example.com")
+        view = _create(client, headers).json()
+        resp = client.patch(
+            f"/api/v1/alerts/views/{view['id']}", headers=headers,
+            json={"name": "Renamed view"},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["name"] == "Renamed view"
+        assert body["filters"]["severity"] == "critical"
+        listing = client.get("/api/v1/alerts/views/", headers=headers).json()
+        assert listing[0]["name"] == "Renamed view"
+
+    def test_rename_trims_whitespace(self, client):
+        headers = _register_and_login(client, "trim@example.com")
+        view = _create(client, headers).json()
+        resp = client.patch(
+            f"/api/v1/alerts/views/{view['id']}", headers=headers,
+            json={"name": "  Trimmed  "},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["name"] == "Trimmed"
+
+    def test_rename_blank_name_rejected(self, client):
+        headers = _register_and_login(client, "renameblank@example.com")
+        view = _create(client, headers).json()
+        resp = client.patch(
+            f"/api/v1/alerts/views/{view['id']}", headers=headers,
+            json={"name": "   "},
+        )
+        assert resp.status_code == 400
+
+    def test_rename_to_own_name_allowed(self, client):
+        headers = _register_and_login(client, "ownname@example.com")
+        view = _create(client, headers).json()
+        resp = client.patch(
+            f"/api/v1/alerts/views/{view['id']}", headers=headers,
+            json={"name": "critical PENDING"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["name"] == "critical PENDING"
+
+    def test_rename_duplicate_name_rejected(self, client):
+        headers = _register_and_login(client, "renamedupe@example.com")
+        _create(client, headers, name="Taken")
+        other = _create(client, headers, name="Original").json()
+        resp = client.patch(
+            f"/api/v1/alerts/views/{other['id']}", headers=headers,
+            json={"name": "taken"},
+        )
+        assert resp.status_code == 409
+
+    def test_rename_not_found_and_cross_scope(self, client):
+        headers = _register_and_login(client, "notfound@example.com")
+        alerts_view = _create(client, headers).json()
+        assert client.patch(
+            "/api/v1/alerts/views/9999", headers=headers, json={"name": "x"},
+        ).status_code == 404
+        # Same id through another list's path does not touch the alerts view.
+        assert client.patch(
+            f"/api/v1/cases/views/{alerts_view['id']}", headers=headers,
+            json={"name": "x"},
+        ).status_code == 404
+
+    def test_rename_other_users_view_not_found(self, client):
+        owner = _register_and_login(client, "renowner@example.com")
+        other = _register_and_login(client, "renother@example.com")
+        view = _create(client, owner).json()
+        resp = client.patch(
+            f"/api/v1/alerts/views/{view['id']}", headers=other,
+            json={"name": "hijack"},
+        )
+        assert resp.status_code == 404
+        listing = client.get("/api/v1/alerts/views/", headers=owner).json()
+        assert listing[0]["name"] == "Critical pending"

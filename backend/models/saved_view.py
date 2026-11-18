@@ -67,6 +67,13 @@ class SavedViewCreate(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class SavedViewRename(BaseModel):
+    """Rename body for a saved view."""
+
+    name: str = Field(min_length=1, max_length=80)
+    model_config = {"extra": "forbid"}
+
+
 class SavedViewResponse(BaseModel):
     id: int
     name: str
