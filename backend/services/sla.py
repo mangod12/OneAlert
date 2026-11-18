@@ -14,8 +14,7 @@ from backend.models.audit_log import AuditLog
 from backend.models.case import Case
 from backend.models.notification import Notification
 from backend.models.user import User
-from backend.services.email_alert import email_service
-from backend.services.notification_prefs import should_email_event
+from backend.services.investigation_notify import notify_investigation_event
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +85,11 @@ async def notify_breached_slas(db) -> int:
         logger.info("Sent %d SLA breach notifications", len(breached))
         for case in breached:
             user = await db.get(User, case.user_id)
-            if user is not None and should_email_event(user, "case_sla_breached", case.severity):
-                await email_service.send_investigation_event(
+            if user is not None:
+                await notify_investigation_event(
                     user,
+                    kind="case_sla_breached",
+                    severity=case.severity,
                     title=f"Investigation overdue: {case.title}",
                     body=(
                         f"Investigation #{case.id} passed its SLA target "

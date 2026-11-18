@@ -33,8 +33,7 @@ from backend.models.response_plan import ApprovalRequest, ResponsePlan
 from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.services.audit import add_audit_log
-from backend.services.email_alert import email_service
-from backend.services.notification_prefs import should_email_event
+from backend.services.investigation_notify import notify_investigation_event
 from backend.services.sla import sla_due_date
 
 router = APIRouter()
@@ -573,10 +572,11 @@ async def assign_case(
         assignment.user_id is not None
         and assignment.user_id != current_user.id
         and assignee is not None
-        and should_email_event(assignee, "case_assigned", case.severity)
     ):
-        await email_service.send_investigation_event(
+        await notify_investigation_event(
             assignee,
+            kind="case_assigned",
+            severity=case.severity,
             title=f"Case #{case.id} assigned to you",
             body=(
                 f"{current_user.email} assigned you an investigation: "

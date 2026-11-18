@@ -25,11 +25,9 @@ from backend.services.cve_enrichment import CVEEnrichmentService
 from backend.services.cve_scraper import cve_scraper
 from backend.services.email_alert import email_service
 from backend.services.ics_cert_feed import ics_cert_feed_service
+from backend.services.investigation_notify import notify_investigation_event
 from backend.services.notification_prefs import (
     SEVERITY_RANK as _SEVERITY_RANK,
-)
-from backend.services.notification_prefs import (
-    should_email_event as _should_email_event,
 )
 from backend.services.notification_prefs import (
     should_email_user as _should_email_user,
@@ -108,16 +106,17 @@ async def _maybe_auto_escalate(db: AsyncSession, user: User, asset: Asset) -> No
         detail=f"Incident on {asset.name} auto-escalated to case {case.id} ({len(alerts)} alerts)",
     ))
     logger.info(f"Auto-escalated incident on asset {asset.id} to case {case.id} for user {user.email}")
-    if _should_email_event(user, "incident_escalated", max_severity):
-        await email_service.send_investigation_event(
-            user,
-            title=f"Incident auto-escalated on {asset.name}",
-            body=(
-                f"{len(alerts)} active alerts crossed your threshold. "
-                f"Investigation #{case.id} opened. Highest severity: {max_severity}."
-            ),
-            link_path=f"/app/cases/{case.id}",
-        )
+    await notify_investigation_event(
+        user,
+        kind="incident_escalated",
+        severity=max_severity,
+        title=f"Incident auto-escalated on {asset.name}",
+        body=(
+            f"{len(alerts)} active alerts crossed your threshold. "
+            f"Investigation #{case.id} opened. Highest severity: {max_severity}."
+        ),
+        link_path=f"/app/cases/{case.id}",
+    )
 
 
 async def _notify_incident_formed(db: AsyncSession, user: User, asset: Asset) -> None:
