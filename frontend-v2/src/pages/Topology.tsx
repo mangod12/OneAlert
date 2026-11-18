@@ -51,6 +51,7 @@ export function Topology() {
   const [deletingBusy, setDeletingBusy] = useState(false);
   const [protocolFilter, setProtocolFilter] = useState('');
   const [cleartextOnly, setCleartextOnly] = useState(false);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   const fetchTopology = useCallback(async () => {
     setLoading(true);
@@ -143,8 +144,11 @@ export function Topology() {
     ? Math.round((stats.encrypted / stats.total_connections) * 100)
     : 100;
   const protocolOptions = [...new Set(edges.map(e => e.protocol))].sort();
+  const selectedNode = selectedNodeId ? nodes.find(n => n.id === selectedNodeId) ?? null : null;
   const filteredEdges = edges.filter(e =>
-    (!protocolFilter || e.protocol === protocolFilter) && (!cleartextOnly || !e.is_encrypted),
+    (!protocolFilter || e.protocol === protocolFilter)
+    && (!cleartextOnly || !e.is_encrypted)
+    && (!selectedNodeId || e.source === selectedNodeId || e.target === selectedNodeId),
   );
 
   return (
@@ -187,7 +191,18 @@ export function Topology() {
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-surface-400 mb-3">{zone}</h2>
                 <div className="space-y-2">
                   {zoneNodes.map(node => (
-                    <div key={node.id} className="flex items-center justify-between rounded-md border border-surface-700 bg-surface-800/50 px-3 py-2">
+                    <button
+                      key={node.id}
+                      type="button"
+                      aria-pressed={selectedNodeId === node.id}
+                      title="Show this node's connections"
+                      onClick={() => setSelectedNodeId(prev => (prev === node.id ? null : node.id))}
+                      className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left transition-colors ${
+                        selectedNodeId === node.id
+                          ? 'border-primary-500/60 bg-primary-500/10 ring-1 ring-primary-500/40'
+                          : 'border-surface-700 bg-surface-800/50 hover:bg-surface-800'
+                      }`}
+                    >
                       <div className="min-w-0">
                         <p className="truncate text-sm text-surface-100">{node.label}</p>
                         <p className="font-mono text-xs text-surface-500">{node.id}</p>
@@ -198,7 +213,7 @@ export function Topology() {
                           <span className="text-xs text-surface-400">risk {Math.round(node.risk_score)}</span>
                         )}
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -229,7 +244,20 @@ export function Topology() {
                   />
                   Cleartext only
                 </label>
-                {(protocolFilter || cleartextOnly) && (
+                {selectedNodeId && (
+                  <span className="inline-flex items-center gap-1.5 rounded-md border border-primary-500/40 bg-primary-500/10 px-2 py-1 text-xs text-primary-200">
+                    Connections for {selectedNode?.label ?? selectedNodeId}
+                    <button
+                      type="button"
+                      aria-label={`Clear node filter for ${selectedNode?.label ?? selectedNodeId}`}
+                      onClick={() => setSelectedNodeId(null)}
+                      className="rounded-sm px-0.5 text-primary-300 hover:text-primary-100"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+                {(protocolFilter || cleartextOnly || selectedNodeId) && (
                   <span className="text-xs text-surface-500">{filteredEdges.length} of {edges.length} connections</span>
                 )}
               </div>
