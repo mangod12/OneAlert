@@ -8,6 +8,7 @@ vi.mock('../api/client', () => ({
     get: vi.fn(),
     post: vi.fn(),
     patch: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
@@ -19,6 +20,7 @@ import { toast } from '../components/Toast';
 const mockGet = vi.mocked(apiClient.get);
 const mockPost = vi.mocked(apiClient.post);
 const mockPatch = vi.mocked(apiClient.patch);
+const mockDelete = vi.mocked(apiClient.delete);
 const mockToast = vi.mocked(toast);
 
 interface CaseItem {
@@ -81,10 +83,16 @@ describe('Cases page', () => {
 
   it('shows an error state and retries', async () => {
     mockGet.mockReset();
-    mockGet.mockRejectedValueOnce({ isAxiosError: true, response: { status: 500, data: {} } });
-    mockGet.mockResolvedValueOnce({ data: { cases: [makeCase()], total: 1 } });
+    mockGet.mockImplementation((url: string) => (
+      url === '/orgs/me/members'
+        ? Promise.resolve({ data: [] })
+        : Promise.reject({ isAxiosError: true, response: { status: 500, data: {} } })
+    ));
     renderCases();
     expect(await screen.findByText('Investigations could not be loaded.')).toBeTruthy();
+    mockGet.mockImplementation((url: string) => Promise.resolve(
+      url === '/orgs/me/members' ? { data: [] } : { data: { cases: [makeCase()], total: 1 } }
+    ));
     fireEvent.click(screen.getByRole('button', { name: /retry/i }));
     expect(await screen.findByText('Credential dumping on edge router')).toBeTruthy();
   });
@@ -288,5 +296,62 @@ describe('Cases pagination', () => {
         params: expect.objectContaining({ page: 1, status: 'open' }),
       }));
     });
+  });
+});
+
+describe('Case bulk actions', () => {
+  const twoCases = () => [
+    makeCase({ id: 1 }),
+    makeCase({ id: 2, title: 'Suspicious OAuth grant', severity: 'critical' }),
+  ];
+
+  const selectAll = async () => {
+    expect(await screen.findByText('Credential dumping on edge router')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Select all investigations on this page'));
+    expect(screen.getByText('2 selected')).toBeTruthy();
+  };
+
+  it('marks selected investigations resolved with one PATCH per case', async () => {
+    mockGet.mockResolvedValue({ data: { cases: twoCases(), total: 2 } });
+    mockPatch.mockResolvedValue({ data: {} });
+    renderCases();
+    await selectAll();
+    fireEvent.change(screen.getByLabelText('Set status for selected investigations'), { target: { value: 'resolved' } });
+    await waitFor(() => {
+      expect(mockPatch).toHaveBeenCalledWith('/cases/1', null, { params: { status_update: 'resolved' } });
+      expect(mockPatch).toHaveBeenCalledWith('/cases/2', null, { params: { status_update: 'resolved' } });
+    });
+    await waitFor(() => expect(mockToast).toHaveBeenCalledWith('2 investigations marked resolved.', 'success'));
+  });
+
+  it('assigns selected investigations to an organization member', async () => {
+    mockGet.mockImplementation((url: string) => Promise.resolve(
+      url === '/orgs/me/members'
+        ? { data: [{ id: 5, email: 'priya@example.com', is_active: true }] }
+        : { data: { cases: twoCases(), total: 2 } }
+    ));
+    renderCases();
+    await selectAll();
+    fireEvent.change(screen.getByLabelText('Assign selected investigations'), { target: { value: '5' } });
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/cases/1/assign', { user_id: 5 });
+      expect(mockPost).toHaveBeenCalledWith('/cases/2/assign', { user_id: 5 });
+    });
+    await waitFor(() => expect(mockToast).toHaveBeenCalledWith('2 investigations assigned to priya@example.com.', 'success'));
+  });
+
+  it('deletes selected investigations after confirmation', async () => {
+    mockGet.mockResolvedValue({ data: { cases: twoCases(), total: 2 } });
+    mockDelete.mockResolvedValue({ data: {} });
+    renderCases();
+    await selectAll();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(await screen.findByText('Delete 2 investigations?')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete 2' }));
+    await waitFor(() => {
+      expect(mockDelete).toHaveBeenCalledWith('/cases/1');
+      expect(mockDelete).toHaveBeenCalledWith('/cases/2');
+    });
+    await waitFor(() => expect(mockToast).toHaveBeenCalledWith('2 investigations deleted.', 'success'));
   });
 });
