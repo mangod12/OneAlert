@@ -26,6 +26,7 @@ from backend.services.cve_enrichment import CVEEnrichmentService
 from backend.services.cve_scraper import cve_scraper
 from backend.services.email_alert import email_service
 from backend.services.ics_cert_feed import ics_cert_feed_service
+from backend.services.sla import sla_due_date
 from backend.services.slack_webhook import SlackNotificationService, WebhookNotificationService
 from backend.services.vendor_scraper import vendor_scraper
 
@@ -124,6 +125,7 @@ async def _maybe_auto_escalate(db: AsyncSession, user: User, asset: Asset) -> No
         ),
         severity=max_severity,
         status="open",
+        due_date=sla_due_date(user, max_severity),
     )
     db.add(case)
     await db.flush()

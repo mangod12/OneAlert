@@ -33,6 +33,7 @@ from backend.models.response_plan import ApprovalRequest, ResponsePlan
 from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.services.audit import add_audit_log
+from backend.services.sla import sla_due_date
 
 router = APIRouter()
 
@@ -230,6 +231,7 @@ async def create_case(
         severity=case_data.severity,
         status="open",
         created_by="human",
+        due_date=sla_due_date(current_user, case_data.severity),
     )
     db.add(case)
     await db.flush()
