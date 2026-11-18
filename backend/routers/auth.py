@@ -301,6 +301,10 @@ async def update_notification_preferences(
         # Both present: either a new window or an explicit null pair to clear it.
         current_user.quiet_hours_start = update.quiet_hours_start
         current_user.quiet_hours_end = update.quiet_hours_end
+    if update.digest_enabled is not None:
+        current_user.digest_enabled = update.digest_enabled
+    if update.digest_hour_utc is not None:
+        current_user.digest_hour_utc = update.digest_hour_utc
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)

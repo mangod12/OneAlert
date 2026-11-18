@@ -41,7 +41,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mockGet.mockImplementation(async (url: string) => {
     if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
-    if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low' } };
+    if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low', digest_enabled: false, digest_hour_utc: 7 } };
     if (url === '/auth/me/automation-preferences') return { data: { auto_escalate_incidents: false, auto_escalate_min_alerts: 3, auto_escalate_min_severity: 'high', sla_due_dates_enabled: false, sla_days_critical: 1, sla_days_high: 3, sla_days_medium: 7, sla_days_low: 14, sla_days_info: 30 } };
     return notFound();
   });
@@ -243,7 +243,7 @@ describe('Organization creation', () => {
 describe('Email notification preferences', () => {
   it('loads current preferences into the form', async () => {
     mockGet.mockImplementation(async (url: string) => {
-      if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: false, notify_min_severity: 'high' } };
+      if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: false, notify_min_severity: 'high', digest_enabled: false, digest_hour_utc: 7 } };
       if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
       return notFound();
     });
@@ -266,6 +266,8 @@ describe('Email notification preferences', () => {
       muted_kinds: [],
       quiet_hours_start: null,
       quiet_hours_end: null,
+      digest_enabled: false,
+      digest_hour_utc: 7,
     }));
     await screen.findByText('Notification preferences saved.');
   });
@@ -282,6 +284,8 @@ describe('Email notification preferences', () => {
       muted_kinds: ['case_assigned', 'alert_assigned'],
       quiet_hours_start: null,
       quiet_hours_end: null,
+      digest_enabled: false,
+      digest_hour_utc: 7,
     }));
   });
 
@@ -295,7 +299,7 @@ describe('Email notification preferences', () => {
 
   it('loads and saves quiet hours', async () => {
     mockGet.mockImplementation(async (url: string) => {
-      if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low', muted_kinds: [], quiet_hours_start: '22:00', quiet_hours_end: '06:00' } };
+      if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low', muted_kinds: [], quiet_hours_start: '22:00', quiet_hours_end: '06:00', digest_enabled: false, digest_hour_utc: 7 } };
       if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
       return notFound();
     });
@@ -312,7 +316,21 @@ describe('Email notification preferences', () => {
       muted_kinds: [],
       quiet_hours_start: '23:00',
       quiet_hours_end: '06:00',
+      digest_enabled: false,
+      digest_hour_utc: 7,
     }));
+  });
+
+  it('saves the daily digest preference', async () => {
+    render(<Settings />);
+    const digestToggle = await screen.findByRole('checkbox', { name: /send me a daily digest/i });
+    fireEvent.click(digestToggle);
+    fireEvent.change(screen.getByLabelText(/send at/i), { target: { value: '6' } });
+    fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/auth/me/notification-preferences', expect.objectContaining({
+      digest_enabled: true,
+      digest_hour_utc: 6,
+    })));
   });
 
   it('requires both quiet hour times before saving', async () => {
@@ -326,7 +344,7 @@ describe('Email notification preferences', () => {
 
   it('clear sends a null pair', async () => {
     mockGet.mockImplementation(async (url: string) => {
-      if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low', muted_kinds: [], quiet_hours_start: '22:00', quiet_hours_end: '06:00' } };
+      if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low', muted_kinds: [], quiet_hours_start: '22:00', quiet_hours_end: '06:00', digest_enabled: false, digest_hour_utc: 7 } };
       if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
       return notFound();
     });
@@ -339,6 +357,8 @@ describe('Email notification preferences', () => {
       muted_kinds: [],
       quiet_hours_start: null,
       quiet_hours_end: null,
+      digest_enabled: false,
+      digest_hour_utc: 7,
     }));
   });
 
@@ -360,7 +380,7 @@ describe('Email notification preferences', () => {
     mockGet.mockImplementation(async (url: string) => {
       if (url === '/auth/me') return { data: { ...analyst, full_name: 'New Name', company: 'New Co' } };
       if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
-      if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low' } };
+      if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low', digest_enabled: false, digest_hour_utc: 7 } };
     if (url === '/auth/me/automation-preferences') return { data: { auto_escalate_incidents: false, auto_escalate_min_alerts: 3, auto_escalate_min_severity: 'high', sla_due_dates_enabled: false, sla_days_critical: 1, sla_days_high: 3, sla_days_medium: 7, sla_days_low: 14, sla_days_info: 30 } };
       return notFound();
     });

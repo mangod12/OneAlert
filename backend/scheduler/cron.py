@@ -61,6 +61,16 @@ class VulnerabilityScheduler:
             replace_existing=True
         )
 
+        # Daily digest - hourly tick, emails users at their chosen UTC hour
+        self.scheduler.add_job(
+            func=self._run_daily_digest,
+            trigger=IntervalTrigger(hours=1),
+            id='daily_digest',
+            name='Daily Digest',
+            replace_existing=True,
+            max_instances=1
+        )
+
         # SLA breach check - runs hourly, notifies on overdue investigations
         self.scheduler.add_job(
             func=self._run_sla_breach_check,
@@ -126,6 +136,20 @@ class VulnerabilityScheduler:
 
         except Exception as e:
             logger.error(f"Error generating weekly stats: {e}")
+
+    async def _run_daily_digest(self):
+        """Email opted-in users their daily investigation digest."""
+        try:
+            from backend.database.db import AsyncSessionLocal
+            from backend.services.digest import send_due_digests
+
+            async with AsyncSessionLocal() as db:
+                sent = await send_due_digests(db)
+                if sent:
+                    logger.info("Daily digest run sent %d emails", sent)
+
+        except Exception as e:
+            logger.error(f"Error during daily digest: {e}")
 
     async def _run_sla_breach_check(self):
         """Notify owners of investigations that passed their SLA due date."""
