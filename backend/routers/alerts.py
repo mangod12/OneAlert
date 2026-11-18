@@ -27,6 +27,7 @@ from backend.models.alert import (
     Severity,
 )
 from backend.models.asset import Asset
+from backend.models.notification import Notification
 from backend.models.user import User
 from backend.routers.auth import get_active_user
 
@@ -349,6 +350,18 @@ async def update_alert(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Assignee must be an active member of your organization"
                 )
+        if (
+            assignee_id is not None
+            and assignee_id != current_user.id
+            and assignee_id != alert.assigned_to_id
+        ):
+            db.add(Notification(
+                user_id=assignee_id,
+                kind="alert_assigned",
+                title=f"Alert #{alert.id} assigned to you",
+                body=alert.title,
+                link="/app/alerts",
+            ))
 
     for field, value in update_data.items():
         setattr(alert, field, value)

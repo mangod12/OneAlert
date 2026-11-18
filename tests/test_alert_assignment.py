@@ -239,3 +239,76 @@ class TestAlertExport:
         lines = res.text.strip().splitlines()
         assert len(lines) == 2
         assert lines[1].split(",")[7] == ""
+
+
+class TestAlertAssignmentNotifications:
+    def test_assign_notifies_assignee(self, client):
+        owner = _register_and_login(client, "owner@example.com")
+        member = _register_and_login(client, "member@example.com")
+        owner_id = _user_id(client, owner)
+        member_id = _user_id(client, member)
+        _share_org(owner_id, member_id)
+        alert_id = _seed_alert(owner_id)
+
+        resp = client.patch(f"/api/v1/alerts/{alert_id}", json={"assigned_to_id": member_id}, headers=owner)
+        assert resp.status_code == 200, resp.text
+
+        feed = client.get("/api/v1/notifications/", headers=member)
+        assert feed.status_code == 200, feed.text
+        items = feed.json()["data"]
+        assert len(items) == 1
+        assert items[0]["kind"] == "alert_assigned"
+        assert items[0]["title"] == f"Alert #{alert_id} assigned to you"
+        assert items[0]["body"] == "RouterOS remote code execution"
+        assert items[0]["link"] == "/app/alerts"
+        assert feed.json()["unread_count"] == 1
+
+    def test_repeat_same_assignment_does_not_notify_again(self, client):
+        owner = _register_and_login(client, "owner@example.com")
+        member = _register_and_login(client, "member@example.com")
+        owner_id = _user_id(client, owner)
+        member_id = _user_id(client, member)
+        _share_org(owner_id, member_id)
+        alert_id = _seed_alert(owner_id)
+
+        for _ in range(2):
+            resp = client.patch(f"/api/v1/alerts/{alert_id}", json={"assigned_to_id": member_id}, headers=owner)
+            assert resp.status_code == 200, resp.text
+
+        feed = client.get("/api/v1/notifications/", headers=member)
+        assert feed.json()["total"] == 1
+
+    def test_self_assign_and_unassign_do_not_notify(self, client):
+        owner = _register_and_login(client, "owner@example.com")
+        owner_id = _user_id(client, owner)
+        alert_id = _seed_alert(owner_id)
+
+        resp = client.patch(f"/api/v1/alerts/{alert_id}", json={"assigned_to_id": owner_id}, headers=owner)
+        assert resp.status_code == 200, resp.text
+        resp = client.patch(f"/api/v1/alerts/{alert_id}", json={"assigned_to_id": None}, headers=owner)
+        assert resp.status_code == 200, resp.text
+
+        feed = client.get("/api/v1/notifications/", headers=owner)
+        assert feed.json()["total"] == 0
+
+    def test_muted_alert_assigned_hidden_from_feed(self, client):
+        owner = _register_and_login(client, "owner@example.com")
+        member = _register_and_login(client, "member@example.com")
+        owner_id = _user_id(client, owner)
+        member_id = _user_id(client, member)
+        _share_org(owner_id, member_id)
+        alert_id = _seed_alert(owner_id)
+
+        mute = client.patch(
+            "/api/v1/auth/me/notification-preferences",
+            json={"muted_kinds": ["alert_assigned"]},
+            headers=member,
+        )
+        assert mute.status_code == 200, mute.text
+
+        resp = client.patch(f"/api/v1/alerts/{alert_id}", json={"assigned_to_id": member_id}, headers=owner)
+        assert resp.status_code == 200, resp.text
+
+        feed = client.get("/api/v1/notifications/", headers=member)
+        assert feed.json()["total"] == 0
+        assert feed.json()["unread_count"] == 0

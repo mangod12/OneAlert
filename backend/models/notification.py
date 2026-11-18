@@ -17,7 +17,7 @@ class Notification(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    kind = Column(String, nullable=False)  # alert_created | case_assigned
+    kind = Column(String, nullable=False)  # alert_created | case_assigned | alert_assigned
     title = Column(String, nullable=False)
     body = Column(Text, nullable=True)
     link = Column(String, nullable=True)  # in-app route, e.g. /app/cases/12

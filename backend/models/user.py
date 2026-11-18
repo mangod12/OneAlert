@@ -143,7 +143,7 @@ class PasswordChange(BaseModel):
 SEVERITY_LEVELS = ("low", "medium", "high", "critical")
 
 # In-app notification kinds that can be muted individually.
-KNOWN_NOTIFICATION_KINDS = ("alert_created", "case_assigned")
+KNOWN_NOTIFICATION_KINDS = ("alert_created", "case_assigned", "alert_assigned")
 
 
 class NotificationPreferences(BaseModel):
