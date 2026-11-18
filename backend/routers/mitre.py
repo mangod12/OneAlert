@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
 from backend.models.case import Case
+from backend.models.detection_rule import DetectionRule
 from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.services.mitre.attack_data import (
@@ -46,7 +47,7 @@ async def get_coverage(
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Get MITRE ATT&CK detection coverage based on user's cases."""
+    """Get MITRE ATT&CK detection coverage from the user's cases and enabled detection rules."""
     result = await db.execute(
         select(Case.mitre_techniques)
         .where(Case.user_id == current_user.id, Case.mitre_techniques.isnot(None))
@@ -62,5 +63,23 @@ async def get_coverage(
                 elif isinstance(t, str):
                     detected.add(t)
 
+    # Enabled detection rules are coverage too: each one watches for its techniques.
+    rule_rows = await db.execute(
+        select(DetectionRule.mitre_techniques)
+        .where(
+            DetectionRule.user_id == current_user.id,
+            DetectionRule.enabled.is_(True),
+            DetectionRule.mitre_techniques.isnot(None),
+        )
+    )
+    for techniques_list in rule_rows.scalars().all():
+        if isinstance(techniques_list, list):
+            for t in techniques_list:
+                if isinstance(t, dict):
+                    detected.add(t.get("id", ""))
+                elif isinstance(t, str):
+                    detected.add(t)
+
+    detected.discard("")
     coverage = compute_coverage(detected)
     return {"success": True, "data": coverage}
