@@ -41,6 +41,7 @@ const caseData = {
 
 function mockLoad(status = 'open') {
   mockGet.mockImplementation(url => {
+    if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
     if (url.endsWith('/alerts')) return Promise.resolve({ data: [] });
     if (url.endsWith('/events')) return Promise.resolve({ data: [] });
     if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: blastRadius } });
@@ -51,6 +52,7 @@ function mockLoad(status = 'open') {
 
 function mockLoadWithPlans(plans: Array<Record<string, unknown>>) {
   mockGet.mockImplementation(url => {
+    if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
     if (url.endsWith('/alerts')) return Promise.resolve({ data: [] });
     if (url.endsWith('/events')) return Promise.resolve({ data: [] });
     if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: blastRadius } });
@@ -62,6 +64,7 @@ function mockLoadWithPlans(plans: Array<Record<string, unknown>>) {
 
 function mockLoadWithTimeline(timeline: Array<Record<string, unknown>>) {
   mockGet.mockImplementation(url => {
+    if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
     if (url.endsWith('/alerts')) return Promise.resolve({ data: [] });
     if (url.endsWith('/events')) return Promise.resolve({ data: [] });
     if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: blastRadius } });
@@ -150,6 +153,7 @@ describe('Blast radius and similar investigations', () => {
 
   it('hides both panels when the case has no graph or similar cases', async () => {
     mockGet.mockImplementation(url => {
+    if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
       if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: { ...blastRadius, nodes: blastRadius.nodes.slice(0, 1), summary: { total_nodes: 1, assets_affected: 0, ips_involved: 0, techniques_used: 0 } } } });
       if (url.endsWith('/similar')) return Promise.resolve({ data: { success: true, data: [] } });
       if (url.endsWith('/alerts') || url.endsWith('/events')) return Promise.resolve({ data: [] });
@@ -164,6 +168,7 @@ describe('Blast radius and similar investigations', () => {
 
   it('keeps the page intact when the graph and similar requests fail', async () => {
     mockGet.mockImplementation(url => {
+    if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
       if (url.endsWith('/blast-radius') || url.endsWith('/similar')) return Promise.reject(new Error('offline'));
       if (url.endsWith('/alerts') || url.endsWith('/events')) return Promise.resolve({ data: [] });
       return Promise.resolve({ data: caseData });
@@ -247,6 +252,7 @@ describe('Linking alerts to the case', () => {
 
   function mockLoadWithRecentAlerts() {
     mockGet.mockImplementation(url => {
+    if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
       if (url === '/alerts/') return Promise.resolve({ data: { alerts: recentAlerts, total: 2 } });
       if (url.endsWith('/alerts')) return Promise.resolve({ data: [{ id: 11, severity: 'high', title: 'Suspicious login burst' }] });
       if (url.endsWith('/events')) return Promise.resolve({ data: [] });
@@ -274,6 +280,7 @@ describe('Linking alerts to the case', () => {
 
   it('notes when every recent alert is already linked', async () => {
     mockGet.mockImplementation(url => {
+    if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
       if (url === '/alerts/') return Promise.resolve({ data: { alerts: recentAlerts, total: 2 } });
       if (url.endsWith('/alerts')) return Promise.resolve({ data: recentAlerts });
       if (url.endsWith('/events')) return Promise.resolve({ data: [] });
@@ -296,6 +303,7 @@ describe('Linking events to the case', () => {
 
   function mockLoadWithRecentEvents() {
     mockGet.mockImplementation(url => {
+    if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
       if (url === '/events/') return Promise.resolve({ data: { events: recentEvents, total: 2 } });
       if (url.endsWith('/events')) return Promise.resolve({ data: [{ id: 21, event_type: 'alert', severity: 'high', signature: 'ET SCAN Nmap' }] });
       if (url.endsWith('/alerts')) return Promise.resolve({ data: [] });
@@ -323,6 +331,7 @@ describe('Linking events to the case', () => {
 
   it('notes when every recent event is already linked', async () => {
     mockGet.mockImplementation(url => {
+    if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
       if (url === '/events/') return Promise.resolve({ data: { events: recentEvents, total: 2 } });
       if (url.endsWith('/events')) return Promise.resolve({ data: recentEvents });
       if (url.endsWith('/alerts')) return Promise.resolve({ data: [] });
@@ -340,6 +349,7 @@ describe('Linking events to the case', () => {
 describe('Unlinking related items', () => {
   function mockLoadWithLinked() {
     mockGet.mockImplementation(url => {
+    if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
       if (url.endsWith('/alerts')) return Promise.resolve({ data: [{ id: 11, severity: 'high', title: 'Suspicious login burst' }] });
       if (url.endsWith('/events')) return Promise.resolve({ data: [{ id: 21, event_type: 'alert', severity: 'high', signature: 'ET SCAN Nmap', source_ip: '10.0.4.9', dest_ip: '10.0.4.20' }] });
       if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: null } });
@@ -544,6 +554,7 @@ describe('Timeline CSV export', () => {
     });
     mockLoad();
     mockGet.mockImplementation(url => {
+    if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
       if (url === '/cases/7/export') return Promise.resolve({ data: new Blob(['case_id\n7']) });
       if (url.endsWith('/alerts')) return Promise.resolve({ data: [] });
       if (url.endsWith('/events')) return Promise.resolve({ data: [] });
@@ -626,5 +637,83 @@ describe('Assignee view', () => {
     expect(await screen.findByText('Suspicious lateral movement')).toBeTruthy();
     expect(screen.getByLabelText('Edit case details')).toBeTruthy();
     expect(screen.getByLabelText('Delete case')).toBeTruthy();
+  });
+});
+
+describe('Case watchers', () => {
+  const members = [
+    { id: 5, email: 'owner@example.com', full_name: 'Olga Owner', is_active: true },
+    { id: 6, email: 'watcher@example.com', full_name: 'Will Watch', is_active: true },
+    { id: 8, email: 'other@example.com', full_name: 'Olive Other', is_active: true },
+  ];
+  const fullUser = { id: 5, email: 'owner@example.com', full_name: 'Olga Owner', company: 'Acme', role: 'admin', is_active: true, is_verified: true, mfa_enabled: false, created_at: '2026-01-01T00:00:00Z' };
+
+  function mockLoadWithWatchers(watchers: Array<{ user_id: number; email: string; full_name: string | null }>) {
+    mockGet.mockImplementation(url => {
+      if (url === '/orgs/me/members') return Promise.resolve({ data: members });
+      if (url.endsWith('/watchers')) return Promise.resolve({ data: watchers });
+      if (url.endsWith('/alerts')) return Promise.resolve({ data: [] });
+      if (url.endsWith('/events')) return Promise.resolve({ data: [] });
+      if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: null } });
+      if (url.endsWith('/similar')) return Promise.resolve({ data: { success: true, data: [] } });
+      return Promise.resolve({ data: caseData });
+    });
+  }
+
+  it('lists watchers and lets the owner add one from the member select', async () => {
+    useAuthStore.setState({ user: fullUser });
+    mockLoadWithWatchers([{ user_id: 6, email: 'watcher@example.com', full_name: 'Will Watch' }]);
+    mockPost.mockResolvedValue({
+      data: [
+        { user_id: 6, email: 'watcher@example.com', full_name: 'Will Watch' },
+        { user_id: 8, email: 'other@example.com', full_name: 'Olive Other' },
+      ],
+    });
+    renderDetail();
+    expect(await screen.findByText('Will Watch')).toBeTruthy();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Add a watcher' }), { target: { value: '8' } });
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/watchers', { user_id: 8 }));
+    expect(await screen.findByText('Olive Other')).toBeTruthy();
+  });
+
+  it('toggles watching on and off for the current user', async () => {
+    useAuthStore.setState({ user: fullUser });
+    let watchers: Array<{ user_id: number; email: string; full_name: string | null }> = [];
+    mockGet.mockImplementation(url => {
+      if (url === '/orgs/me/members') return Promise.resolve({ data: members });
+      if (url.endsWith('/watchers')) return Promise.resolve({ data: watchers });
+      if (url.endsWith('/alerts') || url.endsWith('/events')) return Promise.resolve({ data: [] });
+      if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: null } });
+      if (url.endsWith('/similar')) return Promise.resolve({ data: { success: true, data: [] } });
+      return Promise.resolve({ data: caseData });
+    });
+    mockPost.mockImplementation(url => {
+      if (url.endsWith('/watch')) {
+        watchers = [{ user_id: 5, email: 'owner@example.com', full_name: 'Olga Owner' }];
+      }
+      return Promise.resolve({ data: { success: true } });
+    });
+    mockDelete.mockImplementation(url => {
+      if (url.endsWith('/watch')) watchers = [];
+      return Promise.resolve({ data: { success: true } });
+    });
+    renderDetail();
+    fireEvent.click(await screen.findByRole('button', { name: 'Watch this case' }));
+    expect(await screen.findByRole('button', { name: 'Stop watching this case' })).toBeTruthy();
+    expect(mockPost).toHaveBeenCalledWith('/cases/7/watch');
+    fireEvent.click(screen.getByRole('button', { name: 'Stop watching this case' }));
+    expect(await screen.findByRole('button', { name: 'Watch this case' })).toBeTruthy();
+    expect(mockDelete).toHaveBeenCalledWith('/cases/7/watch');
+  });
+
+  it('lets a watcher remove themselves but hides the add-watcher select from non-owners', async () => {
+    useAuthStore.setState({ user: { ...fullUser, id: 6, email: 'watcher@example.com' } });
+    mockLoadWithWatchers([{ user_id: 6, email: 'watcher@example.com', full_name: 'Will Watch' }]);
+    mockDelete.mockResolvedValue({ data: { success: true } });
+    renderDetail();
+    expect(await screen.findByText('Will Watch')).toBeTruthy();
+    expect(screen.queryByRole('combobox', { name: 'Add a watcher' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove watcher watcher@example.com' }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/7/watchers/6'));
   });
 });
