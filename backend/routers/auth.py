@@ -8,7 +8,7 @@ import io
 import logging
 import secrets
 import time
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.config import settings
 from backend.database.db import get_async_db
 from backend.middleware.rate_limiter import limiter
+from backend.models.api_token import TOKEN_PREFIX, ApiToken, hash_api_token
 from backend.models.audit_log import AuditLog
 from backend.models.user import (
     NotificationPreferences,
@@ -72,6 +73,39 @@ async def get_current_user(
         token = request.cookies.get("access_token")
     if not token:
         raise credentials_exception
+
+    # Personal API tokens authenticate as their owner
+    if token.startswith(TOKEN_PREFIX):
+        candidates = await db.execute(
+            select(ApiToken).where(ApiToken.prefix == token[:12])
+        )
+        api_token = next(
+            (
+                row
+                for row in candidates.scalars().all()
+                if row.token_hash == hash_api_token(token, row.salt)
+            ),
+            None,
+        )
+        now = datetime.now(UTC).replace(tzinfo=None)  # naive UTC, matching stored timestamps
+        if (
+            api_token is None
+            or api_token.revoked_at is not None
+            or (api_token.expires_at is not None and api_token.expires_at <= now)
+        ):
+            raise credentials_exception
+        result = await db.execute(select(User).where(User.id == api_token.user_id))
+        user = result.scalar_one_or_none()
+        if user is None:
+            raise credentials_exception
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Inactive user",
+            )
+        api_token.last_used_at = now
+        await db.commit()
+        return user
 
     # Verify token and get email
     email = verify_token(token)
