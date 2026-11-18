@@ -132,7 +132,7 @@ async def get_posture_report(
         await db.execute(select(Case.status, Case.created_at).where(Case.user_id == current_user.id))
     ).all()
     cases_open = sum(1 for status, _ in case_rows if status == "open")
-    cases_in_progress = sum(1 for status, _ in case_rows if status == "in_progress")
+    cases_in_progress = sum(1 for status, _ in case_rows if status == "investigating")
     cases_done = sum(1 for status, _ in case_rows if status in _DONE_CASE_STATUSES)
     cases_opened = sum(
         1

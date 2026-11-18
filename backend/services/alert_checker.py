@@ -110,7 +110,7 @@ async def _maybe_auto_escalate(db: AsyncSession, user: User, asset: Asset) -> No
         .where(
             Case.user_id == user.id,
             CaseAlert.alert_id.in_(alert_ids),
-            Case.status.in_(("open", "in_progress")),
+            Case.status.in_(("open", "investigating")),
         )
     )).scalars().first()
     if existing:

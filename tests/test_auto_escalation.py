@@ -279,3 +279,33 @@ class TestCheckerAutoEscalation:
             case = (await session.execute(select(Case).where(Case.user_id == uid))).scalar_one()
             assert case.due_date is None
             await session.rollback()
+
+
+    @pytest.mark.asyncio
+    async def test_investigating_case_blocks_escalation(self, client, auth_headers):
+        """An investigation in the 'investigating' status also deduplicates."""
+        uid = _user_id()
+        asset_id = _seed_incident(
+            uid,
+            [("a1", "critical"), ("a2", "high"), ("a3", "high")],
+            {"auto_escalate_incidents": True},
+        )
+        async with AsyncTestingSessionLocal() as session:
+            user = await session.get(User, uid)
+            asset = await session.get(Asset, asset_id)
+            existing = Case(user_id=uid, title="Already on it", severity="high",
+                            status="investigating")
+            session.add(existing)
+            await session.flush()
+            alert_ids = (await session.execute(
+                select(Alert.id).where(Alert.user_id == uid)
+            )).scalars().all()
+            for aid in alert_ids:
+                session.add(CaseAlert(case_id=existing.id, alert_id=aid))
+            await session.commit()
+
+            await _maybe_auto_escalate(session, user, asset)
+            cases = (await session.execute(select(Case).where(Case.user_id == uid))).scalars().all()
+            assert len(cases) == 1
+            assert cases[0].title == "Already on it"
+            await session.rollback()
