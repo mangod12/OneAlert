@@ -30,6 +30,7 @@ export function Dashboard() {
   const [responseMetrics, setResponseMetrics] = useState<ResponseMetrics | null>(null);
   const [myAlerts, setMyAlerts] = useState<Alert[] | null>(null);
   const [myCases, setMyCases] = useState<Array<{ id: number; title: string; severity: string; status: string }> | null>(null);
+  const [incidents, setIncidents] = useState<Array<{ asset_id: number; asset_name: string; max_severity: string; alert_count: number; blast_radius: number }> | null>(null);
   const [errors, setErrors] = useState<DashboardErrors>({});
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -53,6 +54,7 @@ export function Dashboard() {
         apiClient.get<{ cases?: Array<{ id: number; title: string; severity: string; status: string }> }>('/cases/', { params: { size: 5, assigned: 'me' } }),
         apiClient.get<{ days?: TimelineDay[] }>('/alerts/stats/timeline', { params: { days: 14 } }),
         apiClient.get<ResponseMetrics>('/alerts/stats/response-metrics', { params: { days: 30 } }),
+        apiClient.get<{ incidents?: Array<{ asset_id: number; asset_name: string; max_severity: string; alert_count: number; blast_radius: number }> }>('/incidents'),
       ] as const;
       const results = await Promise.allSettled(requests);
       if (!active) return;
@@ -74,6 +76,8 @@ export function Dashboard() {
       else setTimeline(null);
       if (results[7].status === 'fulfilled') setResponseMetrics(results[7].value.data);
       else setResponseMetrics(null);
+      if (results[8].status === 'fulfilled') setIncidents(results[8].value.data.incidents ?? []);
+      else setIncidents([]);
 
       setErrors(nextErrors);
       setLastUpdated(new Date());
@@ -188,6 +192,23 @@ export function Dashboard() {
                   <div className="px-5 py-6 text-center text-sm text-surface-400">{myCases === null ? 'Loading...' : 'No investigations assigned to you.'}</div>
                 )}
               </div>
+            </div>
+          </Panel>
+        </section>
+      )}
+
+      {(incidents === null || incidents.length > 0) && (
+        <section aria-label="Active incidents">
+          <Panel title="Active incidents" description="Correlated alert groups hitting the same asset." action={<Link to="/incidents" className="text-xs font-semibold text-primary-300 hover:text-primary-200">View incidents</Link>}>
+            <div className="divide-y divide-surface-800">
+              {(incidents ?? []).length > 0 ? (incidents ?? []).slice(0, 4).map(incident => (
+                <Link key={incident.asset_id} to="/incidents" className="flex items-center gap-3 px-5 py-3 hover:bg-surface-800/45">
+                  <StatusBadge tone={incident.max_severity === 'critical' ? 'danger' : incident.max_severity === 'high' ? 'warning' : 'neutral'}>{incident.max_severity}</StatusBadge>
+                  <div className="min-w-0"><p className="truncate text-sm font-semibold text-surface-100">{incident.asset_name}</p><p className="mt-0.5 truncate text-[11px] text-surface-500">{incident.alert_count} active alerts{incident.blast_radius > 0 ? ` · blast radius ${incident.blast_radius}` : ''}</p></div>
+                </Link>
+              )) : (
+                <div className="px-5 py-6 text-center text-sm text-surface-400">Loading...</div>
+              )}
             </div>
           </Panel>
         </section>

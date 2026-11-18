@@ -53,7 +53,7 @@ const STATS: AlertStats = {
   acknowledged_alerts: 2,
 };
 
-function mockAllFulfilled(alerts: Alert[] = [makeAlert()], myAlerts: Alert[] = [], myCases: Array<{ id: number; title: string; severity: string; status: string }> = []) {
+function mockAllFulfilled(alerts: Alert[] = [makeAlert()], myAlerts: Alert[] = [], myCases: Array<{ id: number; title: string; severity: string; status: string }> = [], incidents: Array<{ asset_id: number; asset_name: string; max_severity: string; alert_count: number; blast_radius: number }> = []) {
   mockGet.mockImplementation((url: string, config?: unknown) => {
     const params = (config as { params?: Record<string, unknown> } | undefined)?.params;
     switch (url) {
@@ -74,6 +74,8 @@ function mockAllFulfilled(alerts: Alert[] = [makeAlert()], myAlerts: Alert[] = [
         return Promise.resolve({ data: [] });
       case '/alerts/stats/timeline':
         return Promise.resolve({ data: { days: TIMELINE_DAYS } });
+      case '/incidents':
+        return Promise.resolve({ data: { total: incidents.length, incidents } });
       case '/alerts/stats/response-metrics':
         return Promise.resolve({ data: { days: 30, acknowledged_count: 8, resolved_count: 5, mtta_seconds: 5400, mttr_seconds: 18000 } });
       default:
@@ -186,5 +188,23 @@ describe('My assignments', () => {
     renderDashboard();
     await screen.findByText('42');
     await waitFor(() => expect(screen.queryByText('My assignments')).toBeNull());
+  });
+
+
+  it('shows the active incidents panel when incidents exist', async () => {
+    mockAllFulfilled([makeAlert()], [], [], [
+      { asset_id: 5, asset_name: 'plc-01', max_severity: 'critical', alert_count: 3, blast_radius: 2 },
+    ]);
+    renderDashboard();
+    expect(await screen.findByText('Active incidents')).toBeTruthy();
+    expect(screen.getByText('plc-01')).toBeTruthy();
+    expect(screen.getByText(/3 active alerts/)).toBeTruthy();
+  });
+
+  it('hides the incidents panel when nothing correlates', async () => {
+    mockAllFulfilled();
+    renderDashboard();
+    await screen.findByText('42');
+    expect(screen.queryByText('Active incidents')).toBeNull();
   });
 });
