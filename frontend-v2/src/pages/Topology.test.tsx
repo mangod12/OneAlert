@@ -51,6 +51,34 @@ describe('Topology page', () => {
     expect(screen.getAllByText(/modbus/i).length).toBeGreaterThan(0);
   });
 
+  it('filters connections by protocol', async () => {
+    render(<Topology />);
+    await screen.findAllByText('scada-historian');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter connections by protocol' }), { target: { value: 'modbus' } });
+    expect(screen.getByText('1 of 2 connections')).toBeTruthy();
+    const rows = screen.getAllByRole('row');
+    expect(rows.some(r => r.textContent?.includes('modbus'))).toBe(true);
+    expect(rows.some(r => r.textContent?.includes('https'))).toBe(false);
+  });
+
+  it('filters to cleartext connections only', async () => {
+    render(<Topology />);
+    await screen.findAllByText('scada-historian');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Cleartext only' }));
+    expect(screen.getByText('1 of 2 connections')).toBeTruthy();
+    const rows = screen.getAllByRole('row');
+    expect(rows.some(r => r.textContent?.includes('Cleartext'))).toBe(true);
+    expect(rows.some(r => r.textContent?.includes('https'))).toBe(false);
+  });
+
+  it('shows a no-match note when filters exclude every connection', async () => {
+    render(<Topology />);
+    await screen.findAllByText('scada-historian');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter connections by protocol' }), { target: { value: 'https' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Cleartext only' }));
+    expect(await screen.findByText('No connections match the current filters.')).toBeTruthy();
+  });
+
   it('shows the empty state when nothing has been observed', async () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/topology/graph') return { data: { nodes: [], edges: [] } };

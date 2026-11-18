@@ -49,6 +49,8 @@ export function Topology() {
   const [formMessage, setFormMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [deletingEdge, setDeletingEdge] = useState<TopologyEdge | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
+  const [protocolFilter, setProtocolFilter] = useState('');
+  const [cleartextOnly, setCleartextOnly] = useState(false);
 
   const fetchTopology = useCallback(async () => {
     setLoading(true);
@@ -140,6 +142,10 @@ export function Topology() {
   const encryptedPct = stats && stats.total_connections > 0
     ? Math.round((stats.encrypted / stats.total_connections) * 100)
     : 100;
+  const protocolOptions = [...new Set(edges.map(e => e.protocol))].sort();
+  const filteredEdges = edges.filter(e =>
+    (!protocolFilter || e.protocol === protocolFilter) && (!cleartextOnly || !e.is_encrypted),
+  );
 
   return (
     <div className="space-y-6">
@@ -201,6 +207,32 @@ export function Topology() {
 
           {edges.length > 0 && (
             <div className="oa-panel overflow-hidden rounded-md">
+              <div className="flex flex-wrap items-center gap-3 border-b border-surface-700 px-4 py-3">
+                <label className="flex items-center gap-2 text-xs text-surface-400">
+                  Protocol
+                  <select
+                    aria-label="Filter connections by protocol"
+                    value={protocolFilter}
+                    onChange={e => setProtocolFilter(e.target.value)}
+                    className="rounded-md border border-surface-600 bg-surface-800 px-2 py-1.5 text-xs text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  >
+                    <option value="">All protocols</option>
+                    {protocolOptions.map(p => <option key={p} value={p}>{p.toUpperCase()}</option>)}
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 text-xs text-surface-300">
+                  <input
+                    type="checkbox"
+                    checked={cleartextOnly}
+                    onChange={e => setCleartextOnly(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-surface-600 bg-surface-800 text-primary-500 focus:ring-primary-500"
+                  />
+                  Cleartext only
+                </label>
+                {(protocolFilter || cleartextOnly) && (
+                  <span className="text-xs text-surface-500">{filteredEdges.length} of {edges.length} connections</span>
+                )}
+              </div>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-surface-700 text-surface-400">
@@ -213,7 +245,12 @@ export function Topology() {
                   </tr>
                 </thead>
                 <tbody>
-                  {edges.map((edge, i) => (
+                  {filteredEdges.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-6 text-center text-xs text-surface-500">No connections match the current filters.</td>
+                    </tr>
+                  )}
+                  {filteredEdges.map((edge, i) => (
                     <tr key={edge.id ?? `${edge.source}-${edge.target}-${edge.protocol}-${i}`} className="border-b border-surface-700/50 hover:bg-surface-800 transition-colors">
                       <td className="px-4 py-3 text-surface-200">{nodeLabel(edge.source)}</td>
                       <td className="px-4 py-3 text-surface-200">{nodeLabel(edge.target)}</td>
