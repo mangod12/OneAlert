@@ -49,6 +49,16 @@ describe('SBOM page', () => {
     expect(screen.getByText('busybox')).toBeTruthy();
   });
 
+  it('summarizes licenses and flags copyleft components', async () => {
+    render(<Sbom />);
+    fireEvent.click(await screen.findByText('Plant gateway'));
+    await screen.findByText('openssl');
+    expect(screen.getByText('2 of 2 components licensed')).toBeTruthy();
+    expect(screen.getByText('Apache-2.0 · 1')).toBeTruthy();
+    expect(screen.getByText('GPL-2.0 · 1')).toBeTruthy();
+    expect(screen.getByText('1 copyleft')).toBeTruthy();
+  });
+
   it('filters expanded components by search', async () => {
     render(<Sbom />);
     fireEvent.click(await screen.findByText('Plant gateway'));
