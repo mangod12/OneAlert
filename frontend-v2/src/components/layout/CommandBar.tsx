@@ -1,4 +1,4 @@
-import { Menu, Radio, ShieldCheck } from 'lucide-react';
+import { Menu, Radio, Search, ShieldCheck } from 'lucide-react';
 import { NotificationBell } from './NotificationBell';
 import { useLocation } from 'react-router-dom';
 import type { RefObject } from 'react';
@@ -22,7 +22,7 @@ const routeMeta: Array<{ match: (path: string) => boolean; section: string; titl
   { match: path => path === '/', section: 'Command', title: 'Security operations' },
 ];
 
-export function CommandBar({ onOpenNavigation, menuButtonRef }: { onOpenNavigation: () => void; menuButtonRef: RefObject<HTMLButtonElement | null> }) {
+export function CommandBar({ onOpenNavigation, onOpenSearch, menuButtonRef }: { onOpenNavigation: () => void; onOpenSearch: () => void; menuButtonRef: RefObject<HTMLButtonElement | null> }) {
   const { pathname } = useLocation();
   const meta = routeMeta.find(item => item.match(pathname)) ?? routeMeta[routeMeta.length - 1];
 
@@ -38,6 +38,16 @@ export function CommandBar({ onOpenNavigation, menuButtonRef }: { onOpenNavigati
         </div>
       </div>
       <div className="flex items-center gap-2 sm:gap-3">
+        <button
+          type="button"
+          aria-label="Search alerts, investigations and assets (Ctrl+K)"
+          onClick={onOpenSearch}
+          className="flex items-center gap-2 rounded-md border border-surface-800 bg-surface-900 px-2.5 py-1.5 text-[11px] text-surface-400 hover:bg-surface-800"
+        >
+          <Search className="h-3.5 w-3.5" aria-hidden="true" />
+          <span className="hidden md:inline">Search</span>
+          <kbd className="hidden rounded border border-surface-700 px-1 text-[10px] md:inline">Ctrl K</kbd>
+        </button>
         <NotificationBell />
         <div className="hidden items-center gap-2 rounded-md border border-surface-800 bg-surface-900 px-2.5 py-1.5 text-[11px] text-surface-400 sm:flex">
           <Radio className="h-3.5 w-3.5 text-success" aria-hidden="true" />
