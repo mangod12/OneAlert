@@ -492,6 +492,37 @@ async def verify_mfa(
     return True
 
 
+@router.post("/me/mfa/disable", response_model=bool)
+async def disable_mfa(
+    body: MFAVerifyRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Disable MFA after confirming a current TOTP code. Clears the stored secret."""
+    import pyotp
+    if not current_user.mfa_enabled or not current_user.mfa_secret:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MFA is not enabled for this account",
+        )
+    totp = pyotp.TOTP(current_user.mfa_secret)
+    if not totp.verify(body.code):
+        return False
+    current_user.mfa_enabled = False
+    current_user.mfa_secret = None
+    db.add(current_user)
+    db.add(
+        AuditLog(
+            user_id=current_user.id,
+            action="mfa_disabled",
+            target_type="user",
+            target_id=current_user.id,
+        )
+    )
+    await db.commit()
+    return True
+
+
 @router.get("/audit-logs")
 async def get_audit_logs(
     action: str | None = Query(None, max_length=100),

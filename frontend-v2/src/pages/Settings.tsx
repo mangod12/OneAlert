@@ -32,6 +32,9 @@ export function Settings() {
   const [mfaUri, setMfaUri] = useState<string | null>(null);
   const [mfaCode, setMfaCode] = useState('');
   const [verifying, setVerifying] = useState(false);
+  const [disablingMfa, setDisablingMfa] = useState(false);
+  const [disableCode, setDisableCode] = useState('');
+  const [disableVerifying, setDisableVerifying] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [org, setOrg] = useState<Org | null>(null);
@@ -306,6 +309,27 @@ export function Settings() {
     }
   };
 
+  const handleDisableMFA = async () => {
+    if (!disableCode.trim() || disableVerifying) return;
+    setDisableVerifying(true);
+    setMessage(null);
+    try {
+      const response = await apiClient.post<boolean>('/auth/me/mfa/disable', { code: disableCode.trim() });
+      if (response.data) {
+        setDisablingMfa(false);
+        setDisableCode('');
+        setMessage({ text: 'MFA is now disabled for this account.', error: false });
+        await fetchUser();
+      } else {
+        setMessage({ text: 'That code did not match. Check your authenticator and try again.', error: true });
+      }
+    } catch (error: unknown) {
+      setMessage({ text: getApiErrorMessage(error, 'MFA could not be disabled.'), error: true });
+    } finally {
+      setDisableVerifying(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <PageHeader eyebrow="Govern" title="Settings" description="Account security and write-only notification credentials for this operator workspace." />
@@ -465,7 +489,54 @@ export function Settings() {
 
           <Panel title="Multi-factor authentication" description="TOTP adds a second verification step to password sign-in." action={<Shield className="h-4 w-4 text-success" />}>
             <div className="p-5">
-              {user?.mfa_enabled ? <StatusBadge tone="success">MFA enabled</StatusBadge> : <button type="button" onClick={handleSetupMFA} className="inline-flex min-h-9 items-center gap-2 rounded-md bg-primary-500 px-3.5 text-sm font-semibold text-surface-950 hover:bg-primary-400"><KeyRound className="h-4 w-4" /> Enable MFA</button>}
+              {user?.mfa_enabled ? (
+                <div className="space-y-3">
+                  <StatusBadge tone="success">MFA enabled</StatusBadge>
+                  {disablingMfa ? (
+                    <div className="space-y-3 rounded-md border border-surface-700 bg-surface-950 p-4">
+                      <p className="text-xs text-surface-400">Enter the current 6-digit code from your authenticator to disable MFA. The stored secret is removed.</p>
+                      <div className="flex items-center gap-2">
+                        <label htmlFor="mfa-disable-code" className="sr-only">Authenticator code</label>
+                        <input
+                          id="mfa-disable-code"
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          placeholder="6-digit code"
+                          value={disableCode}
+                          onChange={event => setDisableCode(event.target.value)}
+                          className="w-32 rounded-md border border-surface-600 bg-surface-900 px-3 py-2 text-sm text-surface-100 placeholder-surface-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void handleDisableMFA()}
+                          disabled={disableVerifying || !disableCode.trim()}
+                          className="rounded-md bg-danger px-3 py-2 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                        >
+                          {disableVerifying ? 'Checking…' : 'Confirm disable'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDisablingMfa(false)}
+                          className="rounded-md border border-surface-600 px-3 py-2 text-xs font-medium text-surface-300 hover:bg-surface-800"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => { setDisablingMfa(true); setDisableCode(''); setMessage(null); }}
+                        className="inline-flex min-h-9 items-center gap-2 rounded-md border border-surface-600 px-3.5 text-sm font-medium text-surface-300 hover:bg-surface-800"
+                      >
+                        Disable MFA
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : <button type="button" onClick={handleSetupMFA} className="inline-flex min-h-9 items-center gap-2 rounded-md bg-primary-500 px-3.5 text-sm font-semibold text-surface-950 hover:bg-primary-400"><KeyRound className="h-4 w-4" /> Enable MFA</button>}
               {mfaUri && (
                 <div className="mt-4 space-y-3 rounded-md border border-surface-700 bg-surface-950 p-4">
                   <p className="text-xs text-surface-400">Add this provisioning URI to your authenticator, then enter its 6-digit code to finish. MFA stays off until the first code verifies.</p>
