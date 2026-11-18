@@ -28,6 +28,7 @@ class TestAlertChecker:
         user.email = "test@example.com"
         user.full_name = "Test User"
         user.is_active = True
+        user.auto_escalate_incidents = False
         return user
     
     @pytest.fixture

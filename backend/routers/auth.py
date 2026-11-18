@@ -23,6 +23,8 @@ from backend.middleware.rate_limiter import limiter
 from backend.models.api_token import TOKEN_PREFIX, ApiToken, hash_api_token
 from backend.models.audit_log import AuditLog
 from backend.models.user import (
+    AutomationPreferences,
+    AutomationPreferencesUpdate,
     NotificationPreferences,
     NotificationPreferencesUpdate,
     PasswordChange,
@@ -299,6 +301,31 @@ async def update_notification_preferences(
         # Both present: either a new window or an explicit null pair to clear it.
         current_user.quiet_hours_start = update.quiet_hours_start
         current_user.quiet_hours_end = update.quiet_hours_end
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
+    return current_user
+
+
+@router.get("/me/automation-preferences", response_model=AutomationPreferences)
+async def read_automation_preferences(current_user: User = Depends(get_active_user)):
+    """Get the current user's response automation preferences."""
+    return current_user
+
+
+@router.patch("/me/automation-preferences", response_model=AutomationPreferences)
+async def update_automation_preferences(
+    update: AutomationPreferencesUpdate,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Update the current user's response automation preferences."""
+    if update.auto_escalate_incidents is not None:
+        current_user.auto_escalate_incidents = update.auto_escalate_incidents
+    if update.auto_escalate_min_alerts is not None:
+        current_user.auto_escalate_min_alerts = update.auto_escalate_min_alerts
+    if update.auto_escalate_min_severity is not None:
+        current_user.auto_escalate_min_severity = update.auto_escalate_min_severity
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)

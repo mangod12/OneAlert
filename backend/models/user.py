@@ -55,6 +55,10 @@ class User(Base):
     muted_kinds = Column(JSON, nullable=False, server_default="[]", default=list)
     quiet_hours_start = Column(String, nullable=True)  # "22:00" local wall clock
     quiet_hours_end = Column(String, nullable=True)    # "06:00"; null pair = quiet hours off
+    # Incident auto-escalation: open an investigation when an asset gets noisy enough
+    auto_escalate_incidents = Column(Boolean, nullable=False, server_default="0")
+    auto_escalate_min_alerts = Column(Integer, nullable=False, server_default="3")
+    auto_escalate_min_severity = Column(String, nullable=False, server_default="high")
     organization = relationship("Organization", back_populates="users")
 
     # Slack and webhook URLs
@@ -231,3 +235,21 @@ class TokenData(BaseModel):
 async def list_users(db: AsyncSession = Depends(get_async_db)) -> list[User]:
     result = await db.execute(select(User))
     return result.scalars().all()
+
+
+class AutomationPreferences(BaseModel):
+    """Per-user response automation preferences."""
+    auto_escalate_incidents: bool
+    auto_escalate_min_alerts: int
+    auto_escalate_min_severity: str
+
+    model_config = {"from_attributes": True}
+
+
+class AutomationPreferencesUpdate(BaseModel):
+    """Partial update for response automation preferences."""
+    auto_escalate_incidents: bool | None = None
+    auto_escalate_min_alerts: int | None = Field(default=None, ge=2, le=20)
+    auto_escalate_min_severity: str | None = Field(
+        default=None, pattern="^(low|medium|high|critical)$"
+    )
