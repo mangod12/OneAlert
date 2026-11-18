@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CaseDetail } from './CaseDetail';
 
 vi.mock('../api/client', () => ({
+  SESSION_EXPIRED_EVENT: 'onealert:session-expired',
   default: {
     get: vi.fn(),
     patch: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock('../api/client', () => ({
 }));
 
 import apiClient from '../api/client';
+import { useAuthStore } from '../stores/authStore';
 
 const mockGet = vi.mocked(apiClient.get);
 const mockPatch = vi.mocked(apiClient.patch);
@@ -21,6 +23,7 @@ const mockDelete = vi.mocked(apiClient.delete);
 
 const caseData = {
   id: 7,
+  user_id: 5,
   title: 'Suspicious lateral movement',
   summary: 'Correlated brute force and discovery activity',
   severity: 'high',
@@ -93,7 +96,10 @@ function renderDetail() {
 }
 
 beforeEach(() => { vi.resetAllMocks(); });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useAuthStore.setState({ user: null });
+});
 
 describe('Case status transitions', () => {
   it('offers the forward actions for an open case and applies one', async () => {
@@ -571,5 +577,54 @@ describe('Case response plans', () => {
     renderDetail();
     await screen.findByText(caseData.title);
     expect(screen.queryByText('Response Plans')).toBeNull();
+  });
+});
+
+describe('Assignee view', () => {
+  const member = {
+    id: 42, email: 'member@example.com', full_name: 'Member', company: 'Acme',
+    role: 'analyst', is_active: true, is_verified: true, mfa_enabled: false,
+    created_at: '2026-01-01T00:00:00Z',
+  };
+
+  it('hides owner-only controls but keeps status and notes', async () => {
+    useAuthStore.setState({ user: member });
+    mockLoad();
+    renderDetail();
+    expect(await screen.findByText('Suspicious lateral movement')).toBeTruthy();
+
+    // Owner-only controls are gone.
+    expect(screen.queryByLabelText('Edit case details')).toBeNull();
+    expect(screen.queryByLabelText('Delete case')).toBeNull();
+    expect(screen.queryByLabelText('Change case severity')).toBeNull();
+    expect(screen.queryByLabelText('Assign case')).toBeNull();
+    expect(screen.queryByLabelText('Case due date')).toBeNull();
+    expect(screen.queryByRole('button', { name: /link alert/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /link event/i })).toBeNull();
+
+    // Status actions and the note composer stay available.
+    expect(screen.getByRole('button', { name: 'Start investigating' })).toBeTruthy();
+    expect(screen.getByPlaceholderText('Add an investigation note…')).toBeTruthy();
+  });
+
+  it('lets the assignee move the status', async () => {
+    useAuthStore.setState({ user: member });
+    mockLoad();
+    mockPatch.mockResolvedValue({ data: {} });
+    renderDetail();
+    expect(await screen.findByText('Suspicious lateral movement')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Start investigating' }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith(
+      '/cases/7', null, { params: { status_update: 'investigating' } }
+    ));
+  });
+
+  it('shows owner controls to the owner', async () => {
+    useAuthStore.setState({ user: { ...member, id: 5, email: 'owner@example.com', full_name: 'Owner' } });
+    mockLoad();
+    renderDetail();
+    expect(await screen.findByText('Suspicious lateral movement')).toBeTruthy();
+    expect(screen.getByLabelText('Edit case details')).toBeTruthy();
+    expect(screen.getByLabelText('Delete case')).toBeTruthy();
   });
 });
