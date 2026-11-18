@@ -488,6 +488,8 @@ async def update_case(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="due_date must be an ISO date (YYYY-MM-DD)",
                 ) from None
+        # A moved or cleared due date re-arms the SLA breach notification.
+        case.sla_breach_notified_at = None
 
     await db.commit()
     return {"success": True, "message": "Case updated"}
