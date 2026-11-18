@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect } from 'react';
 import apiClient from '../api/client';
-import { Play, Plus, ShieldCheck, Target, CheckCircle, XCircle } from 'lucide-react';
+import { Play, Plus, ShieldCheck, Target, CheckCircle, XCircle, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { toast } from '../components/Toast';
 import { getApiErrorMessage } from '../api/errors';
@@ -69,6 +69,8 @@ export function Validation() {
   const [creating, setCreating] = useState(false);
   const [executing, setExecuting] = useState<number | null>(null);
   const [confirmRunId, setConfirmRunId] = useState<number | null>(null);
+  const [deletingRun, setDeletingRun] = useState<ValidationRun | null>(null);
+  const [deletingBusy, setDeletingBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [coverageError, setCoverageError] = useState('');
@@ -114,6 +116,19 @@ export function Validation() {
       await viewRun(runId);
     } catch (err) { toast(getApiErrorMessage(err, 'Execution failed.'), 'error'); }
     finally { setExecuting(null); }
+  };
+
+  const deleteRun = async () => {
+    if (!deletingRun || deletingBusy) return;
+    setDeletingBusy(true);
+    try {
+      await apiClient.delete(`/validation/runs/${deletingRun.id}`);
+      toast('Validation run deleted', 'success');
+      if (selectedRun?.id === deletingRun.id) setSelectedRun(null);
+      setDeletingRun(null);
+      await fetchRuns();
+    } catch (err) { toast(getApiErrorMessage(err, 'The validation run could not be deleted.'), 'error'); }
+    finally { setDeletingBusy(false); }
   };
 
   const viewRun = async (runId: number) => {
@@ -252,6 +267,10 @@ export function Validation() {
                     <Play className="w-3 h-3" /> Run
                   </button>
                 )}
+                <button type="button" aria-label={`Delete validation run ${r.name}`} onClick={e => { e.stopPropagation(); setDeletingRun(r); }}
+                  className="flex items-center gap-1 rounded border border-surface-600 px-2.5 py-1.5 text-xs text-surface-300 transition-colors hover:bg-surface-800">
+                  <Trash2 className="w-3 h-3" aria-hidden="true" /> Delete
+                </button>
               </div>
             ))}
           </div>
@@ -335,6 +354,17 @@ export function Validation() {
           busy={executing !== null}
           onCancel={() => setConfirmRunId(null)}
           onConfirm={() => void executeRun(confirmRunId)}
+        />
+      )}
+      {deletingRun && (
+        <ConfirmDialog
+          title="Delete validation run"
+          description={`Delete "${deletingRun.name}"? Its steps and recorded results are removed permanently.`}
+          confirmLabel="Delete run"
+          tone="danger"
+          busy={deletingBusy}
+          onCancel={() => setDeletingRun(null)}
+          onConfirm={() => void deleteRun()}
         />
       )}
     </div>

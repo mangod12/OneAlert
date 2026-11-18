@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { Validation } from './Validation';
-vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
+vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }));
 const run = {
   id: 8, name: 'Perimeter check', status: 'completed', mode: 'dry_run',
   description: 'Weekly review', mitre_techniques: ['T1110'],
@@ -137,5 +137,34 @@ describe('Validation coverage panel', () => {
     expect(await screen.findByText('Perimeter check')).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toContain('Coverage unavailable');
     expect(screen.queryByText('Validation unavailable')).toBeNull();
+  });
+});
+
+describe('Delete validation run', () => {
+  it('deletes a run after confirmation and refreshes the list', async () => {
+    const del = vi.mocked(apiClient.delete);
+    del.mockResolvedValue({ data: null });
+    render(<Validation />);
+    await screen.findByText('Perimeter check');
+    const get = vi.mocked(apiClient.get);
+    get.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete validation run Perimeter check' }));
+    expect((await screen.findByText(/Its steps and recorded results are removed permanently/)).textContent).toContain('removed permanently');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete run' }));
+
+    await waitFor(() => expect(del).toHaveBeenCalledWith('/validation/runs/8'));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/validation/runs', expect.anything()));
+  });
+
+  it('keeps the run when the dialog is cancelled', async () => {
+    const del = vi.mocked(apiClient.delete);
+    render(<Validation />);
+    await screen.findByText('Perimeter check');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete validation run Perimeter check' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(del).not.toHaveBeenCalled();
+    expect(screen.getByText('Perimeter check')).toBeTruthy();
   });
 });

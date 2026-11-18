@@ -2,7 +2,7 @@
 
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import Integer, func, select
+from sqlalchemy import Integer, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -118,6 +118,34 @@ async def get_validation_run(
     run_data["steps"] = step_responses
 
     return {"success": True, "data": run_data}
+
+
+@router.delete("/runs/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_validation_run(
+    run_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Delete a validation run and its steps/results, owned by the current user."""
+    vrun = (await db.execute(
+        select(ValidationRun).where(
+            ValidationRun.id == run_id,
+            ValidationRun.user_id == current_user.id,
+        )
+    )).scalar_one_or_none()
+
+    if not vrun:
+        raise HTTPException(status_code=404, detail="Validation run not found")
+
+    # Delete dependents explicitly: async sessions cannot lazy-load for ORM cascades.
+    step_ids = (await db.execute(
+        select(ValidationStep.id).where(ValidationStep.run_id == run_id)
+    )).scalars().all()
+    if step_ids:
+        await db.execute(delete(ControlResult).where(ControlResult.step_id.in_(step_ids)))
+    await db.execute(delete(ValidationStep).where(ValidationStep.run_id == run_id))
+    await db.delete(vrun)
+    await db.commit()
 
 
 @router.post("/runs/{run_id}/execute")
