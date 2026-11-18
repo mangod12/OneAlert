@@ -61,6 +61,7 @@ interface CaseData {
   event_count: number;
   assigned_to_id: number | null;
   assigned_to_email: string | null;
+  due_date: string | null;
   timeline: TimelineEntry[];
 }
 interface RelatedAlert { id: number; severity: string; cve_id?: string | null; title: string; }
@@ -104,6 +105,7 @@ export function CaseDetail() {
   const [showEdit, setShowEdit] = useState(false);
   const [members, setMembers] = useState<Array<{ id: number; email: string; full_name: string | null; is_active: boolean }>>([]);
   const [assigning, setAssigning] = useState(false);
+  const [savingDueDate, setSavingDueDate] = useState(false);
 
   useEffect(() => {
     apiClient.get('/orgs/me/members')
@@ -121,6 +123,17 @@ export function CaseDetail() {
       await fetchAll();
     } catch (err) { toast(getApiErrorMessage(err, 'The case could not be assigned.'), 'error'); }
     finally { setAssigning(false); }
+  };
+
+  const changeDueDate = async (value: string) => {
+    if (savingDueDate) return;
+    setSavingDueDate(true);
+    try {
+      await apiClient.patch(`/cases/${caseId}`, null, { params: { due_date: value } });
+      toast(value ? `Due date set to ${value}.` : 'Due date cleared.', 'success');
+      await fetchAll();
+    } catch (err) { toast(getApiErrorMessage(err, 'The due date could not be updated.'), 'error'); }
+    finally { setSavingDueDate(false); }
   };
 
   const changeStatus = async (status: string) => {
@@ -338,6 +351,17 @@ export function CaseDetail() {
                   ))}
                 </select>
               )}
+              <label className="flex items-center gap-1.5 text-xs text-surface-400">
+                Due
+                <input
+                  type="date"
+                  aria-label="Case due date"
+                  value={caseData.due_date ?? ''}
+                  disabled={savingDueDate}
+                  onChange={e => void changeDueDate(e.target.value)}
+                  className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200 disabled:opacity-40"
+                />
+              </label>
               {caseData.confidence_score && (
                 <span className="text-sm text-surface-400">
                   {Math.round(caseData.confidence_score * 100)}% confidence

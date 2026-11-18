@@ -3,6 +3,7 @@
 
 import csv
 import io
+from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -43,9 +44,10 @@ async def list_cases(
     assigned: str | None = Query(
         None, pattern="^(me|unassigned)$", description="Filter by assignment: 'me' or 'unassigned'"
     ),
+    overdue: bool = Query(False, description="Only open cases past their due date"),
     sort: str = Query(
         "created_at_desc",
-        pattern="^(created_at_desc|created_at_asc|severity_desc|severity_asc)$",
+        pattern="^(created_at_desc|created_at_asc|severity_desc|severity_asc|due_date_asc|due_date_desc)$",
         description="Sort order"
     ),
     current_user: User = Depends(get_active_user),
@@ -69,6 +71,17 @@ async def list_cases(
     elif assigned == "unassigned":
         query = query.filter(Case.assigned_to_id.is_(None))
         count_q = count_q.filter(Case.assigned_to_id.is_(None))
+    if overdue:
+        today = datetime.now(UTC).date()
+        done_statuses = ("resolved", "closed", "false_positive")
+        query = query.filter(
+            Case.due_date.isnot(None), Case.due_date < today,
+            Case.status.notin_(done_statuses),
+        )
+        count_q = count_q.filter(
+            Case.due_date.isnot(None), Case.due_date < today,
+            Case.status.notin_(done_statuses),
+        )
 
     total = (await db.execute(count_q)).scalar_one()
     severity_rank = sql_case(
@@ -81,6 +94,8 @@ async def list_cases(
         "created_at_asc": [Case.created_at.asc()],
         "severity_desc": [severity_rank.desc(), Case.created_at.desc()],
         "severity_asc": [severity_rank.asc(), Case.created_at.desc()],
+        "due_date_asc": [Case.due_date.asc().nulls_last(), Case.created_at.desc()],
+        "due_date_desc": [Case.due_date.desc().nulls_last(), Case.created_at.desc()],
     }
     query = query.order_by(*order_columns[sort]).offset(skip).limit(size)
     cases = (await db.execute(query)).scalars().all()
@@ -337,6 +352,9 @@ async def update_case(
     severity: str | None = None,
     title: str | None = None,
     summary: str | None = None,
+    due_date: str | None = Query(
+        None, description="ISO date (YYYY-MM-DD), empty to clear, omitted to leave unchanged"
+    ),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -359,6 +377,17 @@ async def update_case(
         case.title = stripped_title
     if summary is not None:
         case.summary = summary.strip() or None
+    if due_date is not None:
+        if due_date == "":
+            case.due_date = None
+        else:
+            try:
+                case.due_date = date.fromisoformat(due_date)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="due_date must be an ISO date (YYYY-MM-DD)",
+                ) from None
 
     await db.commit()
     return {"success": True, "message": "Case updated"}

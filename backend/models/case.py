@@ -1,11 +1,11 @@
 """Case and investigation models — AI-generated investigation containers."""
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.types import JSON
@@ -44,6 +44,7 @@ class Case(Base):
     mitre_tactics = Column(JSON, nullable=True)  # ["TA0001", "TA0008"]
     mitre_techniques = Column(JSON, nullable=True)  # [{"id": "T1078", "name": "Valid Accounts", "confidence": 0.85}]
     attack_narrative = Column(Text, nullable=True)  # AI-generated attack story
+    due_date = Column(Date, nullable=True)  # target date to close the case
     created_by = Column(String, default="system")  # "agent", "human", "system"
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -162,6 +163,7 @@ class CaseResponse(BaseModel):
     mitre_tactics: list | None = None
     mitre_techniques: list | None = None
     attack_narrative: str | None = None
+    due_date: date | None = None
     created_by: str
     created_at: datetime
     updated_at: datetime | None = None
