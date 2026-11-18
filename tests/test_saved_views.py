@@ -129,3 +129,57 @@ class TestSavedViews:
             assert resp.status_code == 201, resp.text
         resp = _create(client, headers, name="one too many")
         assert resp.status_code == 400
+
+
+def _create_case_view(client, headers, name="Overdue criticals", filters=None):
+    return client.post("/api/v1/cases/views/", headers=headers, json={
+        "name": name,
+        "filters": filters if filters is not None else {
+            "severity": "critical", "overdue": True, "sort": "due_date_asc",
+        },
+    })
+
+
+class TestCaseScopeViews:
+    def test_create_and_list_cases_views(self, client):
+        headers = _register_and_login(client, "caseviews@example.com")
+        resp = _create_case_view(client, headers)
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["scope"] == "cases"
+        assert body["filters"]["overdue"] is True
+        assert body["filters"]["sort"] == "due_date_asc"
+
+        listing = client.get("/api/v1/cases/views/", headers=headers)
+        assert [v["id"] for v in listing.json()] == [body["id"]]
+
+    def test_scopes_are_isolated(self, client):
+        headers = _register_and_login(client, "isolated@example.com")
+        alerts_view = _create(client, headers).json()
+        cases_view = _create_case_view(client, headers).json()
+        assert alerts_view["scope"] == "alerts"
+
+        alerts_listing = client.get("/api/v1/alerts/views/", headers=headers).json()
+        cases_listing = client.get("/api/v1/cases/views/", headers=headers).json()
+        assert [v["id"] for v in alerts_listing] == [alerts_view["id"]]
+        assert [v["id"] for v in cases_listing] == [cases_view["id"]]
+
+        # Cross-scope delete does not touch the other list's view.
+        assert client.delete(
+            f"/api/v1/cases/views/{alerts_view['id']}", headers=headers
+        ).status_code == 404
+        assert client.delete(
+            f"/api/v1/alerts/views/{cases_view['id']}", headers=headers
+        ).status_code == 404
+
+    def test_same_name_allowed_across_scopes(self, client):
+        headers = _register_and_login(client, "samename@example.com")
+        assert _create(client, headers, name="Mine").status_code == 201
+        assert _create_case_view(client, headers, name="Mine").status_code == 201
+
+    def test_alerts_only_filter_key_rejected_for_cases(self, client):
+        headers = _register_and_login(client, "strictcases@example.com")
+        resp = _create_case_view(client, headers, filters={"asset_id": 3})
+        assert resp.status_code == 422
+        resp = _create_case_view(client, headers, filters={"not_a_filter": 1})
+        assert resp.status_code == 422

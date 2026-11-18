@@ -105,7 +105,7 @@ describe('Cases page', () => {
     fireEvent.click(screen.getByRole('button', { name: /run ai triage/i }));
     await waitFor(() => {
       expect(mockPost).toHaveBeenCalledWith('/cases/auto-triage', null, { params: { hours_back: 72 } });
-      expect(mockGet).toHaveBeenCalledTimes(2);
+      expect(mockGet.mock.calls.filter(([url]) => url === '/cases/')).toHaveLength(2);
     });
   });
 });
@@ -161,7 +161,7 @@ describe('Manual investigation creation', () => {
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/', { title: 'Suspicious USB activity', summary: 'New removable media on floor 3.', severity: 'high' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(mockToast).toHaveBeenCalledWith('Investigation opened.', 'success');
-    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/')).toHaveLength(2));
   });
 
   it('keeps the submit disabled until a title is entered', async () => {

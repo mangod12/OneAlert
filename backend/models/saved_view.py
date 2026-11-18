@@ -1,6 +1,7 @@
-"""Saved filter views: named, per-user snapshots of alerts-list filters."""
+"""Saved filter views: named, per-user snapshots of list filters (alerts or cases)."""
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
@@ -10,12 +11,13 @@ from backend.database.db import Base
 
 
 class SavedView(Base):
-    """A named set of alerts-list filters owned by one user."""
+    """A named set of list filters owned by one user, scoped to a page."""
 
     __tablename__ = "saved_views"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    scope = Column(String(16), nullable=False, default="alerts", server_default="alerts")
     name = Column(String(80), nullable=False)
     filters = Column(JSON, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -33,16 +35,31 @@ class SavedViewFilters(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class CaseViewFilters(BaseModel):
+    """Subset of the cases-list query parameters captured in a saved view."""
+
+    severity: str | None = None
+    status: str | None = None
+    assigned: str | None = None
+    overdue: bool | None = None
+    sort: str | None = None
+    model_config = {"extra": "forbid"}
+
+
+FILTERS_MODELS = {"alerts": SavedViewFilters, "cases": CaseViewFilters}
+
+
 class SavedViewCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
-    filters: SavedViewFilters
+    filters: dict[str, Any] = Field(default_factory=dict)
     model_config = {"extra": "forbid"}
 
 
 class SavedViewResponse(BaseModel):
     id: int
     name: str
-    filters: SavedViewFilters
+    scope: str
+    filters: dict[str, Any]
     created_at: datetime
 
     class Config:
