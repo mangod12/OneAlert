@@ -2,6 +2,8 @@
 Integrations router for managing SIEM/SOAR integration configurations.
 Provides CRUD endpoints for integration configs plus connection testing.
 """
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +24,44 @@ from backend.services.integrations.servicenow import ServiceNowIntegration
 from backend.services.integrations.splunk import SplunkIntegration
 
 router = APIRouter()
+
+SECRET_KEY_PATTERN = re.compile(
+    r"token|secret|password|api[-_]?key|credential|routing[-_]?key|private",
+    re.IGNORECASE,
+)
+MASKED_VALUE = "********"
+
+
+def mask_integration_config(config: dict) -> dict:
+    """Return a copy of an integration config with secret-looking values masked."""
+    masked = {}
+    for key, value in (config or {}).items():
+        if isinstance(value, str) and value and SECRET_KEY_PATTERN.search(key):
+            masked[key] = MASKED_VALUE
+        else:
+            masked[key] = value
+    return masked
+
+
+def _public_config(config: IntegrationConfig) -> dict:
+    """Serialize an integration config with its secrets masked."""
+    data = IntegrationConfigResponse.model_validate(config).model_dump()
+    data["config"] = mask_integration_config(config.config)
+    return data
+
+
+def _merge_config_update(stored: dict, incoming: dict) -> dict:
+    """Merge a config update, keeping stored secrets when the mask is echoed back."""
+    merged = dict(stored or {})
+    for key, value in (incoming or {}).items():
+        if (
+            value == MASKED_VALUE
+            and SECRET_KEY_PATTERN.search(key)
+            and key in merged
+        ):
+            continue
+        merged[key] = value
+    return merged
 
 AVAILABLE_TYPES = [
     {"type": "splunk", "name": "Splunk", "description": "Splunk HTTP Event Collector"},
@@ -82,9 +122,7 @@ async def list_integrations(
     configs = result.scalars().all()
     return {
         "success": True,
-        "data": [
-            IntegrationConfigResponse.model_validate(c) for c in configs
-        ],
+        "data": [_public_config(c) for c in configs],
     }
 
 
@@ -116,7 +154,7 @@ async def create_integration(
     await db.refresh(config)
     return {
         "success": True,
-        "data": IntegrationConfigResponse.model_validate(config),
+        "data": _public_config(config),
     }
 
 
@@ -140,9 +178,11 @@ async def update_integration(
 
     update_data = payload.model_dump(exclude_unset=True)
     if "config" in update_data:
+        merged_config = _merge_config_update(config.config, update_data["config"])
         await _require_safe_integration_config(
-            config.integration_type, update_data["config"]
+            config.integration_type, merged_config
         )
+        update_data["config"] = merged_config
     for key, value in update_data.items():
         setattr(config, key, value)
 
@@ -150,7 +190,7 @@ async def update_integration(
     await db.refresh(config)
     return {
         "success": True,
-        "data": IntegrationConfigResponse.model_validate(config),
+        "data": _public_config(config),
     }
 
 
