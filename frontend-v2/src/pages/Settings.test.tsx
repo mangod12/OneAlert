@@ -80,6 +80,30 @@ describe('MFA setup verification', () => {
     expect(await screen.findByText(/did not match/)).toBeTruthy();
     expect(screen.getByLabelText('Authenticator code')).toBeTruthy();
   });
+  it('disables MFA after confirming an authenticator code', async () => {
+    mockPost.mockResolvedValue({ data: true });
+    const fetchUser = vi.fn();
+    useAuthStore.setState({ user: { ...analyst, mfa_enabled: true }, fetchUser } as never);
+    render(<Settings />);
+    await screen.findByText('MFA enabled');
+    fireEvent.click(screen.getByRole('button', { name: /^Disable MFA$/ }));
+    fireEvent.change(screen.getByLabelText('Authenticator code'), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm disable' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/auth/me/mfa/disable', { code: '123456' }));
+    expect(await screen.findByText('MFA is now disabled for this account.')).toBeTruthy();
+    expect(fetchUser).toHaveBeenCalled();
+  });
+
+  it('shows an error when the disable code is wrong', async () => {
+    mockPost.mockResolvedValue({ data: false });
+    useAuthStore.setState({ user: { ...analyst, mfa_enabled: true } } as never);
+    render(<Settings />);
+    await screen.findByText('MFA enabled');
+    fireEvent.click(screen.getByRole('button', { name: /^Disable MFA$/ }));
+    fireEvent.change(screen.getByLabelText('Authenticator code'), { target: { value: '999999' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm disable' }));
+    expect(await screen.findByText('That code did not match. Check your authenticator and try again.')).toBeTruthy();
+  });
 });
 
 describe('Team panel', () => {
