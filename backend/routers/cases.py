@@ -119,6 +119,94 @@ async def list_cases(
     return CaseListResponse(cases=case_responses, total=total, page=page, size=size)
 
 
+@router.get("/export")
+async def export_cases(
+    severity: str | None = Query(None),
+    status_filter: str | None = Query(None, alias="status"),
+    assigned: str | None = Query(None, pattern="^(me|unassigned)$"),
+    overdue: bool = Query(False),
+    sort: str = Query(
+        "created_at_desc",
+        pattern="^(created_at_desc|created_at_asc|severity_desc|severity_asc|due_date_asc|due_date_desc)$",
+    ),
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Export the filtered investigations list as CSV (same filters as the list, max 5000 rows)."""
+    alert_counts = (
+        select(func.count(CaseAlert.id)).where(CaseAlert.case_id == Case.id).correlate(Case).scalar_subquery()
+    )
+    event_counts = (
+        select(func.count(CaseEvent.id)).where(CaseEvent.case_id == Case.id).correlate(Case).scalar_subquery()
+    )
+    query = (
+        select(Case, alert_counts.label("alert_count"), event_counts.label("event_count"))
+        .options(joinedload(Case.assignee))
+        .where(Case.user_id == current_user.id)
+    )
+
+    if severity:
+        query = query.filter(Case.severity == severity)
+    if status_filter:
+        query = query.filter(Case.status == status_filter)
+    if assigned == "me":
+        query = query.filter(Case.assigned_to_id == current_user.id)
+    elif assigned == "unassigned":
+        query = query.filter(Case.assigned_to_id.is_(None))
+    if overdue:
+        today = datetime.now(UTC).date()
+        done_statuses = ("resolved", "closed", "false_positive")
+        query = query.filter(
+            Case.due_date.isnot(None), Case.due_date < today,
+            Case.status.notin_(done_statuses),
+        )
+
+    severity_rank = sql_case(
+        {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0},
+        value=Case.severity,
+        else_=2
+    )
+    order_columns = {
+        "created_at_desc": [Case.created_at.desc()],
+        "created_at_asc": [Case.created_at.asc()],
+        "severity_desc": [severity_rank.desc(), Case.created_at.desc()],
+        "severity_asc": [severity_rank.asc(), Case.created_at.desc()],
+        "due_date_asc": [Case.due_date.asc().nulls_last(), Case.created_at.desc()],
+        "due_date_desc": [Case.due_date.desc().nulls_last(), Case.created_at.desc()],
+    }
+    query = query.order_by(*order_columns[sort]).limit(5000)
+    rows = (await db.execute(query)).all()
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([
+        "id", "title", "summary", "severity", "status", "confidence_score",
+        "alert_count", "event_count", "assigned_to_email", "due_date", "created_by", "created_at",
+    ])
+    for row in rows:
+        case = row.Case
+        writer.writerow([
+            case.id,
+            case.title,
+            case.summary or "",
+            case.severity,
+            case.status,
+            case.confidence_score if case.confidence_score is not None else "",
+            row.alert_count,
+            row.event_count,
+            case.assignee.email if case.assignee else "",
+            case.due_date.isoformat() if case.due_date else "",
+            case.created_by,
+            case.created_at.isoformat() if case.created_at else "",
+        ])
+    buffer.seek(0)
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=cases.csv"},
+    )
+
+
 @router.post("/", response_model=CaseResponse, status_code=status.HTTP_201_CREATED)
 async def create_case(
     case_data: CaseCreate,

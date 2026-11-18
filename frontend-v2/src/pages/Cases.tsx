@@ -78,6 +78,7 @@ export function Cases() {
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [today, setToday] = useState('');
   const [sort, setSort] = useState('created_at_desc');
+  const [exporting, setExporting] = useState(false);
   const [page, setPage] = useState(1);
 
   const fetchCases = async () => {
@@ -149,6 +150,29 @@ export function Cases() {
   useEffect(() => {
     setToday(new Date().toISOString().slice(0, 10));
   }, []);
+
+  const exportCsv = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const params: Record<string, string | number | boolean> = { sort };
+      if (statusFilter) params.status = statusFilter;
+      if (severityFilter) params.severity = severityFilter;
+      if (assignedFilter) params.assigned = assignedFilter;
+      if (overdueOnly) params.overdue = true;
+      const res = await apiClient.get('/cases/export', { params, responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'cases.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'The export could not be downloaded.'), 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const isOverdue = (c: CaseItem) =>
     !!c.due_date && !!today && c.due_date < today && !['resolved', 'closed', 'false_positive'].includes(c.status);
@@ -302,6 +326,10 @@ export function Cases() {
             <option value="due_date_asc">Due date (earliest)</option>
             <option value="due_date_desc">Due date (latest)</option>
           </select>
+          <button type="button" onClick={() => void exportCsv()} disabled={exporting}
+            className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-3 text-sm text-surface-300 hover:text-surface-100 disabled:opacity-40">
+            {exporting ? 'Exporting...' : 'Export CSV'}
+          </button>
         </div>
       )}
 
