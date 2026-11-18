@@ -10,7 +10,11 @@ Provides endpoints for:
 """
 
 
-from fastapi import APIRouter, Depends, HTTPException
+import csv
+import io
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,6 +64,67 @@ async def list_controls(
     )
     controls = result.scalars().all()
     return controls
+
+
+@router.get("/export")
+async def export_compliance(
+    framework_id: int | None = Query(None, description="Limit the export to one framework"),
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Export controls with their latest assessment as CSV (max 5000 rows)."""
+    controls_q = select(ComplianceControl)
+    if framework_id is not None:
+        controls_q = controls_q.where(ComplianceControl.framework_id == framework_id)
+    controls = (await db.execute(
+        controls_q.order_by(ComplianceControl.id).limit(5000)
+    )).scalars().all()
+
+    frameworks = {
+        f.id: f
+        for f in (await db.execute(select(ComplianceFramework))).scalars().all()
+    }
+
+    assessments = (await db.execute(
+        select(ComplianceAssessment).where(ComplianceAssessment.user_id == current_user.id)
+    )).scalars().all()
+    latest: dict[int, ComplianceAssessment] = {}
+    for assessment in assessments:
+        existing = latest.get(assessment.control_id)
+        if existing is None or (
+            assessment.assessed_at
+            and (not existing.assessed_at or assessment.assessed_at > existing.assessed_at)
+        ):
+            latest[assessment.control_id] = assessment
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([
+        "framework", "framework_version", "control_id", "title", "category",
+        "status", "evidence_type", "evidence_detail", "assessed_by", "assessed_at",
+    ])
+    for control in controls:
+        assessment = latest.get(control.id)
+        framework = frameworks.get(control.framework_id)
+        writer.writerow([
+            framework.name if framework else "",
+            framework.version if framework else "",
+            control.control_id,
+            control.title,
+            control.category or "",
+            assessment.status if assessment else "not_assessed",
+            (assessment.evidence_type or "") if assessment else "",
+            (assessment.evidence_detail or "") if assessment else "",
+            assessment.assessed_by if assessment else "",
+            assessment.assessed_at.isoformat() if assessment and assessment.assessed_at else "",
+        ])
+    buffer.seek(0)
+    filename = f"compliance-{framework_id}.csv" if framework_id is not None else "compliance.csv"
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @router.get("/summary", response_model=list[ComplianceSummary])

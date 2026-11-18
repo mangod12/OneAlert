@@ -163,3 +163,33 @@ describe('Assessment evidence', () => {
     expect(screen.queryByRole('button', { name: 'Edit evidence for DE.CM-1' })).toBeNull();
   });
 });
+
+describe('Compliance CSV export', () => {
+  it('downloads the CSV for the expanded framework', async () => {
+    URL.createObjectURL = vi.fn(() => 'blob:compliance');
+    URL.revokeObjectURL = vi.fn();
+    const clicks: string[] = [];
+    const origCreate = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string, options?: ElementCreationOptions) => {
+      const el = origCreate(tag, options);
+      if (tag === 'a') {
+        Object.defineProperty(el, 'download', { set: (v: string) => clicks.push(v), configurable: true });
+        el.click = () => clicks.push('clicked');
+      }
+      return el;
+    });
+    get.mockImplementation(async (url: string, config?: unknown) => {
+      if (url === '/compliance/export') return { data: new Blob(['csv']) , config };
+      if (url === '/compliance/frameworks') return { data: frameworks };
+      if (url === '/compliance/summary') return { data: summaries };
+      if (url === '/compliance/frameworks/1/controls') return { data: controls };
+      if (url === '/compliance/assessments') return { data: assessments };
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<Compliance />);
+    fireEvent.click(await screen.findByText('NIST CSF'));
+    fireEvent.click(await screen.findByRole('button', { name: /export csv/i }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/compliance/export', { params: { framework_id: '1' }, responseType: 'blob' }));
+    await waitFor(() => expect(clicks).toContain('compliance-1.csv'));
+  });
+});
