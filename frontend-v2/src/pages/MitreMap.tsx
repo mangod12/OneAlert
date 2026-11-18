@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
 import { Search } from 'lucide-react';
 import clsx from 'clsx';
@@ -21,6 +22,13 @@ interface Technique {
   description: string;
 }
 
+interface TechniqueReferences {
+  technique_id: string;
+  technique_name: string;
+  cases: Array<{ id: number; title: string; status: string }>;
+  detection_rules: Array<{ id: number; name: string; enabled: boolean }>;
+}
+
 export function MitreMap() {
   const [coverage, setCoverage] = useState<{
     total_techniques: number;
@@ -34,6 +42,31 @@ export function MitreMap() {
   const [gapsOnly, setGapsOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState<string[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [references, setReferences] = useState<TechniqueReferences | null>(null);
+  const [refsLoading, setRefsLoading] = useState(false);
+  const [refsError, setRefsError] = useState('');
+
+  const toggleTechnique = async (id: string) => {
+    if (selectedId === id) {
+      setSelectedId(null);
+      setReferences(null);
+      setRefsError('');
+      return;
+    }
+    setSelectedId(id);
+    setReferences(null);
+    setRefsError('');
+    setRefsLoading(true);
+    try {
+      const res = await apiClient.get<TechniqueReferences>(`/mitre/techniques/${id}/references`);
+      setReferences(res.data);
+    } catch (err: unknown) {
+      setRefsError(getApiErrorMessage(err, 'Technique references could not be loaded.'));
+    } finally {
+      setRefsLoading(false);
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -162,20 +195,76 @@ export function MitreMap() {
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-96 overflow-y-auto">
-          {filteredTechniques.map(t => (
-            <div key={t.id} className="p-3 bg-surface-900/50 rounded-lg">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-primary-400">{t.id}</span>
-                <span className="text-sm text-surface-50">{t.name}</span>
-                {coverage?.covered_ids && (
-                  coveredIds.has(t.id)
-                    ? <StatusBadge tone="success">Detected</StatusBadge>
-                    : <StatusBadge tone="neutral">Gap</StatusBadge>
+          {filteredTechniques.map(t => {
+            const covered = coverage?.covered_ids ? coveredIds.has(t.id) : false;
+            const expanded = selectedId === t.id;
+            return (
+              <div key={t.id} className="p-3 bg-surface-900/50 rounded-lg">
+                {covered ? (
+                  <button
+                    type="button"
+                    aria-expanded={expanded}
+                    aria-label={`Show what detects ${t.id} ${t.name}`}
+                    onClick={() => void toggleTechnique(t.id)}
+                    className="flex w-full items-center gap-2 text-left rounded-sm hover:bg-surface-800/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                  >
+                    <span className="text-xs font-mono text-primary-400">{t.id}</span>
+                    <span className="text-sm text-surface-50">{t.name}</span>
+                    <StatusBadge tone="success">Detected</StatusBadge>
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono text-primary-400">{t.id}</span>
+                    <span className="text-sm text-surface-50">{t.name}</span>
+                    {coverage?.covered_ids && <StatusBadge tone="neutral">Gap</StatusBadge>}
+                  </div>
+                )}
+                <p className="text-xs text-surface-500 mt-1">{t.description}</p>
+                {expanded && refsLoading && (
+                  <p className="mt-3 text-xs text-surface-500">Loading references…</p>
+                )}
+                {expanded && refsError && (
+                  <p role="alert" className="mt-3 text-xs text-danger">{refsError}</p>
+                )}
+                {expanded && references && (
+                  <div className="mt-3 space-y-3 border-t border-surface-700 pt-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-surface-400">Cases</p>
+                      {references.cases.length === 0 ? (
+                        <p className="mt-1 text-xs text-surface-500">No cases reference this technique.</p>
+                      ) : (
+                        <ul className="mt-1 space-y-1">
+                          {references.cases.map(c => (
+                            <li key={c.id}>
+                              <Link to={`/cases/${c.id}`} className="text-xs text-primary-300 hover:text-primary-200 hover:underline">
+                                #{c.id} {c.title}
+                              </Link>
+                              <span className="ml-2 text-xs text-surface-500">{c.status}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-surface-400">Detection rules</p>
+                      {references.detection_rules.length === 0 ? (
+                        <p className="mt-1 text-xs text-surface-500">No detection rules cover this technique.</p>
+                      ) : (
+                        <ul className="mt-1 space-y-1">
+                          {references.detection_rules.map(r => (
+                            <li key={r.id} className="text-xs text-surface-200">
+                              <Link to="/hunt" className="text-primary-300 hover:text-primary-200 hover:underline">{r.name}</Link>
+                              {!r.enabled && <span className="ml-2 text-surface-500">disabled</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
-              <p className="text-xs text-surface-500 mt-1">{t.description}</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
