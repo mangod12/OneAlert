@@ -428,6 +428,7 @@ async def resolve_alert(
         )
 
     alert.status = AlertStatus.RESOLVED
+    alert.resolved_at = datetime.now(UTC)
     alert.snoozed_until = None
 
     await db.commit()
@@ -458,6 +459,7 @@ async def reopen_alert(
         )
 
     alert.status = AlertStatus.PENDING
+    alert.resolved_at = None
 
     await db.commit()
     await db.refresh(alert)
@@ -672,6 +674,62 @@ async def get_alert_timeline(
         })
 
     return {"success": True, "days": timeline}
+
+
+@router.get("/stats/response-metrics")
+async def get_response_metrics(
+    days: int = Query(30, ge=1, le=90),
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Mean time to acknowledge and resolve over the trailing `days`-day window."""
+    # naive UTC, matching stored timestamps
+    start = (datetime.now(UTC) - timedelta(days=days)).replace(tzinfo=None)
+
+    ack_result = await db.execute(
+        select(Alert.created_at, Alert.acknowledged_at).where(
+            and_(
+                Alert.user_id == current_user.id,
+                Alert.acknowledged_at.is_not(None),
+                Alert.acknowledged_at >= start,
+            )
+        )
+    )
+    ack_rows = ack_result.all()
+
+    res_result = await db.execute(
+        select(Alert.created_at, Alert.resolved_at).where(
+            and_(
+                Alert.user_id == current_user.id,
+                Alert.resolved_at.is_not(None),
+                Alert.resolved_at >= start,
+            )
+        )
+    )
+    res_rows = res_result.all()
+
+    def _mean_delta_seconds(rows: list) -> float | None:
+        deltas = []
+        for created_at, ended_at in rows:
+            if created_at is None or ended_at is None:
+                continue
+            start_dt = created_at.replace(tzinfo=None) if created_at.tzinfo else created_at
+            end_dt = ended_at.replace(tzinfo=None) if ended_at.tzinfo else ended_at
+            delta = (end_dt - start_dt).total_seconds()
+            if delta >= 0:
+                deltas.append(delta)
+        if not deltas:
+            return None
+        return sum(deltas) / len(deltas)
+
+    return {
+        "success": True,
+        "days": days,
+        "acknowledged_count": len(ack_rows),
+        "resolved_count": len(res_rows),
+        "mtta_seconds": _mean_delta_seconds(ack_rows),
+        "mttr_seconds": _mean_delta_seconds(res_rows),
+    }
 
 
 @router.get("/stats/overview", response_model=AlertStats)
