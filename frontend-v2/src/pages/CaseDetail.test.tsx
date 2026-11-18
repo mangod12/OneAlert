@@ -46,6 +46,17 @@ function mockLoad(status = 'open') {
   });
 }
 
+function mockLoadWithPlans(plans: Array<Record<string, unknown>>) {
+  mockGet.mockImplementation(url => {
+    if (url.endsWith('/alerts')) return Promise.resolve({ data: [] });
+    if (url.endsWith('/events')) return Promise.resolve({ data: [] });
+    if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: blastRadius } });
+    if (url.endsWith('/similar')) return Promise.resolve({ data: { success: true, data: similarCases } });
+    if (url === '/response-plans/') return Promise.resolve({ data: { data: plans } });
+    return Promise.resolve({ data: caseData });
+  });
+}
+
 function mockLoadWithTimeline(timeline: Array<Record<string, unknown>>) {
   mockGet.mockImplementation(url => {
     if (url.endsWith('/alerts')) return Promise.resolve({ data: [] });
@@ -503,5 +514,27 @@ describe('Timeline CSV export', () => {
     fireEvent.click(await screen.findByRole('button', { name: /export csv/i }));
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/7/export', { responseType: 'blob' }));
     await waitFor(() => expect(clicks).toContain('case-7-timeline.csv'));
+  });
+});
+
+describe('Case response plans', () => {
+  it('lists response plans for the case with status and action count', async () => {
+    mockLoadWithPlans([
+      { id: 21, status: 'pending_approval', autonomy_level: 'L2', created_by: 'agent', created_at: '2026-11-18T08:00:00Z', actions: [{}, {}] },
+      { id: 20, status: 'completed', autonomy_level: 'L1', created_by: 'agent', created_at: '2026-11-17T08:00:00Z', actions: [{}] },
+    ]);
+    renderDetail();
+    expect(await screen.findByText('Response Plans')).toBeTruthy();
+    expect(screen.getByText('Plan #21')).toBeTruthy();
+    expect(screen.getByText('pending approval')).toBeTruthy();
+    expect(screen.getByText(/2 actions · L2 · agent/)).toBeTruthy();
+    expect(screen.getByText('Plan #20')).toBeTruthy();
+  });
+
+  it('omits the section when the case has no plans', async () => {
+    mockLoadWithPlans([]);
+    renderDetail();
+    await screen.findByText(caseData.title);
+    expect(screen.queryByText('Response Plans')).toBeNull();
   });
 });
