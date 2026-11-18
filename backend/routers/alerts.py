@@ -51,6 +51,8 @@ async def list_alerts(
         "active", pattern="^(active|all|only)$",
         description="Snooze visibility: 'active' hides snoozed alerts, 'all' includes them, 'only' returns snoozed"
     ),
+    min_age_days: int | None = Query(None, ge=0, le=365, description="Only alerts at least this many days old"),
+    max_age_days: int | None = Query(None, ge=0, le=365, description="Only alerts at most this many days old"),
     sort: str = Query(
         "created_at_desc",
         pattern="^(created_at_desc|created_at_asc|cvss_desc|cvss_asc|severity_desc|severity_asc)$",
@@ -110,6 +112,14 @@ async def list_alerts(
     elif snoozed == "only":
         query = query.filter(Alert.snoozed_until > datetime.now(UTC))
         count_base_query = count_base_query.filter(Alert.snoozed_until > datetime.now(UTC))
+    if max_age_days is not None:
+        newest = datetime.now(UTC) - timedelta(days=max_age_days)
+        query = query.filter(Alert.created_at >= newest)
+        count_base_query = count_base_query.filter(Alert.created_at >= newest)
+    if min_age_days is not None:
+        oldest = datetime.now(UTC) - timedelta(days=min_age_days)
+        query = query.filter(Alert.created_at <= oldest)
+        count_base_query = count_base_query.filter(Alert.created_at <= oldest)
 
     # Finalize count query using a subquery for explicitness and to avoid deprecation warnings
     final_count_query = select(func.count()).select_from(count_base_query.subquery())
@@ -169,6 +179,8 @@ async def export_alerts(
         "active", pattern="^(active|all|only)$",
         description="Snooze visibility: 'active' hides snoozed alerts, 'all' includes them, 'only' returns snoozed"
     ),
+    min_age_days: int | None = Query(None, ge=0, le=365, description="Only alerts at least this many days old"),
+    max_age_days: int | None = Query(None, ge=0, le=365, description="Only alerts at most this many days old"),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -200,6 +212,10 @@ async def export_alerts(
         query = query.filter(or_(Alert.snoozed_until.is_(None), Alert.snoozed_until <= datetime.now(UTC)))
     elif snoozed == "only":
         query = query.filter(Alert.snoozed_until > datetime.now(UTC))
+    if max_age_days is not None:
+        query = query.filter(Alert.created_at >= datetime.now(UTC) - timedelta(days=max_age_days))
+    if min_age_days is not None:
+        query = query.filter(Alert.created_at <= datetime.now(UTC) - timedelta(days=min_age_days))
 
     query = query.order_by(Alert.created_at.desc()).limit(5000)
     rows = (await db.execute(query)).all()

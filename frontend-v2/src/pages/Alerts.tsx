@@ -21,6 +21,7 @@ export function Alerts() {
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [severityFilter, setSeverityFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [ageFilter, setAgeFilter] = useState<string>('');
   const [cveSearch, setCveSearch] = useState('');
   const [assetFilter, setAssetFilter] = useState('');
   const [assignedFilter, setAssignedFilter] = useState('');
@@ -67,6 +68,9 @@ export function Alerts() {
       if (assetFilter) params.asset_id = Number(assetFilter);
       if (assignedFilter) params.assigned = assignedFilter;
       if (showSnoozedOnly) params.snoozed = 'only';
+      if (ageFilter === 'lt1') params.max_age_days = 1;
+      else if (ageFilter === '1to7') { params.min_age_days = 1; params.max_age_days = 7; }
+      else if (ageFilter === 'gt7') params.min_age_days = 7;
       const res = await apiClient.get('/alerts/export', { params, responseType: 'blob' });
       const url = URL.createObjectURL(res.data as Blob);
       const link = document.createElement('a');
@@ -92,6 +96,9 @@ export function Alerts() {
       if (assetFilter) params.asset_id = Number(assetFilter);
       if (assignedFilter) params.assigned = assignedFilter;
       if (showSnoozedOnly) params.snoozed = 'only';
+      if (ageFilter === 'lt1') params.max_age_days = 1;
+      else if (ageFilter === '1to7') { params.min_age_days = 1; params.max_age_days = 7; }
+      else if (ageFilter === 'gt7') params.min_age_days = 7;
       params.sort = sort;
 
       const res = await apiClient.get<AlertListResponse>('/alerts/', { params });
@@ -103,7 +110,7 @@ export function Alerts() {
     } finally {
       setLoading(false);
     }
-  }, [page, severityFilter, statusFilter, cveSearch, assetFilter, assignedFilter, showSnoozedOnly, sort]);
+  }, [page, severityFilter, statusFilter, cveSearch, assetFilter, assignedFilter, showSnoozedOnly, ageFilter, sort]);
 
   useEffect(() => {
     fetchAlerts();
@@ -338,6 +345,7 @@ export function Alerts() {
             ...(cveSearch ? { search: cveSearch } : {}),
             ...(assetFilter ? { asset_id: Number(assetFilter) } : {}),
             ...(assignedFilter ? { assigned: assignedFilter } : {}),
+            ...(ageFilter ? { age: ageFilter } : {}),
             sort,
           }}
           onApply={(filters: SavedViewFilters) => {
@@ -346,6 +354,7 @@ export function Alerts() {
             setCveSearch(filters.search ?? '');
             setAssetFilter(filters.asset_id != null ? String(filters.asset_id) : '');
             setAssignedFilter(filters.assigned ?? '');
+            setAgeFilter(filters.age ?? '');
             setSort(filters.sort ?? 'created_at_desc');
             setPage(1);
           }}
@@ -412,6 +421,17 @@ export function Alerts() {
           <option value="">Anyone</option>
           <option value="me">Assigned to me</option>
           <option value="unassigned">Unassigned</option>
+        </select>
+        <select
+          aria-label="Filter by age"
+          value={ageFilter}
+          onChange={(e) => { setAgeFilter(e.target.value); setPage(1); }}
+          className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+        >
+          <option value="">Any age</option>
+          <option value="lt1">Last 24 hours</option>
+          <option value="1to7">1-7 days old</option>
+          <option value="gt7">Older than 7 days</option>
         </select>
         <select
           aria-label="Sort alerts"
