@@ -3,10 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { Compliance } from './Compliance';
 
-vi.mock('../api/client', () => ({ default: { get: vi.fn(), patch: vi.fn() } }));
+vi.mock('../api/client', () => ({ default: { get: vi.fn(), patch: vi.fn(), post: vi.fn() } }));
 
 const get = vi.mocked(apiClient.get);
 const patch = vi.mocked(apiClient.patch);
+const post = vi.mocked(apiClient.post);
 
 const frameworks = [
   { id: 1, name: 'NIST CSF', version: '2.0', description: null },
@@ -36,6 +37,29 @@ function mockOverview() {
 
 beforeEach(() => { vi.resetAllMocks(); mockOverview(); patch.mockResolvedValue({ data: {} }); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+describe('Automated assessment', () => {
+  it('runs the automated assessment and refreshes the overview', async () => {
+    post.mockResolvedValue({ data: { data: { total: 11 } } });
+    render(<Compliance />);
+    await screen.findByText('NIST CSF');
+    get.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Run automated assessment' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/compliance/assess'));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/compliance/summary'));
+  });
+
+  it('reloads the open framework controls after an assessment', async () => {
+    post.mockResolvedValue({ data: { data: { total: 11 } } });
+    render(<Compliance />);
+    fireEvent.click(await screen.findByText('NIST CSF'));
+    await screen.findByText('PR.AC-1');
+    get.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Run automated assessment' }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/compliance/frameworks/1/controls'));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/compliance/assessments'));
+  });
+});
 
 describe('Compliance page', () => {
   it('renders framework cards with progress and assessment counts', async () => {
