@@ -44,6 +44,7 @@ export function Settings() {
   const [teamMessage, setTeamMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [notifEnabled, setNotifEnabled] = useState(true);
   const [notifMinSeverity, setNotifMinSeverity] = useState('low');
+  const [notifMutedKinds, setNotifMutedKinds] = useState<string[]>([]);
   const [notifSaving, setNotifSaving] = useState(false);
   const [notifMessage, setNotifMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [creatingOrg, setCreatingOrg] = useState(false);
@@ -76,10 +77,11 @@ export function Settings() {
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await apiClient.get<{ email_notifications_enabled: boolean; notify_min_severity: string }>('/auth/me/notification-preferences');
+        const res = await apiClient.get<{ email_notifications_enabled: boolean; notify_min_severity: string; muted_kinds: string[] }>('/auth/me/notification-preferences');
         if (cancelled) return;
         setNotifEnabled(res.data.email_notifications_enabled);
         setNotifMinSeverity(res.data.notify_min_severity);
+        setNotifMutedKinds(res.data.muted_kinds ?? []);
       } catch {
         if (!cancelled) setNotifMessage({ text: 'Notification preferences could not be loaded.', error: true });
       }
@@ -93,12 +95,14 @@ export function Settings() {
     setNotifSaving(true);
     setNotifMessage(null);
     try {
-      const res = await apiClient.patch<{ email_notifications_enabled: boolean; notify_min_severity: string }>('/auth/me/notification-preferences', {
+      const res = await apiClient.patch<{ email_notifications_enabled: boolean; notify_min_severity: string; muted_kinds: string[] }>('/auth/me/notification-preferences', {
         email_notifications_enabled: notifEnabled,
         notify_min_severity: notifMinSeverity,
+        muted_kinds: notifMutedKinds,
       });
       setNotifEnabled(res.data.email_notifications_enabled);
       setNotifMinSeverity(res.data.notify_min_severity);
+      setNotifMutedKinds(res.data.muted_kinds ?? []);
       setNotifMessage({ text: 'Notification preferences saved.', error: false });
     } catch (error: unknown) {
       setNotifMessage({ text: getApiErrorMessage(error, 'The notification preferences could not be saved.'), error: true });
@@ -403,6 +407,23 @@ export function Settings() {
                 <option value="critical">Critical only</option>
               </select>
               <p className="mt-1.5 text-xs text-surface-500">Alerts below this severity still appear in the app but do not trigger an email.</p>
+            </div>
+            <div>
+              <p className="mb-1.5 text-sm font-medium text-surface-300">In-app notifications</p>
+              <p className="mb-2 text-xs text-surface-500">Muted kinds stay recorded but no longer appear in the notification feed or unread count.</p>
+              {([['alert_created', 'New alerts'], ['case_assigned', 'Case assignments']] as Array<[string, string]>).map(([kind, label]) => (
+                <label key={kind} className="flex items-center gap-3 py-1 text-sm text-surface-200">
+                  <input
+                    type="checkbox"
+                    checked={!notifMutedKinds.includes(kind)}
+                    onChange={event => setNotifMutedKinds(current =>
+                      event.target.checked ? current.filter(k => k !== kind) : [...current, kind]
+                    )}
+                    className="h-4 w-4 rounded border-surface-600 bg-surface-950 text-primary-500 focus:ring-2 focus:ring-primary-500"
+                  />
+                  {label}
+                </label>
+              ))}
             </div>
             {notifMessage && (
               <p role={notifMessage.error ? 'alert' : 'status'} className={notifMessage.error ? 'text-sm text-danger' : 'text-sm text-primary-400'}>{notifMessage.text}</p>

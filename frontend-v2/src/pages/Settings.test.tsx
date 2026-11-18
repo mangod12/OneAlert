@@ -238,8 +238,21 @@ describe('Email notification preferences', () => {
     await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/auth/me/notification-preferences', {
       email_notifications_enabled: false,
       notify_min_severity: 'high',
+      muted_kinds: [],
     }));
     await screen.findByText('Notification preferences saved.');
+  });
+
+  it('saves muted in-app notification kinds', async () => {
+    render(<Settings />);
+    const caseAssignments = await screen.findByRole('checkbox', { name: /case assignments/i });
+    fireEvent.click(caseAssignments);
+    fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/auth/me/notification-preferences', {
+      email_notifications_enabled: true,
+      notify_min_severity: 'low',
+      muted_kinds: ['case_assigned'],
+    }));
   });
 
   it('surfaces a save failure', async () => {

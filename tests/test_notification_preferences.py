@@ -72,6 +72,7 @@ class TestNotificationPreferenceEndpoints:
         assert resp.json() == {
             "email_notifications_enabled": True,
             "notify_min_severity": "low",
+            "muted_kinds": [],
         }
 
     def test_patch_updates_both_fields(self, client):
@@ -85,6 +86,7 @@ class TestNotificationPreferenceEndpoints:
         assert resp.json() == {
             "email_notifications_enabled": False,
             "notify_min_severity": "high",
+            "muted_kinds": [],
         }
         confirm = client.get("/api/v1/auth/me/notification-preferences", headers=headers)
         assert confirm.json()["notify_min_severity"] == "high"
@@ -100,6 +102,7 @@ class TestNotificationPreferenceEndpoints:
         assert confirm.json() == {
             "email_notifications_enabled": True,
             "notify_min_severity": "critical",
+            "muted_kinds": [],
         }
 
     def test_invalid_severity_rejected(self, client):
@@ -107,6 +110,42 @@ class TestNotificationPreferenceEndpoints:
         resp = client.patch(
             "/api/v1/auth/me/notification-preferences",
             json={"notify_min_severity": "urgent"},
+            headers=headers,
+        )
+        assert resp.status_code == 422
+
+    def test_muted_kinds_update(self, client):
+        headers = _register_and_login(client, "muted@example.com")
+        resp = client.patch(
+            "/api/v1/auth/me/notification-preferences",
+            json={"muted_kinds": ["case_assigned"]},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["muted_kinds"] == ["case_assigned"]
+        confirm = client.get("/api/v1/auth/me/notification-preferences", headers=headers)
+        assert confirm.json()["muted_kinds"] == ["case_assigned"]
+
+    def test_partial_patch_keeps_muted_kinds(self, client):
+        headers = _register_and_login(client, "keepmuted@example.com")
+        client.patch(
+            "/api/v1/auth/me/notification-preferences",
+            json={"muted_kinds": ["alert_created"]},
+            headers=headers,
+        )
+        client.patch(
+            "/api/v1/auth/me/notification-preferences",
+            json={"notify_min_severity": "high"},
+            headers=headers,
+        )
+        confirm = client.get("/api/v1/auth/me/notification-preferences", headers=headers)
+        assert confirm.json()["muted_kinds"] == ["alert_created"]
+
+    def test_unknown_muted_kind_rejected(self, client):
+        headers = _register_and_login(client, "unknownkind@example.com")
+        resp = client.patch(
+            "/api/v1/auth/me/notification-preferences",
+            json={"muted_kinds": ["not_a_kind"]},
             headers=headers,
         )
         assert resp.status_code == 422

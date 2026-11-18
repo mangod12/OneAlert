@@ -269,6 +269,8 @@ async def update_notification_preferences(
         current_user.email_notifications_enabled = update.email_notifications_enabled
     if update.notify_min_severity is not None:
         current_user.notify_min_severity = update.notify_min_severity
+    if update.muted_kinds is not None:
+        current_user.muted_kinds = update.muted_kinds
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)

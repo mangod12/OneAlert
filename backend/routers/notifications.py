@@ -22,11 +22,15 @@ async def list_notifications(
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """List the current user's notifications, newest first."""
+    """List the current user's notifications, newest first. Muted kinds are hidden."""
+    muted = current_user.muted_kinds or []
     base = select(Notification).where(Notification.user_id == current_user.id)
     count_q = select(func.count(Notification.id)).where(
         Notification.user_id == current_user.id
     )
+    if muted:
+        base = base.where(Notification.kind.notin_(muted))
+        count_q = count_q.where(Notification.kind.notin_(muted))
     if unread_only:
         base = base.where(Notification.read_at.is_(None))
         count_q = count_q.where(Notification.read_at.is_(None))
@@ -36,6 +40,7 @@ async def list_notifications(
         select(func.count(Notification.id)).where(
             Notification.user_id == current_user.id,
             Notification.read_at.is_(None),
+            Notification.kind.notin_(muted),
         )
     )).scalar_one()
     rows = (await db.execute(
