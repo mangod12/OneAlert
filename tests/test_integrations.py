@@ -366,3 +366,87 @@ class TestIntegrationClasses:
             })
             assert result["success"] is True
             assert result["status_code"] == 201
+
+
+class TestIntegrationSecretMasking:
+    """Secrets in integration configs are never returned by the API."""
+
+    def test_create_and_list_mask_secret_values(self, client, auth_headers):
+        """Tokens and keys come back masked; non-secret fields stay visible."""
+        create_resp = client.post(
+            "/api/v1/integrations/",
+            json={
+                "integration_type": "splunk",
+                "name": "Splunk Prod",
+                "config": {
+                    "hec_url": "https://splunk.example.com:8088",
+                    "hec_token": "super-secret-token",
+                    "index": "security",
+                },
+            },
+            headers=auth_headers,
+        )
+        assert create_resp.status_code == 201
+        created = create_resp.json()["data"]
+        assert created["config"]["hec_token"] == "********"
+        assert created["config"]["hec_url"] == "https://splunk.example.com:8088"
+        assert created["config"]["index"] == "security"
+
+        listed = client.get("/api/v1/integrations/", headers=auth_headers).json()["data"]
+        assert listed[0]["config"]["hec_token"] == "********"
+        assert "super-secret-token" not in str(listed)
+
+    def test_echoed_mask_preserves_stored_secret(self, client, auth_headers):
+        """PATCHing a config with the mask sentinel keeps the stored secret."""
+        create_resp = client.post(
+            "/api/v1/integrations/",
+            json={
+                "integration_type": "splunk",
+                "name": "Splunk Prod",
+                "config": {
+                    "hec_url": "https://splunk.example.com:8088",
+                    "hec_token": "super-secret-token",
+                },
+            },
+            headers=auth_headers,
+        )
+        integration_id = create_resp.json()["data"]["id"]
+
+        patch_resp = client.patch(
+            f"/api/v1/integrations/{integration_id}",
+            json={"config": {"hec_url": "https://splunk.example.com:8088", "hec_token": "********"}},
+            headers=auth_headers,
+        )
+        assert patch_resp.status_code == 200
+        assert patch_resp.json()["data"]["config"]["hec_token"] == "********"
+
+        from backend.models.integration_config import IntegrationConfig
+        from tests.test_integrations import TestingSessionLocal
+        with TestingSessionLocal() as db:
+            stored = db.get(IntegrationConfig, integration_id)
+            assert stored.config["hec_token"] == "super-secret-token"
+
+    def test_new_secret_replaces_stored_one(self, client, auth_headers):
+        """PATCHing a real new value replaces the stored secret."""
+        create_resp = client.post(
+            "/api/v1/integrations/",
+            json={
+                "integration_type": "pagerduty",
+                "name": "PD",
+                "config": {"routing_key": "old-key"},
+            },
+            headers=auth_headers,
+        )
+        integration_id = create_resp.json()["data"]["id"]
+
+        client.patch(
+            f"/api/v1/integrations/{integration_id}",
+            json={"config": {"routing_key": "new-key"}},
+            headers=auth_headers,
+        )
+
+        from backend.models.integration_config import IntegrationConfig
+        from tests.test_integrations import TestingSessionLocal
+        with TestingSessionLocal() as db:
+            stored = db.get(IntegrationConfig, integration_id)
+            assert stored.config["routing_key"] == "new-key"
