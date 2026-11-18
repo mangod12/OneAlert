@@ -248,6 +248,43 @@ class TestCaseAlertLinking:
         detail = client.get(f"/api/v1/cases/{case_id}", headers=headers)
         assert detail.json()["alert_count"] == 1
 
+    def test_link_higher_severity_alert_raises_case_severity(self, client):
+        # Linking an alert more severe than the case raises the case severity.
+        headers = register_and_login(client, "analyst@example.com")
+        case_id = self._make_case(client, headers)  # defaults to medium
+        alert_id = self._make_alert(client, headers)  # high
+
+        resp = client.post(f"/api/v1/cases/{case_id}/alerts/{alert_id}", headers=headers)
+        assert resp.status_code == 200, resp.text
+
+        detail = client.get(f"/api/v1/cases/{case_id}", headers=headers)
+        assert detail.json()["severity"] == "high"
+        raise_entries = [
+            e for e in detail.json()["timeline"]
+            if e["entry_type"] == "action" and "Severity raised to high" in e["content"]
+        ]
+        assert raise_entries
+
+    def test_link_lower_severity_alert_keeps_case_severity(self, client):
+        # A less severe alert never lowers the case severity.
+        headers = register_and_login(client, "analyst@example.com")
+        resp = client.post(
+            "/api/v1/cases/", json={"title": "Critical case", "severity": "critical"}, headers=headers
+        )
+        assert resp.status_code == 201, resp.text
+        case_id = resp.json()["id"]
+        alert_id = self._make_alert(client, headers)  # high
+
+        resp = client.post(f"/api/v1/cases/{case_id}/alerts/{alert_id}", headers=headers)
+        assert resp.status_code == 200, resp.text
+
+        detail = client.get(f"/api/v1/cases/{case_id}", headers=headers)
+        assert detail.json()["severity"] == "critical"
+        assert not [
+            e for e in detail.json()["timeline"]
+            if e["entry_type"] == "action" and "Severity raised" in e["content"]
+        ]
+
     def test_foreign_case_or_alert_is_404(self, client):
         owner = register_and_login(client, "owner@example.com")
         outsider = register_and_login(client, "outsider@example.com")

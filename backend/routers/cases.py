@@ -36,6 +36,17 @@ from backend.services.audit import add_audit_log
 from backend.services.investigation_notify import notify_investigation_event
 from backend.services.sla import sla_due_date
 
+_SEVERITY_ORDER = ("info", "low", "medium", "high", "critical")
+
+
+def _severity_rank(value: str | None) -> int:
+    """Rank a case/alert severity for comparison; unknown values rank lowest."""
+    try:
+        return _SEVERITY_ORDER.index(str(value or "").lower())
+    except ValueError:
+        return -1
+
+
 router = APIRouter()
 
 
@@ -697,6 +708,14 @@ async def link_alert_to_case(
         content=f"Alert linked manually by {current_user.email}: {alert.title}",
         source="human",
     ))
+    if _severity_rank(alert.severity) > _severity_rank(case.severity):
+        case.severity = alert.severity
+        db.add(CaseTimeline(
+            case_id=case.id,
+            entry_type="action",
+            content=f"Severity raised to {alert.severity} after linking alert #{alert.id}: {alert.title}",
+            source="system",
+        ))
     await db.commit()
     return {"success": True, "data": {"linked": True}}
 
