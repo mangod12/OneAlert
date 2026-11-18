@@ -97,6 +97,28 @@ describe('Assets page', () => {
     });
   });
 
+  it('shows the risk badge when the asset has one', async () => {
+    get.mockResolvedValue({ data: { assets: [{ ...asset, risk_score: 30, risk_level: 'high' }], total: 1, page: 1, size: 15 } });
+    render(<MemoryRouter><Assets /></MemoryRouter>);
+    expect(await screen.findByText('Risk: high (30)')).toBeTruthy();
+  });
+
+  it('hides the risk badge when risk is none', async () => {
+    get.mockResolvedValue({ data: { assets: [{ ...asset, risk_score: 0, risk_level: 'none' }], total: 1, page: 1, size: 15 } });
+    render(<MemoryRouter><Assets /></MemoryRouter>);
+    await screen.findByText('Plant gateway');
+    expect(screen.queryByText(/Risk:/)).toBeNull();
+  });
+
+  it('sends the risk sort order to the API', async () => {
+    render(<MemoryRouter><Assets /></MemoryRouter>);
+    const select = await screen.findByRole('combobox', { name: 'Sort assets' });
+    fireEvent.change(select, { target: { value: 'risk_desc' } });
+    await waitFor(() => {
+      expect(get).toHaveBeenCalledWith('/assets/', { params: { page: 1, size: 15, sort: 'risk_desc' } });
+    });
+  });
+
   it('sends the chosen sort order to the API', async () => {
     render(<MemoryRouter><Assets /></MemoryRouter>);
     const select = await screen.findByRole('combobox', { name: 'Sort assets' });

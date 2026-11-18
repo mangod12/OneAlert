@@ -167,6 +167,8 @@ class AssetResponse(AssetBase):
     created_at: datetime
     updated_at: datetime | None = None
     open_alert_count: int | None = None
+    risk_score: int | None = None
+    risk_level: str | None = None
 
     model_config = {"from_attributes": True}
 

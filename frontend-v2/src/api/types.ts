@@ -77,6 +77,8 @@ export interface Asset {
   criticality: string | null;
   created_at: string;
   open_alert_count?: number | null;
+  risk_score?: number | null;
+  risk_level?: string | null;
 }
 
 export interface AssetCreate {
