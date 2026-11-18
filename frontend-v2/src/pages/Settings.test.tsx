@@ -278,6 +278,23 @@ describe('Email notification preferences', () => {
     await screen.findByText('Password updated.');
   });
 
+  it('updates the operator profile', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/auth/me') return { data: { ...analyst, full_name: 'New Name', company: 'New Co' } };
+      if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
+      if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low' } };
+      return notFound();
+    });
+    mockPatch.mockResolvedValue({ data: {} });
+    render(<Settings />);
+    fireEvent.click(await screen.findByRole('button', { name: /edit profile/i }));
+    fireEvent.change(screen.getByLabelText(/display name/i), { target: { value: 'New Name' } });
+    fireEvent.change(screen.getByLabelText(/company/i), { target: { value: 'New Co' } });
+    fireEvent.click(screen.getByRole('button', { name: /save profile/i }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/auth/me', { full_name: 'New Name', company: 'New Co' }));
+    await screen.findByText('Profile updated.');
+  });
+
   it('blocks mismatched new passwords before posting', async () => {
     render(<Settings />);
     fireEvent.change(await screen.findByLabelText(/current password/i), { target: { value: 'old-password-1' } });
