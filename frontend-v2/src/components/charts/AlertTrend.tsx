@@ -2,14 +2,19 @@ import { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import type { Alert } from '../../api/types';
 import { chartColors, tooltipStyle } from './theme';
-import { buildTrendData } from './trendData';
+import { buildTrendData, formatTimeline } from './trendData';
+import type { TimelineDay } from './trendData';
 
 interface Props {
   alerts: Alert[];
+  timeline?: TimelineDay[] | null;
 }
 
-export function AlertTrend({ alerts }: Props) {
-  const data = useMemo(() => buildTrendData(alerts), [alerts]);
+export function AlertTrend({ alerts, timeline }: Props) {
+  const data = useMemo(
+    () => (timeline && timeline.length > 0 ? formatTimeline(timeline) : buildTrendData(alerts)),
+    [alerts, timeline]
+  );
   const totals = data.reduce(
     (acc, day) => ({
       critical: acc.critical + day.critical,
@@ -22,7 +27,7 @@ export function AlertTrend({ alerts }: Props) {
   const summary = `${totals.critical} critical, ${totals.high} high, ${totals.medium} medium, ${totals.low} low`;
 
   return (
-    <div role="img" aria-label={`Alert activity over the last 7 days: ${summary}`}>
+    <div role="img" aria-label={`Alert activity over the last ${data.length} days: ${summary}`}>
     <ResponsiveContainer width="100%" height={250}>
       <BarChart data={data}>
         <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />

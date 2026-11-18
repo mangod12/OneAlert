@@ -10,6 +10,7 @@ import type { AlertStats, Alert, AlertListResponse } from '../api/types';
 import { KPICard } from '../components/KPICard';
 import { SeverityBreakdown } from '../components/charts/SeverityBreakdown';
 import { AlertTrend } from '../components/charts/AlertTrend';
+import type { TimelineDay } from '../components/charts/trendData';
 import { RiskHeatmap } from '../components/charts/RiskHeatmap';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -23,6 +24,7 @@ export function Dashboard() {
   const [totalAssets, setTotalAssets] = useState<number | null>(null);
   const [totalDiscovered, setTotalDiscovered] = useState<number | null>(null);
   const [alerts, setAlerts] = useState<Alert[] | null>(null);
+  const [timeline, setTimeline] = useState<TimelineDay[] | null>(null);
   const [myAlerts, setMyAlerts] = useState<Alert[] | null>(null);
   const [myCases, setMyCases] = useState<Array<{ id: number; title: string; severity: string; status: string }> | null>(null);
   const [errors, setErrors] = useState<DashboardErrors>({});
@@ -46,6 +48,7 @@ export function Dashboard() {
         apiClient.get<AlertListResponse>('/alerts/', { params: { size: 50 } }),
         apiClient.get<AlertListResponse>('/alerts/', { params: { size: 5, assigned: 'me' } }),
         apiClient.get<{ cases?: Array<{ id: number; title: string; severity: string; status: string }> }>('/cases/', { params: { size: 5, assigned: 'me' } }),
+        apiClient.get<{ days?: TimelineDay[] }>('/alerts/stats/timeline', { params: { days: 14 } }),
       ] as const;
       const results = await Promise.allSettled(requests);
       if (!active) return;
@@ -63,6 +66,8 @@ export function Dashboard() {
       else setMyAlerts([]);
       if (results[5].status === 'fulfilled') setMyCases(results[5].value.data.cases ?? []);
       else setMyCases([]);
+      if (results[6].status === 'fulfilled') setTimeline(results[6].value.data.days ?? []);
+      else setTimeline(null);
 
       setErrors(nextErrors);
       setLastUpdated(new Date());
@@ -179,7 +184,7 @@ export function Dashboard() {
 
       <section className="grid gap-4 xl:grid-cols-2">
         <Panel title="Severity distribution" description="Current alert inventory by operational severity."><div className="p-4"><SeverityBreakdown stats={stats} /></div></Panel>
-        <Panel title="Alert activity · 7 days" description="Daily volume grouped by severity."><div className="p-4"><AlertTrend alerts={alerts ?? []} /></div></Panel>
+        <Panel title={`Alert activity · ${timeline && timeline.length > 0 ? timeline.length : 7} days`} description="Daily volume grouped by severity."><div className="p-4"><AlertTrend alerts={alerts ?? []} timeline={timeline} /></div></Panel>
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(20rem,0.65fr)]">
