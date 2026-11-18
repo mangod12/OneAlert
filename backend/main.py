@@ -36,6 +36,7 @@ from backend.routers import (
     notifications,
     organizations,
     ot,
+    reports,
     response_plans,
     saved_views,
     sbom,
@@ -199,6 +200,7 @@ app.include_router(response_plans.router, prefix="/api/v1/response-plans", tags=
 app.include_router(validation.router, prefix="/api/v1/validation", tags=["Purple-Team Validation"])
 app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["Notifications"])
 app.include_router(search.router, prefix="/api/v1/search", tags=["Search"])
+app.include_router(reports.router, prefix="/api/v1/reports", tags=["Reports"])
 
 
 # Health check endpoint
