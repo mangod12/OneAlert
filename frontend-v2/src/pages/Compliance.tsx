@@ -150,6 +150,7 @@ export function Compliance() {
   const [statusFilter, setStatusFilter] = useState('');
   const [evidenceTarget, setEvidenceTarget] = useState<{ assessment: Assessment; control: Control } | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [assessing, setAssessing] = useState(false);
 
   const exportCsv = async () => {
     if (exporting || selected == null) return;
@@ -201,9 +202,7 @@ export function Compliance() {
 
   useEffect(() => { void fetchOverview(); }, [fetchOverview]);
 
-  const openFramework = async (frameworkId: number) => {
-    if (selected === frameworkId) { setSelected(null); return; }
-    setSelected(frameworkId);
+  const loadControls = async (frameworkId: number) => {
     setControlsLoading(true);
     setControlsError('');
     try {
@@ -224,6 +223,28 @@ export function Compliance() {
       setControlsError(getApiErrorMessage(err, 'Framework controls could not be loaded.'));
     } finally {
       setControlsLoading(false);
+    }
+  };
+
+  const openFramework = async (frameworkId: number) => {
+    if (selected === frameworkId) { setSelected(null); return; }
+    setSelected(frameworkId);
+    await loadControls(frameworkId);
+  };
+
+  const runAssessment = async () => {
+    if (assessing) return;
+    setAssessing(true);
+    try {
+      const res = await apiClient.post<{ data?: { total?: number } }>('/compliance/assess');
+      const total = res.data?.data?.total;
+      toast(total != null ? `Automated assessment updated ${total} controls.` : 'Automated assessment completed.', 'success');
+      await fetchOverview();
+      if (selected != null) await loadControls(selected);
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'The automated assessment could not be run.'), 'error');
+    } finally {
+      setAssessing(false);
     }
   };
 
@@ -249,7 +270,16 @@ export function Compliance() {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Govern" title="Compliance" description="Control coverage and assessment posture across your frameworks." />
+      <PageHeader eyebrow="Govern" title="Compliance" description="Control coverage and assessment posture across your frameworks." actions={
+        <button
+          type="button"
+          onClick={() => void runAssessment()}
+          disabled={assessing}
+          className="flex min-h-9 items-center gap-2 rounded-md bg-primary-500 px-3.5 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50"
+        >
+          {assessing ? 'Running assessment…' : 'Run automated assessment'}
+        </button>
+      } />
 
       {frameworks.length === 0 ? (
         <div className="oa-panel p-12 text-center text-surface-500">
