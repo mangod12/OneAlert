@@ -93,4 +93,37 @@ describe('SiemIntegrationsPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Delete integration' }));
     await waitFor(() => expect(del).toHaveBeenCalledWith('/integrations/2'));
   });
+
+  it('edits an integration, keeping blank secrets out of the payload', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/integrations/types') return { data: { data: types } };
+      if (url === '/integrations/') return { data: { data: [
+        { ...integrations[0], config: { hec_url: 'https://s.example.com:8088', hec_token: '********', index: 'security' } },
+      ] } };
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<SiemIntegrationsPanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Prod Splunk' }));
+    expect((screen.getByLabelText(/^Name/) as HTMLInputElement).value).toBe('Prod Splunk');
+    expect((screen.getByLabelText(/^Type/) as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByLabelText(/HEC URL/) as HTMLInputElement).value).toBe('https://s.example.com:8088');
+    expect((screen.getByLabelText(/HEC token/) as HTMLInputElement).value).toBe('');
+    fireEvent.change(screen.getByLabelText(/HEC URL/), { target: { value: 'https://s2.example.com:8088' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update integration' }));
+    await waitFor(() => expect(patch).toHaveBeenCalledWith('/integrations/1', {
+      name: 'Prod Splunk',
+      config: { hec_url: 'https://s2.example.com:8088', index: 'security' },
+    }));
+  });
+
+  it('sends a newly typed secret when editing', async () => {
+    render(<SiemIntegrationsPanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Oncall PD' }));
+    fireEvent.change(screen.getByLabelText(/Routing key/), { target: { value: 'new-routing-key' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update integration' }));
+    await waitFor(() => expect(patch).toHaveBeenCalledWith('/integrations/2', {
+      name: 'Oncall PD',
+      config: { routing_key: 'new-routing-key' },
+    }));
+  });
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Plug, Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plug, Plus, Trash2 } from 'lucide-react';
 import apiClient from '../../api/client';
 import { getApiErrorMessage } from '../../api/errors';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
@@ -60,6 +60,7 @@ export function SiemIntegrationsPanel() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Integration | null>(null);
   const [name, setName] = useState('');
   const [selectedType, setSelectedType] = useState('');
   const [fields, setFields] = useState<Record<string, string>>({});
@@ -96,15 +97,32 @@ export function SiemIntegrationsPanel() {
 
   const resetForm = () => {
     setAdding(false);
+    setEditing(null);
     setName('');
     setSelectedType('');
     setFields({});
   };
 
-  const handleCreate = async () => {
+  const startEdit = (integration: Integration) => {
+    setAdding(false);
+    setEditing(integration);
+    setName(integration.name);
+    setSelectedType(integration.integration_type);
+    const spec = TYPE_FIELDS[integration.integration_type] ?? [];
+    const nextFields: Record<string, string> = {};
+    for (const f of spec) {
+      const value = integration.config?.[f.key];
+      // Secrets come back masked; leave them blank so the stored value is kept.
+      if (!f.secret && typeof value === 'string') nextFields[f.key] = value;
+    }
+    setFields(nextFields);
+    setMessage(null);
+  };
+
+  const handleSave = async () => {
     if (saving) return;
     const spec = TYPE_FIELDS[selectedType] ?? [];
-    const missing = spec.filter(f => f.required && !fields[f.key]?.trim());
+    const missing = spec.filter(f => f.required && !(f.secret && editing) && !fields[f.key]?.trim());
     if (!name.trim() || !selectedType || missing.length > 0) {
       setMessage({ text: 'Fill in the name, type and every required field.', error: true });
       return;
@@ -117,8 +135,13 @@ export function SiemIntegrationsPanel() {
         const value = fields[f.key]?.trim();
         if (value) config[f.key] = value;
       }
-      await apiClient.post('/integrations/', { integration_type: selectedType, name: name.trim(), config });
-      setMessage({ text: `${typeName(selectedType)} integration added.`, error: false });
+      if (editing) {
+        await apiClient.patch(`/integrations/${editing.id}`, { name: name.trim(), config });
+        setMessage({ text: `${typeName(selectedType)} integration updated.`, error: false });
+      } else {
+        await apiClient.post('/integrations/', { integration_type: selectedType, name: name.trim(), config });
+        setMessage({ text: `${typeName(selectedType)} integration added.`, error: false });
+      }
       resetForm();
       await fetchAll();
     } catch (error: unknown) {
@@ -190,6 +213,7 @@ export function SiemIntegrationsPanel() {
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <StatusBadge tone={integration.is_active ? 'success' : 'neutral'}>{integration.is_active ? 'Active' : 'Inactive'}</StatusBadge>
+                <button type="button" aria-label={`Edit ${integration.name}`} disabled={busyId === integration.id} onClick={() => startEdit(integration)} className="rounded-md border border-surface-600 p-1.5 text-surface-300 hover:bg-surface-800 disabled:opacity-50"><Pencil className="h-3.5 w-3.5" /></button>
                 <button type="button" disabled={busyId === integration.id} onClick={() => void handleTest(integration)} className="rounded-md border border-surface-600 px-2 py-1 text-xs text-surface-300 hover:bg-surface-800 disabled:opacity-50">Test</button>
                 <button type="button" disabled={busyId === integration.id} onClick={() => void handleToggle(integration)} className="rounded-md border border-surface-600 px-2 py-1 text-xs text-surface-300 hover:bg-surface-800 disabled:opacity-50">{integration.is_active ? 'Disable' : 'Enable'}</button>
                 <button type="button" aria-label={`Delete ${integration.name}`} disabled={busyId === integration.id} onClick={() => setPendingDelete(integration)} className="rounded-md border border-danger/40 p-1.5 text-danger hover:bg-danger/10 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" /></button>
@@ -198,28 +222,31 @@ export function SiemIntegrationsPanel() {
           ))}
         </ul>
 
-        {!adding && (
+        {!adding && !editing && (
           <button type="button" onClick={() => { setAdding(true); setMessage(null); }} className="mt-4 inline-flex min-h-9 items-center gap-1.5 rounded-md border border-primary-500/40 px-3 text-sm font-semibold text-primary-300 hover:bg-primary-500/10">
             <Plus className="h-4 w-4" /> Add integration
           </button>
         )}
 
-        {adding && (
-          <form className="mt-4 space-y-3 rounded-md border border-surface-700 bg-surface-950/60 p-4" onSubmit={event => { event.preventDefault(); void handleCreate(); }}>
+        {(adding || editing) && (
+          <form className="mt-4 space-y-3 rounded-md border border-surface-700 bg-surface-950/60 p-4" onSubmit={event => { event.preventDefault(); void handleSave(); }}>
             <div>
               <label htmlFor="siem-name" className="mb-1 block text-xs font-medium text-surface-300">Name</label>
               <input id="siem-name" type="text" autoComplete="off" value={name} onChange={e => setName(e.target.value)} placeholder="Production Splunk" className={inputClass} />
             </div>
             <div>
               <label htmlFor="siem-type" className="mb-1 block text-xs font-medium text-surface-300">Type</label>
-              <select id="siem-type" value={selectedType} onChange={e => { setSelectedType(e.target.value); setFields({}); }} className={inputClass}>
+              <select id="siem-type" disabled={editing !== null} value={selectedType} onChange={e => { setSelectedType(e.target.value); setFields({}); }} className={`${inputClass} disabled:opacity-50`}>
                 <option value="">Choose a type…</option>
                 {types.map(t => <option key={t.type} value={t.type}>{t.name} - {t.description}</option>)}
               </select>
             </div>
             {spec.map(f => (
               <div key={f.key}>
-                <label htmlFor={`siem-field-${f.key}`} className="mb-1 block text-xs font-medium text-surface-300">{f.label}{f.required ? ' *' : ''}</label>
+                <label htmlFor={`siem-field-${f.key}`} className="mb-1 block text-xs font-medium text-surface-300">
+                  {f.label}{f.required && !(f.secret && editing) ? ' *' : ''}
+                  {f.secret && editing && <span className="ml-1 font-normal text-surface-500">(stored - leave blank to keep)</span>}
+                </label>
                 <input
                   id={`siem-field-${f.key}`}
                   type={f.secret ? 'password' : 'text'}
@@ -232,7 +259,7 @@ export function SiemIntegrationsPanel() {
               </div>
             ))}
             <div className="flex items-center gap-2 pt-1">
-              <button type="submit" disabled={saving} className="min-h-9 rounded-md bg-primary-500 px-4 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">{saving ? 'Saving…' : 'Save integration'}</button>
+              <button type="submit" disabled={saving} className="min-h-9 rounded-md bg-primary-500 px-4 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">{saving ? 'Saving…' : editing ? 'Update integration' : 'Save integration'}</button>
               <button type="button" onClick={resetForm} className="rounded-md border border-surface-600 px-3 py-2 text-sm text-surface-300 hover:bg-surface-800">Cancel</button>
             </div>
           </form>
