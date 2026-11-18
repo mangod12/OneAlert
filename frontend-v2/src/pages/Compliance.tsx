@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
-import { FileText, ShieldCheck } from 'lucide-react';
+import { Download, FileText, ShieldCheck } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { toast } from '../components/Toast';
 import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -149,6 +149,28 @@ export function Compliance() {
   const [controlSearch, setControlSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [evidenceTarget, setEvidenceTarget] = useState<{ assessment: Assessment; control: Control } | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  const exportCsv = async () => {
+    if (exporting || selected == null) return;
+    setExporting(true);
+    try {
+      const res = await apiClient.get('/compliance/export', {
+        params: { framework_id: String(selected) },
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(res.data as Blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `compliance-${selected}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'The export could not be downloaded.'), 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const filteredControls = controls.filter(control => {
     const effectiveStatus = assessments.get(control.id)?.status ?? 'not_assessed';
@@ -305,6 +327,15 @@ export function Compliance() {
                 ))}
               </select>
               <span className="text-xs text-surface-500">{filteredControls.length} of {controls.length} controls</span>
+              <button
+                type="button"
+                onClick={() => { void exportCsv(); }}
+                disabled={exporting}
+                className="ml-auto inline-flex min-h-8 items-center gap-1.5 rounded-md border border-surface-600 px-2.5 text-xs text-surface-200 hover:bg-surface-800 disabled:opacity-50"
+              >
+                <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                {exporting ? 'Exporting...' : 'Export CSV'}
+              </button>
             </div>
             <table className="w-full text-sm">
               <thead>

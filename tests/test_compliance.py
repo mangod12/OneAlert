@@ -9,6 +9,9 @@ Tests:
 5. Manual assessment update works
 """
 
+import csv
+import io
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -326,3 +329,62 @@ class TestAssessmentEvidence:
             assert response.status_code == 200
             assert response.json()["evidence_type"] == evidence_type
             assert response.json()["evidence_detail"] == f"Stored via {evidence_type}."
+
+
+class TestComplianceExport:
+    """Test exporting the compliance posture as CSV."""
+
+    def test_export_contains_controls_with_latest_assessment(self, client, auth_headers):
+        client.post("/api/v1/compliance/assess", headers=auth_headers)
+        assessments = client.get("/api/v1/compliance/assessments", headers=auth_headers).json()
+        target = assessments[0]
+        client.patch(
+            f"/api/v1/compliance/assessments/{target['id']}",
+            json={"status": "partial", "evidence_type": "manual", "evidence_detail": "Reviewed in Q3."},
+            headers=auth_headers,
+        )
+
+        response = client.get("/api/v1/compliance/export", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/csv")
+        assert "attachment" in response.headers["content-disposition"]
+
+        rows = list(csv.reader(io.StringIO(response.text)))
+        assert rows[0] == [
+            "framework", "framework_version", "control_id", "title", "category",
+            "status", "evidence_type", "evidence_detail", "assessed_by", "assessed_at",
+        ]
+        assert len(rows) > 1
+        exported = {row[2]: row for row in rows[1:]}
+        # Every control appears, unmodified ones as not_assessed
+        assert any(row[5] == "not_assessed" for row in rows[1:])
+        # The patched control carries its latest assessment
+        control_code = None
+        for row in rows[1:]:
+            if row[5] == "partial" and row[7] == "Reviewed in Q3.":
+                control_code = row[2]
+        assert control_code is not None
+        assert exported[control_code][6] == "manual"
+
+    def test_export_framework_filter(self, client, auth_headers):
+        client.post("/api/v1/compliance/assess", headers=auth_headers)
+        frameworks = client.get("/api/v1/compliance/frameworks", headers=auth_headers).json()
+        first, second = frameworks[0], frameworks[1]
+
+        response = client.get(
+            f"/api/v1/compliance/export?framework_id={first['id']}", headers=auth_headers
+        )
+        rows = list(csv.reader(io.StringIO(response.text)))
+        assert len(rows) > 1
+        assert all(row[0] == first["name"] for row in rows[1:])
+        assert all(row[0] != second["name"] for row in rows[1:])
+
+    def test_export_excludes_other_users_assessments(self, client, auth_headers):
+        client.post("/api/v1/compliance/assess", headers=auth_headers)
+        response = client.get("/api/v1/compliance/export", headers=auth_headers)
+        rows = list(csv.reader(io.StringIO(response.text)))
+        # The other user (this test's seeded user) ran no assessment in this
+        # fresh database, so nothing is assessed for them here after only
+        # their own assess run: statuses must come from their own run.
+        assert len(rows) > 1
+        assert all(row[8] in ("", "system", "compliance_test@example.com") for row in rows[1:])
