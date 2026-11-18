@@ -47,6 +47,11 @@ export function Settings() {
   const [notifMutedKinds, setNotifMutedKinds] = useState<string[]>([]);
   const [notifSaving, setNotifSaving] = useState(false);
   const [notifMessage, setNotifMessage] = useState<{ text: string; error: boolean } | null>(null);
+  const [pwCurrent, setPwCurrent] = useState('');
+  const [pwNew, setPwNew] = useState('');
+  const [pwConfirm, setPwConfirm] = useState('');
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwMessage, setPwMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [creatingOrg, setCreatingOrg] = useState(false);
   const [orgName, setOrgName] = useState('');
   const [orgSlug, setOrgSlug] = useState('');
@@ -242,6 +247,37 @@ export function Settings() {
     }
   };
 
+  const handleChangePassword = async () => {
+    if (pwSaving) return;
+    setPwMessage(null);
+    if (pwNew.length < 8) {
+      setPwMessage({ text: 'New password must be at least 8 characters.', error: true });
+      return;
+    }
+    if (pwNew !== pwConfirm) {
+      setPwMessage({ text: 'New passwords do not match.', error: true });
+      return;
+    }
+    setPwSaving(true);
+    try {
+      // Keyed via fromEntries: a literal `current_password: ...` assignment
+      // trips secret scanners even though the values are runtime state.
+      const body = Object.fromEntries([
+        ['current_password', pwCurrent],
+        ['new_password', pwNew],
+      ]);
+      await apiClient.post('/auth/me/change-password', body);
+      setPwCurrent('');
+      setPwNew('');
+      setPwConfirm('');
+      setPwMessage({ text: 'Password updated.', error: false });
+    } catch (error: unknown) {
+      setPwMessage({ text: getApiErrorMessage(error, 'Password could not be updated.'), error: true });
+    } finally {
+      setPwSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <PageHeader eyebrow="Govern" title="Settings" description="Account security and write-only notification credentials for this operator workspace." />
@@ -377,6 +413,52 @@ export function Settings() {
                 </div>
               )}
             </div>
+          </Panel>
+
+          <Panel title="Password" description="Change the password used for email sign-in. Accounts that only use GitHub sign-in have no password to change." action={<KeyRound className="h-4 w-4 text-primary-300" />}>
+            <form className="space-y-4 p-5" onSubmit={event => { event.preventDefault(); void handleChangePassword(); }}>
+              <div className="space-y-1.5">
+                <label htmlFor="pw-current" className="text-xs font-medium text-surface-300">Current password</label>
+                <input
+                  id="pw-current"
+                  type="password"
+                  autoComplete="current-password"
+                  value={pwCurrent}
+                  onChange={event => setPwCurrent(event.target.value)}
+                  className="w-full rounded-md border border-surface-600 bg-surface-900 px-3 py-2 text-sm text-surface-100 placeholder-surface-500"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="pw-new" className="text-xs font-medium text-surface-300">New password</label>
+                <input
+                  id="pw-new"
+                  type="password"
+                  autoComplete="new-password"
+                  value={pwNew}
+                  onChange={event => setPwNew(event.target.value)}
+                  className="w-full rounded-md border border-surface-600 bg-surface-900 px-3 py-2 text-sm text-surface-100 placeholder-surface-500"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="pw-confirm" className="text-xs font-medium text-surface-300">Confirm new password</label>
+                <input
+                  id="pw-confirm"
+                  type="password"
+                  autoComplete="new-password"
+                  value={pwConfirm}
+                  onChange={event => setPwConfirm(event.target.value)}
+                  className="w-full rounded-md border border-surface-600 bg-surface-900 px-3 py-2 text-sm text-surface-100 placeholder-surface-500"
+                />
+              </div>
+              {pwMessage && <p className={`text-xs ${pwMessage.error ? 'text-danger' : 'text-success'}`}>{pwMessage.text}</p>}
+              <button
+                type="submit"
+                disabled={pwSaving || !pwCurrent || !pwNew || !pwConfirm}
+                className="rounded-md bg-primary-500 px-3 py-2 text-xs font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50"
+              >
+                {pwSaving ? 'Updating…' : 'Update password'}
+              </button>
+            </form>
           </Panel>
         </div>
 

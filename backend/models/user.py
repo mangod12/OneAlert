@@ -127,6 +127,19 @@ class UserUpdate(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PasswordChange(BaseModel):
+    """Schema for changing the current user's password."""
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new(cls, value: str) -> str:
+        return validate_new_password(value)
+
+    model_config = {"from_attributes": True}
+
+
 SEVERITY_LEVELS = ("low", "medium", "high", "critical")
 
 # In-app notification kinds that can be muted individually.

@@ -25,6 +25,7 @@ from backend.models.audit_log import AuditLog
 from backend.models.user import (
     NotificationPreferences,
     NotificationPreferencesUpdate,
+    PasswordChange,
     Token,
     User,
     UserCreate,
@@ -275,6 +276,43 @@ async def update_notification_preferences(
     await db.commit()
     await db.refresh(current_user)
     return current_user
+
+
+@router.post("/me/change-password", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("5/minute")
+async def change_password(
+    request: Request,
+    payload: PasswordChange,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Change the current user's password after verifying the current one."""
+    if current_user.hashed_password is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This account signs in with GitHub and has no password to change",
+        )
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+    if payload.current_password == payload.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must differ from the current password",
+        )
+    current_user.hashed_password = get_password_hash(payload.new_password)
+    db.add(current_user)
+    db.add(
+        AuditLog(
+            user_id=current_user.id,
+            action="password_changed",
+            target_type="user",
+            target_id=current_user.id,
+        )
+    )
+    await db.commit()
 
 
 @router.post("/verify-token")
