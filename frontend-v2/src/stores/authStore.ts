@@ -9,7 +9,7 @@ interface AuthState {
   hasCheckedSession: boolean;
   isLoading: boolean;
   error: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, mfaCode?: string) => Promise<void>;
   register: (email: string, password: string, fullName: string, company?: string) => Promise<void>;
   logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
@@ -28,10 +28,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   hasCheckedSession: false,
   error: null,
 
-  login: async (email, password) => {
+  login: async (email, password, mfaCode) => {
     set({ isLoading: true, error: null });
     try {
       const formData = new URLSearchParams({ username: email, password });
+      if (mfaCode) formData.set('scope', mfaCode);
       await apiClient.post('/auth/login', formData, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });

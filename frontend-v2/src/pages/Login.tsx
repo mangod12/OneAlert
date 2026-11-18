@@ -1,11 +1,14 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { Activity, LockKeyhole, Shield, ShieldCheck } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 
 export function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [mfaCode, setMfaCode] = useState('');
   const { login, isLoading, error, clearError } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
@@ -13,14 +16,20 @@ export function Login() {
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     try {
-      await login(email, password);
+      await login(email, password, mfaRequired ? mfaCode.trim() : undefined);
       const requested = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from;
       const destination = requested?.pathname?.startsWith('/')
         ? `${requested.pathname}${requested.search ?? ''}`
         : '/';
       navigate(destination, { replace: true });
-    } catch {
-      // Store owns the user-facing error.
+    } catch (err: unknown) {
+      // The backend asks for the authenticator code with a distinct 401 detail.
+      if (!mfaRequired && axios.isAxiosError(err) && err.response?.status === 401
+          && (err.response.data as { detail?: string })?.detail === 'MFA code required') {
+        setMfaRequired(true);
+        clearError();
+      }
+      // Other errors stay with the store for display.
     }
   };
 
@@ -72,8 +81,15 @@ export function Login() {
                 <label htmlFor="login-password" className="mb-1.5 block text-sm font-medium text-surface-300">Password</label>
                 <input id="login-password" type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} aria-describedby={error ? 'login-error' : undefined} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3.5 py-2.5 text-surface-50 placeholder-surface-500 transition focus:border-primary-500 focus:outline-none" placeholder="Enter your password" required />
               </div>
+              {mfaRequired && (
+                <div>
+                  <label htmlFor="login-mfa-code" className="mb-1.5 block text-sm font-medium text-surface-300">Authenticator code</label>
+                  <input id="login-mfa-code" type="text" inputMode="numeric" autoComplete="one-time-code" autoFocus value={mfaCode} onChange={event => setMfaCode(event.target.value)} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3.5 py-2.5 text-surface-50 placeholder-surface-500 transition focus:border-primary-500 focus:outline-none" placeholder="6-digit code" required />
+                  <p className="mt-1.5 text-xs text-surface-500">This account has multi-factor authentication. Enter the current code from your authenticator app.</p>
+                </div>
+              )}
               <button type="submit" disabled={isLoading} className="w-full rounded-md bg-primary-500 px-4 py-2.5 font-semibold text-surface-950 transition-colors hover:bg-primary-400 disabled:opacity-50">
-                {isLoading ? 'Signing in…' : 'Sign In'}
+                {isLoading ? 'Signing in…' : mfaRequired ? 'Verify and sign in' : 'Sign In'}
               </button>
             </form>
 
