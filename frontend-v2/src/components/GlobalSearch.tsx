@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Briefcase, Search, Server } from 'lucide-react';
+import { AlertTriangle, Briefcase, Search, Server, Siren } from 'lucide-react';
 import clsx from 'clsx';
 import apiClient from '../api/client';
 import { StatusBadge } from './ui/StatusBadge';
@@ -8,14 +8,17 @@ import { StatusBadge } from './ui/StatusBadge';
 interface AlertHit { id: number; title: string; severity: string; status: string }
 interface CaseHit { id: number; title: string; status: string; severity: string }
 interface AssetHit { id: number; name: string; vendor: string | null; asset_type: string }
+interface IncidentHit { asset_id: number; asset_name: string; alert_count: number; max_severity: string }
 
 interface SearchResults {
   alerts: AlertHit[];
   cases: CaseHit[];
   assets: AssetHit[];
+  incidents?: IncidentHit[];
 }
 
 type FlatHit =
+  | { key: string; group: 'incidents'; label: string; sub: string; to: string }
   | { key: string; group: 'alerts'; label: string; sub: string; to: string }
   | { key: string; group: 'cases'; label: string; sub: string; to: string }
   | { key: string; group: 'assets'; label: string; sub: string; to: string };
@@ -30,6 +33,10 @@ const severityTone = (severity: string): 'danger' | 'warning' | 'info' | 'neutra
 function flatten(results: SearchResults | null): FlatHit[] {
   if (!results) return [];
   return [
+    ...(results.incidents ?? []).map(i => ({
+      key: `incident-${i.asset_id}`, group: 'incidents' as const, label: i.asset_name,
+      sub: `Incident · ${i.max_severity} · ${i.alert_count} active alerts`, to: '/incidents',
+    })),
     ...results.alerts.map(a => ({
       key: `alert-${a.id}`, group: 'alerts' as const, label: a.title,
       sub: `Alert · ${a.severity} · ${a.status}`, to: `/alerts?alert=${a.id}`,
@@ -47,6 +54,7 @@ function flatten(results: SearchResults | null): FlatHit[] {
 }
 
 const groupMeta = {
+  incidents: { heading: 'Incidents', icon: Siren },
   alerts: { heading: 'Alerts', icon: AlertTriangle },
   cases: { heading: 'Investigations', icon: Briefcase },
   assets: { heading: 'Assets', icon: Server },
@@ -86,7 +94,7 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
           setResults(res.data.data as SearchResults);
           setActiveIndex(0);
         } catch {
-          setResults({ alerts: [], cases: [], assets: [] });
+          setResults({ alerts: [], cases: [], assets: [], incidents: [] });
         } finally {
           setSearching(false);
         }
@@ -134,7 +142,7 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
             aria-expanded="true"
             aria-controls="global-search-results"
             aria-activedescendant={hits[activeIndex] ? `global-search-hit-${hits[activeIndex].key}` : undefined}
-            aria-label="Search alerts, investigations and assets"
+            aria-label="Search incidents, alerts, investigations and assets"
             placeholder="Search alerts, investigations, assets..."
             value={query}
             onChange={e => setQuery(e.target.value)}
@@ -149,9 +157,9 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
           ) : searching && !results ? (
             <p className="px-3 py-6 text-center text-xs text-surface-500">Searching...</p>
           ) : hits.length === 0 ? (
-            <p className="px-3 py-6 text-center text-xs text-surface-500">No alerts, investigations or assets match "{query.trim()}".</p>
+            <p className="px-3 py-6 text-center text-xs text-surface-500">No incidents, alerts, investigations or assets match "{query.trim()}".</p>
           ) : (
-            (['alerts', 'cases', 'assets'] as const).map(group => {
+            (['incidents', 'alerts', 'cases', 'assets'] as const).map(group => {
               const groupHits = hits.filter(h => h.group === group);
               if (groupHits.length === 0) return null;
               const Meta = groupMeta[group];

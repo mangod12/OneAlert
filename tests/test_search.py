@@ -65,6 +65,10 @@ def _seed(session, user_id):
         user_id=user_id, asset_id=asset.id, title="Ransomware behavior on historian",
         description="Encryption burst", severity="critical", status="pending",
     ))
+    session.add(Alert(
+        user_id=user_id, asset_id=asset.id, title="Historian firmware tamper",
+        description="unsigned image", severity="high", status="acknowledged",
+    ))
     for i in range(6):
         session.add(Alert(
             user_id=user_id, asset_id=other_asset.id, title=f"Ransomware canary {i}",
@@ -179,3 +183,26 @@ class TestGlobalSearch:
     def test_unauthenticated_rejected(self, client):
         response = client.get("/api/v1/search/", params={"q": "ransomware"})
         assert response.status_code in (401, 403)
+
+    def test_asset_match_with_active_alerts_surfaces_incident(self, client, auth_headers):
+        response = client.get("/api/v1/search/", params={"q": "acme"},
+                              headers=auth_headers)
+        data = response.json()["data"]
+        assert data["incidents"] == [{
+            "asset_id": data["assets"][0]["id"],
+            "asset_name": "plant-historian",
+            "alert_count": 2,
+            "max_severity": "critical",
+        }]
+
+    def test_incident_includes_all_active_alerts_on_matched_asset(self, client, auth_headers):
+        response = client.get("/api/v1/search/", params={"q": "netco"},
+                              headers=auth_headers)
+        data = response.json()["data"]
+        assert [a["name"] for a in data["assets"]] == ["edge-router"]
+        assert data["incidents"] == [{
+            "asset_id": data["assets"][0]["id"],
+            "asset_name": "edge-router",
+            "alert_count": 6,
+            "max_severity": "low",
+        }]
