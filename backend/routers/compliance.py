@@ -145,6 +145,13 @@ async def update_assessment(
             detail=f"Invalid status. Must be one of: {', '.join(sorted(valid_statuses))}"
         )
 
+    valid_evidence_types = {"automated", "manual", "document"}
+    if update.evidence_type is not None and update.evidence_type not in valid_evidence_types:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid evidence_type. Must be one of: {', '.join(sorted(valid_evidence_types))}"
+        )
+
     assessment.status = update.status
     if update.evidence_type is not None:
         assessment.evidence_type = update.evidence_type

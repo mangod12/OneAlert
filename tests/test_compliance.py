@@ -292,3 +292,37 @@ class TestManualAssessment:
             headers=auth_headers,
         )
         assert response.status_code == 404
+
+
+class TestAssessmentEvidence:
+    """Test evidence capture on assessments."""
+
+    def test_invalid_evidence_type_rejected(self, client, auth_headers):
+        """An evidence_type outside automated/manual/document is a 422."""
+        client.post("/api/v1/compliance/assess", headers=auth_headers)
+        response = client.get("/api/v1/compliance/assessments", headers=auth_headers)
+        assessment_id = response.json()[0]["id"]
+
+        response = client.patch(
+            f"/api/v1/compliance/assessments/{assessment_id}",
+            json={"status": "compliant", "evidence_type": "guesswork"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
+
+    def test_each_valid_evidence_type_accepted(self, client, auth_headers):
+        """automated, manual and document evidence types are stored."""
+        client.post("/api/v1/compliance/assess", headers=auth_headers)
+        response = client.get("/api/v1/compliance/assessments", headers=auth_headers)
+        assessment_id = response.json()[0]["id"]
+
+        for evidence_type in ("automated", "manual", "document"):
+            response = client.patch(
+                f"/api/v1/compliance/assessments/{assessment_id}",
+                json={"status": "compliant", "evidence_type": evidence_type,
+                      "evidence_detail": f"Stored via {evidence_type}."},
+                headers=auth_headers,
+            )
+            assert response.status_code == 200
+            assert response.json()["evidence_type"] == evidence_type
+            assert response.json()["evidence_detail"] == f"Stored via {evidence_type}."

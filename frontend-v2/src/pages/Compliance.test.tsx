@@ -122,3 +122,44 @@ describe('Assessment status updates', () => {
     expect(screen.queryByRole('combobox', { name: 'Set status for DE.CM-1' })).toBeNull();
   });
 });
+
+describe('Assessment evidence', () => {
+  const updatedAssessment = {
+    id: 5, control_id: 11, status: 'compliant', evidence_type: 'manual',
+    evidence_detail: 'Policy reviewed 2026-11.', assessed_at: '2026-11-10T08:00:00Z', assessed_by: 'analyst',
+  };
+
+  it('saves evidence type and details for an assessed control', async () => {
+    patch.mockResolvedValue({ data: updatedAssessment });
+    render(<Compliance />);
+    fireEvent.click(await screen.findByText('NIST CSF'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit evidence for PR.AC-1' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Evidence for PR.AC-1' })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Evidence type'), { target: { value: 'manual' } });
+    fireEvent.change(screen.getByLabelText('Details'), { target: { value: 'Policy reviewed 2026-11.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save evidence' }));
+
+    await waitFor(() => expect(patch).toHaveBeenCalledWith('/compliance/assessments/5', {
+      status: 'compliant', evidence_type: 'manual', evidence_detail: 'Policy reviewed 2026-11.',
+    }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByRole('button', { name: 'Edit evidence for PR.AC-1' }).textContent).toContain('View');
+  });
+
+  it('closes without saving when cancelled', async () => {
+    render(<Compliance />);
+    fireEvent.click(await screen.findByText('NIST CSF'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit evidence for PR.AC-1' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it('offers no evidence action for controls that have never been assessed', async () => {
+    render(<Compliance />);
+    fireEvent.click(await screen.findByText('NIST CSF'));
+    await screen.findByText('DE.CM-1');
+    expect(screen.queryByRole('button', { name: 'Edit evidence for DE.CM-1' })).toBeNull();
+  });
+});
