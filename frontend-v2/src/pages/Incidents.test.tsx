@@ -1,11 +1,12 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { Incidents } from './Incidents';
 
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn(), patch: vi.fn() } }));
 const get = vi.mocked(apiClient.get);
+const post = vi.mocked(apiClient.post);
 
 beforeEach(() => { vi.resetAllMocks(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -70,5 +71,22 @@ describe('Incidents', () => {
     get.mockRejectedValue(new Error('offline'));
     renderPage();
     expect(await screen.findByText('Incidents unavailable')).toBeTruthy();
+  });
+
+  it('escalates an incident to a new investigation and navigates to it', async () => {
+    mockGets();
+    post.mockResolvedValue({ data: { id: 44, title: 'Incident on plc-01', severity: 'critical', alerts_linked: 3 } });
+    render(
+      <MemoryRouter initialEntries={['/incidents']}>
+        <Routes>
+          <Route path="/incidents" element={<Incidents />} />
+          <Route path="/cases/44" element={<p>Case 44 opened</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByText('plc-01'));
+    fireEvent.click(await screen.findByText('Escalate to investigation'));
+    expect(await screen.findByText('Case 44 opened')).toBeTruthy();
+    expect(post).toHaveBeenCalledWith('/incidents/5/escalate');
   });
 });

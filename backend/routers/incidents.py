@@ -12,6 +12,7 @@ from backend.models.audit_log import AuditLog
 from backend.models.case import Case, CaseAlert
 from backend.models.network_connection import NetworkConnection
 from backend.models.user import User
+from backend.services.audit import add_audit_log
 
 router = APIRouter()
 
@@ -127,6 +128,64 @@ async def list_incidents(
         reverse=True,
     )
     return {"total": len(incidents), "incidents": incidents}
+
+
+@router.post("/{asset_id}/escalate", status_code=201)
+async def escalate_incident(
+    asset_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Open an investigation case from an incident, linking all its active alerts."""
+    asset = (await db.execute(
+        select(Asset).where(Asset.id == asset_id, Asset.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    alerts = (await db.execute(
+        select(Alert).where(
+            Alert.asset_id == asset_id,
+            Alert.user_id == current_user.id,
+            Alert.status.in_(_ACTIVE_STATUSES),
+        )
+    )).scalars().all()
+    if not alerts:
+        raise HTTPException(status_code=400, detail="No active alerts on this asset")
+
+    max_severity = _max_severity(alerts)
+    cves = sorted({a.cve_id for a in alerts if a.cve_id})
+    summary = (
+        f"Incident escalated from {len(alerts)} active alerts on {asset.name}. "
+        f"Highest severity: {max_severity}."
+        + (f" CVEs: {', '.join(cves)}." if cves else "")
+    )
+    case = Case(
+        user_id=current_user.id,
+        title=f"Incident on {asset.name}",
+        summary=summary[:2000],
+        severity=max_severity,
+        status="open",
+    )
+    db.add(case)
+    await db.flush()
+    for alert in alerts:
+        db.add(CaseAlert(case_id=case.id, alert_id=alert.id))
+    add_audit_log(
+        db,
+        user_id=current_user.id,
+        action="incident_escalated",
+        target_type="case",
+        target_id=case.id,
+        detail=f"Incident on {asset.name} escalated to case {case.id} ({len(alerts)} alerts)",
+    )
+    await db.commit()
+    return {
+        "id": case.id,
+        "title": case.title,
+        "severity": max_severity,
+        "alerts_linked": len(alerts),
+    }
 
 
 @router.get("/{asset_id}/timeline")

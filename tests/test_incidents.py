@@ -175,3 +175,43 @@ class TestIncidentTimeline:
         other = _register_and_login(client, "other3@example.com")
         resp = client.get(f"/api/v1/incidents/{asset_id}/timeline", headers=other)
         assert resp.status_code == 404
+
+
+class TestIncidentEscalation:
+    def test_escalate_creates_case_with_linked_alerts(self, client):
+        headers = _register_and_login(client, "esc@example.com")
+        uid = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        asset_id = _seed(uid)
+
+        resp = client.post(f"/api/v1/incidents/{asset_id}/escalate", headers=headers)
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["title"] == "Incident on plc-01"
+        assert body["severity"] == "critical"
+        assert body["alerts_linked"] == 3
+
+        with _TestingSessionLocal() as db:
+            from backend.models.audit_log import AuditLog
+            links = db.query(CaseAlert).filter(CaseAlert.case_id == body["id"]).all()
+            assert len(links) == 3
+            rows = db.query(AuditLog).filter(AuditLog.action == "incident_escalated").all()
+            assert any(r.target_type == "case" and r.target_id == body["id"] for r in rows)
+
+    def test_escalate_404_for_other_users_asset(self, client):
+        headers = _register_and_login(client, "escowner@example.com")
+        uid = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        asset_id = _seed(uid)
+        other = _register_and_login(client, "escother@example.com")
+        assert client.post(f"/api/v1/incidents/{asset_id}/escalate", headers=other).status_code == 404
+
+    def test_escalate_400_without_active_alerts(self, client):
+        headers = _register_and_login(client, "escempty@example.com")
+        uid = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        with _TestingSessionLocal() as db:
+            asset = Asset(user_id=uid, name="quiet-01", asset_type="hardware")
+            db.add(asset)
+            db.commit()
+            asset_id = asset.id
+        assert client.post(
+            f"/api/v1/incidents/{asset_id}/escalate", headers=headers,
+        ).status_code == 400
