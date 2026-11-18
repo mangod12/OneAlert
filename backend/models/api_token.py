@@ -4,7 +4,7 @@ import hashlib
 from datetime import datetime
 
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 
 from backend.database.db import Base
 
@@ -42,11 +42,13 @@ class ApiToken(Base):
     last_used_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=True)
     revoked_at = Column(DateTime, nullable=True)
+    read_only = Column(Boolean, nullable=False, server_default="0", default=False)
 
 
 class ApiTokenCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     expires_in_days: int | None = Field(default=None, ge=1, le=365)
+    read_only: bool = False
     model_config = {"extra": "forbid"}
 
 
@@ -58,6 +60,7 @@ class ApiTokenResponse(BaseModel):
     last_used_at: datetime | None = None
     expires_at: datetime | None = None
     revoked_at: datetime | None = None
+    read_only: bool = False
 
     class Config:
         from_attributes = True

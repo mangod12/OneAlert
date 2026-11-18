@@ -155,3 +155,47 @@ class TestApiTokens:
         body = _create_token(client, owner).json()
         assert client.get("/api/v1/api-tokens/", headers=other).json() == []
         assert client.delete(f"/api/v1/api-tokens/{body['id']}", headers=other).status_code == 404
+
+
+class TestReadOnlyTokens:
+    def test_read_only_token_can_read(self, client):
+        headers = _register_and_login(client, "ro-read@example.com")
+        raw = _create_token(client, headers, name="reporting", read_only=True).json()["token"]
+        resp = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {raw}"})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["email"] == "ro-read@example.com"
+
+    def test_read_only_token_cannot_write(self, client):
+        headers = _register_and_login(client, "ro-write@example.com")
+        raw = _create_token(client, headers, name="reporting", read_only=True).json()["token"]
+        token_headers = {"Authorization": f"Bearer {raw}"}
+        attempts = [
+            ("patch", "/api/v1/auth/me/notification-preferences", {"json": {"notify_min_severity": "high"}}),
+            ("post", "/api/v1/auth/me/change-password", {"json": {"current_password": "securepass123", "new_password": "newpass4567"}}),
+            ("delete", "/api/v1/api-tokens/1", {}),
+        ]
+        for method, url, kwargs in attempts:
+            resp = getattr(client, method)(url, headers=token_headers, **kwargs)
+            assert resp.status_code == 403, f"{method.upper()} {url}: {resp.text}"
+            assert "read-only" in resp.json()["error"]["message"]
+
+    def test_write_token_unaffected(self, client):
+        headers = _register_and_login(client, "rw@example.com")
+        raw = _create_token(client, headers, name="automation").json()["token"]
+        token_headers = {"Authorization": f"Bearer {raw}"}
+        resp = client.patch(
+            "/api/v1/auth/me/notification-preferences",
+            json={"notify_min_severity": "high"},
+            headers=token_headers,
+        )
+        assert resp.status_code == 200, resp.text
+
+    def test_read_only_flag_round_trips(self, client):
+        headers = _register_and_login(client, "ro-list@example.com")
+        created = _create_token(client, headers, name="reporting", read_only=True).json()
+        assert created["read_only"] is True
+        default_token = _create_token(client, headers, name="automation").json()
+        assert default_token["read_only"] is False
+        listing = client.get("/api/v1/api-tokens/", headers=headers).json()
+        by_name = {t["name"]: t["read_only"] for t in listing}
+        assert by_name == {"reporting": True, "automation": False}
