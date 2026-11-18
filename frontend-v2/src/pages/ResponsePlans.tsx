@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect } from 'react';
 import apiClient from '../api/client';
-import { CheckCircle, XCircle, Play, Clock, Download, Shield } from 'lucide-react';
+import { CheckCircle, XCircle, Play, Clock, Download, Shield, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { toast } from '../components/Toast';
 import { getApiErrorMessage } from '../api/errors';
@@ -80,7 +80,7 @@ export function ResponsePlans() {
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState<string[]>([]);
   const [workingPlan, setWorkingPlan] = useState<number | null>(null);
-  const [confirmAction, setConfirmAction] = useState<{ type: 'reject' | 'execute'; planId: number } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ type: 'reject' | 'execute' | 'delete'; planId: number } | null>(null);
 
   const fetchPlans = useCallback(async () => {
     setLoading(true);
@@ -129,6 +129,19 @@ export function ResponsePlans() {
       setConfirmAction(null);
       await fetchPlans();
     } catch (err) { toast(getApiErrorMessage(err, 'Execution failed.'), 'error'); }
+    finally { setWorkingPlan(null); }
+  };
+
+  const deletePlan = async (planId: number) => {
+    if (workingPlan !== null) return;
+    setWorkingPlan(planId);
+    try {
+      await apiClient.delete(`/response-plans/${planId}`);
+      toast('Plan deleted', 'success');
+      setConfirmAction(null);
+      if (selectedPlanId === planId) setSelectedPlanId(null);
+      await fetchPlans();
+    } catch (err) { toast(getApiErrorMessage(err, 'Failed to delete plan.'), 'error'); }
     finally { setWorkingPlan(null); }
   };
 
@@ -248,6 +261,12 @@ export function ResponsePlans() {
                           <Play className="w-3 h-3" /> Execute
                         </button>
                       )}
+                      {(p.status === 'draft' || p.status === 'rejected') && (
+                        <button aria-label={`Delete plan ${p.id}`} disabled={workingPlan !== null || loading || errors.length > 0} onClick={e => { e.stopPropagation(); setConfirmAction({ type: 'delete', planId: p.id }); }}
+                          className="flex items-center gap-1 px-2 py-1 bg-danger/10 hover:bg-danger/20 text-danger rounded text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40">
+                          <Trash2 className="w-3 h-3" /> Delete
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -294,6 +313,17 @@ export function ResponsePlans() {
           busy={workingPlan !== null}
           onCancel={() => setConfirmAction(null)}
           onConfirm={() => void executePlan(confirmAction.planId)}
+        />
+      )}
+      {confirmAction?.type === 'delete' && (
+        <ConfirmDialog
+          title={`Delete plan #${confirmAction.planId}?`}
+          description="This permanently removes the draft or rejected plan and its approval history. This cannot be undone."
+          confirmLabel="Delete plan"
+          tone="danger"
+          busy={workingPlan !== null}
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={() => void deletePlan(confirmAction.planId)}
         />
       )}
       {confirmAction?.type === 'reject' && (

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -291,3 +291,35 @@ async def execute_plan(
             "results": public_results,
         },
     }
+@router.delete("/{plan_id}")
+async def delete_response_plan(
+    plan_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Delete a draft or rejected response plan and its approval requests."""
+    plan = (await db.execute(
+        select(ResponsePlan).where(
+            ResponsePlan.id == plan_id,
+            ResponsePlan.user_id == current_user.id,
+        )
+    )).scalar_one_or_none()
+
+    if not plan:
+        raise HTTPException(status_code=404, detail="Response plan not found")
+
+    if plan.status not in ("draft", "rejected"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only draft or rejected plans can be deleted (current: '{plan.status}')",
+        )
+
+    await db.execute(
+        delete(ApprovalRequest).where(ApprovalRequest.plan_id == plan_id)
+    )
+    await db.execute(
+        delete(ResponsePlan).where(ResponsePlan.id == plan_id)
+    )
+    await db.commit()
+
+    return {"success": True, "message": f"Plan {plan_id} deleted"}
