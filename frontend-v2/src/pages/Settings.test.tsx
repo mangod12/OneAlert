@@ -247,11 +247,12 @@ describe('Email notification preferences', () => {
     render(<Settings />);
     const caseAssignments = await screen.findByRole('checkbox', { name: /case assignments/i });
     fireEvent.click(caseAssignments);
+    fireEvent.click(screen.getByRole('checkbox', { name: /alert assignments/i }));
     fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
     await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/auth/me/notification-preferences', {
       email_notifications_enabled: true,
       notify_min_severity: 'low',
-      muted_kinds: ['case_assigned'],
+      muted_kinds: ['case_assigned', 'alert_assigned'],
     }));
   });
 
