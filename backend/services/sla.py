@@ -13,6 +13,9 @@ from sqlalchemy import select
 from backend.models.audit_log import AuditLog
 from backend.models.case import Case
 from backend.models.notification import Notification
+from backend.models.user import User
+from backend.services.email_alert import email_service
+from backend.services.notification_prefs import should_email_event
 
 logger = logging.getLogger(__name__)
 
@@ -81,4 +84,16 @@ async def notify_breached_slas(db) -> int:
     if breached:
         await db.commit()
         logger.info("Sent %d SLA breach notifications", len(breached))
+        for case in breached:
+            user = await db.get(User, case.user_id)
+            if user is not None and should_email_event(user, "case_sla_breached", case.severity):
+                await email_service.send_investigation_event(
+                    user,
+                    title=f"Investigation overdue: {case.title}",
+                    body=(
+                        f"Investigation #{case.id} passed its SLA target "
+                        f"{case.due_date.isoformat()}. Severity: {case.severity}."
+                    ),
+                    link_path=f"/app/cases/{case.id}",
+                )
     return len(breached)

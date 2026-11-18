@@ -5,6 +5,7 @@ Handles email composition and delivery for security alerts.
 
 import logging
 from datetime import UTC, datetime
+from html import escape
 
 import requests
 from requests.adapters import HTTPAdapter, Retry
@@ -319,6 +320,31 @@ This alert was generated on {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')} UT
 ---
 This alert was sent by {settings.app_name}.
         """
+
+    async def send_investigation_event(self, user: User, title: str, body: str, link_path: str | None = None) -> bool:
+        """Email an investigation event (assignment, escalation, SLA breach)."""
+        if not self._is_configured():
+            return False
+        safe_title = escape(title)
+        safe_body = escape(body)
+        link_html = (
+            f'<p style="margin-top:16px;"><a href="{escape(link_path)}" '
+            f'style="color:#2563eb;">Open in OneAlert: {escape(link_path)}</a></p>'
+            if link_path else ""
+        )
+        link_text = f"\nOpen in OneAlert: {link_path}" if link_path else ""
+        html_content = f"""
+        <html><body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+            <h2 style="color:#1e293b;">{safe_title}</h2>
+            <p style="color:#334155;">{safe_body}</p>
+            {link_html}
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />
+            <p style="color:#94a3b8;font-size:12px;">OneAlert investigation notification.
+            Manage email preferences and muted kinds in Settings.</p>
+        </body></html>
+        """
+        text_content = f"{title}\n\n{body}{link_text}\n\nManage email preferences and muted kinds in Settings."
+        return await self._send_email(user.email, f"[OneAlert] {title}", html_content, text_content)
 
     async def _send_email(self, to_email: str, subject: str, html_content: str, text_content: str) -> bool:
         """Send email using Mailgun API with retry and timeout."""

@@ -8,7 +8,6 @@ import logging
 import os
 import re
 from datetime import UTC, datetime, timedelta
-from datetime import time as _time
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +25,15 @@ from backend.services.cve_enrichment import CVEEnrichmentService
 from backend.services.cve_scraper import cve_scraper
 from backend.services.email_alert import email_service
 from backend.services.ics_cert_feed import ics_cert_feed_service
+from backend.services.notification_prefs import (
+    SEVERITY_RANK as _SEVERITY_RANK,
+)
+from backend.services.notification_prefs import (
+    should_email_event as _should_email_event,
+)
+from backend.services.notification_prefs import (
+    should_email_user as _should_email_user,
+)
 from backend.services.sla import sla_due_date
 from backend.services.slack_webhook import SlackNotificationService, WebhookNotificationService
 from backend.services.vendor_scraper import vendor_scraper
@@ -33,50 +41,7 @@ from backend.services.vendor_scraper import vendor_scraper
 logger = logging.getLogger(__name__)
 
 
-_SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3, "critical": 4}
 
-_QUIET_HOURS_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
-
-
-def _in_quiet_hours(user, now: _time | None = None) -> bool:
-    """True when the wall-clock time falls inside the user's quiet-hours window.
-
-    The window can span midnight ("22:00" to "06:00"). Stored as HH:MM strings;
-    compared in UTC because no per-user timezone is tracked.
-    """
-    start_raw = getattr(user, "quiet_hours_start", None)
-    end_raw = getattr(user, "quiet_hours_end", None)
-    start_match = _QUIET_HOURS_RE.match(str(start_raw or ""))
-    end_match = _QUIET_HOURS_RE.match(str(end_raw or ""))
-    if not start_match or not end_match:
-        return False
-    start = int(start_match.group(1)) * 60 + int(start_match.group(2))
-    end = int(end_match.group(1)) * 60 + int(end_match.group(2))
-    current = (now or datetime.now(UTC).time())
-    minutes = current.hour * 60 + current.minute
-    if start == end:
-        return False  # a zero-length window mutes nothing
-    if start < end:
-        return start <= minutes < end
-    return minutes >= start or minutes < end  # overnight window
-
-
-def _should_email_user(user, severity: str | None, now: _time | None = None) -> bool:
-    """Check the user's email notification preferences against an alert severity."""
-    if not getattr(user, "email_notifications_enabled", True):
-        return False
-    if _in_quiet_hours(user, now) and str(severity or "").lower() != "critical":
-        return False  # quiet hours hold everything below critical
-    minimum = _SEVERITY_RANK.get(
-        str(getattr(user, "notify_min_severity", "low") or "low").lower(), 1
-    )
-    rank = _SEVERITY_RANK.get(str(severity or "").lower())
-    if rank is None:
-        return True  # unknown severities are never suppressed
-    return rank >= minimum
-
-
-_SEVERITY_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
 
 def _severity_name(severity) -> str:
@@ -143,6 +108,16 @@ async def _maybe_auto_escalate(db: AsyncSession, user: User, asset: Asset) -> No
         detail=f"Incident on {asset.name} auto-escalated to case {case.id} ({len(alerts)} alerts)",
     ))
     logger.info(f"Auto-escalated incident on asset {asset.id} to case {case.id} for user {user.email}")
+    if _should_email_event(user, "incident_escalated", max_severity):
+        await email_service.send_investigation_event(
+            user,
+            title=f"Incident auto-escalated on {asset.name}",
+            body=(
+                f"{len(alerts)} active alerts crossed your threshold. "
+                f"Investigation #{case.id} opened. Highest severity: {max_severity}."
+            ),
+            link_path=f"/app/cases/{case.id}",
+        )
 
 
 async def _notify_incident_formed(db: AsyncSession, user: User, asset: Asset) -> None:
