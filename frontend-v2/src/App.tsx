@@ -9,6 +9,7 @@ const Login = lazy(() => import('./pages/Login').then(module => ({ default: modu
 const Register = lazy(() => import('./pages/Register').then(module => ({ default: module.Register })));
 const Dashboard = lazy(() => import('./pages/Dashboard').then(module => ({ default: module.Dashboard })));
 const Cases = lazy(() => import('./pages/Cases').then(module => ({ default: module.Cases })));
+const Incidents = lazy(() => import('./pages/Incidents').then(module => ({ default: module.Incidents })));
 const CaseDetail = lazy(() => import('./pages/CaseDetail').then(module => ({ default: module.CaseDetail })));
 const Alerts = lazy(() => import('./pages/Alerts').then(module => ({ default: module.Alerts })));
 const Events = lazy(() => import('./pages/Events').then(module => ({ default: module.Events })));
@@ -49,6 +50,7 @@ function App() {
         >
           <Route path="/" element={<Dashboard />} />
           <Route path="/cases" element={<Cases />} />
+          <Route path="/incidents" element={<Incidents />} />
           <Route path="/cases/:caseId" element={<CaseDetail />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/events" element={<Events />} />

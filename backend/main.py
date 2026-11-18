@@ -30,6 +30,7 @@ from backend.routers import (
     compliance,
     events,
     hunt,
+    incidents,
     integrations,
     mitre,
     notifications,
@@ -191,6 +192,7 @@ app.include_router(billing.router, prefix="/api/v1/billing", tags=["Billing"])
 app.include_router(integrations.router, prefix="/api/v1/integrations", tags=["Integrations"])
 app.include_router(events.router, prefix="/api/v1/events", tags=["Security Events"])
 app.include_router(cases.router, prefix="/api/v1/cases", tags=["Cases & Investigations"])
+app.include_router(incidents.router, prefix="/api/v1/incidents", tags=["Incidents"])
 app.include_router(mitre.router, prefix="/api/v1/mitre", tags=["MITRE ATT&CK"])
 app.include_router(hunt.router, prefix="/api/v1/hunt", tags=["Threat Hunting"])
 app.include_router(response_plans.router, prefix="/api/v1/response-plans", tags=["Response Plans"])

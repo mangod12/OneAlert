@@ -1,0 +1,177 @@
+"""Tests for incident correlation."""
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import sessionmaker
+
+from backend.database.db import Base, get_async_db, get_db
+from backend.main import app
+from backend.models.alert import Alert
+from backend.models.asset import Asset
+from backend.models.case import Case, CaseAlert
+from backend.models.network_connection import NetworkConnection
+
+SQLALCHEMY_DATABASE_URL = "sqlite:///./test_incidents.db"
+_engine = create_engine(
+    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+)
+_TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
+
+ASYNC_SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///./test_incidents.db"
+_async_engine_test = create_async_engine(
+    ASYNC_SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+)
+_AsyncTestingSessionLocal = async_sessionmaker(
+    bind=_async_engine_test, class_=AsyncSession, expire_on_commit=False
+)
+
+
+def _override_get_db():
+    try:
+        db = _TestingSessionLocal()
+        yield db
+    finally:
+        db.close()
+
+
+async def _override_get_async_db():
+    async with _AsyncTestingSessionLocal() as session:
+        yield session
+
+
+@pytest.fixture
+def client():
+    """Create a test client with fresh database tables."""
+    Base.metadata.create_all(bind=_engine)
+    app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_async_db] = _override_get_async_db
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+    Base.metadata.drop_all(bind=_engine)
+
+
+def _register_and_login(client: TestClient, email: str, password: str = "securepass123"):
+    reg = client.post("/api/v1/auth/register", json={
+        "email": email, "password": password, "full_name": "Analyst",
+    })
+    assert reg.status_code in (200, 201), f"Registration failed: {reg.text}"
+    login = client.post("/api/v1/auth/login", data={
+        "username": email, "password": password,
+    })
+    assert login.status_code == 200, f"Login failed: {login.text}"
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+def _seed(user_id: int):
+    """Two assets: plc-01 with 3 active alerts + 1 resolved, lonely with 1 alert."""
+    with _TestingSessionLocal() as db:
+        plc = Asset(user_id=user_id, name="plc-01", asset_type="hardware",
+                    vendor="Acme", product="PLC-300", last_known_ip="10.0.0.5",
+                    criticality="critical")
+        lonely = Asset(user_id=user_id, name="printer-01", asset_type="hardware")
+        db.add_all([plc, lonely])
+        db.flush()
+        for title, severity, status, cve in [
+            ("Modbus coil write", "critical", "pending", "CVE-2026-1001"),
+            ("Firmware backdoor", "high", "acknowledged", "CVE-2026-1002"),
+            ("Default credentials", "high", "pending", "CVE-2026-1001"),
+            ("Old issue", "low", "resolved", "CVE-2025-9999"),
+        ]:
+            db.add(Alert(user_id=user_id, asset_id=plc.id, cve_id=cve,
+                         title=title, severity=severity, status=status))
+        db.add(Alert(user_id=user_id, asset_id=lonely.id, cve_id="CVE-2026-2000",
+                     title="Lonely alert", severity="low", status="pending"))
+        db.add(NetworkConnection(user_id=user_id, source_ip="10.0.0.5",
+                                 target_ip="10.0.0.9", protocol="modbus"))
+        db.add(NetworkConnection(user_id=user_id, source_ip="10.0.0.2",
+                                 target_ip="10.0.0.5", protocol="ssh"))
+        db.commit()
+        return plc.id
+
+
+class TestIncidentList:
+    def test_groups_alerts_by_asset(self, client):
+        headers = _register_and_login(client, "inc@example.com")
+        uid = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        asset_id = _seed(uid)
+
+        resp = client.get("/api/v1/incidents", headers=headers)
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["total"] == 1  # lonely asset (1 alert) is not an incident
+        inc = body["incidents"][0]
+        assert inc["asset_id"] == asset_id
+        assert inc["asset_name"] == "plc-01"
+        assert inc["alert_count"] == 3  # resolved alert excluded
+        assert inc["max_severity"] == "critical"
+        assert inc["shared_cves"] == ["CVE-2026-1001", "CVE-2026-1002"]
+        assert inc["blast_radius"] == 2
+        assert inc["alerts"][0]["severity"] == "critical"
+
+    def test_empty_when_no_correlation(self, client):
+        headers = _register_and_login(client, "empty@example.com")
+        resp = client.get("/api/v1/incidents", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json() == {"total": 0, "incidents": []}
+
+    def test_linked_cases_included(self, client):
+        headers = _register_and_login(client, "cases@example.com")
+        uid = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        asset_id = _seed(uid)
+        with _TestingSessionLocal() as db:
+            alert_id = db.query(Alert).filter(Alert.asset_id == asset_id).first().id
+            case = Case(user_id=uid, title="PLC compromise", status="open", severity="critical")
+            db.add(case)
+            db.flush()
+            db.add(CaseAlert(case_id=case.id, alert_id=alert_id))
+            db.commit()
+            case_id = case.id
+
+        resp = client.get("/api/v1/incidents", headers=headers)
+        cases = resp.json()["incidents"][0]["linked_cases"]
+        assert cases == [{"id": case_id, "title": "PLC compromise", "status": "open"}]
+
+    def test_scoped_per_user(self, client):
+        headers = _register_and_login(client, "owner2@example.com")
+        uid = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        _seed(uid)
+        other = _register_and_login(client, "other2@example.com")
+        resp = client.get("/api/v1/incidents", headers=other)
+        assert resp.json() == {"total": 0, "incidents": []}
+
+
+class TestIncidentTimeline:
+    def test_timeline_includes_creation_and_changes(self, client):
+        headers = _register_and_login(client, "tl@example.com")
+        uid = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        asset_id = _seed(uid)
+        with _TestingSessionLocal() as db:
+            alert_id = db.query(Alert).filter(
+                Alert.asset_id == asset_id, Alert.status == "pending"
+            ).first().id
+        resp = client.patch(
+            f"/api/v1/alerts/{alert_id}", json={"status": "acknowledged"}, headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+
+        resp = client.get(f"/api/v1/incidents/{asset_id}/timeline", headers=headers)
+        assert resp.status_code == 200, resp.text
+        events = resp.json()["events"]
+        kinds = {e["kind"] for e in events}
+        assert "alert_created" in kinds
+        assert "alert_updated" in kinds
+        updated = [e for e in events if e["kind"] == "alert_updated"]
+        assert updated[0]["alert_id"] == alert_id
+        timestamps = [e["timestamp"] for e in events if e["timestamp"]]
+        assert timestamps == sorted(timestamps, reverse=True)
+
+    def test_timeline_404_for_other_users_asset(self, client):
+        headers = _register_and_login(client, "owner3@example.com")
+        uid = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        asset_id = _seed(uid)
+        other = _register_and_login(client, "other3@example.com")
+        resp = client.get(f"/api/v1/incidents/{asset_id}/timeline", headers=other)
+        assert resp.status_code == 404

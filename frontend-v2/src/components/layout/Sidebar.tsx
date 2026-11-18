@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import {
   Activity, Bell, BriefcaseMedical, ClipboardList, ShieldCheck, FileCheck,
-  LayoutDashboard, LogOut, Network, Package, Search, Share2, Server, Settings, Shield,
+  LayoutDashboard, LogOut, Network, Package, Search, Share2, Server, Settings, Shield, Siren,
   Swords, Target, X,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -12,6 +12,7 @@ const navigation = [
   { label: 'Command', items: [
     { to: '/', icon: LayoutDashboard, label: 'Overview' },
     { to: '/cases', icon: BriefcaseMedical, label: 'Investigations' },
+    { to: '/incidents', icon: Siren, label: 'Incidents' },
   ] },
   { label: 'Observe', items: [
     { to: '/alerts', icon: Bell, label: 'Alerts' },
