@@ -17,6 +17,7 @@ from backend.models.response_plan import (
 )
 from backend.models.user import User
 from backend.routers.auth import get_active_user
+from backend.services.audit import add_audit_log
 
 router = APIRouter()
 
@@ -190,6 +191,14 @@ async def approve_plan(
         approval.reviewed_by = current_user.id
         approval.reviewed_at = now
 
+    add_audit_log(
+        db,
+        user_id=current_user.id,
+        action="response_plan_approved",
+        target_type="response_plan",
+        target_id=plan.id,
+        detail=f"Plan approved; {len(approvals)} approval request(s) resolved",
+    )
     await db.commit()
 
     return {
@@ -237,6 +246,14 @@ async def reject_plan(
         approval.reviewed_at = now
         approval.reason = reason or approval.reason
 
+    add_audit_log(
+        db,
+        user_id=current_user.id,
+        action="response_plan_rejected",
+        target_type="response_plan",
+        target_id=plan.id,
+        detail="Plan rejected" + (f": {reason[:200]}" if reason else ""),
+    )
     await db.commit()
 
     return {
@@ -279,6 +296,19 @@ async def execute_plan(
         "detail": action_result.get("detail", ""),
         "executed_at": action_result.get("executed_at"),
     } for action_result in result.get("results", [])]
+
+    add_audit_log(
+        db,
+        user_id=current_user.id,
+        action="response_plan_executed",
+        target_type="response_plan",
+        target_id=result.get("plan_id", plan_id),
+        detail=(
+            f"Plan executed: {result.get('succeeded', 0)} of "
+            f"{result.get('total_actions', 0)} action(s) succeeded"
+        ),
+    )
+    await db.commit()
 
     return {
         "success": True,
