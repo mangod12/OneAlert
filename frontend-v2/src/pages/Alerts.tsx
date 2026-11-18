@@ -17,20 +17,29 @@ export function Alerts() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
-  const [severityFilter, setSeverityFilter] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [severityFilter, setSeverityFilter] = useState<string>(() => {
+    const value = searchParams.get('severity') ?? '';
+    return ['critical', 'high', 'medium', 'low'].includes(value) ? value : '';
+  });
+  const [statusFilter, setStatusFilter] = useState<string>(() => {
+    const value = searchParams.get('status') ?? '';
+    return ['pending', 'acknowledged', 'resolved'].includes(value) ? value : '';
+  });
   const [ageFilter, setAgeFilter] = useState<string>('');
   const [cveSearch, setCveSearch] = useState('');
-  const [assetFilter, setAssetFilter] = useState('');
+  const [assetFilter, setAssetFilter] = useState<string>(() => {
+    const value = searchParams.get('asset_id') ?? '';
+    return /^\d+$/.test(value) ? value : '';
+  });
   const [assignedFilter, setAssignedFilter] = useState('');
   const [assetOptions, setAssetOptions] = useState<{ id: number; name: string }[]>([]);
   const [sort, setSort] = useState('created_at_desc');
   const [showSnoozedOnly, setShowSnoozedOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
-  const [searchParams, setSearchParams] = useSearchParams();
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [exporting, setExporting] = useState(false);
   const [epssScores, setEpssScores] = useState<Record<string, { score: number; percentile: number }>>({});

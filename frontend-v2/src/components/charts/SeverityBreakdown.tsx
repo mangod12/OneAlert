@@ -11,9 +11,10 @@ const COLORS = {
 
 interface Props {
   stats: AlertStats | null;
+  onSelect?: (severity: string) => void;
 }
 
-export function SeverityBreakdown({ stats }: Props) {
+export function SeverityBreakdown({ stats, onSelect }: Props) {
   if (!stats) return null;
 
   const data = [
@@ -48,6 +49,8 @@ export function SeverityBreakdown({ stats }: Props) {
             <Cell
               key={entry.name}
               fill={COLORS[entry.name as keyof typeof COLORS]}
+              cursor={onSelect ? 'pointer' : undefined}
+              onClick={onSelect ? () => onSelect(entry.name.toLowerCase()) : undefined}
             />
           ))}
         </Pie>
