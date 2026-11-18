@@ -59,6 +59,7 @@ async def build_topology_graph(user_id: int, db: AsyncSession) -> dict:
 
     # Build edges
     edges = [{
+        "id": conn.id,
         "source": conn.source_ip,
         "target": conn.target_ip,
         "protocol": conn.protocol,

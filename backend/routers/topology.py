@@ -9,7 +9,7 @@ Provides endpoints for:
 """
 
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -77,6 +77,26 @@ async def list_connections(
         .order_by(NetworkConnection.last_seen.desc())
     )
     return result.scalars().all()
+
+
+@router.delete("/connections/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_connection(
+    connection_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Delete a network connection owned by the current user."""
+    result = await db.execute(
+        select(NetworkConnection).where(
+            NetworkConnection.id == connection_id,
+            NetworkConnection.user_id == current_user.id,
+        )
+    )
+    conn = result.scalar_one_or_none()
+    if not conn:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    await db.delete(conn)
+    await db.commit()
 
 
 @router.get("/graph", response_model=TopologyGraph)

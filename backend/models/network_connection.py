@@ -73,6 +73,7 @@ class TopologyNode(BaseModel):
 
 
 class TopologyEdge(BaseModel):
+    id: int | None = None
     source: str
     target: str
     protocol: str
