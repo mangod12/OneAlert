@@ -60,6 +60,24 @@ describe('AuditLog action search and pagination', () => {
     });
   });
 
+  it('sends user and date range filters to the API', async () => {
+    render(<AuditLog />);
+    await screen.findByLabelText('Search audit actions');
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/auth/audit-logs', { params: { page: 1, size: 50 } }));
+    fireEvent.change(screen.getByLabelText('Filter by user email'), { target: { value: 'analyst@' } });
+    fireEvent.change(screen.getByLabelText('From date'), { target: { value: '2026-11-01' } });
+    fireEvent.change(screen.getByLabelText('To date'), { target: { value: '2026-11-10' } });
+    await waitFor(() => {
+      expect(get).toHaveBeenCalledWith('/auth/audit-logs', { params: {
+        page: 1,
+        size: 50,
+        user: 'analyst@',
+        from_date: '2026-11-01T00:00:00',
+        to_date: '2026-11-10T23:59:59',
+      } });
+    });
+  });
+
   it('paginates server-side', async () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/auth/audit-logs') return { data: { logs, total: 120 } };

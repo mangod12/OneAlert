@@ -42,6 +42,9 @@ export function AuditLog() {
   const [agentRuns, setAgentRuns] = useState<AgentRun[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [userFilter, setUserFilter] = useState('');
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
@@ -53,6 +56,9 @@ export function AuditLog() {
     try {
       const params: Record<string, string> = {};
       if (search.trim()) params.action = search.trim();
+      if (userFilter.trim()) params.user = userFilter.trim();
+      if (fromDate) params.from_date = `${fromDate}T00:00:00`;
+      if (toDate) params.to_date = `${toDate}T23:59:59`;
       const res = await apiClient.get('/auth/audit-logs/export', { params, responseType: 'blob' });
       const url = URL.createObjectURL(res.data as Blob);
       const link = document.createElement('a');
@@ -69,11 +75,14 @@ export function AuditLog() {
   const SIZE = 50;
   const pages = Math.max(1, Math.ceil(total / SIZE));
 
-  const fetchLogs = useCallback(async (targetPage: number, action: string) => {
+  const fetchLogs = useCallback(async (targetPage: number, action: string, user: string, from: string, to: string) => {
     setError('');
     try {
       const params: Record<string, string | number> = { page: targetPage, size: SIZE };
       if (action.trim()) params.action = action.trim();
+      if (user.trim()) params.user = user.trim();
+      if (from) params.from_date = `${from}T00:00:00`;
+      if (to) params.to_date = `${to}T23:59:59`;
       const res = await apiClient.get('/auth/audit-logs', { params });
       setLogs(res.data.logs);
       setTotal(res.data.total);
@@ -94,8 +103,8 @@ export function AuditLog() {
   };
 
   useEffect(() => {
-    void fetchLogs(page, search);
-  }, [page, search, fetchLogs]);
+    void fetchLogs(page, search, userFilter, fromDate, toDate);
+  }, [page, search, userFilter, fromDate, toDate, fetchLogs]);
 
   useEffect(() => {
     void fetchAgentRuns();
@@ -110,7 +119,7 @@ export function AuditLog() {
       <PageHeader eyebrow="Govern" title="Audit Log" description="Immutable operator, agent, approval, and configuration activity." />
 
       {error ? (
-        <ErrorState title="Audit log unavailable" description={error} action={<RetryButton onClick={() => void fetchLogs(page, search)} />} />
+        <ErrorState title="Audit log unavailable" description={error} action={<RetryButton onClick={() => void fetchLogs(page, search, userFilter, fromDate, toDate)} />} />
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-3">
@@ -125,6 +134,28 @@ export function AuditLog() {
                 className="w-full pl-9 pr-4 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
+            <input
+              type="date"
+              aria-label="From date"
+              value={fromDate}
+              onChange={(e) => { setFromDate(e.target.value); setPage(1); }}
+              className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            <input
+              type="date"
+              aria-label="To date"
+              value={toDate}
+              onChange={(e) => { setToDate(e.target.value); setPage(1); }}
+              className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            <input
+              type="text"
+              aria-label="Filter by user email"
+              placeholder="User email..."
+              value={userFilter}
+              onChange={(e) => { setUserFilter(e.target.value); setPage(1); }}
+              className="w-44 px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
             <button
               type="button"
               onClick={() => { void exportCsv(); }}
