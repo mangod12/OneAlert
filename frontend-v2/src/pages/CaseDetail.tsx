@@ -1,6 +1,7 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import apiClient from '../api/client';
+import { useAuthStore } from '../stores/authStore';
 import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil, Trash2, Download, Shield } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { toast } from '../components/Toast';
@@ -47,6 +48,7 @@ interface TimelineEntry {
 
 interface CaseData {
   id: number;
+  user_id: number;
   title: string;
   summary: string | null;
   severity: string;
@@ -111,6 +113,7 @@ export function CaseDetail() {
   const [members, setMembers] = useState<Array<{ id: number; email: string; full_name: string | null; is_active: boolean }>>([]);
   const [assigning, setAssigning] = useState(false);
   const [savingDueDate, setSavingDueDate] = useState(false);
+  const currentUserId = useAuthStore(state => state.user?.id ?? null);
 
   useEffect(() => {
     apiClient.get('/orgs/me/members')
@@ -329,6 +332,8 @@ export function CaseDetail() {
 
   useEffect(() => { void fetchAll(); }, [fetchAll]);
 
+  const isOwner = caseData === null || currentUserId === null || caseData.user_id === currentUserId;
+
   if (loading) {
     return <LoadingSurface rows={6} label="Loading case investigation" />;
   }
@@ -350,16 +355,18 @@ export function CaseDetail() {
             <div className="flex items-center gap-3 mb-2">
               <StatusBadge tone={alertSeverityTones[caseData.severity] ?? 'neutral'}>{caseData.severity}</StatusBadge>
               <StatusBadge tone={caseStatusTones[caseData.status] ?? 'neutral'}>{caseData.status}</StatusBadge>
-              <select
-                aria-label="Change case severity"
-                value={caseData.severity}
-                disabled={changingSeverity}
-                onChange={e => void changeSeverity(e.target.value)}
-                className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200 disabled:opacity-40"
-              >
-                {['info', 'low', 'medium', 'high', 'critical'].map(sev => <option key={sev} value={sev}>{sev}</option>)}
-              </select>
-              {members.length > 0 && (
+              {isOwner && (
+                <select
+                  aria-label="Change case severity"
+                  value={caseData.severity}
+                  disabled={changingSeverity}
+                  onChange={e => void changeSeverity(e.target.value)}
+                  className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200 disabled:opacity-40"
+                >
+                  {['info', 'low', 'medium', 'high', 'critical'].map(sev => <option key={sev} value={sev}>{sev}</option>)}
+                </select>
+              )}
+              {isOwner && members.length > 0 && (
                 <select
                   aria-label="Assign case"
                   value={caseData.assigned_to_id ?? ''}
@@ -373,17 +380,19 @@ export function CaseDetail() {
                   ))}
                 </select>
               )}
-              <label className="flex items-center gap-1.5 text-xs text-surface-400">
-                Due
-                <input
-                  type="date"
-                  aria-label="Case due date"
-                  value={caseData.due_date ?? ''}
-                  disabled={savingDueDate}
-                  onChange={e => void changeDueDate(e.target.value)}
-                  className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200 disabled:opacity-40"
-                />
-              </label>
+              {isOwner && (
+                <label className="flex items-center gap-1.5 text-xs text-surface-400">
+                  Due
+                  <input
+                    type="date"
+                    aria-label="Case due date"
+                    value={caseData.due_date ?? ''}
+                    disabled={savingDueDate}
+                    onChange={e => void changeDueDate(e.target.value)}
+                    className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200 disabled:opacity-40"
+                  />
+                </label>
+              )}
               {caseData.confidence_score && (
                 <span className="text-sm text-surface-400">
                   {Math.round(caseData.confidence_score * 100)}% confidence
@@ -392,22 +401,26 @@ export function CaseDetail() {
             </div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold text-surface-50">{caseData.title}</h1>
-              <button
-                type="button"
-                aria-label="Edit case details"
-                onClick={() => setShowEdit(true)}
-                className="grid h-9 w-9 place-items-center rounded-md text-surface-400 hover:bg-surface-800 hover:text-surface-50"
-              >
-                <Pencil className="w-4 h-4" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                aria-label="Delete case"
-                onClick={() => setConfirmingDelete(true)}
-                className="grid h-9 w-9 place-items-center rounded-md text-surface-400 hover:bg-surface-800 hover:text-danger"
-              >
-                <Trash2 className="w-4 h-4" aria-hidden="true" />
-              </button>
+              {isOwner && (
+                <button
+                  type="button"
+                  aria-label="Edit case details"
+                  onClick={() => setShowEdit(true)}
+                  className="grid h-9 w-9 place-items-center rounded-md text-surface-400 hover:bg-surface-800 hover:text-surface-50"
+                >
+                  <Pencil className="w-4 h-4" aria-hidden="true" />
+                </button>
+              )}
+              {isOwner && (
+                <button
+                  type="button"
+                  aria-label="Delete case"
+                  onClick={() => setConfirmingDelete(true)}
+                  className="grid h-9 w-9 place-items-center rounded-md text-surface-400 hover:bg-surface-800 hover:text-danger"
+                >
+                  <Trash2 className="w-4 h-4" aria-hidden="true" />
+                </button>
+              )}
             </div>
             {caseData.summary && <p className="text-surface-400 mt-2">{caseData.summary}</p>}
           </div>
@@ -608,7 +621,7 @@ export function CaseDetail() {
                           <span className="text-xs px-1.5 py-0.5 rounded bg-surface-700 text-surface-400">{entry.entry_type}</span>
                           <span className="text-xs text-surface-600">{entry.source}</span>
                           {entry.metadata_json?.edited ? <span className="text-xs text-surface-600">(edited)</span> : null}
-                          {entry.entry_type === 'note' && editingNoteId !== entry.id && (
+                          {isOwner && entry.entry_type === 'note' && editingNoteId !== entry.id && (
                             <span className="ml-auto flex items-center gap-2">
                               <button
                                 type="button"
@@ -674,9 +687,11 @@ export function CaseDetail() {
           <div className="oa-panel p-6">
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="text-lg font-semibold text-surface-50">Related Alerts</h2>
-              <button type="button" onClick={() => void openLinkAlert()} className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-surface-600 px-2.5 text-xs font-semibold text-surface-200 hover:bg-surface-800">
-                <Link2 className="w-3.5 h-3.5" /> Link alert
-              </button>
+              {isOwner && (
+                <button type="button" onClick={() => void openLinkAlert()} className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-surface-600 px-2.5 text-xs font-semibold text-surface-200 hover:bg-surface-800">
+                  <Link2 className="w-3.5 h-3.5" /> Link alert
+                </button>
+              )}
             </div>
             {alerts.length === 0 ? (
               <p className="text-surface-500 text-sm">No linked alerts.</p>
@@ -687,15 +702,17 @@ export function CaseDetail() {
                     <div className="flex items-center gap-2 mb-1">
                       <StatusBadge tone={alertSeverityTones[a.severity] ?? 'neutral'}>{a.severity}</StatusBadge>
                       {a.cve_id && <span className="text-xs text-primary-400">{a.cve_id}</span>}
-                      <button
-                        type="button"
-                        aria-label={`Unlink alert ${a.title}`}
-                        disabled={unlinkingId !== null}
-                        onClick={() => void unlinkItem('alerts', a.id)}
-                        className="ml-auto text-surface-500 hover:text-danger disabled:opacity-50"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                      {isOwner && (
+                        <button
+                          type="button"
+                          aria-label={`Unlink alert ${a.title}`}
+                          disabled={unlinkingId !== null}
+                          onClick={() => void unlinkItem('alerts', a.id)}
+                          className="ml-auto text-surface-500 hover:text-danger disabled:opacity-50"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                     <p className="text-sm text-surface-300 truncate">{a.title}</p>
                   </div>
@@ -707,9 +724,11 @@ export function CaseDetail() {
           <div className="oa-panel p-6">
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="text-lg font-semibold text-surface-50">Related Events</h2>
-              <button type="button" onClick={() => void openLinkEvent()} className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-surface-600 px-2.5 text-xs font-semibold text-surface-200 hover:bg-surface-800">
-                <Link2 className="w-3.5 h-3.5" /> Link event
-              </button>
+              {isOwner && (
+                <button type="button" onClick={() => void openLinkEvent()} className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-surface-600 px-2.5 text-xs font-semibold text-surface-200 hover:bg-surface-800">
+                  <Link2 className="w-3.5 h-3.5" /> Link event
+                </button>
+              )}
             </div>
             {events.length === 0 ? (
               <p className="text-surface-500 text-sm">No linked events.</p>
@@ -720,15 +739,17 @@ export function CaseDetail() {
                     <div className="flex items-center gap-2 mb-1">
                       <StatusBadge tone={eventSeverityTones[e.severity] ?? 'neutral'}>{e.severity}</StatusBadge>
                       <span className="text-xs text-surface-500">{e.event_type}</span>
-                      <button
-                        type="button"
-                        aria-label={`Unlink event ${e.signature ?? e.event_type}`}
-                        disabled={unlinkingId !== null}
-                        onClick={() => void unlinkItem('events', e.id)}
-                        className="ml-auto text-surface-500 hover:text-danger disabled:opacity-50"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                      {isOwner && (
+                        <button
+                          type="button"
+                          aria-label={`Unlink event ${e.signature ?? e.event_type}`}
+                          disabled={unlinkingId !== null}
+                          onClick={() => void unlinkItem('events', e.id)}
+                          className="ml-auto text-surface-500 hover:text-danger disabled:opacity-50"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                     <p className="text-xs text-surface-400">
                       {e.source_ip} → {e.dest_ip} {e.signature && `| ${e.signature}`}
