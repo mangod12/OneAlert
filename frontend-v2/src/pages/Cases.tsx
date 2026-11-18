@@ -4,6 +4,7 @@ import apiClient from '../api/client';
 import { Play, Plus, Search, Shield, ChevronRight, X } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { useDialogFocus } from '../components/ui/useDialogFocus';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
@@ -80,6 +81,11 @@ export function Cases() {
   const [sort, setSort] = useState('created_at_desc');
   const [exporting, setExporting] = useState(false);
   const [page, setPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
+  const [members, setMembers] = useState<Array<{ id: number; email: string; is_active: boolean }>>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
   const fetchCases = async () => {
     setError(null);
@@ -151,6 +157,17 @@ export function Cases() {
     setToday(new Date().toISOString().slice(0, 10));
   }, []);
 
+  useEffect(() => {
+    apiClient.get<Array<{ id: number; email: string; is_active: boolean }>>('/orgs/me/members')
+      .then(res => { if (Array.isArray(res.data)) setMembers(res.data.filter(m => m.is_active)); })
+      .catch(() => setMembers([]));
+  }, []);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setPendingIds(new Set());
+  }, [statusFilter, severityFilter, assignedFilter, overdueOnly, sort, page]);
+
   const exportCsv = async () => {
     if (exporting) return;
     setExporting(true);
@@ -189,6 +206,75 @@ export function Cases() {
     } finally {
       setUpdatingStatusId(null);
     }
+  };
+
+  const visibleSelected = () => Array.from(selectedIds).filter(id => !pendingIds.has(id));
+
+  const finishBulk = async (ids: number[], results: PromiseSettledResult<unknown>[], okMessage: string, failMessage: string) => {
+    const failedIds = ids.filter((_, index) => results[index].status === 'rejected');
+    setSelectedIds(new Set(failedIds));
+    setPendingIds(current => { const next = new Set(current); ids.forEach(id => next.delete(id)); return next; });
+    await fetchCases();
+    if (failedIds.length > 0) toast(`${failedIds.length} ${failMessage}`, 'error');
+    else toast(okMessage, 'success');
+  };
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allVisibleSelected = cases.length > 0 && cases.every(c => selectedIds.has(c.id));
+
+  const toggleSelectAll = () => {
+    setSelectedIds(allVisibleSelected ? new Set() : new Set(cases.map(c => c.id)));
+  };
+
+  const handleBulkAssign = async (value: string) => {
+    if (value === '' || bulkBusy) return;
+    const assigneeId = value === 'none' ? null : Number(value);
+    const member = members.find(m => m.id === assigneeId) ?? null;
+    const ids = visibleSelected();
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    setPendingIds(current => new Set([...current, ...ids]));
+    const results = await Promise.allSettled(ids.map(id => apiClient.post(`/cases/${id}/assign`, { user_id: assigneeId })));
+    setBulkBusy(false);
+    const target = member ? member.email : 'Unassigned';
+    await finishBulk(ids, results,
+      assigneeId === null ? `${ids.length} investigations unassigned.` : `${ids.length} investigations assigned to ${target}.`,
+      'investigations could not be assigned and remain selected.');
+  };
+
+  const handleBulkStatus = async (status: string) => {
+    if (status === '' || bulkBusy) return;
+    const ids = visibleSelected();
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    setPendingIds(current => new Set([...current, ...ids]));
+    const results = await Promise.allSettled(ids.map(id => apiClient.patch(`/cases/${id}`, null, { params: { status_update: status } })));
+    setBulkBusy(false);
+    await finishBulk(ids, results,
+      `${ids.length} investigations marked ${status}.`,
+      'investigations could not be updated and remain selected.');
+  };
+
+  const handleBulkDelete = async () => {
+    if (bulkBusy) return;
+    const ids = visibleSelected();
+    if (ids.length === 0) return;
+    setConfirmBulkDelete(false);
+    setBulkBusy(true);
+    setPendingIds(current => new Set([...current, ...ids]));
+    const results = await Promise.allSettled(ids.map(id => apiClient.delete(`/cases/${id}`)));
+    setBulkBusy(false);
+    await finishBulk(ids, results,
+      `${ids.length} investigations deleted.`,
+      'investigations could not be deleted and remain selected.');
   };
 
   const runSearch = async () => {
@@ -386,6 +472,59 @@ export function Cases() {
       ) : cases.length === 0 ? (
         <EmptyState title="No investigations yet" description="Run AI triage to correlate alerts and security events into investigation cases." action={<button type="button" onClick={() => void runTriage()} className="text-sm font-semibold text-primary-300">Run AI triage</button>} />
       ) : (
+        <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-xs text-surface-400">
+            <input
+              type="checkbox"
+              aria-label="Select all investigations on this page"
+              checked={allVisibleSelected}
+              onChange={toggleSelectAll}
+              className="h-3.5 w-3.5 rounded border-surface-600 bg-surface-950 text-primary-500 focus:ring-2 focus:ring-primary-500"
+            />
+            Select page
+          </label>
+          {selectedIds.size > 0 && (
+            <div className="flex flex-wrap items-center gap-2" aria-live="polite">
+              <span className="text-xs text-surface-400">{selectedIds.size} selected</span>
+              {members.length > 0 && (
+                <select
+                  aria-label="Assign selected investigations"
+                  value=""
+                  disabled={bulkBusy}
+                  onChange={e => { void handleBulkAssign(e.target.value); }}
+                  className="min-h-8 rounded-md border border-surface-600 bg-surface-800 px-2 text-xs text-surface-200 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+                >
+                  <option value="" disabled>Assign...</option>
+                  {members.map(m => (
+                    <option key={m.id} value={m.id}>{m.email}</option>
+                  ))}
+                  <option value="none">Unassign</option>
+                </select>
+              )}
+              <select
+                aria-label="Set status for selected investigations"
+                value=""
+                disabled={bulkBusy}
+                onChange={e => { void handleBulkStatus(e.target.value); }}
+                className="min-h-8 rounded-md border border-surface-600 bg-surface-800 px-2 text-xs text-surface-200 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+              >
+                <option value="" disabled>Mark...</option>
+                {CASE_STATUSES.map(status => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={bulkBusy}
+                onClick={() => setConfirmBulkDelete(true)}
+                className="min-h-8 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 text-xs font-medium text-red-300 hover:bg-red-500/20 disabled:opacity-50"
+              >
+                Delete
+              </button>
+            </div>
+          )}
+        </div>
         <div className="grid gap-4">
           {cases.map(c => (
             <Link
@@ -396,6 +535,15 @@ export function Cases() {
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-2">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select investigation ${c.id}`}
+                      checked={selectedIds.has(c.id)}
+                      disabled={pendingIds.has(c.id)}
+                      onClick={e => { e.preventDefault(); e.stopPropagation(); }}
+                      onChange={() => toggleSelect(c.id)}
+                      className="h-3.5 w-3.5 rounded border-surface-600 bg-surface-950 text-primary-500 focus:ring-2 focus:ring-primary-500 disabled:opacity-40"
+                    />
                     <StatusBadge tone={alertSeverityTones[c.severity] ?? 'neutral'}>{c.severity}</StatusBadge>
                     <StatusBadge tone={caseStatusTones[c.status] ?? 'neutral'}>{c.status}</StatusBadge>
                     <select
@@ -442,6 +590,7 @@ export function Cases() {
             </Link>
           ))}
         </div>
+        </div>
       )}
 
       {!loading && !error && cases.length > 0 && (
@@ -461,6 +610,18 @@ export function Cases() {
           busy={creatingCase}
           onCancel={() => setShowNewCase(false)}
           onCreate={(title, summary, severity) => void handleCreateCase(title, summary, severity)}
+        />
+      )}
+
+      {confirmBulkDelete && (
+        <ConfirmDialog
+          title={`Delete ${selectedIds.size} investigations?`}
+          description="Deleting removes the investigations and their timelines. Linked alerts stay untouched. This cannot be undone."
+          confirmLabel={`Delete ${selectedIds.size}`}
+          tone="danger"
+          busy={bulkBusy}
+          onCancel={() => setConfirmBulkDelete(false)}
+          onConfirm={() => void handleBulkDelete()}
         />
       )}
     </div>
