@@ -15,6 +15,7 @@ const coverage = {
     TA0001: { name: 'Initial Access', total: 10, covered: 5, percentage: 50 },
     TA0002: { name: 'Execution', total: 10, covered: 0, percentage: 0 },
   },
+  covered_ids: ['T1190'],
 };
 
 const techniques = [
@@ -31,6 +32,37 @@ beforeEach(() => {
   });
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+describe('MitreMap technique coverage markers', () => {
+  it('marks detected techniques and gaps from covered_ids', async () => {
+    render(<MitreMap />);
+    await screen.findByText('T1059');
+    expect(screen.getByText('Detected')).toBeTruthy();
+    expect(screen.getByText('Gap')).toBeTruthy();
+  });
+
+  it('gaps-only toggle hides detected techniques', async () => {
+    render(<MitreMap />);
+    await screen.findByText('T1059');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Gaps only' }));
+    expect(screen.queryByText('T1190')).toBeNull();
+    expect(screen.getByText('T1059')).toBeTruthy();
+    expect(screen.queryByText('Detected')).toBeNull();
+  });
+
+  it('shows no markers or toggle when coverage lacks covered_ids', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/mitre/coverage') return { data: { data: { ...coverage, covered_ids: undefined } } };
+      if (url === '/mitre/techniques') return { data: techniques };
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<MitreMap />);
+    await screen.findByText('T1059');
+    expect(screen.queryByRole('checkbox', { name: 'Gaps only' })).toBeNull();
+    expect(screen.queryByText('Detected')).toBeNull();
+    expect(screen.queryByText('Gap')).toBeNull();
+  });
+});
 
 describe('MitreMap', () => {
   it('renders overall coverage with progressbar semantics', async () => {

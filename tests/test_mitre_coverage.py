@@ -121,3 +121,17 @@ class TestMitreCoverage:
         _add_rule(client, other, ["T0843"])
         data = _coverage(client, headers)
         assert data["covered_techniques"] == 0
+
+
+class TestCoverageIds:
+    def test_covered_ids_lists_detected_techniques(self, client):
+        headers = _register_and_login(client, "ids@example.com")
+        _add_case("ids@example.com", [{"id": "T0855"}, {"id": "T0866"}])  # T0866 is not in the catalog and must be dropped
+        _add_rule(client, headers, ["T0800"])
+        ids = _coverage(client, headers)["covered_ids"]
+        assert ids == sorted(ids)
+        assert set(ids) == {"T0855", "T0800"}
+
+    def test_covered_ids_empty_with_no_cases(self, client):
+        headers = _register_and_login(client, "idsnone@example.com")
+        assert _coverage(client, headers)["covered_ids"] == []
