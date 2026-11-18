@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { ResponsePlans } from './ResponsePlans';
 
-vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
+vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }));
 const get = vi.mocked(apiClient.get);
 const post = vi.mocked(apiClient.post);
+const del = vi.mocked(apiClient.delete);
 const plan = {
   id: 12, case_id: 4, status: 'approved', autonomy_level: 'L2',
   created_at: '2026-11-17T08:00:00Z', actions: [{
@@ -66,6 +67,22 @@ describe('Response plan confirmation dialogs', () => {
       url.endsWith('pending-approvals') ? [pendingApproval] : [{ ...plan, status: planStatus }],
     } }));
   };
+
+  it('deletes a draft plan after confirmation', async () => {
+    mockLoad('draft');
+    del.mockResolvedValue({ data: {} });
+    render(<ResponsePlans />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete plan 12' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete plan' }));
+    await waitFor(() => expect(del).toHaveBeenCalledWith('/response-plans/12'));
+  });
+
+  it('shows no delete button for a completed plan', async () => {
+    mockLoad('completed');
+    render(<ResponsePlans />);
+    await screen.findByText('Case #4');
+    expect(screen.queryByRole('button', { name: /Delete plan/ })).toBeNull();
+  });
 
   it('sends the typed reason when rejecting a plan', async () => {
     mockLoad();
