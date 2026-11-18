@@ -31,6 +31,7 @@ from backend.models.case import Case, CaseAlert
 from backend.models.notification import Notification
 from backend.models.user import User
 from backend.routers.auth import get_active_user
+from backend.services.audit import add_audit_log
 
 router = APIRouter()
 
@@ -380,8 +381,22 @@ async def update_alert(
                 link="/app/alerts",
             ))
 
+    changes = []
     for field, value in update_data.items():
+        old_value = getattr(alert, field)
+        if old_value != value:
+            changes.append(f"{field}: {old_value} -> {value}")
         setattr(alert, field, value)
+
+    if changes:
+        add_audit_log(
+            db,
+            user_id=current_user.id,
+            action="alert_updated",
+            target_type="alert",
+            target_id=alert.id,
+            detail="; ".join(changes)[:500],
+        )
 
     await db.commit()
     await db.refresh(alert)
