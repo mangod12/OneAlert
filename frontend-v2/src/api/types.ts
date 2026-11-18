@@ -17,6 +17,7 @@ export interface Token {
 
 export interface Alert {
   id: number;
+  user_id: number;
   cve_id: string;
   title: string;
   description: string;

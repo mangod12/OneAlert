@@ -2,15 +2,19 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
+import { useAuthStore } from '../stores/authStore';
 import type { Alert } from '../api/types';
 import { AlertDetail } from './AlertDetail';
 
-vi.mock('../api/client', () => ({ default: {
-  get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(), patch: vi.fn(),
-} }));
+vi.mock('../api/client', () => ({
+  SESSION_EXPIRED_EVENT: 'onealert:session-expired',
+  default: {
+    get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(), patch: vi.fn(),
+  },
+}));
 
 const alert: Alert = {
-  id: 1, cve_id: 'CVE-2026-0001', title: 'RouterOS RCE', description: 'Remote code execution.',
+  id: 1, user_id: 5, cve_id: 'CVE-2026-0001', title: 'RouterOS RCE', description: 'Remote code execution.',
   severity: 'critical', status: 'acknowledged', source: 'NVD', cvss_score: 9.8, asset_id: 10,
   asset_name: 'edge-router-01', asset_vendor: 'Acme', asset_product: 'RouterOS',
   remediation: 'Patch to 7.1', created_at: '2026-11-10T08:00:00Z', acknowledged_at: null, assigned_to_id: null, assigned_to_email: null,
@@ -20,7 +24,11 @@ const get = vi.mocked(apiClient.get);
 const post = vi.mocked(apiClient.post);
 
 beforeEach(() => { vi.resetAllMocks(); });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  useAuthStore.setState({ user: null });
+});
 
 describe('AlertDetail', () => {
   it('shows the EPSS score and percentile when available', async () => {
@@ -394,5 +402,38 @@ describe('AlertDetail activity', () => {
     });
     render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />);
     await waitFor(() => expect(screen.queryByText('Activity')).toBeNull());
+  });
+});
+
+describe('Assignee gating', () => {
+  const memberUser = {
+    id: 42, email: 'member@example.com', full_name: 'Member', company: 'Acme',
+    role: 'analyst', is_active: true, is_verified: true, mfa_enabled: false,
+    created_at: '2026-01-01T00:00:00Z',
+  };
+  const renderDetail = () => render(
+    <AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />
+  );
+  const mockDrawerGets = () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/orgs/me/members') return { data: [{ id: 42, email: 'member@example.com', full_name: 'Member', is_active: true }] };
+      if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null } };
+      return { data: [] };
+    });
+  };
+
+  it('hides the assign control from non-owners', async () => {
+    useAuthStore.setState({ user: memberUser });
+    mockDrawerGets();
+    renderDetail();
+    await waitFor(() => expect(screen.getByText('RouterOS RCE')).toBeTruthy());
+    expect(screen.queryByLabelText('Assigned to')).toBeNull();
+  });
+
+  it('shows the assign control to the owner', async () => {
+    useAuthStore.setState({ user: { ...memberUser, id: 5, email: 'owner@example.com' } });
+    mockDrawerGets();
+    renderDetail();
+    expect(await screen.findByLabelText('Assigned to')).toBeTruthy();
   });
 });

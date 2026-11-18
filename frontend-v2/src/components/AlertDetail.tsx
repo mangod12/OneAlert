@@ -1,5 +1,6 @@
 import type { Alert, EpssScore, RemediationAction } from '../api/types';
 import apiClient from '../api/client';
+import { useAuthStore } from '../stores/authStore';
 import { getApiErrorMessage } from '../api/errors';
 import { X, ExternalLink, Wrench, FolderOpen, Briefcase } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -76,6 +77,9 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [assigning, setAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
+  const currentUserId = useAuthStore(state => state.user?.id ?? null);
+  // Assignment is owner-only on the API; everyone else keeps the actions below.
+  const isOwner = currentUserId === null || alert.user_id === currentUserId;
 
   useEffect(() => {
     apiClient.get<OrgMember[]>('/orgs/me/members')
@@ -345,7 +349,7 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
             </div>
           )}
 
-          {members.length > 0 && (
+          {isOwner && members.length > 0 && (
             <div className="pt-4 border-t border-surface-700">
               <label htmlFor="alert-assignee" className="block text-xs text-surface-500 mb-1.5">Assigned to</label>
               <select

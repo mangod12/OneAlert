@@ -18,7 +18,7 @@ const STATS: AlertStats = {
 
 function makeAlert(severity: Alert['severity'], createdAt: string): Alert {
   return {
-    id: 1, cve_id: 'CVE-2026-0001', title: 't', description: 'd', severity,
+    id: 1, user_id: 5, cve_id: 'CVE-2026-0001', title: 't', description: 'd', severity,
     status: 'pending', source: 'NVD', cvss_score: null, asset_id: 1,
     asset_name: 'a', asset_vendor: 'v', asset_product: 'p', remediation: null,
     created_at: createdAt, acknowledged_at: null, assigned_to_id: null, assigned_to_email: null,

@@ -5,6 +5,7 @@ import type { Alert, AlertListResponse } from '../api/types';
 import { Alerts } from './Alerts';
 
 vi.mock('../api/client', () => ({
+  SESSION_EXPIRED_EVENT: 'onealert:session-expired',
   default: {
     get: vi.fn(),
     post: vi.fn(),
@@ -21,6 +22,7 @@ const mockPatch = vi.mocked(apiClient.patch);
 function makeAlert(overrides: Partial<Alert> = {}): Alert {
   return {
     id: 1,
+    user_id: 5,
     cve_id: 'CVE-2026-0001',
     title: 'Test vulnerability',
     description: 'A test description',

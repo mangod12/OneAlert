@@ -1,7 +1,7 @@
 """Notes attached to alerts."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -24,6 +24,20 @@ async def _owned_alert(alert_id: int, user: User, db: AsyncSession) -> Alert:
     return alert
 
 
+async def _visible_alert(alert_id: int, user: User, db: AsyncSession) -> Alert:
+    """Alert the user may open and annotate: their own or one assigned to them."""
+    result = await db.execute(
+        select(Alert).where(
+            Alert.id == alert_id,
+            or_(Alert.user_id == user.id, Alert.assigned_to_id == user.id),
+        )
+    )
+    alert = result.scalar_one_or_none()
+    if alert is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return alert
+
+
 @router.get("/{alert_id}/notes", response_model=list[AlertNoteResponse])
 async def list_alert_notes(
     alert_id: int,
@@ -31,7 +45,7 @@ async def list_alert_notes(
     db: AsyncSession = Depends(get_async_db),
 ):
     """List an alert's notes, oldest first."""
-    await _owned_alert(alert_id, current_user, db)
+    await _visible_alert(alert_id, current_user, db)
     result = await db.execute(
         select(AlertNote).where(AlertNote.alert_id == alert_id).order_by(AlertNote.created_at, AlertNote.id)
     )
@@ -45,7 +59,7 @@ async def list_alert_activity(
     db: AsyncSession = Depends(get_async_db),
 ):
     """List audit-trail entries for an alert, newest first (max 50)."""
-    await _owned_alert(alert_id, current_user, db)
+    await _visible_alert(alert_id, current_user, db)
     result = await db.execute(
         select(AuditLog)
         .where(AuditLog.target_type == "alert", AuditLog.target_id == alert_id)
@@ -71,7 +85,7 @@ async def add_alert_note(
     db: AsyncSession = Depends(get_async_db),
 ):
     """Attach a note to an alert."""
-    await _owned_alert(alert_id, current_user, db)
+    await _visible_alert(alert_id, current_user, db)
     body = payload.body.strip()
     if not body:
         raise HTTPException(status_code=400, detail="Note cannot be blank")
