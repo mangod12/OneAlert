@@ -6,6 +6,7 @@ import { getApiErrorMessage } from '../api/errors';
 import { PageHeader } from '../components/ui/PageHeader';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { SiemIntegrationsPanel } from '../components/settings/SiemIntegrationsPanel';
+import { ApiTokensPanel } from '../components/settings/ApiTokensPanel';
 import { Panel } from '../components/ui/Panel';
 import { StatusBadge } from '../components/ui/StatusBadge';
 
@@ -431,6 +432,8 @@ export function Settings() {
         </Panel>
 
         <SiemIntegrationsPanel />
+
+        <ApiTokensPanel />
         </div>
       </div>
 
