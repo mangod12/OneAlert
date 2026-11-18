@@ -168,3 +168,30 @@ describe('Delete validation run', () => {
     expect(screen.getByText('Perimeter check')).toBeTruthy();
   });
 });
+
+describe('Export validation run', () => {
+  it('downloads the run results as CSV from the detail panel', async () => {
+    URL.createObjectURL = vi.fn(() => 'blob:validation');
+    URL.revokeObjectURL = vi.fn();
+    const clicks: string[] = [];
+    const origCreate = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string, options?: ElementCreationOptions) => {
+      const el = origCreate(tag, options);
+      if (tag === 'a') {
+        Object.defineProperty(el, 'download', { set: (v: string) => clicks.push(v), configurable: true });
+        el.click = () => clicks.push('clicked');
+      }
+      return el;
+    });
+    const get = vi.mocked(apiClient.get);
+    get.mockImplementation(async (url: string) => {
+      if (url === '/validation/runs/8/export') return { data: new Blob(['csv']) };
+      return { data: { data: url.endsWith('/8') ? run : [run] } };
+    });
+    render(<Validation />);
+    fireEvent.click(await screen.findByRole('button', { name: 'View results for Perimeter check' }));
+    fireEvent.click(await screen.findByRole('button', { name: /export csv/i }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/validation/runs/8/export', { responseType: 'blob' }));
+    await waitFor(() => expect(clicks).toContain('validation-run-8.csv'));
+  });
+});

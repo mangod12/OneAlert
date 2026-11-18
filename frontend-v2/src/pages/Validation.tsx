@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect } from 'react';
 import apiClient from '../api/client';
-import { Play, Plus, ShieldCheck, Target, CheckCircle, XCircle, Trash2 } from 'lucide-react';
+import { Play, Plus, ShieldCheck, Target, CheckCircle, XCircle, Trash2, Download } from 'lucide-react';
 import clsx from 'clsx';
 import { toast } from '../components/Toast';
 import { getApiErrorMessage } from '../api/errors';
@@ -71,6 +71,7 @@ export function Validation() {
   const [confirmRunId, setConfirmRunId] = useState<number | null>(null);
   const [deletingRun, setDeletingRun] = useState<ValidationRun | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
+  const [exportingRun, setExportingRun] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [coverageError, setCoverageError] = useState('');
@@ -116,6 +117,21 @@ export function Validation() {
       await viewRun(runId);
     } catch (err) { toast(getApiErrorMessage(err, 'Execution failed.'), 'error'); }
     finally { setExecuting(null); }
+  };
+
+  const exportRun = async (runId: number) => {
+    if (exportingRun) return;
+    setExportingRun(true);
+    try {
+      const res = await apiClient.get(`/validation/runs/${runId}/export`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `validation-run-${runId}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) { toast(getApiErrorMessage(err, 'The export could not be downloaded.'), 'error'); }
+    finally { setExportingRun(false); }
   };
 
   const deleteRun = async () => {
@@ -280,10 +296,17 @@ export function Validation() {
       {/* Run Detail */}
       {selectedRun && (
         <div className="oa-panel p-6">
-          <h2 className="text-lg font-semibold text-surface-50 mb-4 flex items-center gap-2">
-            <Target className="w-5 h-5 text-primary-400" />
-            {selectedRun.name} - Results
-          </h2>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-surface-50 flex items-center gap-2">
+              <Target className="w-5 h-5 text-primary-400" />
+              {selectedRun.name} - Results
+            </h2>
+            <button type="button" onClick={() => void exportRun(selectedRun.id)} disabled={exportingRun}
+              className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-surface-600 px-2.5 text-xs text-surface-200 hover:bg-surface-800 disabled:opacity-50">
+              <Download className="h-3.5 w-3.5" aria-hidden="true" />
+              {exportingRun ? 'Exporting...' : 'Export CSV'}
+            </button>
+          </div>
 
           {selectedRun.description && <p className="mb-4 text-sm text-surface-400">{selectedRun.description}</p>}
           {selectedRun.mode === 'dry_run' && (

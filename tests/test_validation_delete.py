@@ -5,6 +5,9 @@ Covers: owner delete removes the run with its steps and control results,
 unknown ids return 404, and another user's run cannot be deleted.
 """
 
+import csv
+import io
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -160,3 +163,59 @@ class TestDeleteValidationRun:
 
         detail = client.get(f"/api/v1/validation/runs/{run_id}", headers=auth_headers)
         assert detail.status_code == 200
+
+
+class TestExportValidationRun:
+    """Test exporting a validation run's results as CSV."""
+
+    def test_export_contains_steps_and_controls(self, client, auth_headers):
+        run_id = _create_run(client, auth_headers)
+        execute = client.post(
+            f"/api/v1/validation/runs/{run_id}/execute", headers=auth_headers
+        )
+        assert execute.status_code == 200
+
+        response = client.get(
+            f"/api/v1/validation/runs/{run_id}/export", headers=auth_headers
+        )
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/csv")
+        assert f"validation-run-{run_id}.csv" in response.headers["content-disposition"]
+
+        rows = list(csv.reader(io.StringIO(response.text)))
+        assert rows[0] == [
+            "run", "mode", "run_status", "step_number", "technique_id",
+            "technique_name", "test_name", "test_type", "step_status",
+            "actual_result", "duration_ms", "controls", "executed_at",
+        ]
+        assert len(rows) > 1
+        assert rows[1][0] == "Weekly coverage test"
+        assert rows[1][1] == "dry_run"
+        assert rows[1][4] == "T1110"
+
+    def test_export_unknown_run_returns_404(self, client, auth_headers):
+        response = client.get(
+            "/api/v1/validation/runs/999999/export", headers=auth_headers
+        )
+        assert response.status_code == 404
+
+    def test_export_other_users_run_returns_404(self, client, auth_headers):
+        run_id = _create_run(client, auth_headers)
+        client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "other_export@example.com",
+                "password": "otherpass123",
+                "full_name": "Other User",
+                "company": "Other Corp",
+            },
+        )
+        login_resp = client.post(
+            "/api/v1/auth/login",
+            data={"username": "other_export@example.com", "password": "otherpass123"},
+        )
+        other_headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
+        response = client.get(
+            f"/api/v1/validation/runs/{run_id}/export", headers=other_headers
+        )
+        assert response.status_code == 404

@@ -1,7 +1,11 @@
 """Validation router — purple-team validation runs, steps, and control results."""
 
 
+import csv
+import io
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import Integer, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -118,6 +122,67 @@ async def get_validation_run(
     run_data["steps"] = step_responses
 
     return {"success": True, "data": run_data}
+
+
+@router.get("/runs/{run_id}/export")
+async def export_validation_run(
+    run_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Export a validation run's steps and control results as CSV."""
+    vrun = (await db.execute(
+        select(ValidationRun).where(
+            ValidationRun.id == run_id,
+            ValidationRun.user_id == current_user.id,
+        )
+    )).scalar_one_or_none()
+
+    if not vrun:
+        raise HTTPException(status_code=404, detail="Validation run not found")
+
+    steps = (await db.execute(
+        select(ValidationStep)
+        .where(ValidationStep.run_id == run_id)
+        .order_by(ValidationStep.step_number)
+    )).scalars().all()
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([
+        "run", "mode", "run_status", "step_number", "technique_id",
+        "technique_name", "test_name", "test_type", "step_status",
+        "actual_result", "duration_ms", "controls", "executed_at",
+    ])
+    for step in steps:
+        controls = (await db.execute(
+            select(ControlResult).where(ControlResult.step_id == step.id)
+        )).scalars().all()
+        control_summary = "; ".join(
+            f"{c.control_name} ({'detected' if c.detected else 'missed'})"
+            for c in controls
+        )
+        writer.writerow([
+            vrun.name,
+            vrun.mode,
+            vrun.status,
+            step.step_number,
+            step.technique_id,
+            step.technique_name,
+            step.test_name,
+            step.test_type or "",
+            step.status,
+            step.actual_result or "",
+            step.duration_ms if step.duration_ms is not None else "",
+            control_summary,
+            step.executed_at.isoformat() if step.executed_at else "",
+        ])
+    buffer.seek(0)
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=validation-run-{run_id}.csv"},
+    )
 
 
 @router.delete("/runs/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
