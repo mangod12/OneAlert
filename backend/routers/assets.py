@@ -21,6 +21,51 @@ from backend.routers.auth import get_active_user
 
 router = APIRouter()
 
+_SEVERITY_WEIGHT = {"critical": 10, "high": 5, "medium": 2, "low": 1}
+_CRITICALITY_MULTIPLIER = {"critical": 2.0, "high": 1.5, "medium": 1.0, "low": 0.5}
+_ACTIVE_ALERT_STATUSES = [AlertStatus.PENDING, AlertStatus.SENT, AlertStatus.ACKNOWLEDGED]
+
+
+def _severity_weight(severity) -> int:
+    sev = severity.value if hasattr(severity, "value") else str(severity or "").lower()
+    return _SEVERITY_WEIGHT.get(sev, 1)
+
+
+def _risk_level(score: int) -> str:
+    if score >= 40:
+        return "critical"
+    if score >= 15:
+        return "high"
+    if score >= 5:
+        return "medium"
+    if score > 0:
+        return "low"
+    return "none"
+
+
+def _risk_score(asset: Asset, base: int) -> int:
+    multiplier = _CRITICALITY_MULTIPLIER.get(str(asset.criticality or "medium").lower(), 1.0)
+    return min(100, round(base * multiplier))
+
+
+async def _risk_base_scores(db: AsyncSession, user_id: int, asset_ids: list[int]) -> dict[int, int]:
+    """Severity-weighted sum of each asset's active alerts."""
+    if not asset_ids:
+        return {}
+    rows = await db.execute(
+        select(Alert.asset_id, Alert.severity).where(
+            Alert.user_id == user_id,
+            Alert.asset_id.in_(asset_ids),
+            Alert.status.in_(_ACTIVE_ALERT_STATUSES),
+        )
+    )
+    bases: dict[int, int] = {}
+    for asset_id, severity in rows.all():
+        bases[asset_id] = bases.get(asset_id, 0) + _severity_weight(severity)
+    return bases
+
+
+
 
 @router.post("/", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
 async def create_asset(
@@ -51,7 +96,7 @@ async def list_assets(
     is_ot: bool | None = Query(None, description="Filter to OT assets (true) or non-OT assets (false)"),
     sort: str = Query(
         "created_at_desc",
-        pattern="^(created_at_desc|created_at_asc|name_asc|name_desc|criticality_desc|criticality_asc)$",
+        pattern="^(created_at_desc|created_at_asc|name_asc|name_desc|criticality_desc|criticality_asc|risk_desc)$",
         description="Sort order"
     ),
     search: str | None = Query(None, description="Search in name, vendor, or product"),
@@ -104,11 +149,17 @@ async def list_assets(
         "criticality_desc": [criticality_rank.desc(), Asset.name.asc()],
         "criticality_asc": [criticality_rank.asc(), Asset.name.asc()],
     }
-    query = query.offset(offset).limit(size).order_by(*order_columns[sort])
-
-    # Execute query
-    result = await db.execute(query)
-    assets = result.scalars().all()
+    if sort == "risk_desc":
+        # Computed score: sort across the full filtered set, then paginate in Python.
+        result = await db.execute(query)
+        all_assets = result.scalars().all()
+        all_bases = await _risk_base_scores(db, current_user.id, [a.id for a in all_assets])
+        all_assets.sort(key=lambda a: (-_risk_score(a, all_bases.get(a.id, 0)), a.name.lower()))
+        assets = all_assets[offset:offset + size]
+    else:
+        query = query.offset(offset).limit(size).order_by(*order_columns[sort])
+        result = await db.execute(query)
+        assets = result.scalars().all()
 
     # Open (pending or acknowledged) alert counts per asset on this page.
     asset_ids = [asset.id for asset in assets]
@@ -124,12 +175,19 @@ async def list_assets(
             .group_by(Alert.asset_id)
         )
         open_counts = {row[0]: row[1] for row in count_rows.all()}
-    items = [
-        AssetResponse.model_validate(asset).model_copy(
-            update={"open_alert_count": open_counts.get(asset.id, 0)}
+    bases = await _risk_base_scores(db, current_user.id, asset_ids)
+    items = []
+    for asset in assets:
+        score = _risk_score(asset, bases.get(asset.id, 0))
+        items.append(
+            AssetResponse.model_validate(asset).model_copy(
+                update={
+                    "open_alert_count": open_counts.get(asset.id, 0),
+                    "risk_score": score,
+                    "risk_level": _risk_level(score),
+                }
+            )
         )
-        for asset in assets
-    ]
 
     return AssetListResponse(
         assets=items,
@@ -222,7 +280,11 @@ async def get_asset(
             detail="Asset not found"
         )
 
-    return asset
+    bases = await _risk_base_scores(db, current_user.id, [asset.id])
+    score = _risk_score(asset, bases.get(asset.id, 0))
+    return AssetResponse.model_validate(asset).model_copy(
+        update={"risk_score": score, "risk_level": _risk_level(score)}
+    )
 
 
 @router.put("/{asset_id}", response_model=AssetResponse)

@@ -215,6 +215,7 @@ export function Assets() {
           <option value="name_desc">Name Z-A</option>
           <option value="criticality_desc">Highest criticality</option>
           <option value="criticality_asc">Lowest criticality</option>
+          <option value="risk_desc">Highest risk</option>
         </select>
         <button
           type="button"
@@ -271,6 +272,11 @@ export function Assets() {
                 {asset.is_ot_asset && <StatusBadge tone="warning">OT</StatusBadge>}
                 {asset.criticality && (
                   <StatusBadge tone={criticalityTones[asset.criticality] ?? 'neutral'}>{asset.criticality}</StatusBadge>
+                )}
+                {asset.risk_level && asset.risk_level !== 'none' && (
+                  <StatusBadge tone={criticalityTones[asset.risk_level] ?? 'neutral'}>
+                    Risk: {asset.risk_level}{typeof asset.risk_score === 'number' ? ` (${asset.risk_score})` : ''}
+                  </StatusBadge>
                 )}
               </div>
               {asset.version && (
