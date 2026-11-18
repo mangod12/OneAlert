@@ -79,6 +79,45 @@ describe('Topology page', () => {
     expect(await screen.findByText('No connections match the current filters.')).toBeTruthy();
   });
 
+  it('filters connections to the selected node', async () => {
+    render(<Topology />);
+    await screen.findAllByText('scada-historian');
+    fireEvent.click(screen.getByRole('button', { name: /scada-historian/ }));
+    expect(screen.getByText('Connections for scada-historian')).toBeTruthy();
+    expect(screen.getByText('1 of 2 connections')).toBeTruthy();
+    const rows = screen.getAllByRole('row');
+    expect(rows.some(r => r.textContent?.includes('modbus'))).toBe(true);
+    expect(rows.some(r => r.textContent?.includes('https'))).toBe(false);
+  });
+
+  it('clears the node filter from the chip or by re-clicking the node', async () => {
+    render(<Topology />);
+    await screen.findAllByText('scada-historian');
+    const nodeButton = screen.getByRole('button', { name: /scada-historian/ });
+    fireEvent.click(nodeButton);
+    expect(screen.getByText('1 of 2 connections')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear node filter for scada-historian' }));
+    expect(screen.queryByText(/of 2 connections/)).toBeNull();
+    expect(screen.getAllByRole('row').some(r => r.textContent?.includes('https'))).toBe(true);
+
+    fireEvent.click(nodeButton);
+    expect(screen.getByText('1 of 2 connections')).toBeTruthy();
+    fireEvent.click(nodeButton);
+    expect(screen.queryByText(/of 2 connections/)).toBeNull();
+  });
+
+  it('combines the node filter with the protocol filter', async () => {
+    render(<Topology />);
+    await screen.findAllByText('scada-historian');
+    fireEvent.click(screen.getByRole('button', { name: /plant-gateway/ }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter connections by protocol' }), { target: { value: 'https' } });
+    expect(screen.getByText('1 of 2 connections')).toBeTruthy();
+    const rows = screen.getAllByRole('row');
+    expect(rows.some(r => r.textContent?.includes('https'))).toBe(true);
+    expect(rows.some(r => r.textContent?.includes('modbus'))).toBe(false);
+  });
+
   it('shows the empty state when nothing has been observed', async () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/topology/graph') return { data: { nodes: [], edges: [] } };
