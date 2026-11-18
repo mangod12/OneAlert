@@ -24,6 +24,7 @@ interface CaseItem {
   event_count: number;
   assigned_to_id: number | null;
   assigned_to_email: string | null;
+  due_date: string | null;
 }
 
 interface CaseSearchResult {
@@ -65,6 +66,8 @@ export function Cases() {
   const [statusFilter, setStatusFilter] = useState('');
   const [severityFilter, setSeverityFilter] = useState('');
   const [assignedFilter, setAssignedFilter] = useState('');
+  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [today, setToday] = useState('');
   const [sort, setSort] = useState('created_at_desc');
   const [page, setPage] = useState(1);
 
@@ -78,6 +81,7 @@ export function Cases() {
           ...(statusFilter ? { status: statusFilter } : {}),
           ...(severityFilter ? { severity: severityFilter } : {}),
           ...(assignedFilter ? { assigned: assignedFilter } : {}),
+          ...(overdueOnly ? { overdue: true } : {}),
           sort,
         },
       });
@@ -131,7 +135,14 @@ export function Cases() {
     }
   };
 
-  useEffect(() => { fetchCases(); }, [statusFilter, severityFilter, assignedFilter, sort, page]);
+  useEffect(() => { fetchCases(); }, [statusFilter, severityFilter, assignedFilter, overdueOnly, sort, page]);
+
+  useEffect(() => {
+    setToday(new Date().toISOString().slice(0, 10));
+  }, []);
+
+  const isOverdue = (c: CaseItem) =>
+    !!c.due_date && !!today && c.due_date < today && !['resolved', 'closed', 'false_positive'].includes(c.status);
 
   const changeCaseStatus = async (c: CaseItem, status: string) => {
     if (updatingStatusId !== null || status === c.status) return;
@@ -251,12 +262,18 @@ export function Cases() {
             <option value="me">Assigned to me</option>
             <option value="unassigned">Unassigned</option>
           </select>
+          <button type="button" onClick={() => { setPage(1); setOverdueOnly(v => !v); }} aria-pressed={overdueOnly}
+            className={`min-h-9 rounded-md border px-3 text-sm transition-colors ${overdueOnly ? 'border-red-500/50 bg-red-500/10 text-red-300' : 'border-surface-600 bg-surface-950 text-surface-400 hover:text-surface-200'}`}>
+            Overdue
+          </button>
           <label htmlFor="case-sort" className="sr-only">Sort investigations</label>
           <select id="case-sort" value={sort} onChange={e => { setPage(1); setSort(e.target.value); }} className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200">
             <option value="created_at_desc">Newest first</option>
             <option value="created_at_asc">Oldest first</option>
             <option value="severity_desc">Highest severity</option>
             <option value="severity_asc">Lowest severity</option>
+            <option value="due_date_asc">Due date (earliest)</option>
+            <option value="due_date_desc">Due date (latest)</option>
           </select>
         </div>
       )}
@@ -358,6 +375,11 @@ export function Cases() {
                     <span>{new Date(c.created_at).toLocaleDateString()}</span>
                     <span className="capitalize">{c.created_by}</span>
                     {c.assigned_to_email && <span>Assigned to {c.assigned_to_email}</span>}
+                    {c.due_date && (
+                      <span className={isOverdue(c) ? 'text-red-400 font-medium' : ''}>
+                        Due {new Date(`${c.due_date}T00:00:00`).toLocaleDateString()}{isOverdue(c) ? ' (overdue)' : ''}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <ChevronRight className="w-5 h-5 text-surface-600 group-hover:text-primary-400 transition-colors mt-1" />
