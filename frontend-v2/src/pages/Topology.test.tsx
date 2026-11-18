@@ -3,10 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { Topology } from './Topology';
 
-vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
+vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }));
 
 const get = vi.mocked(apiClient.get);
 const post = vi.mocked(apiClient.post);
+const del = vi.mocked(apiClient.delete);
 
 const graph = {
   nodes: [
@@ -104,5 +105,55 @@ describe('Add connection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Record connection' }));
     expect(await screen.findByText(/between 0 and 65535/)).toBeTruthy();
     expect(post).not.toHaveBeenCalled();
+  });
+});
+
+describe('Remove connection', () => {
+  const graphWithIds = {
+    ...graph,
+    edges: [
+      { id: 101, source: '10.0.1.5', target: '10.0.0.1', protocol: 'modbus', is_encrypted: false, port: 502 },
+      { id: 102, source: '192.168.1.10', target: '10.0.0.1', protocol: 'https', is_encrypted: true, port: 443 },
+    ],
+  };
+
+  function mockWithIds() {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/topology/graph') return { data: graphWithIds };
+      if (url === '/topology/stats') return { data: stats };
+      throw new Error(`unexpected ${url}`);
+    });
+  }
+
+  it('removes a connection after confirmation and refreshes the topology', async () => {
+    mockWithIds();
+    del.mockResolvedValue({ data: null });
+    render(<Topology />);
+    await screen.findAllByText('scada-historian');
+    get.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: /Remove connection 10\.0\.1\.5/ }));
+    expect(await screen.findByText(/no longer appears in the topology or stats/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove connection' }));
+
+    await waitFor(() => expect(del).toHaveBeenCalledWith('/topology/connections/101'));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/topology/graph'));
+    expect(get).toHaveBeenCalledWith('/topology/stats');
+  });
+
+  it('keeps the connection when the dialog is cancelled', async () => {
+    mockWithIds();
+    render(<Topology />);
+    await screen.findAllByText('scada-historian');
+
+    fireEvent.click(screen.getByRole('button', { name: /Remove connection 10\.0\.1\.5/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(del).not.toHaveBeenCalled();
+  });
+
+  it('hides the remove action for edges without a connection id', async () => {
+    render(<Topology />);
+    await screen.findAllByText('scada-historian');
+    expect(screen.queryByRole('button', { name: /Remove connection/ })).toBeNull();
   });
 });

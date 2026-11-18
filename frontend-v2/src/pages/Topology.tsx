@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import apiClient from '../api/client';
-import { Network, Lock, LockOpen, Plus } from 'lucide-react';
+import { Network, Lock, LockOpen, Plus, Trash2 } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { toast } from '../components/Toast';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 
@@ -15,6 +17,7 @@ interface TopologyNode {
 }
 
 interface TopologyEdge {
+  id: number | null;
   source: string;
   target: string;
   protocol: string;
@@ -44,6 +47,8 @@ export function Topology() {
   const [encrypted, setEncrypted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formMessage, setFormMessage] = useState<{ text: string; error: boolean } | null>(null);
+  const [deletingEdge, setDeletingEdge] = useState<TopologyEdge | null>(null);
+  const [deletingBusy, setDeletingBusy] = useState(false);
 
   const fetchTopology = useCallback(async () => {
     setLoading(true);
@@ -105,6 +110,21 @@ export function Topology() {
       setFormMessage({ text: getApiErrorMessage(err, 'The connection could not be recorded.'), error: true });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const deleteConnection = async () => {
+    if (!deletingEdge || deletingEdge.id == null || deletingBusy) return;
+    setDeletingBusy(true);
+    try {
+      await apiClient.delete(`/topology/connections/${deletingEdge.id}`);
+      toast('Connection removed. The topology has been refreshed.', 'success');
+      setDeletingEdge(null);
+      await fetchTopology();
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'The connection could not be removed.'), 'error');
+    } finally {
+      setDeletingBusy(false);
     }
   };
 
@@ -189,11 +209,12 @@ export function Topology() {
                     <th className="px-4 py-3 text-left">Protocol</th>
                     <th className="px-4 py-3 text-left">Port</th>
                     <th className="px-4 py-3 text-left">Encryption</th>
+                    <th className="px-4 py-3 text-right"><span className="sr-only">Actions</span></th>
                   </tr>
                 </thead>
                 <tbody>
                   {edges.map((edge, i) => (
-                    <tr key={`${edge.source}-${edge.target}-${edge.protocol}-${i}`} className="border-b border-surface-700/50 hover:bg-surface-800 transition-colors">
+                    <tr key={edge.id ?? `${edge.source}-${edge.target}-${edge.protocol}-${i}`} className="border-b border-surface-700/50 hover:bg-surface-800 transition-colors">
                       <td className="px-4 py-3 text-surface-200">{nodeLabel(edge.source)}</td>
                       <td className="px-4 py-3 text-surface-200">{nodeLabel(edge.target)}</td>
                       <td className="px-4 py-3 text-surface-400 text-xs uppercase">{edge.protocol}</td>
@@ -203,6 +224,18 @@ export function Topology() {
                           <span className="inline-flex items-center gap-1 text-xs text-success"><Lock className="w-3.5 h-3.5" aria-hidden="true" />Encrypted</span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-xs text-danger"><LockOpen className="w-3.5 h-3.5" aria-hidden="true" />Cleartext</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {edge.id != null && (
+                          <button
+                            type="button"
+                            aria-label={`Remove connection ${edge.source} to ${edge.target}`}
+                            onClick={() => setDeletingEdge(edge)}
+                            className="inline-flex min-h-8 items-center gap-1 rounded-md border border-surface-600 px-2.5 text-xs text-surface-200 hover:bg-surface-800"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Remove
+                          </button>
                         )}
                       </td>
                     </tr>
@@ -265,6 +298,17 @@ export function Topology() {
           </form>
         )}
       </div>
+      {deletingEdge && (
+        <ConfirmDialog
+          title="Remove connection"
+          description={`Remove the ${deletingEdge.protocol} connection from ${deletingEdge.source} to ${deletingEdge.target}? It no longer appears in the topology or stats.`}
+          confirmLabel="Remove connection"
+          tone="danger"
+          busy={deletingBusy}
+          onCancel={() => setDeletingEdge(null)}
+          onConfirm={() => void deleteConnection()}
+        />
+      )}
     </div>
   );
 }

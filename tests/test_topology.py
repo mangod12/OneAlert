@@ -355,3 +355,94 @@ class TestUserIsolation:
         response = client.get("/api/v1/topology/graph", headers=other_headers)
         assert response.status_code == 200
         assert response.json()["edges"] == []
+
+
+class TestDeleteConnection:
+    """Test deleting a network connection."""
+
+    def _create(self, client, auth_headers, **overrides):
+        payload = {
+            "source_ip": "10.9.9.1",
+            "target_ip": "10.9.9.2",
+            "protocol": "dnp3",
+            "port": 20000,
+        }
+        payload.update(overrides)
+        response = client.post(
+            "/api/v1/topology/connections", json=payload, headers=auth_headers
+        )
+        assert response.status_code == 201
+        return response.json()["id"]
+
+    def test_delete_connection(self, client, auth_headers):
+        """Deleting a connection removes it from list, graph and stats."""
+        conn_id = self._create(client, auth_headers)
+
+        response = client.delete(
+            f"/api/v1/topology/connections/{conn_id}", headers=auth_headers
+        )
+        assert response.status_code == 204
+
+        response = client.get("/api/v1/topology/connections", headers=auth_headers)
+        assert all(c["id"] != conn_id for c in response.json())
+
+        response = client.get("/api/v1/topology/graph", headers=auth_headers)
+        assert all(e.get("id") != conn_id for e in response.json()["edges"])
+
+        response = client.get("/api/v1/topology/stats", headers=auth_headers)
+        assert response.json()["total_connections"] == 0
+
+    def test_delete_unknown_connection_returns_404(self, client, auth_headers):
+        """Deleting a non-existent connection returns 404."""
+        response = client.delete(
+            "/api/v1/topology/connections/999999", headers=auth_headers
+        )
+        assert response.status_code == 404
+
+    def test_cannot_delete_other_users_connection(self, client, auth_headers):
+        """A connection owned by another user cannot be deleted."""
+        conn_id = self._create(client, auth_headers)
+
+        register_data = {
+            "email": "other_delete@example.com",
+            "password": "otherpass123",
+            "full_name": "Other User",
+            "company": "Other Corp",
+        }
+        client.post("/api/v1/auth/register", json=register_data)
+        login_resp = client.post(
+            "/api/v1/auth/login",
+            data={"username": "other_delete@example.com", "password": "otherpass123"},
+        )
+        other_headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
+
+        response = client.delete(
+            f"/api/v1/topology/connections/{conn_id}", headers=other_headers
+        )
+        assert response.status_code == 404
+
+        # Still present for the owner
+        response = client.get("/api/v1/topology/connections", headers=auth_headers)
+        assert any(c["id"] == conn_id for c in response.json())
+
+
+class TestGraphEdgeIds:
+    """Graph edges carry their connection id so the UI can manage them."""
+
+    def test_edges_include_connection_id(self, client, auth_headers):
+        payload = {
+            "source_ip": "10.8.8.1",
+            "target_ip": "10.8.8.2",
+            "protocol": "ssh",
+            "port": 22,
+        }
+        create_resp = client.post(
+            "/api/v1/topology/connections", json=payload, headers=auth_headers
+        )
+        conn_id = create_resp.json()["id"]
+
+        response = client.get("/api/v1/topology/graph", headers=auth_headers)
+        assert response.status_code == 200
+        edges = response.json()["edges"]
+        assert len(edges) == 1
+        assert edges[0]["id"] == conn_id
