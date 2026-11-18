@@ -61,6 +61,16 @@ class VulnerabilityScheduler:
             replace_existing=True
         )
 
+        # SLA breach check - runs hourly, notifies on overdue investigations
+        self.scheduler.add_job(
+            func=self._run_sla_breach_check,
+            trigger=IntervalTrigger(hours=1),
+            id='sla_breach_check',
+            name='SLA Breach Check',
+            replace_existing=True,
+            max_instances=1
+        )
+
         # NEW: OT risk rescoring job - runs every 12 hours
         self.scheduler.add_job(
             func=self._run_ot_risk_rescore,
@@ -116,6 +126,20 @@ class VulnerabilityScheduler:
 
         except Exception as e:
             logger.error(f"Error generating weekly stats: {e}")
+
+    async def _run_sla_breach_check(self):
+        """Notify owners of investigations that passed their SLA due date."""
+        try:
+            from backend.database.db import AsyncSessionLocal
+            from backend.services.sla import notify_breached_slas
+
+            async with AsyncSessionLocal() as db:
+                sent = await notify_breached_slas(db)
+                if sent:
+                    logger.info("SLA breach check sent %d notifications", sent)
+
+        except Exception as e:
+            logger.error(f"Error during SLA breach check: {e}")
 
     async def _run_ot_risk_rescore(self):
         """Rescore all OT assets based on latest vulnerability data."""
