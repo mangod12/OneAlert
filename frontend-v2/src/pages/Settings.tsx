@@ -8,6 +8,7 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { SiemIntegrationsPanel } from '../components/settings/SiemIntegrationsPanel';
 import { ApiTokensPanel } from '../components/settings/ApiTokensPanel';
 import { SuppressionRulesPanel } from '../components/settings/SuppressionRulesPanel';
+import { AutomationPanel } from '../components/settings/AutomationPanel';
 import { Panel } from '../components/ui/Panel';
 import { StatusBadge } from '../components/ui/StatusBadge';
 
@@ -727,6 +728,8 @@ export function Settings() {
             </div>
           </form>
         </Panel>
+
+        <AutomationPanel />
 
         <SuppressionRulesPanel />
 

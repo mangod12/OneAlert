@@ -17,7 +17,9 @@ from backend.database.db import AsyncSessionLocal
 from backend.models.alert import Alert, AlertStatus, Severity
 from backend.models.asset import Asset
 from backend.models.audit_log import AuditLog
+from backend.models.case import Case, CaseAlert
 from backend.models.notification import Notification
+from backend.models.security_event import SecurityEvent as _SecurityEvent  # noqa: F401  (Case mapper dependency)
 from backend.models.suppression_rule import AlertSuppressionRule, rule_matches
 from backend.models.user import User
 from backend.services.cve_enrichment import CVEEnrichmentService
@@ -71,6 +73,75 @@ def _should_email_user(user, severity: str | None, now: _time | None = None) -> 
     if rank is None:
         return True  # unknown severities are never suppressed
     return rank >= minimum
+
+
+_SEVERITY_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+
+
+def _severity_name(severity) -> str:
+    return severity.value if hasattr(severity, "value") else str(severity or "").lower()
+
+
+async def _maybe_auto_escalate(db: AsyncSession, user: User, asset: Asset) -> None:
+    """Open an investigation when an incident crosses the user's auto-escalation threshold."""
+    if not getattr(user, "auto_escalate_incidents", False):
+        return
+    alerts = (await db.execute(
+        select(Alert).where(
+            Alert.user_id == user.id,
+            Alert.asset_id == asset.id,
+            Alert.status.in_((AlertStatus.PENDING, AlertStatus.SENT, AlertStatus.ACKNOWLEDGED)),
+        )
+    )).scalars().all()
+    min_alerts = getattr(user, "auto_escalate_min_alerts", None) or 3
+    if len(alerts) < min_alerts:
+        return
+    max_severity = max((_severity_name(a.severity) for a in alerts), key=lambda s: _SEVERITY_RANK.get(s, -1))
+    min_severity = getattr(user, "auto_escalate_min_severity", None) or "high"
+    if _SEVERITY_RANK.get(max_severity, -1) < _SEVERITY_RANK.get(min_severity, 2):
+        return
+
+    # Skip when an open investigation already covers one of these alerts.
+    alert_ids = [a.id for a in alerts]
+    existing = (await db.execute(
+        select(Case)
+        .join(CaseAlert, CaseAlert.case_id == Case.id)
+        .where(
+            Case.user_id == user.id,
+            CaseAlert.alert_id.in_(alert_ids),
+            Case.status.in_(("open", "in_progress")),
+        )
+    )).scalars().first()
+    if existing:
+        return
+
+    case = Case(
+        user_id=user.id,
+        title=f"Incident on {asset.name}",
+        summary=(
+            f"Auto-escalated: {len(alerts)} active alerts on {asset.name} crossed the "
+            f"{min_severity}+ threshold. Highest severity: {max_severity}."
+        ),
+        severity=max_severity,
+        status="open",
+    )
+    db.add(case)
+    await db.flush()
+    for alert in alerts:
+        db.add(CaseAlert(case_id=case.id, alert_id=alert.id))
+    db.add(Notification(
+        user_id=user.id,
+        kind="incident_escalated",
+        title=f"Incident auto-escalated on {asset.name}",
+        body=f"{len(alerts)} active alerts crossed your threshold. Investigation {case.id} opened.",
+        link=f"/app/cases/{case.id}",
+    ))
+    db.add(AuditLog(
+        user_id=user.id, action="incident_auto_escalated", target_type="case", target_id=case.id,
+        detail=f"Incident on {asset.name} auto-escalated to case {case.id} ({len(alerts)} alerts)",
+    ))
+    logger.info(f"Auto-escalated incident on asset {asset.id} to case {case.id} for user {user.email}")
+
 
 async def _notify_incident_formed(db: AsyncSession, user: User, asset: Asset) -> None:
     """Notify once when an asset crosses into incident territory (2nd active alert)."""
@@ -380,6 +451,7 @@ class AlertChecker:
             await db.flush()  # Get the ID
             await _apply_suppression_rules(db, user, alert)
             await _notify_incident_formed(db, user, asset)
+            await _maybe_auto_escalate(db, user, asset)
 
             db.add(Notification(
                 user_id=user.id,
@@ -439,6 +511,7 @@ class AlertChecker:
             await db.flush()  # Get the ID
             await _apply_suppression_rules(db, user, alert)
             await _notify_incident_formed(db, user, asset)
+            await _maybe_auto_escalate(db, user, asset)
 
             db.add(Notification(
                 user_id=user.id,
@@ -623,6 +696,7 @@ class AlertChecker:
             await db.flush()  # Get the ID
             await _apply_suppression_rules(db, user, alert)
             await _notify_incident_formed(db, user, asset)
+            await _maybe_auto_escalate(db, user, asset)
 
             # For CISA KEV (known exploited), increase urgency
             if advisory.get('cisa_kev') or advisory.get('known_exploited'):

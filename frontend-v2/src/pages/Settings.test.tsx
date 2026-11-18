@@ -42,6 +42,7 @@ beforeEach(() => {
   mockGet.mockImplementation(async (url: string) => {
     if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
     if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low' } };
+    if (url === '/auth/me/automation-preferences') return { data: { auto_escalate_incidents: false, auto_escalate_min_alerts: 3, auto_escalate_min_severity: 'high' } };
     return notFound();
   });
   mockPatch.mockResolvedValue({ data: { email_notifications_enabled: false, notify_min_severity: 'high' } });
@@ -360,6 +361,7 @@ describe('Email notification preferences', () => {
       if (url === '/auth/me') return { data: { ...analyst, full_name: 'New Name', company: 'New Co' } };
       if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
       if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low' } };
+    if (url === '/auth/me/automation-preferences') return { data: { auto_escalate_incidents: false, auto_escalate_min_alerts: 3, auto_escalate_min_severity: 'high' } };
       return notFound();
     });
     mockPatch.mockResolvedValue({ data: {} });
