@@ -72,7 +72,7 @@ describe('AlertDetail', () => {
     get.mockRejectedValue(new Error('offline'));
     render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />);
     expect(screen.getByText('RouterOS RCE')).toBeTruthy();
-    await waitFor(() => expect(get).toHaveBeenCalledTimes(5));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(6));
     expect(screen.queryByText(/Exploit probability/)).toBeNull();
     expect(screen.queryByText('Remediation plan')).toBeNull();
   });
@@ -283,6 +283,47 @@ describe('AlertDetail snooze', () => {
     });
     render(<AlertDetail alert={{ ...alert, status: 'resolved' }} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />);
     expect(screen.queryByRole('button', { name: 'Snooze alert for 24h' })).toBeNull();
+  });
+});
+
+describe('AlertDetail investigations', () => {
+  const baseMocks = (cases: unknown) => async (url: string) => {
+    if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null, message: 'EPSS data not available' } };
+    if (url === '/alerts/1/remediations') return { data: [] };
+    if (url === '/alerts/1/cases') return { data: cases };
+    if (url === '/alerts/1/notes') return { data: [] };
+    if (url === '/orgs/me/members') return { data: [] };
+    throw new Error(`unexpected ${url}`);
+  };
+
+  it('lists linked cases with status badges and navigates on click', async () => {
+    get.mockImplementation(baseMocks([
+      { id: 21, title: 'Line 3 investigation', status: 'open', severity: 'high', created_at: '2026-11-18T08:00:00Z' },
+      { id: 22, title: 'Follow-up review', status: 'resolved', severity: 'medium', created_at: '2026-11-17T08:00:00Z' },
+    ]));
+    render(<MemoryRouter><AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} /></MemoryRouter>);
+    expect(await screen.findByText('Investigations')).toBeTruthy();
+    expect(screen.getByText('Line 3 investigation')).toBeTruthy();
+    expect(screen.getByText('Follow-up review')).toBeTruthy();
+    expect(screen.getByText('open')).toBeTruthy();
+    expect(screen.getByText('resolved')).toBeTruthy();
+  });
+
+  it('hides the investigations section when the alert is in no case', async () => {
+    get.mockImplementation(baseMocks([]));
+    render(<MemoryRouter><AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} /></MemoryRouter>);
+    await screen.findByText('Notes');
+    expect(screen.queryByText('Investigations')).toBeNull();
+  });
+
+  it('hides the investigations section when the fetch fails', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/cases') throw new Error('upstream down');
+      return baseMocks([])(url);
+    });
+    render(<MemoryRouter><AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} /></MemoryRouter>);
+    await screen.findByText('Notes');
+    expect(screen.queryByText('Investigations')).toBeNull();
   });
 });
 
