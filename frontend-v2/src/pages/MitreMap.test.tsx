@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { MitreMap } from './MitreMap';
@@ -61,6 +62,67 @@ describe('MitreMap technique coverage markers', () => {
     expect(screen.queryByRole('checkbox', { name: 'Gaps only' })).toBeNull();
     expect(screen.queryByText('Detected')).toBeNull();
     expect(screen.queryByText('Gap')).toBeNull();
+  });
+});
+
+describe('MitreMap technique references', () => {
+  const references = {
+    technique_id: 'T1190',
+    technique_name: 'Exploit Public-Facing Application',
+    cases: [{ id: 7, title: 'Web shell on dmz-proxy', status: 'open' }],
+    detection_rules: [{ id: 3, name: 'Exploit attempt pattern', enabled: false }],
+  };
+
+  function mockWithReferences() {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/mitre/coverage') return { data: { data: coverage } };
+      if (url === '/mitre/techniques') return { data: techniques };
+      if (url === '/mitre/techniques/T1190/references') return { data: references };
+      throw new Error(`unexpected ${url}`);
+    });
+  }
+
+  it('expands a detected technique to show the cases and rules behind it', async () => {
+    mockWithReferences();
+    render(<MemoryRouter><MitreMap /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Show what detects T1190 Exploit Public-Facing Application' }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/mitre/techniques/T1190/references'));
+    const caseLink = await screen.findByRole('link', { name: '#7 Web shell on dmz-proxy' });
+    expect(caseLink.getAttribute('href')).toBe('/cases/7');
+    expect(screen.getByText('open')).toBeTruthy();
+    const ruleLink = screen.getByRole('link', { name: 'Exploit attempt pattern' });
+    expect(ruleLink.getAttribute('href')).toBe('/hunt');
+    expect(screen.getByText('disabled')).toBeTruthy();
+  });
+
+  it('collapses the references when the technique is clicked again', async () => {
+    mockWithReferences();
+    render(<MemoryRouter><MitreMap /></MemoryRouter>);
+    const toggle = await screen.findByRole('button', { name: 'Show what detects T1190 Exploit Public-Facing Application' });
+    fireEvent.click(toggle);
+    await screen.findByRole('link', { name: '#7 Web shell on dmz-proxy' });
+    fireEvent.click(toggle);
+    expect(screen.queryByRole('link', { name: '#7 Web shell on dmz-proxy' })).toBeNull();
+  });
+
+  it('notes when nothing references the technique yet', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/mitre/coverage') return { data: { data: coverage } };
+      if (url === '/mitre/techniques') return { data: techniques };
+      if (url === '/mitre/techniques/T1190/references') return { data: { ...references, cases: [], detection_rules: [] } };
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<MemoryRouter><MitreMap /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Show what detects T1190 Exploit Public-Facing Application' }));
+    expect(await screen.findByText('No cases reference this technique.')).toBeTruthy();
+    expect(screen.getByText('No detection rules cover this technique.')).toBeTruthy();
+  });
+
+  it('does not make gap techniques expandable', async () => {
+    mockWithReferences();
+    render(<MemoryRouter><MitreMap /></MemoryRouter>);
+    await screen.findByText('T1059');
+    expect(screen.queryByRole('button', { name: /Show what detects T1059/ })).toBeNull();
   });
 });
 

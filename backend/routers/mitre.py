@@ -1,6 +1,6 @@
 """MITRE ATT&CK router — coverage, techniques, and mapping."""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,6 +40,60 @@ async def list_techniques(
             continue
         results.append({"id": tid, **info})
     return results
+
+
+def _technique_matches(techniques_list: object, technique_id: str) -> bool:
+    """True when a stored mitre_techniques JSON list mentions the technique."""
+    if not isinstance(techniques_list, list):
+        return False
+    for entry in techniques_list:
+        if isinstance(entry, dict) and entry.get("id") == technique_id:
+            return True
+        if isinstance(entry, str) and entry == technique_id:
+            return True
+    return False
+
+
+@router.get("/techniques/{technique_id}/references")
+async def get_technique_references(
+    technique_id: str,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """List the cases and detection rules that reference a technique."""
+    technique_id = technique_id.upper()
+    technique = TECHNIQUES.get(technique_id)
+    if technique is None:
+        raise HTTPException(status_code=404, detail="Unknown technique")
+
+    case_rows = await db.execute(
+        select(Case.id, Case.title, Case.status, Case.mitre_techniques)
+        .where(Case.user_id == current_user.id, Case.mitre_techniques.isnot(None))
+        .order_by(Case.created_at.desc())
+    )
+    cases = [
+        {"id": row.id, "title": row.title, "status": row.status}
+        for row in case_rows.all()
+        if _technique_matches(row.mitre_techniques, technique_id)
+    ][:20]
+
+    rule_rows = await db.execute(
+        select(DetectionRule.id, DetectionRule.name, DetectionRule.enabled, DetectionRule.mitre_techniques)
+        .where(DetectionRule.user_id == current_user.id, DetectionRule.mitre_techniques.isnot(None))
+        .order_by(DetectionRule.created_at.desc())
+    )
+    rules = [
+        {"id": row.id, "name": row.name, "enabled": row.enabled}
+        for row in rule_rows.all()
+        if _technique_matches(row.mitre_techniques, technique_id)
+    ][:20]
+
+    return {
+        "technique_id": technique_id,
+        "technique_name": technique["name"],
+        "cases": cases,
+        "detection_rules": rules,
+    }
 
 
 @router.get("/coverage")
