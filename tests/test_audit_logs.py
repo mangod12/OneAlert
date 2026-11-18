@@ -143,6 +143,38 @@ class TestAuditLogOrdering:
         # Underscore is escaped, so it matches literally: every action contains "_"
         assert body["total"] == 5
 
+    def test_user_email_filter(self, client):
+        headers = _register_admin_and_login(client, "admin5@example.com")
+        _add_logs("admin5@example.com", 3)
+        res = client.get("/api/v1/auth/audit-logs", params={"user": "admin5@"}, headers=headers)
+        assert res.status_code == 200
+        assert res.json()["total"] == 3
+        res_none = client.get("/api/v1/auth/audit-logs", params={"user": "nobody@"}, headers=headers)
+        assert res_none.status_code == 200
+        assert res_none.json()["total"] == 0
+
+    def test_date_range_filter(self, client):
+        headers = _register_admin_and_login(client, "admin6@example.com")
+        _add_logs("admin6@example.com", 10)
+        res = client.get("/api/v1/auth/audit-logs", params={
+            "from_date": "2026-11-01T00:03:00",
+            "to_date": "2026-11-01T00:06:00",
+        }, headers=headers)
+        assert res.status_code == 200
+        body = res.json()
+        assert body["total"] == 4
+        actions = [log["action"] for log in body["logs"]]
+        assert actions == ["action_6", "action_5", "action_4", "action_3"]
+
+    def test_from_date_only_filter(self, client):
+        headers = _register_admin_and_login(client, "admin7@example.com")
+        _add_logs("admin7@example.com", 5)
+        res = client.get("/api/v1/auth/audit-logs", params={
+            "from_date": "2026-11-01T00:03:00",
+        }, headers=headers)
+        assert res.status_code == 200
+        assert res.json()["total"] == 2
+
     def test_non_admin_forbidden(self, client):
         reg = client.post("/api/v1/auth/register", json={
             "email": "viewer@example.com",
@@ -182,6 +214,22 @@ class TestAuditLogExport:
         lines = res.text.strip().splitlines()
         assert len(lines) == 2
         assert "action_1" in lines[1]
+
+    def test_export_respects_date_and_user_filters(self, client):
+        headers = _register_admin_and_login(client, "exporter3@example.com")
+        _add_logs("exporter3@example.com", 10)
+        res = client.get("/api/v1/auth/audit-logs/export", params={
+            "user": "exporter3@",
+            "from_date": "2026-11-01T00:02:00",
+            "to_date": "2026-11-01T00:04:00",
+        }, headers=headers)
+        assert res.status_code == 200
+        lines = res.text.strip().splitlines()
+        assert len(lines) == 4
+        assert lines[1].split(",")[3] == "action_4"
+        res_none = client.get("/api/v1/auth/audit-logs/export", params={"user": "nobody@"}, headers=headers)
+        assert res_none.status_code == 200
+        assert len(res_none.text.strip().splitlines()) == 1
 
     def test_export_non_admin_forbidden(self, client):
         reg = client.post("/api/v1/auth/register", json={

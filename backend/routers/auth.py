@@ -523,15 +523,31 @@ async def disable_mfa(
     return True
 
 
+def _apply_audit_filters(scope, user, from_date, to_date):
+    """Apply optional user-email and timestamp-range filters to an audit-log scope."""
+    if user:
+        escaped = user.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        matching_ids = select(User.id).where(User.email.ilike(f"%{escaped}%", escape="\\"))
+        scope = scope & AuditLog.user_id.in_(matching_ids)
+    if from_date:
+        scope = scope & (AuditLog.timestamp >= from_date)
+    if to_date:
+        scope = scope & (AuditLog.timestamp <= to_date)
+    return scope
+
+
 @router.get("/audit-logs")
 async def get_audit_logs(
     action: str | None = Query(None, max_length=100),
+    user: str | None = Query(None, max_length=255),
+    from_date: datetime | None = Query(None),
+    to_date: datetime | None = Query(None),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Admin: Get audit logs scoped to the admin's organization, with action filtering and pagination."""
+    """Admin: Get audit logs scoped to the admin's organization, with action/user/date filtering and pagination."""
     if not current_user.role or current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
 
@@ -546,6 +562,7 @@ async def get_audit_logs(
     if action:
         escaped = action.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         scope = scope & (AuditLog.action.ilike(f"%{escaped}%", escape="\\"))
+    scope = _apply_audit_filters(scope, user, from_date, to_date)
 
     total = (await db.execute(
         select(func.count()).select_from(AuditLog).where(scope)
@@ -578,6 +595,9 @@ async def get_audit_logs(
 @router.get("/audit-logs/export")
 async def export_audit_logs(
     action: str | None = Query(None, max_length=100),
+    user: str | None = Query(None, max_length=255),
+    from_date: datetime | None = Query(None),
+    to_date: datetime | None = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -595,6 +615,7 @@ async def export_audit_logs(
     if action:
         escaped = action.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         scope = scope & (AuditLog.action.ilike(f"%{escaped}%", escape="\\"))
+    scope = _apply_audit_filters(scope, user, from_date, to_date)
 
     result = await db.execute(
         select(AuditLog, User.email)
