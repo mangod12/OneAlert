@@ -4,6 +4,7 @@ import { Play, FileCode, Clock, Plus, ShieldCheck } from 'lucide-react';
 import clsx from 'clsx';
 import { getApiErrorMessage } from '../api/errors';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { toast } from '../components/Toast';
@@ -66,6 +67,8 @@ export function HuntLab() {
   const [ruleForm, setRuleForm] = useState<RuleFormState | null>(null);
   const [savingRule, setSavingRule] = useState(false);
   const [togglingRuleId, setTogglingRuleId] = useState<number | null>(null);
+  const [deletingRule, setDeletingRule] = useState<DetectionRule | null>(null);
+  const [deletingRuleBusy, setDeletingRuleBusy] = useState(false);
   const fetchSessions = async () => {
     try {
       const res = await apiClient.get('/hunt/');
@@ -135,6 +138,21 @@ export function HuntLab() {
       toast(getApiErrorMessage(err, 'The detection rule could not be updated.'), 'error');
     } finally {
       setTogglingRuleId(null);
+    }
+  };
+
+  const deleteRule = async () => {
+    if (!deletingRule || deletingRuleBusy) return;
+    setDeletingRuleBusy(true);
+    try {
+      await apiClient.delete(`/hunt/detections/${deletingRule.id}`);
+      setDetections(prev => prev.filter(r => r.id !== deletingRule.id));
+      toast('Detection rule deleted.', 'success');
+      setDeletingRule(null);
+    } catch (err) {
+      toast(getApiErrorMessage(err, 'The detection rule could not be deleted.'), 'error');
+    } finally {
+      setDeletingRuleBusy(false);
     }
   };
 
@@ -348,15 +366,25 @@ export function HuntLab() {
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1.5">
                   <span className="text-xs text-surface-500">{rule.created_by} · {new Date(rule.created_at).toLocaleDateString()}</span>
-                  <button
-                    type="button"
-                    aria-label={`${rule.enabled ? 'Disable' : 'Enable'} rule ${rule.name}`}
-                    disabled={togglingRuleId !== null}
-                    onClick={() => void toggleRule(rule)}
-                    className="min-h-8 rounded-md border border-surface-600 px-2.5 text-xs text-surface-200 hover:bg-surface-800 disabled:opacity-50"
-                  >
-                    {rule.enabled ? 'Disable' : 'Enable'}
-                  </button>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      aria-label={`${rule.enabled ? 'Disable' : 'Enable'} rule ${rule.name}`}
+                      disabled={togglingRuleId !== null}
+                      onClick={() => void toggleRule(rule)}
+                      className="min-h-8 rounded-md border border-surface-600 px-2.5 text-xs text-surface-200 hover:bg-surface-800 disabled:opacity-50"
+                    >
+                      {rule.enabled ? 'Disable' : 'Enable'}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Delete rule ${rule.name}`}
+                      onClick={() => setDeletingRule(rule)}
+                      className="min-h-8 rounded-md border border-surface-600 px-2.5 text-xs text-danger hover:border-danger/50"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </li>
             ))}
@@ -398,6 +426,18 @@ export function HuntLab() {
           </div>
         )}
       </div>}
+
+      {deletingRule && (
+        <ConfirmDialog
+          title="Delete detection rule"
+          description={`Delete "${deletingRule.name}"? The rule stops matching future hunts and cannot be restored.`}
+          confirmLabel="Delete rule"
+          tone="danger"
+          busy={deletingRuleBusy}
+          onCancel={() => setDeletingRule(null)}
+          onConfirm={() => void deleteRule()}
+        />
+      )}
     </div>
   );
 }

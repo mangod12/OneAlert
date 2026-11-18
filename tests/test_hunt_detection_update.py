@@ -127,3 +127,28 @@ class TestDetectionRuleUpdate:
         headers = _register_and_login(client, "hunter7@example.com")
         res = client.patch("/api/v1/hunt/detections/9999", json={"enabled": False}, headers=headers)
         assert res.status_code == 404
+
+
+class TestDetectionRuleDelete:
+    def test_delete_own_rule(self, client):
+        headers = _register_and_login(client, "hunter8@example.com")
+        rule_id = _create_rule(client, headers)
+        res = client.delete(f"/api/v1/hunt/detections/{rule_id}", headers=headers)
+        assert res.status_code == 204
+        remaining = client.get("/api/v1/hunt/detections", headers=headers)
+        assert all(rule["id"] != rule_id for rule in remaining.json())
+
+    def test_delete_other_users_rule_not_found(self, client):
+        headers_a = _register_and_login(client, "hunter9@example.com")
+        headers_b = _register_and_login(client, "hunter10@example.com")
+        rule_id = _create_rule(client, headers_a)
+        res = client.delete(f"/api/v1/hunt/detections/{rule_id}", headers=headers_b)
+        assert res.status_code == 404
+        # Owner's rule is untouched.
+        remaining = client.get("/api/v1/hunt/detections", headers=headers_a)
+        assert any(rule["id"] == rule_id for rule in remaining.json())
+
+    def test_delete_missing_rule_not_found(self, client):
+        headers = _register_and_login(client, "hunter11@example.com")
+        res = client.delete("/api/v1/hunt/detections/9999", headers=headers)
+        assert res.status_code == 404

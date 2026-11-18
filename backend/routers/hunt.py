@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -83,6 +83,20 @@ async def list_hunts(
     return result.scalars().all()
 
 
+@router.get("/detections", response_model=list[DetectionRuleResponse])
+async def list_detection_rules(
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """List all detection rules."""
+    result = await db.execute(
+        select(DetectionRule)
+        .where(DetectionRule.user_id == current_user.id)
+        .order_by(DetectionRule.created_at.desc())
+    )
+    return result.scalars().all()
+
+
 @router.get("/{session_id}")
 async def get_hunt(
     session_id: int,
@@ -133,20 +147,6 @@ async def create_detection_rule(
     return DetectionRuleResponse.model_validate(detection)
 
 
-@router.get("/detections", response_model=list[DetectionRuleResponse])
-async def list_detection_rules(
-    current_user: User = Depends(get_active_user),
-    db: AsyncSession = Depends(get_async_db),
-):
-    """List all detection rules."""
-    result = await db.execute(
-        select(DetectionRule)
-        .where(DetectionRule.user_id == current_user.id)
-        .order_by(DetectionRule.created_at.desc())
-    )
-    return result.scalars().all()
-
-
 @router.patch("/detections/{rule_id}", response_model=DetectionRuleResponse)
 async def update_detection_rule(
     rule_id: int,
@@ -172,3 +172,17 @@ async def update_detection_rule(
     await db.commit()
     await db.refresh(rule)
     return DetectionRuleResponse.model_validate(rule)
+
+
+@router.delete("/detections/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_detection_rule(
+    rule_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Delete a detection rule owned by the current user."""
+    rule = await db.get(DetectionRule, rule_id)
+    if not rule or rule.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Detection rule not found")
+    await db.delete(rule)
+    await db.commit()
