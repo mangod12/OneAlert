@@ -10,7 +10,7 @@ import re
 from datetime import UTC, datetime
 from datetime import time as _time
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import AsyncSessionLocal
@@ -70,6 +70,25 @@ def _should_email_user(user, severity: str | None, now: _time | None = None) -> 
     if rank is None:
         return True  # unknown severities are never suppressed
     return rank >= minimum
+
+async def _notify_incident_formed(db: AsyncSession, user: User, asset: Asset) -> None:
+    """Notify once when an asset crosses into incident territory (2nd active alert)."""
+    count = (await db.execute(
+        select(func.count()).select_from(Alert).where(
+            Alert.user_id == user.id,
+            Alert.asset_id == asset.id,
+            Alert.status.in_((AlertStatus.PENDING, AlertStatus.SENT, AlertStatus.ACKNOWLEDGED)),
+        )
+    )).scalar_one()
+    if count == 2:
+        db.add(Notification(
+            user_id=user.id,
+            kind="incident_formed",
+            title=f"Incident forming on {asset.name}",
+            body="2 active alerts now hit this asset. Review the correlated incident.",
+            link="/app/incidents",
+        ))
+
 
 # Notification service instances (read from env)
 _default_slack_webhook = os.getenv("SLACK_WEBHOOK_URL")
@@ -335,6 +354,7 @@ class AlertChecker:
 
             db.add(alert)
             await db.flush()  # Get the ID
+            await _notify_incident_formed(db, user, asset)
 
             db.add(Notification(
                 user_id=user.id,
@@ -392,6 +412,7 @@ class AlertChecker:
 
             db.add(alert)
             await db.flush()  # Get the ID
+            await _notify_incident_formed(db, user, asset)
 
             db.add(Notification(
                 user_id=user.id,
@@ -574,6 +595,7 @@ class AlertChecker:
 
             db.add(alert)
             await db.flush()  # Get the ID
+            await _notify_incident_formed(db, user, asset)
 
             # For CISA KEV (known exploited), increase urgency
             if advisory.get('cisa_kev') or advisory.get('known_exploited'):
