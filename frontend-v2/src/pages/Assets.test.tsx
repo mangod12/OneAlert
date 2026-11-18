@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router-dom';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
@@ -28,7 +29,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe('Assets page', () => {
   it('renders asset identity and OT badges', async () => {
-    render(<Assets />);
+    render(<MemoryRouter><Assets /></MemoryRouter>);
     expect(await screen.findByText('Plant gateway')).toBeTruthy();
     expect(screen.getByText('Acme Gateway')).toBeTruthy();
     expect(screen.getByText('OT')).toBeTruthy();
@@ -36,7 +37,7 @@ describe('Assets page', () => {
   });
 
   it('searches the inventory with the entered query', async () => {
-    render(<Assets />);
+    render(<MemoryRouter><Assets /></MemoryRouter>);
     await screen.findByText('Plant gateway');
     fireEvent.change(screen.getByPlaceholderText('Search assets...'), { target: { value: 'plant' } });
     await waitFor(() => expect(get).toHaveBeenLastCalledWith('/assets/', {
@@ -50,7 +51,7 @@ describe('Assets page', () => {
       if (url === '/assets/types/') return { data: ['hardware'] };
       return { data: { assets: [asset], total: 1 } };
     });
-    render(<Assets />);
+    render(<MemoryRouter><Assets /></MemoryRouter>);
     const select = await screen.findByRole('combobox', { name: 'Filter by vendor' });
     fireEvent.change(select, { target: { value: 'Cisco' } });
     await waitFor(() => {
@@ -59,7 +60,7 @@ describe('Assets page', () => {
   });
 
   it('filters by criticality from the dropdown', async () => {
-    render(<Assets />);
+    render(<MemoryRouter><Assets /></MemoryRouter>);
     const select = await screen.findByRole('combobox', { name: 'Filter by criticality' });
     fireEvent.change(select, { target: { value: 'high' } });
     await waitFor(() => {
@@ -68,7 +69,7 @@ describe('Assets page', () => {
   });
 
   it('filters to OT assets from the dropdown', async () => {
-    render(<Assets />);
+    render(<MemoryRouter><Assets /></MemoryRouter>);
     const select = await screen.findByRole('combobox', { name: 'Filter by OT or IT' });
     fireEvent.change(select, { target: { value: 'true' } });
     await waitFor(() => {
@@ -77,7 +78,7 @@ describe('Assets page', () => {
   });
 
   it('sends the chosen sort order to the API', async () => {
-    render(<Assets />);
+    render(<MemoryRouter><Assets /></MemoryRouter>);
     const select = await screen.findByRole('combobox', { name: 'Sort assets' });
     fireEvent.change(select, { target: { value: 'name_asc' } });
     await waitFor(() => {
@@ -86,7 +87,7 @@ describe('Assets page', () => {
   });
 
   it('filters by asset type from the dropdown', async () => {
-    render(<Assets />);
+    render(<MemoryRouter><Assets /></MemoryRouter>);
     await screen.findByText('Plant gateway');
     fireEvent.change(screen.getByRole('combobox', { name: 'Filter by asset type' }), { target: { value: 'plc' } });
     await waitFor(() => {
@@ -95,7 +96,7 @@ describe('Assets page', () => {
   });
 
   it('asks for confirmation and does not delete when cancelled', async () => {
-    render(<Assets />);
+    render(<MemoryRouter><Assets /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'Delete Plant gateway' }));
     const dialog = within(await screen.findByRole('dialog'));
     expect(dialog.getByText('Delete asset?')).toBeTruthy();
@@ -106,7 +107,7 @@ describe('Assets page', () => {
   });
 
   it('deletes a confirmed asset and refreshes inventory', async () => {
-    render(<Assets />);
+    render(<MemoryRouter><Assets /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'Delete Plant gateway' }));
     const dialog = within(await screen.findByRole('dialog'));
     fireEvent.click(dialog.getByRole('button', { name: 'Delete asset' }));
@@ -118,7 +119,7 @@ describe('Assets page', () => {
   });
 
   it('labels the search input and the asset form fields for assistive tech', async () => {
-    render(<Assets />);
+    render(<MemoryRouter><Assets /></MemoryRouter>);
     expect(await screen.findByRole('textbox', { name: 'Search assets' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /add asset/i }));
     const dialog = await screen.findByRole('dialog');
@@ -128,7 +129,7 @@ describe('Assets page', () => {
   });
 
   it('prefills the edit dialog and saves the changed name', async () => {
-    render(<Assets />);
+    render(<MemoryRouter><Assets /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Plant gateway' }));
     const dialog = within(screen.getByRole('dialog'));
     const name = dialog.getByPlaceholderText('Name') as HTMLInputElement;
@@ -148,7 +149,7 @@ describe('Asset type options', () => {
       if (url === '/assets/types/') return { data: ['hardware', 'software', 'firmware', 'operating_system', 'plc', 'hmi', 'rtu', 'ied', 'scada_server', 'historian'] };
       return { data: { assets: [asset], total: 1 } };
     });
-    render(<Assets />);
+    render(<MemoryRouter><Assets /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Plant gateway' }));
     const dialog = within(screen.getByRole('dialog'));
     const select = await dialog.findByLabelText('Asset type');
@@ -166,7 +167,7 @@ describe('Asset type options', () => {
       if (url === '/assets/types/') throw new Error('down');
       return { data: { assets: [asset], total: 1 } };
     });
-    render(<Assets />);
+    render(<MemoryRouter><Assets /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Plant gateway' }));
     const dialog = within(screen.getByRole('dialog'));
     const select = dialog.getByLabelText('Asset type');
@@ -190,11 +191,19 @@ describe('Assets CSV export', () => {
       }
       return el;
     });
-    render(<Assets />);
+    render(<MemoryRouter><Assets /></MemoryRouter>);
     await screen.findByRole('button', { name: /export csv/i });
     fireEvent.change(screen.getByRole('combobox', { name: 'Filter by criticality' }), { target: { value: 'high' } });
     fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
     await waitFor(() => expect(get).toHaveBeenCalledWith('/assets/export', { params: { criticality: 'high' }, responseType: 'blob' }));
     await waitFor(() => expect(clicks).toContain('assets.csv'));
+  });
+});
+
+describe('Assets deep link', () => {
+  it('pre-fills the inventory search from the ?search= param', async () => {
+    render(<MemoryRouter initialEntries={['/assets?search=historian']}><Assets /></MemoryRouter>);
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/assets/', expect.objectContaining({ params: expect.objectContaining({ search: 'historian' }) })));
+    expect((screen.getByRole('textbox', { name: 'Search assets' }) as HTMLInputElement).value).toBe('historian');
   });
 });

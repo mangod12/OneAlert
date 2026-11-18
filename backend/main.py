@@ -38,6 +38,7 @@ from backend.routers import (
     response_plans,
     saved_views,
     sbom,
+    search,
     sensor_ingest,
     topology,
     validation,
@@ -195,6 +196,7 @@ app.include_router(hunt.router, prefix="/api/v1/hunt", tags=["Threat Hunting"])
 app.include_router(response_plans.router, prefix="/api/v1/response-plans", tags=["Response Plans"])
 app.include_router(validation.router, prefix="/api/v1/validation", tags=["Purple-Team Validation"])
 app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["Notifications"])
+app.include_router(search.router, prefix="/api/v1/search", tags=["Search"])
 
 
 # Health check endpoint

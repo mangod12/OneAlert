@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import apiClient from '../api/client';
 import type { Alert, AlertListResponse } from '../api/types';
 import { AlertDetail } from '../components/AlertDetail';
@@ -28,12 +29,32 @@ export function Alerts() {
   const [showSnoozedOnly, setShowSnoozedOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [exporting, setExporting] = useState(false);
   const [epssScores, setEpssScores] = useState<Record<string, { score: number; percentile: number }>>({});
   const [kevEntries, setKevEntries] = useState<Record<string, { date_added: string | null; due_date: string | null; known_ransomware_campaign_use: string | null }>>({});
   const [members, setMembers] = useState<Array<{ id: number; email: string; is_active: boolean }>>([]);
   const [bulkAssigning, setBulkAssigning] = useState(false);
+
+  // Deep link: /alerts?alert=<id> opens the detail drawer for that alert.
+  useEffect(() => {
+    const alertParam = searchParams.get('alert');
+    if (!alertParam) return;
+    const alertId = Number(alertParam);
+    setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('alert'); return next; }, { replace: true });
+    if (!Number.isInteger(alertId) || alertId <= 0) return;
+    if (selectedAlert?.id === alertId) return;
+    void (async () => {
+      try {
+        const res = await apiClient.get<Alert>(`/alerts/${alertId}`);
+        setSelectedAlert(res.data);
+      } catch (err: unknown) {
+        toast(getApiErrorMessage(err, 'The linked alert could not be opened.'), 'error');
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const exportCsv = async () => {
     if (exporting) return;

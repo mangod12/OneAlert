@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import apiClient from '../api/client';
 import type { Asset, AssetCreate, AssetListResponse } from '../api/types';
 import { Plus, Search, Server, Trash2, Edit2, Download } from 'lucide-react';
@@ -21,7 +22,8 @@ export function Assets() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
+  const [searchParams] = useSearchParams();
+  const [search, setSearch] = useState(() => searchParams.get('search') ?? '');
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editAsset, setEditAsset] = useState<Asset | null>(null);

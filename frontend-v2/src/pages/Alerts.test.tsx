@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router-dom';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Alert, AlertListResponse } from '../api/types';
@@ -58,7 +59,7 @@ beforeEach(() => {
 
 describe('Alerts page', () => {
   it('renders alert rows after loading', async () => {
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     expect(await screen.findByText('CVE-2026-0001')).toBeTruthy();
     expect(screen.getByText('critical')).toBeTruthy();
     expect(screen.getByText('edge-router-01')).toBeTruthy();
@@ -78,7 +79,7 @@ describe('Alerts page', () => {
       if (alertCalls === 1) throw { isAxiosError: true, response: { status: 500, data: {} } };
       return listResponse([makeAlert()]);
     });
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     expect(await screen.findByText('Alerts could not be loaded.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /retry/i }));
     expect(await screen.findByText('CVE-2026-0001')).toBeTruthy();
@@ -86,7 +87,7 @@ describe('Alerts page', () => {
   });
 
   it('filters to snoozed alerts when the Snoozed chip is toggled', async () => {
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     await screen.findByText('CVE-2026-0001');
     fireEvent.click(screen.getByRole('button', { name: 'Snoozed' }));
     await waitFor(() => {
@@ -102,7 +103,7 @@ describe('Alerts page', () => {
   });
 
   it('refetches with the severity filter applied', async () => {
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     await screen.findByText('CVE-2026-0001');
     const severitySelect = screen.getByRole('combobox', { name: 'Filter by severity' });
     fireEvent.change(severitySelect, { target: { value: 'high' } });
@@ -114,7 +115,7 @@ describe('Alerts page', () => {
   });
 
   it('labels the search input and both filter selects for assistive tech', async () => {
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     await screen.findByText('CVE-2026-0001');
     expect(screen.getByRole('textbox', { name: 'Search by CVE or title' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: 'Filter by severity' })).toBeTruthy();
@@ -126,7 +127,7 @@ describe('Alerts page', () => {
       if (url === '/assets/') return { data: { assets: [{ id: 10, name: 'edge-router-01' }], total: 1 } };
       return listResponse([makeAlert()]);
     });
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     const select = await screen.findByRole('combobox', { name: 'Filter by asset' });
     fireEvent.change(select, { target: { value: '10' } });
     await waitFor(() => {
@@ -137,7 +138,7 @@ describe('Alerts page', () => {
   });
 
   it('sends the search text as a substring query', async () => {
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     const input = await screen.findByRole('textbox', { name: 'Search by CVE or title' });
     fireEvent.change(input, { target: { value: 'routeros' } });
     await waitFor(() => {
@@ -148,7 +149,7 @@ describe('Alerts page', () => {
   });
 
   it('sends the chosen sort order to the API', async () => {
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     const select = await screen.findByRole('combobox', { name: 'Sort alerts' });
     fireEvent.change(select, { target: { value: 'cvss_desc' } });
     await waitFor(() => {
@@ -159,7 +160,7 @@ describe('Alerts page', () => {
   });
 
   it('opens the detail panel on row click and closes it', async () => {
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     fireEvent.click(await screen.findByText('CVE-2026-0001'));
     expect(await screen.findByRole('dialog')).toBeTruthy();
     expect(screen.getByText('A test description')).toBeTruthy();
@@ -170,7 +171,7 @@ describe('Alerts page', () => {
   });
 
   it('opens the detail panel with the keyboard', async () => {
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     const cveCell = await screen.findByText('CVE-2026-0001');
     const row = cveCell.closest('tr');
     expect(row?.tabIndex).toBe(0);
@@ -183,14 +184,14 @@ describe('Alerts page', () => {
   });
 
   it('does not open the detail panel when the row checkbox handles the key', async () => {
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     const checkbox = await screen.findByRole('checkbox', { name: /select alert cve-2026-0001/i });
     fireEvent.keyDown(checkbox, { key: 'Enter' });
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('acknowledges a pending alert from the detail panel', async () => {
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     fireEvent.click(await screen.findByText('CVE-2026-0001'));
     fireEvent.click(await screen.findByRole('button', { name: /acknowledge alert/i }));
     await waitFor(() => {
@@ -206,7 +207,7 @@ describe('Alerts page', () => {
   it('bulk-acknowledges selected alerts', async () => {
     const alerts = [makeAlert({ id: 1, cve_id: 'CVE-2026-0001' }), makeAlert({ id: 2, cve_id: 'CVE-2026-0002' })];
     mockGet.mockResolvedValue(listResponse(alerts));
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     await screen.findByText('CVE-2026-0002');
     fireEvent.click(screen.getByRole('checkbox', { name: /select all alerts/i }));
     fireEvent.click(screen.getByRole('button', { name: /acknowledge \(2\)/i }));
@@ -218,7 +219,7 @@ describe('Alerts page', () => {
   it('bulk-resolves selected alerts', async () => {
     const alerts = [makeAlert({ id: 1, cve_id: 'CVE-2026-0001' }), makeAlert({ id: 2, cve_id: 'CVE-2026-0002' })];
     mockGet.mockResolvedValue(listResponse(alerts));
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     await screen.findByText('CVE-2026-0002');
     fireEvent.click(screen.getByRole('checkbox', { name: /select all alerts/i }));
     fireEvent.click(screen.getByRole('button', { name: /resolve \(2\)/i }));
@@ -231,7 +232,7 @@ describe('Alerts page', () => {
 
 describe('Assignee filter', () => {
   it('sends assigned=me when "Assigned to me" is selected', async () => {
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     await screen.findByRole('combobox', { name: 'Filter by status' });
     fireEvent.change(screen.getByRole('combobox', { name: 'Filter by assignee' }), { target: { value: 'me' } });
     await waitFor(() => {
@@ -256,7 +257,7 @@ describe('Alerts CSV export', () => {
       }
       return el;
     });
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     await screen.findByRole('combobox', { name: 'Filter by status' });
     fireEvent.change(screen.getByRole('combobox', { name: 'Filter by assignee' }), { target: { value: 'me' } });
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/alerts/', {
@@ -275,7 +276,7 @@ describe('EPSS badges', () => {
       if (url === '/assets/') return Promise.resolve({ data: { assets: [] } });
       return Promise.resolve(listResponse([makeAlert()]));
     });
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     expect(await screen.findByText('EPSS 97%')).toBeTruthy();
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/alerts/epss-batch', { params: { cve_ids: 'CVE-2026-0001' } }));
   });
@@ -286,7 +287,7 @@ describe('EPSS badges', () => {
       if (url === '/assets/') return Promise.resolve({ data: { assets: [] } });
       return Promise.resolve(listResponse([makeAlert()]));
     });
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     expect(await screen.findByText('CVE-2026-0001')).toBeTruthy();
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/alerts/epss-batch', { params: { cve_ids: 'CVE-2026-0001' } }));
     expect(screen.queryByText(/EPSS/)).toBeNull();
@@ -295,7 +296,7 @@ describe('EPSS badges', () => {
 
 describe('Severity sort', () => {
   it('sends severity_desc when Highest severity is selected', async () => {
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     await screen.findByRole('combobox', { name: 'Filter by status' });
     fireEvent.change(screen.getByRole('combobox', { name: /sort alerts/i }), { target: { value: 'severity_desc' } });
     await waitFor(() => {
@@ -314,7 +315,7 @@ describe('KEV badges', () => {
       if (url === '/assets/') return Promise.resolve({ data: { assets: [] } });
       return Promise.resolve(listResponse([makeAlert()]));
     });
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     expect(await screen.findByText('KEV listed')).toBeTruthy();
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/alerts/kev-batch', { params: { cve_ids: 'CVE-2026-0001' } }));
   });
@@ -326,7 +327,7 @@ describe('KEV badges', () => {
       if (url === '/assets/') return Promise.resolve({ data: { assets: [] } });
       return Promise.resolve(listResponse([makeAlert()]));
     });
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     expect(await screen.findByText('CVE-2026-0001')).toBeTruthy();
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/alerts/kev-batch', { params: { cve_ids: 'CVE-2026-0001' } }));
     expect(screen.queryByText('KEV listed')).toBeNull();
@@ -348,7 +349,7 @@ describe('Bulk assign', () => {
 
   it('assigns all selected alerts to the chosen member', async () => {
     mockWithMembers();
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     await screen.findByText('CVE-2026-0001');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select alert CVE-2026-0001' }));
     const select = await screen.findByRole('combobox', { name: 'Assign selected alerts' });
@@ -359,7 +360,7 @@ describe('Bulk assign', () => {
 
   it('unassigns selected alerts via the Unassign option', async () => {
     mockWithMembers();
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     await screen.findByText('CVE-2026-0001');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select alert CVE-2026-0001' }));
     const select = await screen.findByRole('combobox', { name: 'Assign selected alerts' });
@@ -369,7 +370,7 @@ describe('Bulk assign', () => {
 
   it('hides the assign control when no alerts are selected', async () => {
     mockWithMembers();
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     await screen.findByText('CVE-2026-0001');
     expect(screen.queryByRole('combobox', { name: 'Assign selected alerts' })).toBeNull();
   });
@@ -386,7 +387,7 @@ describe('Bulk snooze', () => {
   });
 
   it('snoozes all selected alerts for the chosen duration', async () => {
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     await screen.findByText('CVE-2026-0001');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select alert CVE-2026-0001' }));
     const select = await screen.findByRole('combobox', { name: 'Snooze selected alerts' });
@@ -396,7 +397,7 @@ describe('Bulk snooze', () => {
 
   it('keeps failed alerts selected and reports the count', async () => {
     mockPost.mockRejectedValueOnce(new Error('boom'));
-    render(<Alerts />);
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
     await screen.findByText('CVE-2026-0001');
     const checkbox = screen.getByRole('checkbox', { name: 'Select alert CVE-2026-0001' });
     fireEvent.click(checkbox);
@@ -404,5 +405,18 @@ describe('Bulk snooze', () => {
     fireEvent.change(select, { target: { value: '24' } });
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/alerts/1/snooze', { hours: 24 }));
     await waitFor(() => expect((screen.getByRole('checkbox', { name: 'Select alert CVE-2026-0001' }) as HTMLInputElement).checked).toBe(true));
+  });
+});
+
+describe('Alerts deep link', () => {
+  it('opens the detail drawer from an ?alert= deep link', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/alerts/7') return { data: makeAlert({ id: 7, title: 'Deep linked alert' }) };
+      if (typeof url === 'string' && url.endsWith('/notes')) return { data: [] };
+      return listResponse([makeAlert()]);
+    });
+    render(<MemoryRouter initialEntries={['/alerts?alert=7']}><Alerts /></MemoryRouter>);
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/alerts/7'));
+    expect((await screen.findAllByText('Deep linked alert')).length).toBeGreaterThan(0);
   });
 });
