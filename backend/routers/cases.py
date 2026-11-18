@@ -496,6 +496,9 @@ async def update_case(
             detail="Assignees can update the status only; the case owner edits the details",
         )
 
+    old_severity = case.severity
+    old_due_date = case.due_date
+
     if status_update:
         case.status = status_update
     if severity:
@@ -521,7 +524,49 @@ async def update_case(
         # A moved or cleared due date re-arms the SLA breach notification.
         case.sla_breach_notified_at = None
 
+    # Keep the assignee in the loop when the owner changes severity or due date.
+    changes: list[str] = []
+    if severity and case.severity != old_severity:
+        changes.append(f"severity {old_severity or 'none'} -> {case.severity}")
+    if due_date is not None and case.due_date != old_due_date:
+        old_label = old_due_date.isoformat() if old_due_date else "none"
+        new_label = case.due_date.isoformat() if case.due_date else "cleared"
+        changes.append(f"due date {old_label} -> {new_label}")
+
+    assignee_id = case.assigned_to_id
+    notify_assignee = (
+        bool(changes)
+        and assignee_id is not None
+        and assignee_id != current_user.id
+    )
+    if notify_assignee:
+        change_text = "; ".join(changes)
+        db.add(Notification(
+            user_id=assignee_id,
+            kind="case_updated",
+            title=f"Case #{case.id} updated",
+            body=f"{change_text} - {case.title}",
+            link=f"/app/cases/{case.id}",
+        ))
+
     await db.commit()
+
+    if notify_assignee:
+        assignee = (await db.execute(
+            select(User).where(User.id == assignee_id)
+        )).scalar_one_or_none()
+        if assignee is not None:
+            await notify_investigation_event(
+                assignee,
+                kind="case_updated",
+                severity=case.severity,
+                title=f"Case #{case.id} updated",
+                body=(
+                    f"{current_user.email} updated an investigation assigned "
+                    f"to you: {case.title}. Changes: {'; '.join(changes)}."
+                ),
+                link_path=f"/app/cases/{case.id}",
+            )
     return {"success": True, "message": "Case updated"}
 
 
