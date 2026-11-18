@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import apiClient from '../api/client';
-import { Play, FileCode, Clock, Plus, ShieldCheck } from 'lucide-react';
+import { Play, FileCode, Clock, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { getApiErrorMessage } from '../api/errors';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -70,6 +70,8 @@ export function HuntLab() {
   const [togglingRuleId, setTogglingRuleId] = useState<number | null>(null);
   const [deletingRule, setDeletingRule] = useState<DetectionRule | null>(null);
   const [deletingRuleBusy, setDeletingRuleBusy] = useState(false);
+  const [deletingSession, setDeletingSession] = useState<HuntSession | null>(null);
+  const [deletingSessionBusy, setDeletingSessionBusy] = useState(false);
   const fetchSessions = async () => {
     try {
       const res = await apiClient.get('/hunt/');
@@ -154,6 +156,21 @@ export function HuntLab() {
       toast(getApiErrorMessage(err, 'The detection rule could not be deleted.'), 'error');
     } finally {
       setDeletingRuleBusy(false);
+    }
+  };
+
+  const deleteSession = async () => {
+    if (!deletingSession || deletingSessionBusy) return;
+    setDeletingSessionBusy(true);
+    try {
+      await apiClient.delete(`/hunt/${deletingSession.id}`);
+      setSessions(prev => prev.filter(s => s.id !== deletingSession.id));
+      toast('Hunt session deleted.', 'success');
+      setDeletingSession(null);
+    } catch (err) {
+      toast(getApiErrorMessage(err, 'The hunt session could not be deleted.'), 'error');
+    } finally {
+      setDeletingSessionBusy(false);
     }
   };
 
@@ -435,31 +452,52 @@ export function HuntLab() {
         ) : (
           <div className="space-y-2">
             {sessions.map(s => (
-              <button
-                key={s.id}
-                type="button"
-                disabled={loadingSessionId !== null || hunting}
-                onClick={() => void viewSession(s.id)}
-                aria-label={`Reopen hunt: ${s.hypothesis}`}
-                className="flex w-full items-center gap-4 rounded-lg bg-surface-900/50 p-3 text-left transition-colors hover:bg-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Clock className="w-4 h-4 text-surface-500 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-surface-50 truncate">{s.hypothesis}</p>
-                  <p className="text-xs text-surface-500">
-                    {s.queries_run} queries · {s.findings_count} findings · {new Date(s.created_at).toLocaleDateString()}
-                  </p>
-                </div>
-                <span className={clsx('text-xs px-2 py-0.5 rounded',
-                  s.status === 'completed' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning')}>
-                  {s.status}
-                </span>
-              </button>
+              <div key={s.id} className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={loadingSessionId !== null || hunting}
+                  onClick={() => void viewSession(s.id)}
+                  aria-label={`Reopen hunt: ${s.hypothesis}`}
+                  className="flex flex-1 min-w-0 items-center gap-4 rounded-lg bg-surface-900/50 p-3 text-left transition-colors hover:bg-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Clock className="w-4 h-4 text-surface-500 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-surface-50 truncate">{s.hypothesis}</p>
+                    <p className="text-xs text-surface-500">
+                      {s.queries_run} queries · {s.findings_count} findings · {new Date(s.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <span className={clsx('text-xs px-2 py-0.5 rounded',
+                    s.status === 'completed' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning')}>
+                    {s.status}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Delete hunt: ${s.hypothesis}`}
+                  title="Delete this hunt session"
+                  onClick={() => setDeletingSession(s)}
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-surface-600 text-surface-300 hover:bg-surface-800 hover:text-danger"
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </div>
             ))}
           </div>
         )}
       </div>}
 
+      {deletingSession && (
+        <ConfirmDialog
+          title="Delete hunt session"
+          description={`Delete the hunt "${deletingSession.hypothesis}"? Its stored queries and findings are removed and cannot be restored.`}
+          confirmLabel="Delete hunt"
+          tone="danger"
+          busy={deletingSessionBusy}
+          onCancel={() => setDeletingSession(null)}
+          onConfirm={() => void deleteSession()}
+        />
+      )}
       {deletingRule && (
         <ConfirmDialog
           title="Delete detection rule"

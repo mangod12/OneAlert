@@ -85,6 +85,33 @@ describe('Hunt session reopening', () => {
   });
 });
 
+describe('Hunt session deletion', () => {
+  function mockWithSession() {
+    mockGet.mockImplementation(url => Promise.resolve({
+      data: url.endsWith('/detections') ? [] : [session],
+    }));
+  }
+
+  it('deletes a session through the confirm dialog', async () => {
+    mockWithSession();
+    mockDelete.mockResolvedValue({ data: {} });
+    render(<HuntLab />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete hunt: DNS tunneling to external domains' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete hunt' }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/hunt/5'));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /reopen hunt: dns tunneling/i })).toBeNull());
+  });
+
+  it('keeps the session when the delete dialog is cancelled', async () => {
+    mockWithSession();
+    render(<HuntLab />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete hunt: DNS tunneling to external domains' }));
+    fireEvent.click(await screen.findByRole('button', { name: /cancel/i }));
+    expect(mockDelete).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /reopen hunt: dns tunneling/i })).toBeTruthy();
+  });
+});
+
 describe('Detection rules', () => {
   const rules = [
     { id: 1, name: 'Modbus write to PLC', description: 'Flags write function codes', rule_type: 'sigma', rule_content: 'title: x', mitre_techniques: ['T0855'], confidence: 'high', tested: true, enabled: true, created_by: 'human', created_at: '2026-11-10T08:00:00Z' },
