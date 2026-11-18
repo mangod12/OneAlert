@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import case as sql_case
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -29,6 +29,7 @@ from backend.models.case import (
     TimelineEntryResponse,
 )
 from backend.models.notification import Notification
+from backend.models.response_plan import ApprovalRequest, ResponsePlan
 from backend.models.user import User
 from backend.routers.auth import get_active_user
 
@@ -479,6 +480,29 @@ async def update_case(
 
     await db.commit()
     return {"success": True, "message": "Case updated"}
+
+
+@router.delete("/{case_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_case(
+    case_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Delete a case with its timeline, alert/event links and response plans."""
+    case = (await db.execute(
+        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    plan_ids = select(ResponsePlan.id).where(ResponsePlan.case_id == case_id).scalar_subquery()
+    await db.execute(delete(ApprovalRequest).where(ApprovalRequest.plan_id.in_(plan_ids)))
+    await db.execute(delete(ResponsePlan).where(ResponsePlan.case_id == case_id))
+    await db.execute(delete(CaseAlert).where(CaseAlert.case_id == case_id))
+    await db.execute(delete(CaseEvent).where(CaseEvent.case_id == case_id))
+    await db.execute(delete(CaseTimeline).where(CaseTimeline.case_id == case_id))
+    await db.delete(case)
+    await db.commit()
 
 
 @router.post("/{case_id}/assign")

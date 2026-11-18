@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import apiClient from '../api/client';
 import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil, Trash2, Download, Shield } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
@@ -105,6 +105,9 @@ export function CaseDetail() {
   const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
   const [changingSeverity, setChangingSeverity] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deletingCase, setDeletingCase] = useState(false);
+  const navigate = useNavigate();
   const [members, setMembers] = useState<Array<{ id: number; email: string; full_name: string | null; is_active: boolean }>>([]);
   const [assigning, setAssigning] = useState(false);
   const [savingDueDate, setSavingDueDate] = useState(false);
@@ -251,6 +254,20 @@ export function CaseDetail() {
     finally { setExportingTimeline(false); }
   };
 
+  const deleteCase = async () => {
+    if (deletingCase || !caseData) return;
+    setDeletingCase(true);
+    try {
+      await apiClient.delete(`/cases/${caseData.id}`);
+      toast(`Case #${caseData.id} deleted.`, 'success');
+      navigate('/cases');
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'The case could not be deleted.'), 'error');
+      setDeletingCase(false);
+      setConfirmingDelete(false);
+    }
+  };
+
   const startNoteEdit = (entry: TimelineEntry) => {
     setEditingNoteId(entry.id);
     setEditNoteText(entry.content);
@@ -382,6 +399,14 @@ export function CaseDetail() {
                 className="grid h-9 w-9 place-items-center rounded-md text-surface-400 hover:bg-surface-800 hover:text-surface-50"
               >
                 <Pencil className="w-4 h-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                aria-label="Delete case"
+                onClick={() => setConfirmingDelete(true)}
+                className="grid h-9 w-9 place-items-center rounded-md text-surface-400 hover:bg-surface-800 hover:text-danger"
+              >
+                <Trash2 className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
             {caseData.summary && <p className="text-surface-400 mt-2">{caseData.summary}</p>}
@@ -725,6 +750,18 @@ export function CaseDetail() {
           busy={deletingNote}
           onCancel={() => { if (!deletingNote) setPendingDeleteNote(null); }}
           onConfirm={() => { void deleteNote(pendingDeleteNote); }}
+        />
+      )}
+
+      {confirmingDelete && (
+        <ConfirmDialog
+          title="Delete case"
+          description={`Delete case #${caseData.id} "${caseData.title}"? Its timeline, notes, linked alerts and events, and response plans are removed and cannot be restored.`}
+          confirmLabel="Delete case"
+          tone="danger"
+          busy={deletingCase}
+          onCancel={() => { if (!deletingCase) setConfirmingDelete(false); }}
+          onConfirm={() => void deleteCase()}
         />
       )}
 

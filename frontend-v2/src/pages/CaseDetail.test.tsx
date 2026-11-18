@@ -487,6 +487,41 @@ describe('Deleting timeline notes', () => {
   });
 });
 
+describe('Deleting the case', () => {
+  function renderWithList() {
+    return render(
+      <MemoryRouter initialEntries={['/cases/7']}>
+        <Routes>
+          <Route path="/cases/:caseId" element={<CaseDetail />} />
+          <Route path="/cases" element={<div>Cases list</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  it('deletes the case after confirmation and returns to the list', async () => {
+    mockLoad();
+    mockDelete.mockResolvedValue({ data: null });
+    renderWithList();
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete case' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/Its timeline, notes, linked alerts and events/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete case' }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/7'));
+    await screen.findByText('Cases list');
+  });
+
+  it('cancel keeps the case', async () => {
+    mockLoad();
+    renderWithList();
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete case' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(mockDelete).not.toHaveBeenCalled();
+    expect(await screen.findByText('Suspicious lateral movement')).toBeTruthy();
+  });
+});
+
 describe('Timeline CSV export', () => {
   it('downloads the timeline CSV', async () => {
     URL.createObjectURL = vi.fn(() => 'blob:timeline');
