@@ -213,6 +213,22 @@ export function Alerts() {
     else toast(`${ids.length} alerts resolved.`, 'success');
   };
 
+  const handleBulkSnooze = async (value: string) => {
+    if (value === '') return;
+    const hours = Number(value);
+    const ids = Array.from(selectedIds).filter(id => !pendingIds.has(id));
+    if (ids.length === 0) return;
+    setPendingIds(current => new Set([...current, ...ids]));
+    const results = await Promise.allSettled(ids.map(id => apiClient.post(`/alerts/${id}/snooze`, { hours })));
+    const failedIds = ids.filter((_, index) => results[index].status === 'rejected');
+    setSelectedIds(new Set(failedIds));
+    setPendingIds(current => { const next = new Set(current); ids.forEach(id => next.delete(id)); return next; });
+    await fetchAlerts();
+    const label = hours >= 24 ? `${hours / 24} day${hours > 24 ? 's' : ''}` : `${hours} hour${hours > 1 ? 's' : ''}`;
+    if (failedIds.length > 0) toast(`${failedIds.length} alerts could not be snoozed and remain selected.`, 'error');
+    else toast(`${ids.length} alerts snoozed for ${label}.`, 'success');
+  };
+
   const handleBulkAssign = async (value: string) => {
     if (value === '' || bulkAssigning) return;
     const assigneeId = value === 'none' ? null : Number(value);
@@ -261,6 +277,17 @@ export function Alerts() {
                 <option value="none">Unassign</option>
               </select>
             )}
+            <select
+              aria-label="Snooze selected alerts"
+              value=""
+              onChange={(e) => { void handleBulkSnooze(e.target.value); }}
+              className="min-h-9 rounded-md border border-surface-600 bg-surface-800 px-2.5 text-sm text-surface-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="" disabled>Snooze {selectedIds.size} selected...</option>
+              <option value="24">24 hours</option>
+              <option value="168">7 days</option>
+              <option value="720">30 days</option>
+            </select>
             <button
               onClick={handleBulkAcknowledge}
               disabled={Array.from(selectedIds).some(id => pendingIds.has(id))}

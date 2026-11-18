@@ -374,3 +374,35 @@ describe('Bulk assign', () => {
     expect(screen.queryByRole('combobox', { name: 'Assign selected alerts' })).toBeNull();
   });
 });
+
+describe('Bulk snooze', () => {
+  beforeEach(() => {
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/orgs/me/members') return Promise.resolve({ data: [] });
+      if (url === '/alerts/epss-batch') return Promise.resolve({ data: { scores: {} } });
+      if (url === '/assets/') return Promise.resolve({ data: { assets: [] } });
+      return Promise.resolve(listResponse([makeAlert()]));
+    });
+  });
+
+  it('snoozes all selected alerts for the chosen duration', async () => {
+    render(<Alerts />);
+    await screen.findByText('CVE-2026-0001');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select alert CVE-2026-0001' }));
+    const select = await screen.findByRole('combobox', { name: 'Snooze selected alerts' });
+    fireEvent.change(select, { target: { value: '168' } });
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/alerts/1/snooze', { hours: 168 }));
+  });
+
+  it('keeps failed alerts selected and reports the count', async () => {
+    mockPost.mockRejectedValueOnce(new Error('boom'));
+    render(<Alerts />);
+    await screen.findByText('CVE-2026-0001');
+    const checkbox = screen.getByRole('checkbox', { name: 'Select alert CVE-2026-0001' });
+    fireEvent.click(checkbox);
+    const select = await screen.findByRole('combobox', { name: 'Snooze selected alerts' });
+    fireEvent.change(select, { target: { value: '24' } });
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/alerts/1/snooze', { hours: 24 }));
+    await waitFor(() => expect((screen.getByRole('checkbox', { name: 'Select alert CVE-2026-0001' }) as HTMLInputElement).checked).toBe(true));
+  });
+});
