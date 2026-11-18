@@ -18,6 +18,7 @@ def parse_cyclonedx(data: dict) -> list[dict]:
     for comp in raw_components:
         name = comp.get("name", "")
         version = comp.get("version", "")
+        bom_ref = comp.get("bom-ref", "")
         supplier = (
             comp.get("supplier", {}).get("name")
             if isinstance(comp.get("supplier"), dict)
@@ -58,10 +59,29 @@ def parse_cyclonedx(data: dict) -> list[dict]:
                 "cpe": cpe,
                 "license": license_str,
                 "hash_sha256": hash_sha256,
+                "bom_ref": bom_ref,
             }
         )
 
     return components
+
+
+def parse_cyclonedx_vulnerabilities(data: dict) -> dict[str, set[str]]:
+    """Map CycloneDX component bom-refs to the vulnerability IDs affecting them.
+
+    Reads the optional top-level ``vulnerabilities`` array: each entry carries
+    an ``id`` (e.g. a CVE) and an ``affects`` list of component bom-refs.
+    """
+    affects_map: dict[str, set[str]] = {}
+    for vuln in data.get("vulnerabilities", []) or []:
+        vuln_id = vuln.get("id")
+        if not vuln_id:
+            continue
+        for affect in vuln.get("affects", []) or []:
+            ref = affect.get("ref")
+            if ref:
+                affects_map.setdefault(ref, set()).add(vuln_id)
+    return affects_map
 
 
 def parse_spdx(data: dict) -> list[dict]:

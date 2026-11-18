@@ -26,7 +26,11 @@ from backend.models.sbom import (
 )
 from backend.models.user import User
 from backend.routers.auth import get_active_user
-from backend.services.sbom_service import parse_cyclonedx, parse_spdx
+from backend.services.sbom_service import (
+    parse_cyclonedx,
+    parse_cyclonedx_vulnerabilities,
+    parse_spdx,
+)
 
 router = APIRouter()
 
@@ -59,10 +63,12 @@ async def upload_sbom(
     sbom_data = payload.sbom_data
 
     # Detect format and parse
+    vuln_map: dict[str, set[str]] = {}
     if "bomFormat" in sbom_data:
         sbom_format = "CycloneDX"
         spec_version = sbom_data.get("specVersion", "")
         parsed_components = parse_cyclonedx(sbom_data)
+        vuln_map = parse_cyclonedx_vulnerabilities(sbom_data)
     elif "spdxVersion" in sbom_data:
         sbom_format = "SPDX"
         spec_version = sbom_data.get("spdxVersion", "")
@@ -74,6 +80,7 @@ async def upload_sbom(
         )
 
     # Create SBOM record
+    distinct_vulns = {vuln_id for ids in vuln_map.values() for vuln_id in ids}
     db_sbom = SBOM(
         asset_id=payload.asset_id,
         user_id=current_user.id,
@@ -81,7 +88,7 @@ async def upload_sbom(
         version=spec_version,
         source=payload.source,
         component_count=len(parsed_components),
-        vulnerability_count=0,
+        vulnerability_count=len(distinct_vulns),
     )
     db.add(db_sbom)
     await db.flush()  # Get the SBOM id
@@ -97,7 +104,7 @@ async def upload_sbom(
             cpe=comp.get("cpe"),
             license=comp.get("license"),
             hash_sha256=comp.get("hash_sha256"),
-            has_known_vulnerability=0,
+            has_known_vulnerability=len(vuln_map.get(comp.get("bom_ref") or "", set())),
         )
         db.add(db_component)
 

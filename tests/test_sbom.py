@@ -476,3 +476,60 @@ class TestSBOMParsers:
         }
         result = parse_spdx(data)
         assert result[0]["cpe"] == "cpe:2.3:a:nginx:nginx:1.21.0"
+
+
+CYCLONEDX_WITH_VULNS = {
+    "bomFormat": "CycloneDX",
+    "specVersion": "1.5",
+    "components": [
+        {"bom-ref": "comp-openssl", "name": "openssl", "version": "1.1.1k"},
+        {"bom-ref": "comp-zlib", "name": "zlib", "version": "1.2.11"},
+        {"name": "no-ref-lib", "version": "0.1"},
+    ],
+    "vulnerabilities": [
+        {"id": "CVE-2022-0778", "affects": [{"ref": "comp-openssl"}]},
+        {"id": "CVE-2021-3449", "affects": [{"ref": "comp-openssl"}]},
+        {"id": "CVE-2018-25032", "affects": [{"ref": "comp-zlib"}, {"ref": "comp-missing"}]},
+    ],
+}
+
+
+class TestSBOMVulnerabilityCrossReference:
+    def test_upload_populates_vulnerability_counts(self, client, auth_headers, asset_id):
+        """Embedded CycloneDX vulnerabilities flag affected components."""
+        upload_resp = client.post(
+            "/api/v1/sbom/upload",
+            json={"asset_id": asset_id, "sbom_data": CYCLONEDX_WITH_VULNS},
+            headers=auth_headers,
+        )
+        assert upload_resp.status_code == 201
+        sbom = upload_resp.json()
+        assert sbom["vulnerability_count"] == 3
+
+        components = client.get(
+            f"/api/v1/sbom/{sbom['id']}/components", headers=auth_headers
+        ).json()
+        by_name = {c["name"]: c for c in components}
+        assert by_name["openssl"]["has_known_vulnerability"] == 2
+        assert by_name["zlib"]["has_known_vulnerability"] == 1
+        assert by_name["no-ref-lib"]["has_known_vulnerability"] == 0
+
+    def test_upload_without_vulnerabilities_stays_zero(self, client, auth_headers, asset_id):
+        """SBOMs without a vulnerabilities section keep zero counts."""
+        upload_resp = client.post(
+            "/api/v1/sbom/upload",
+            json={"asset_id": asset_id, "sbom_data": CYCLONEDX_SAMPLE},
+            headers=auth_headers,
+        )
+        assert upload_resp.status_code == 201
+        assert upload_resp.json()["vulnerability_count"] == 0
+
+    def test_parser_maps_affects_to_refs(self):
+        """The parser collects distinct vulnerability IDs per component ref."""
+        from backend.services.sbom_service import parse_cyclonedx_vulnerabilities
+
+        result = parse_cyclonedx_vulnerabilities(CYCLONEDX_WITH_VULNS)
+        assert result["comp-openssl"] == {"CVE-2022-0778", "CVE-2021-3449"}
+        assert result["comp-zlib"] == {"CVE-2018-25032"}
+        assert result["comp-missing"] == {"CVE-2018-25032"}
+        assert parse_cyclonedx_vulnerabilities({"bomFormat": "CycloneDX"}) == {}
