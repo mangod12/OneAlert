@@ -166,6 +166,39 @@ class TestNotificationFeed:
         assert resp.json()["marked"] == 2
         assert client.get("/api/v1/notifications/", headers=headers).json()["unread_count"] == 0
 
+    def test_delete_one_notification(self, client):
+        headers = _register_and_login(client, "del@example.com")
+        uid = _user_id(client, headers)
+        nid = _add_notification(uid, "to delete")
+
+        resp = client.delete(f"/api/v1/notifications/{nid}", headers=headers)
+        assert resp.status_code == 200
+        feed = client.get("/api/v1/notifications/", headers=headers).json()
+        assert feed["data"] == []
+
+    def test_delete_missing_or_foreign_notification_404(self, client):
+        owner = _register_and_login(client, "delowner@example.com")
+        other = _register_and_login(client, "delother@example.com")
+        uid = _user_id(client, owner)
+        nid = _add_notification(uid, "private")
+
+        assert client.delete(f"/api/v1/notifications/{nid}", headers=other).status_code == 404
+        assert client.delete("/api/v1/notifications/99999", headers=owner).status_code == 404
+
+    def test_delete_read_keeps_unread(self, client):
+        headers = _register_and_login(client, "delread@example.com")
+        uid = _user_id(client, headers)
+        _add_notification(uid, "read one", read=True)
+        _add_notification(uid, "read two", read=True)
+        _add_notification(uid, "unread one")
+
+        resp = client.delete("/api/v1/notifications/read", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] == 2
+        feed = client.get("/api/v1/notifications/", headers=headers).json()
+        assert [n["title"] for n in feed["data"]] == ["unread one"]
+        assert feed["unread_count"] == 1
+
     def test_isolation_between_users(self, client):
         owner = _register_and_login(client, "owner@example.com")
         other = _register_and_login(client, "other@example.com")
