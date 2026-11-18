@@ -17,6 +17,7 @@ from backend.models.integration_config import (
 )
 from backend.models.user import User
 from backend.routers.auth import get_active_user
+from backend.services.audit import add_audit_log
 from backend.services.integrations.base import validate_outbound_url
 from backend.services.integrations.pagerduty import PagerDutyIntegration
 from backend.services.integrations.sentinel import SentinelIntegration
@@ -150,6 +151,15 @@ async def create_integration(
         is_active=True,
     )
     db.add(config)
+    await db.flush()
+    add_audit_log(
+        db,
+        user_id=current_user.id,
+        action="integration_created",
+        target_type="integration",
+        target_id=config.id,
+        detail=f"{payload.integration_type} integration '{payload.name}' created",
+    )
     await db.commit()
     await db.refresh(config)
     return {
@@ -186,6 +196,14 @@ async def update_integration(
     for key, value in update_data.items():
         setattr(config, key, value)
 
+    add_audit_log(
+        db,
+        user_id=current_user.id,
+        action="integration_updated",
+        target_type="integration",
+        target_id=config.id,
+        detail=f"{config.integration_type} integration '{config.name}' updated",
+    )
     await db.commit()
     await db.refresh(config)
     return {
@@ -211,6 +229,14 @@ async def delete_integration(
     if not config:
         raise HTTPException(status_code=404, detail="Integration not found")
 
+    add_audit_log(
+        db,
+        user_id=current_user.id,
+        action="integration_deleted",
+        target_type="integration",
+        target_id=config.id,
+        detail=f"{config.integration_type} integration '{config.name}' deleted",
+    )
     await db.delete(config)
     await db.commit()
     return {"success": True, "data": None, "message": "Integration deleted"}

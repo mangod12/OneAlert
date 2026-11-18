@@ -18,6 +18,7 @@ from backend.models.api_token import (
     hash_api_token,
 )
 from backend.models.user import User
+from backend.services.audit import add_audit_log
 
 router = APIRouter()
 
@@ -85,6 +86,16 @@ async def create_api_token(
         ),
     )
     db.add(token)
+    await db.flush()
+    add_audit_log(
+        db,
+        user_id=current_user.id,
+        action="api_token_created",
+        target_type="api_token",
+        target_id=token.id,
+        detail=f"Token '{name}' ({prefix}…) created"
+        + (" (read-only)" if payload.read_only else ""),
+    )
     await db.commit()
     await db.refresh(token)
     created = ApiTokenResponse.model_validate(token)
@@ -109,4 +120,12 @@ async def revoke_api_token(
     if token is None:
         raise HTTPException(status_code=404, detail="API token not found")
     token.revoked_at = _utcnow()
+    add_audit_log(
+        db,
+        user_id=current_user.id,
+        action="api_token_revoked",
+        target_type="api_token",
+        target_id=token.id,
+        detail=f"Token '{token.name}' ({token.prefix}…) revoked",
+    )
     await db.commit()
