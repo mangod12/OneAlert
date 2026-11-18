@@ -26,6 +26,7 @@ from backend.models.user import (
     NotificationPreferences,
     NotificationPreferencesUpdate,
     PasswordChange,
+    ProfileUpdate,
     Token,
     User,
     UserCreate,
@@ -250,6 +251,23 @@ async def logout_user(response: Response):
 @router.get("/me", response_model=UserResponse)
 async def read_current_user(current_user: User = Depends(get_active_user)):
     """Get current user profile."""
+    return current_user
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_current_user(
+    update: ProfileUpdate,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Update the current user's display name and company."""
+    if update.full_name is not None:
+        current_user.full_name = update.full_name.strip() or None
+    if update.company is not None:
+        current_user.company = update.company.strip() or None
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
     return current_user
 
 

@@ -140,6 +140,14 @@ class PasswordChange(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ProfileUpdate(BaseModel):
+    """Editable profile fields for the current user."""
+    full_name: str | None = None
+    company: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
 SEVERITY_LEVELS = ("low", "medium", "high", "critical")
 
 # In-app notification kinds that can be muted individually.
