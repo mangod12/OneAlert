@@ -872,10 +872,13 @@ async def update_case(
     due_date: str | None = Query(
         None, description="ISO date (YYYY-MM-DD), empty to clear, omitted to leave unchanged"
     ),
+    resolution: str | None = Query(
+        None, description="Close-out summary, empty to clear, omitted to leave unchanged"
+    ),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Update case status, severity, title, or summary."""
+    """Update case status, severity, title, summary, or close-out resolution."""
     case = (await db.execute(
         _visible_cases(case_id, current_user)
     )).scalar_one_or_none()
@@ -891,7 +894,7 @@ async def update_case(
         )
 
     if case.user_id != current_user.id and any(
-        value is not None for value in (severity, title, summary, due_date)
+        value is not None for value in (severity, title, summary, due_date, resolution)
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -903,7 +906,14 @@ async def update_case(
     old_status = case.status
 
     if status_update:
+        done_statuses = ("resolved", "closed", "false_positive")
+        was_done = case.status in done_statuses
+        will_be_done = status_update in done_statuses
         case.status = status_update
+        if will_be_done and not was_done:
+            case.closed_at = datetime.now(UTC)
+        elif was_done and not will_be_done:
+            case.closed_at = None
     if severity:
         case.severity = severity
     if title is not None:
@@ -913,6 +923,8 @@ async def update_case(
         case.title = stripped_title
     if summary is not None:
         case.summary = summary.strip() or None
+    if resolution is not None:
+        case.resolution = resolution.strip() or None
     if due_date is not None:
         if due_date == "":
             case.due_date = None

@@ -45,6 +45,8 @@ class Case(Base):
     mitre_techniques = Column(JSON, nullable=True)  # [{"id": "T1078", "name": "Valid Accounts", "confidence": 0.85}]
     attack_narrative = Column(Text, nullable=True)  # AI-generated attack story
     due_date = Column(Date, nullable=True)  # target date to close the case
+    closed_at = Column(DateTime(timezone=True), nullable=True)  # set when the case enters a done status
+    resolution = Column(Text, nullable=True)  # close-out summary recorded by the owner
     sla_breach_notified_at = Column(DateTime(timezone=True), nullable=True)  # set once an overdue notification was sent
     # set once a due-tomorrow warning was sent
     sla_due_soon_notified_at = Column(DateTime(timezone=True), nullable=True)
@@ -218,6 +220,8 @@ class CaseResponse(BaseModel):
     mitre_techniques: list | None = None
     attack_narrative: str | None = None
     due_date: date | None = None
+    closed_at: datetime | None = None
+    resolution: str | None = None
     created_by: str
     created_at: datetime
     updated_at: datetime | None = None
