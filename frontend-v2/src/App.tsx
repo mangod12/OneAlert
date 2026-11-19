@@ -18,6 +18,7 @@ const Assets = lazy(() => import('./pages/Assets').then(module => ({ default: mo
 const OTDiscovery = lazy(() => import('./pages/OTDiscovery').then(module => ({ default: module.OTDiscovery })));
 const MitreMap = lazy(() => import('./pages/MitreMap').then(module => ({ default: module.MitreMap })));
 const HuntLab = lazy(() => import('./pages/HuntLab').then(module => ({ default: module.HuntLab })));
+const Notifications = lazy(() => import('./pages/Notifications').then(module => ({ default: module.Notifications })));
 const Settings = lazy(() => import('./pages/Settings').then(module => ({ default: module.Settings })));
 const AuditLog = lazy(() => import('./pages/AuditLog').then(module => ({ default: module.AuditLog })));
 const Compliance = lazy(() => import('./pages/Compliance').then(module => ({ default: module.Compliance })));
@@ -62,6 +63,7 @@ function App() {
           <Route path="/hunt" element={<HuntLab />} />
           <Route path="/response-plans" element={<ResponsePlans />} />
           <Route path="/validation" element={<Validation />} />
+          <Route path="/notifications" element={<Notifications />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/topology" element={<Topology />} />
           <Route path="/sbom" element={<Sbom />} />

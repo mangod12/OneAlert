@@ -117,6 +117,21 @@ class TestNotificationFeed:
         titles = [n["title"] for n in resp.json()["data"]]
         assert titles == ["unread one"]
 
+    def test_kind_filter(self, client):
+        headers = _register_and_login(client, "kindfilter@example.com")
+        uid = _user_id(client, headers)
+        _add_notification(uid, "assigned one", kind="case_assigned")
+        _add_notification(uid, "created one", kind="alert_created")
+        _add_notification(uid, "assigned two", kind="case_assigned")
+
+        resp = client.get("/api/v1/notifications/?kind=case_assigned", headers=headers)
+        body = resp.json()
+        assert body["total"] == 2
+        assert {n["title"] for n in body["data"]} == {"assigned one", "assigned two"}
+
+        resp = client.get("/api/v1/notifications/?kind=alert_created&unread_only=true", headers=headers)
+        assert [n["title"] for n in resp.json()["data"]] == ["created one"]
+
     def test_muted_kinds_hidden_from_feed(self, client):
         headers = _register_and_login(client, "mutefeed@example.com")
         uid = _user_id(client, headers)

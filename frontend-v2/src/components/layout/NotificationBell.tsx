@@ -3,6 +3,7 @@ import { Bell, CheckCheck, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../../api/client';
 import { groupNotifications, type NotificationGroup } from './notificationGroups';
+import { relativeTime } from '../../utils/relativeTime';
 
 export interface AppNotification {
   id: number;
@@ -27,16 +28,6 @@ const POLL_MS = 60_000;
 function toRoutePath(link: string | null): string | null {
   if (!link) return null;
   return link.startsWith('/app') ? link.slice(4) || '/' : link;
-}
-
-function relativeTime(iso: string): string {
-  const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  if (seconds < 60) return 'just now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
 }
 
 export function NotificationBell() {
@@ -212,6 +203,13 @@ export function NotificationBell() {
               );
             })}
           </ul>
+          <button
+            type="button"
+            onClick={() => { setOpen(false); navigate('/notifications'); }}
+            className="w-full border-t border-surface-800 px-3 py-2 text-center text-xs font-semibold text-accent-400 hover:bg-surface-800 hover:text-accent-300"
+          >
+            View all notifications
+          </button>
         </div>
       )}
     </div>

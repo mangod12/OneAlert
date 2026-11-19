@@ -17,6 +17,7 @@ router = APIRouter()
 @router.get("/")
 async def list_notifications(
     unread_only: bool = Query(False),
+    kind: str | None = Query(None),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_active_user),
@@ -34,6 +35,9 @@ async def list_notifications(
     if unread_only:
         base = base.where(Notification.read_at.is_(None))
         count_q = count_q.where(Notification.read_at.is_(None))
+    if kind:
+        base = base.where(Notification.kind == kind)
+        count_q = count_q.where(Notification.kind == kind)
 
     total = (await db.execute(count_q)).scalar_one()
     unread_count = (await db.execute(
