@@ -420,7 +420,8 @@ class AlertChecker:
                 exploitability=cve.get('exploitability'),
                 remediation=cve.get('remediation'),
                 source_url=cve.get('source_url'),
-                status=AlertStatus.PENDING
+                status=AlertStatus.PENDING,
+                due_date=sla_due_date(user, cve.get('severity', 'unknown')),
             )
 
             db.add(alert)
@@ -480,7 +481,8 @@ class AlertChecker:
                 description=advisory.get('description', ''),
                 severity=advisory.get('severity', 'unknown'),
                 source_url=advisory.get('source_url'),
-                status=AlertStatus.PENDING
+                status=AlertStatus.PENDING,
+                due_date=sla_due_date(user, advisory.get('severity', 'unknown')),
             )
 
             db.add(alert)
@@ -665,7 +667,8 @@ class AlertChecker:
                 severity=severity,
                 remediation=advisory.get('remediation'),
                 source_url=advisory.get('source_url'),
-                status=AlertStatus.PENDING
+                status=AlertStatus.PENDING,
+                due_date=sla_due_date(user, severity),
             )
 
             db.add(alert)

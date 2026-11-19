@@ -162,7 +162,7 @@ export function AutomationPanel() {
               disabled={loading}
               className="h-4 w-4 rounded border-surface-600 bg-surface-950 text-primary-500 focus:ring-2 focus:ring-primary-500"
             />
-            Set SLA due dates on new investigations
+            Set SLA due dates on new alerts and investigations
           </label>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">
             {SLA_FIELDS.map(({ key, label }) => (
@@ -182,7 +182,7 @@ export function AutomationPanel() {
             ))}
           </div>
           <p className="mt-3 text-xs text-surface-500">
-            Every new investigation, opened manually or by automation, gets a target close date this many days out, based on its severity.
+            Every new alert and investigation, opened manually or by automation, gets a target close date this many days out, based on its severity.
           </p>
         </div>
 

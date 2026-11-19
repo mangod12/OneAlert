@@ -1,8 +1,8 @@
-"""Severity-based SLA due dates for investigations (cases).
+"""Severity-based SLA due dates for alerts and investigations (cases).
 
-When a user enables SLA due dates, every new investigation automatically
-gets a target close date derived from its severity. A periodic breach
-check notifies the owner once an open investigation passes its due date.
+When a user enables SLA due dates, every new alert and investigation
+automatically gets a target close date derived from its severity. A periodic
+breach check notifies the owner once an open item passes its due date.
 """
 
 import logging
@@ -28,7 +28,7 @@ _SLA_FIELD_BY_SEVERITY = {
 
 
 def sla_due_date(user, severity) -> date | None:
-    """Return the SLA due date for a new case, or None when disabled/unknown."""
+    """Return the SLA due date for a new alert or case, or None when disabled/unknown."""
     if not getattr(user, "sla_due_dates_enabled", False):
         return None
     sev = severity.value if hasattr(severity, "value") else (str(severity) if severity else "")
@@ -36,7 +36,7 @@ def sla_due_date(user, severity) -> date | None:
     if field is None:
         return None
     days = getattr(user, field, None)
-    if not days or days < 1:
+    if not isinstance(days, int) or isinstance(days, bool) or days < 1:
         return None
     return datetime.now(UTC).date() + timedelta(days=days)
 
