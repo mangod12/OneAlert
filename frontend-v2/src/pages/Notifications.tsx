@@ -21,7 +21,7 @@ const KIND_LABELS: Array<[string, string]> = [
   ['alert_updated', 'Alert updates'],
   ['alert_watching', 'Alert watch additions'],
   ['alert_mention', 'Alert mentions'],
-  ['case_assigned', 'Case assignments'],
+  ['case_assigned', 'Case assignments'], ['case_task_assigned', 'Task assignments'],
   ['case_updated', 'Case updates'],
   ['case_watching', 'Case watch additions'],
   ['case_mention', 'Case mentions'],
