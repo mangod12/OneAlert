@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Notifications } from './Notifications';
@@ -100,4 +100,51 @@ describe('Notifications page', () => {
       expect(mockDelete).toHaveBeenCalledWith('/notifications/1');
     });
   });
+  it('keeps unread counts and shows an error when mark all read fails', async () => {
+    mockGet.mockResolvedValue(listResponse([mk(1, 'alert_created', 'New alert', false)], 1, 1) as never);
+    mockPost.mockRejectedValueOnce(new Error('Offline'));
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Mark all read' }));
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.getByText('1 unread')).toBeTruthy();
+    expect(screen.getByText('New alert')).toBeTruthy();
+  });
+
+  it('keeps read items visible until clear succeeds and exposes failures', async () => {
+    mockGet.mockResolvedValue(listResponse([mk(1, 'case_assigned', 'Read item', true)], 1, 0) as never);
+    mockDelete.mockRejectedValueOnce(new Error('Offline'));
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear read' }));
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.getByText('Read item')).toBeTruthy();
+    expect(mockDelete).toHaveBeenCalledWith('/notifications/read');
+  });
+
+  it('removes only confirmed deletions from a partially failed group', async () => {
+    mockGet.mockResolvedValue(listResponse([mk(2, 'alert_updated', 'Same alert', false), mk(1, 'alert_updated', 'Same alert', false)], 2, 2) as never);
+    mockDelete.mockImplementation(async url => {
+      if (url === '/notifications/2') return {} as never;
+      throw new Error('Offline');
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete 2 notifications: Same alert' }));
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.getByText('1 unread')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete notification Same alert' })).toBeTruthy();
+  });
+
+  it('guards duplicate mutations while saving', async () => {
+    let resolve!: (value: never) => void;
+    mockGet.mockResolvedValue(listResponse([mk(1, 'alert_created', 'New alert', false)], 1, 1) as never);
+    mockPost.mockImplementation(() => new Promise(r => { resolve = r; }));
+    renderPage();
+    const button = await screen.findByRole('button', { name: 'Mark all read' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect((screen.getByLabelText('Unread only') as HTMLInputElement).disabled).toBe(true);
+    await act(async () => resolve({} as never));
+    expect(await screen.findByText('All caught up')).toBeTruthy();
+  });
+
 });
