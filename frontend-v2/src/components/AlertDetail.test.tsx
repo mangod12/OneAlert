@@ -369,6 +369,17 @@ describe('AlertDetail notes', () => {
     expect(screen.getByText(/owner@example\.com/)).toBeTruthy();
   });
 
+  it('highlights the deep-linked note', async () => {
+    mockNotesGets([
+      { id: 5, alert_id: 1, user_id: 5, user_email: 'owner@example.com', body: 'First note', created_at: '2026-11-17T09:00:00Z', edited_at: null },
+      { id: 9, alert_id: 1, user_id: 5, user_email: 'owner@example.com', body: 'Second note', created_at: '2026-11-17T10:00:00Z', edited_at: null },
+    ]);
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} highlightNoteId={9} />);
+    expect(await screen.findByText('Second note')).toBeTruthy();
+    expect(document.getElementById('alert-note-9')?.className).toContain('ring-1');
+    expect(document.getElementById('alert-note-5')?.className).not.toContain('ring-1');
+  });
+
   it('adds a note and shows it', async () => {
     mockNotesGets();
     post.mockResolvedValue({ data: { id: 6, alert_id: 1, body: 'Escalated to OT lead', created_at: '2026-11-18T05:00:00Z' } } as never);

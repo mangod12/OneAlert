@@ -225,6 +225,20 @@ describe('Editing timeline notes', () => {
     await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2));
   });
 
+  it('highlights the deep-linked note entry', async () => {
+    mockLoadWithTimeline([noteEntry, actionEntry]);
+    render(
+      <MemoryRouter initialEntries={['/cases/7?note=21']}>
+        <Routes>
+          <Route path="/cases/:caseId" element={<CaseDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByText('Original note');
+    expect(document.getElementById('case-note-21')?.className).toContain('ring-2');
+    expect(document.getElementById('case-note-22')?.className).not.toContain('ring-2');
+  });
+
   it('cancel leaves the note untouched', async () => {
     mockLoadWithTimeline([noteEntry]);
     renderDetail();

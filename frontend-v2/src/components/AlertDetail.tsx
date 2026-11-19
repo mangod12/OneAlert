@@ -26,6 +26,7 @@ interface Props {
   onReopen: (id: number) => void;
   onSnooze: (id: number, hours: number | null) => void;
   onAssigned: (id: number, assigneeId: number | null, assigneeEmail: string | null) => void;
+  highlightNoteId?: number | null;
 }
 
 interface OrgMember {
@@ -60,7 +61,7 @@ interface AlertActivity {
   timestamp: string | null;
 }
 
-export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen, onSnooze, onAssigned }: Props) {
+export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen, onSnooze, onAssigned, highlightNoteId = null }: Props) {
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
     setNow(Date.now());
@@ -175,6 +176,11 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
       .catch(() => { if (!cancelled) setActivity([]); });
     return () => { cancelled = true; };
   }, [alert.id]);
+
+  useEffect(() => {
+    if (!highlightNoteId || !notes) return;
+    document.getElementById(`alert-note-${highlightNoteId}`)?.scrollIntoView?.({ block: 'center' });
+  }, [notes, highlightNoteId]);
 
   const addNote = async () => {
     const body = noteDraft.trim();
@@ -359,7 +365,13 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
               <ul className="mt-2 space-y-2">
                 {notes.length === 0 && <li className="text-xs text-surface-500">No notes yet</li>}
                 {notes.map(note => (
-                  <li key={note.id} className="rounded-md border border-surface-700 bg-surface-800/50 p-3">
+                  <li
+                    key={note.id}
+                    id={`alert-note-${note.id}`}
+                    className={highlightNoteId === note.id
+                      ? 'rounded-md border border-primary-500 bg-primary-500/10 p-3 ring-1 ring-primary-500'
+                      : 'rounded-md border border-surface-700 bg-surface-800/50 p-3'}
+                  >
                     {editingNoteId === note.id ? (
                       <div className="flex items-start gap-2">
                         <MentionTextarea

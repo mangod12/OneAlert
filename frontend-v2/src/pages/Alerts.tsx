@@ -628,6 +628,7 @@ export function Alerts() {
       {selectedAlert && (
         <AlertDetail
           alert={selectedAlert}
+          highlightNoteId={Number(searchParams.get('note')) || null}
           onClose={() => setSelectedAlert(null)}
           onAcknowledge={handleAcknowledge}
           onResolve={handleResolve}

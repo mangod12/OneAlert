@@ -428,6 +428,7 @@ async def add_case_note(
         user_id=current_user.id,
     )
     db.add(entry)
+    await db.flush()  # entry.id feeds the mention deep links below
 
     # @mentions: "@will" pings will@<org> and, when the author can share the
     # case (owner or assignee), adds them as a watcher so the link works and
@@ -467,7 +468,7 @@ async def add_case_note(
                     kind="case_mention",
                     title=f"{current_user.email} mentioned you in case #{case.id}",
                     body=excerpt,
-                    link=f"/app/cases/{case.id}",
+                    link=f"/app/cases/{case.id}?note={entry.id}",
                 ))
                 notified.append(target)
 
@@ -481,7 +482,7 @@ async def add_case_note(
             severity=case.severity,
             title=f"{current_user.email} mentioned you in case #{case.id}",
             body=f"{case.title}. Open the case to read the note.",
-            link_path=f"/app/cases/{case.id}",
+            link_path=f"/app/cases/{case.id}?note={entry.id}",
         )
     return entry
 
