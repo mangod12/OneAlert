@@ -112,6 +112,7 @@ async def add_alert_note(
         raise HTTPException(status_code=400, detail="Note cannot be blank")
     note = AlertNote(alert_id=alert_id, user_id=current_user.id, body=body)
     db.add(note)
+    await db.flush()  # note.id feeds the mention deep links below
 
     # @mentions: "@will" pings will@<org> and, when the author can share the
     # alert (owner or assignee), adds them as a watcher so the link works and
@@ -151,7 +152,7 @@ async def add_alert_note(
                     kind="alert_mention",
                     title=f"{current_user.email} mentioned you in alert #{alert_id}",
                     body=excerpt,
-                    link=f"/app/alerts?alert={alert_id}",
+                    link=f"/app/alerts?alert={alert_id}&note={note.id}",
                 ))
                 notified.append(target)
 
@@ -165,7 +166,7 @@ async def add_alert_note(
             severity=alert.severity,
             title=f"{current_user.email} mentioned you in alert #{alert_id}",
             body=f"{alert.title or alert.cve_id}. Open the alert to read the note.",
-            link_path=f"/app/alerts?alert={alert_id}",
+            link_path=f"/app/alerts?alert={alert_id}&note={note.id}",
         )
     note.user_email = current_user.email
     return note

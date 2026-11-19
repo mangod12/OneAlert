@@ -118,12 +118,13 @@ class TestAlertMentions:
             headers=owner,
         )
         assert resp.status_code in (200, 201), resp.text
+        note_id = resp.json()["id"]
 
         notes = _mention_notes(client, will)
         assert len(notes) == 1
         assert notes[0]["title"] == f"owner@example.com mentioned you in alert #{alert_id}"
         assert "beacon cadence" in notes[0]["body"]
-        assert notes[0]["link"] == f"/app/alerts?alert={alert_id}"
+        assert notes[0]["link"] == f"/app/alerts?alert={alert_id}&note={note_id}"
 
         # The mention granted watcher access, so the alert now opens.
         resp = client.get(f"/api/v1/alerts/{alert_id}", headers=will)

@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { MentionTextarea } from '../components/MentionTextarea';
 import apiClient from '../api/client';
 import { useAuthStore } from '../stores/authStore';
@@ -84,6 +84,13 @@ interface CaseWatcher { user_id: number; email: string; full_name: string | null
 export function CaseDetail() {
   const { caseId } = useParams<{ caseId: string }>();
   const [caseData, setCaseData] = useState<CaseData | null>(null);
+  const [searchParams] = useSearchParams();
+  const highlightedNoteId = Number(searchParams.get('note')) || null;
+
+  useEffect(() => {
+    if (!highlightedNoteId || !caseData) return;
+    document.getElementById(`case-note-${highlightedNoteId}`)?.scrollIntoView?.({ block: 'center' });
+  }, [caseData, highlightedNoteId]);
   const [alerts, setAlerts] = useState<RelatedAlert[]>([]);
   const [events, setEvents] = useState<RelatedEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -698,7 +705,13 @@ export function CaseDetail() {
                 {caseData.timeline.map((entry) => {
                   const Icon = timelineIcons[entry.entry_type] || Clock;
                   return (
-                    <div key={entry.id} className="flex gap-4">
+                    <div
+                      key={entry.id}
+                      id={`case-note-${entry.id}`}
+                      className={highlightedNoteId === entry.id
+                        ? 'flex gap-4 rounded-md bg-primary-500/10 ring-2 ring-primary-500'
+                        : 'flex gap-4'}
+                    >
                       <div className="flex flex-col items-center">
                         <div className="w-8 h-8 rounded-full bg-surface-700 flex items-center justify-center">
                           <Icon className="w-4 h-4 text-primary-400" />
