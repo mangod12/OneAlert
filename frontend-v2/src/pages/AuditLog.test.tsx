@@ -136,3 +136,67 @@ describe('AuditLog CSV export', () => {
     expect(await screen.findByRole('alert')).toBeTruthy();
   });
 });
+
+
+describe('Recorded run inspection', () => {
+  it('opens read-only detail and closes back to the run list', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/auth/audit-logs') return { data: { logs, total: logs.length } };
+      if (url === '/cases/agents/runs') return { data: runs };
+      if (url === '/cases/agents/runs/3') return { data: { ...runs[0], error_message: null, steps: [] } };
+      throw new Error('Unexpected request');
+    });
+    render(<AuditLog />);
+    const inspect = await screen.findByRole('button', { name: 'Inspect triage run 3' });
+    inspect.focus();
+    fireEvent.click(inspect);
+    await screen.findByText('Recorded steps (0)');
+    expect(screen.getByRole('dialog').textContent).toContain('Recorded agent run #3');
+    fireEvent.click(screen.getByRole('button', { name: 'Close run' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Inspect triage run 3' }));
+  });
+
+  it('keeps owner run inspection available when admin audit records are denied', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/auth/audit-logs') throw new Error('Not authorized');
+      if (url === '/cases/agents/runs') return { data: runs };
+      throw new Error('Unexpected request');
+    });
+    render(<AuditLog />);
+    await screen.findByText('Audit log unavailable');
+    expect(screen.getByRole('button', { name: 'Inspect triage run 3' })).toBeTruthy();
+  });
+
+  it('shows a ledger failure and retries without reloading the audit records', async () => {
+    let failed = true;
+    get.mockImplementation(async (url: string) => {
+      if (url === '/auth/audit-logs') return { data: { logs, total: logs.length } };
+      if (url === '/cases/agents/runs') {
+        if (failed) throw new Error('Offline');
+        return { data: [] };
+      }
+      throw new Error('Unexpected request');
+    });
+    render(<AuditLog />);
+    await screen.findByText('Agent activity unavailable');
+    expect(screen.queryByText('No agent runs recorded for your account.')).toBeNull();
+    expect(screen.getByText('case.status_changed')).toBeTruthy();
+    failed = false;
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    await screen.findByText('No agent runs recorded for your account.');
+    expect(get.mock.calls.filter(([url]) => url === '/auth/audit-logs')).toHaveLength(1);
+  });
+});
+
+
+it('loads the owner ledger independently while admin audit records are pending', async () => {
+  get.mockImplementation((url: string) => {
+    if (url === '/auth/audit-logs') return new Promise(() => {});
+    if (url === '/cases/agents/runs') return Promise.resolve({ data: runs });
+    return Promise.reject(new Error('Unexpected request'));
+  });
+  render(<AuditLog />);
+  expect(await screen.findByRole('button', { name: 'Inspect triage run 3' })).toBeTruthy();
+  expect(screen.getByText('Loading audit activity')).toBeTruthy();
+});

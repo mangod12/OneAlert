@@ -11,11 +11,12 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import case as sql_case
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from backend.database.db import get_async_db
 from backend.models.case import (
     AgentRun,
+    AgentRunDetailResponse,
     AgentRunResponse,
     Case,
     CaseAlert,
@@ -1565,3 +1566,21 @@ async def list_agent_runs(
         .limit(50)
     )
     return result.scalars().all()
+
+
+@router.get("/agents/runs/{run_id}", response_model=AgentRunDetailResponse)
+async def get_agent_run(
+    run_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Inspect one run and its recorded steps, restricted to its owner."""
+    result = await db.execute(
+        select(AgentRun)
+        .where(AgentRun.id == run_id, AgentRun.user_id == current_user.id)
+        .options(selectinload(AgentRun.steps))
+    )
+    run = result.scalar_one_or_none()
+    if run is None:
+        raise HTTPException(status_code=404, detail="Agent run not found")
+    return run

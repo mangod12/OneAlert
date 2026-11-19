@@ -327,3 +327,19 @@ class AgentRunResponse(BaseModel):
     result_summary: str | None = None
     # model_used legitimately lives under the model_ prefix here
     model_config = {"from_attributes": True, "protected_namespaces": ()}
+
+
+class AgentStepResponse(BaseModel):
+    id: int
+    step_number: int
+    action: str
+    input_summary: str | None = None
+    output_summary: str | None = None
+    tool_used: str | None = None
+    duration_ms: int | None = None
+    model_config = {"from_attributes": True}
+
+
+class AgentRunDetailResponse(AgentRunResponse):
+    error_message: str | None = None
+    steps: list[AgentStepResponse] = []
