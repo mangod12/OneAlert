@@ -379,6 +379,30 @@ describe('AlertDetail notes', () => {
     expect(await screen.findByText('Escalated to OT lead')).toBeTruthy();
   });
 
+  it('lets the author edit a note and shows the edited marker', async () => {
+    useAuthStore.setState({ user: { id: 5, email: 'owner@example.com', full_name: 'Owner', company: 'Acme', role: 'admin', is_active: true, is_verified: true, mfa_enabled: false, created_at: '2026-01-01T00:00:00Z' } });
+    mockNotesGets([{ id: 8, alert_id: 1, user_id: 5, body: 'first draft', created_at: '2026-11-17T09:00:00Z', edited_at: null }]);
+    const patch = vi.mocked(apiClient.patch);
+    patch.mockResolvedValue({ data: { id: 8, alert_id: 1, user_id: 5, body: 'second draft', created_at: '2026-11-17T09:00:00Z', edited_at: '2026-11-18T06:00:00Z' } } as never);
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />);
+    fireEvent.click(await screen.findByLabelText('Edit note 8'));
+    const editBox = screen.getByLabelText('Edit note');
+    expect((editBox as HTMLTextAreaElement).value).toBe('first draft');
+    fireEvent.change(editBox, { target: { value: 'second draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(patch).toHaveBeenCalledWith('/alerts/1/notes/8', { body: 'second draft' }));
+    expect(await screen.findByText('second draft')).toBeTruthy();
+    expect(screen.getByText(/edited/)).toBeTruthy();
+  });
+
+  it('hides the edit button on notes written by someone else', async () => {
+    useAuthStore.setState({ user: { id: 42, email: 'member@example.com', full_name: 'Member', company: 'Acme', role: 'analyst', is_active: true, is_verified: true, mfa_enabled: false, created_at: '2026-01-01T00:00:00Z' } });
+    mockNotesGets([{ id: 9, alert_id: 1, user_id: 5, body: 'owner note', created_at: '2026-11-17T09:00:00Z', edited_at: null }]);
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />);
+    expect(await screen.findByText('owner note')).toBeTruthy();
+    expect(screen.queryByLabelText('Edit note 9')).toBeNull();
+  });
+
   it('deletes a note', async () => {
     mockNotesGets([{ id: 7, alert_id: 1, body: 'obsolete note', created_at: '2026-11-17T09:00:00Z' }]);
     const del = vi.mocked(apiClient.delete);

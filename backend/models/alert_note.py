@@ -18,6 +18,7 @@ class AlertNote(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     body = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    edited_at = Column(DateTime, nullable=True)
 
 
 class AlertNoteCreate(BaseModel):
@@ -28,8 +29,10 @@ class AlertNoteCreate(BaseModel):
 class AlertNoteResponse(BaseModel):
     id: int
     alert_id: int
+    user_id: int
     body: str
     created_at: datetime
+    edited_at: datetime | None = None
 
     class Config:
         from_attributes = True

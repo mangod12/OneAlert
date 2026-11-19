@@ -134,3 +134,55 @@ class TestAlertNotes:
     def test_notes_on_missing_alert_404(self, client):
         headers = _register_and_login(client, "missing@example.com")
         assert client.get("/api/v1/alerts/9999/notes", headers=headers).status_code == 404
+
+
+class TestAlertNoteEdit:
+    def test_author_can_edit_and_gets_edited_marker(self, client):
+        headers = _register_and_login(client, "editor@example.com")
+        alert_id = _seed_alert(client, headers)
+        created = client.post(
+            f"/api/v1/alerts/{alert_id}/notes", json={"body": "Initial thought"}, headers=headers,
+        )
+        note = created.json()
+        assert note["edited_at"] is None
+        assert "user_id" in note
+
+        resp = client.patch(
+            f"/api/v1/alerts/{alert_id}/notes/{note['id']}", json={"body": "Revised thought"}, headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        updated = resp.json()
+        assert updated["body"] == "Revised thought"
+        assert updated["edited_at"] is not None
+
+        listing = client.get(f"/api/v1/alerts/{alert_id}/notes", headers=headers)
+        assert listing.json()[0]["body"] == "Revised thought"
+        assert listing.json()[0]["edited_at"] is not None
+
+    def test_edit_rejects_blank_body(self, client):
+        headers = _register_and_login(client, "blankedit@example.com")
+        alert_id = _seed_alert(client, headers)
+        note = client.post(
+            f"/api/v1/alerts/{alert_id}/notes", json={"body": "Keep me"}, headers=headers,
+        ).json()
+        assert client.patch(
+            f"/api/v1/alerts/{alert_id}/notes/{note['id']}", json={"body": "  "}, headers=headers,
+        ).status_code == 400
+
+    def test_edit_other_users_note_404(self, client):
+        author = _register_and_login(client, "author@example.com")
+        other = _register_and_login(client, "other@example.com")
+        alert_id = _seed_alert(client, author)
+        note = client.post(
+            f"/api/v1/alerts/{alert_id}/notes", json={"body": "Mine"}, headers=author,
+        ).json()
+        assert client.patch(
+            f"/api/v1/alerts/{alert_id}/notes/{note['id']}", json={"body": "Hijacked"}, headers=other,
+        ).status_code == 404
+
+    def test_edit_missing_note_404(self, client):
+        headers = _register_and_login(client, "missingedit@example.com")
+        alert_id = _seed_alert(client, headers)
+        assert client.patch(
+            f"/api/v1/alerts/{alert_id}/notes/9999", json={"body": "Nope"}, headers=headers,
+        ).status_code == 404
