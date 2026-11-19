@@ -731,3 +731,69 @@ describe('Case watchers', () => {
     await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/7/watchers/6'));
   });
 });
+
+describe('Investigation tasks', () => {
+  const tasks = [
+    { id: 1, title: 'Contain the host', done: true, position: 0, created_at: '2026-11-18T09:00:00Z', completed_at: '2026-11-18T10:00:00Z' },
+    { id: 2, title: 'Collect triage image', done: false, position: 1, created_at: '2026-11-18T09:05:00Z', completed_at: null },
+  ];
+
+  function mockLoadWithTasks(initial: Array<Record<string, unknown>>) {
+    mockGet.mockImplementation(url => {
+      if (url.endsWith('/tasks')) return Promise.resolve({ data: initial });
+      if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
+      if (url.endsWith('/alerts') || url.endsWith('/events')) return Promise.resolve({ data: [] });
+      if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: null } });
+      if (url.endsWith('/similar')) return Promise.resolve({ data: { success: true, data: [] } });
+      return Promise.resolve({ data: caseData });
+    });
+  }
+
+  it('lists checklist tasks with a progress summary', async () => {
+    mockLoadWithTasks(tasks);
+    renderDetail();
+    expect(await screen.findByText('Investigation Tasks')).toBeTruthy();
+    expect(screen.getByText('Contain the host')).toBeTruthy();
+    expect(screen.getByText('Collect triage image')).toBeTruthy();
+    expect(screen.getByText('1 of 2 done')).toBeTruthy();
+  });
+
+  it('completes an open task from the checklist', async () => {
+    mockLoadWithTasks(tasks);
+    mockPatch.mockResolvedValue({ data: { ...tasks[1], done: true } });
+    renderDetail();
+    fireEvent.click(await screen.findByRole('button', { name: 'Complete task Collect triage image' }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/2', { done: true }));
+  });
+
+  it('reopens a completed task from the checklist', async () => {
+    mockLoadWithTasks(tasks);
+    mockPatch.mockResolvedValue({ data: { ...tasks[0], done: false } });
+    renderDetail();
+    fireEvent.click(await screen.findByRole('button', { name: 'Reopen task Contain the host' }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/1', { done: false }));
+  });
+
+  it('adds a new task from the input', async () => {
+    mockLoadWithTasks([]);
+    mockPost.mockResolvedValue({ data: { id: 3, title: 'Eradiate persistence', done: false, position: 0 } });
+    renderDetail();
+    fireEvent.change(await screen.findByLabelText('New task title'), { target: { value: 'Eradicate persistence' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/tasks', { title: 'Eradicate persistence' }));
+  });
+
+  it('removes a task from the checklist', async () => {
+    mockLoadWithTasks(tasks);
+    mockDelete.mockResolvedValue({ data: { success: true } });
+    renderDetail();
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete task Contain the host' }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/7/tasks/1'));
+  });
+
+  it('shows the empty state when the checklist is empty', async () => {
+    mockLoadWithTasks([]);
+    renderDetail();
+    expect(await screen.findByText(/No tasks yet/)).toBeTruthy();
+  });
+});
