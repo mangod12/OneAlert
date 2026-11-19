@@ -5,6 +5,7 @@ import { getApiErrorMessage } from '../api/errors';
 import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { AgentRunInspector } from '../components/AgentRunInspector';
 
 interface AuditEntry {
   id: number;
@@ -41,6 +42,10 @@ export function AuditLog() {
   const [page, setPage] = useState(1);
   const [agentRuns, setAgentRuns] = useState<AgentRun[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [agentLoading, setAgentLoading] = useState(true);
+  const [agentError, setAgentError] = useState('');
+  const [agentRetry, setAgentRetry] = useState(0);
+  const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -93,32 +98,27 @@ export function AuditLog() {
     }
   }, []);
 
-  const fetchAgentRuns = async () => {
-    try {
-      const res = await apiClient.get('/cases/agents/runs');
-      setAgentRuns(res.data);
-    } catch {
-      setAgentRuns(null);
-    }
-  };
-
   useEffect(() => {
     void fetchLogs(page, search, userFilter, fromDate, toDate);
   }, [page, search, userFilter, fromDate, toDate, fetchLogs]);
 
   useEffect(() => {
-    void fetchAgentRuns();
-  }, []);
-
-  if (loading) {
-    return <LoadingSurface rows={6} label="Loading audit activity" />;
-  }
+    let active = true;
+    setAgentLoading(true);
+    setAgentError('');
+    void apiClient.get<AgentRun[]>('/cases/agents/runs').then(response => {
+      if (active) setAgentRuns(response.data);
+    }).catch(err => {
+      if (active) setAgentError(getApiErrorMessage(err, 'Recorded agent activity could not be loaded.'));
+    }).finally(() => { if (active) setAgentLoading(false); });
+    return () => { active = false; };
+  }, [agentRetry]);
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <PageHeader eyebrow="Govern" title="Audit Log" description="Immutable operator, agent, approval, and configuration activity." />
 
-      {error ? (
+      {loading ? <LoadingSurface rows={6} label="Loading audit activity" /> : error ? (
         <ErrorState title="Audit log unavailable" description={error} action={<RetryButton onClick={() => void fetchLogs(page, search, userFilter, fromDate, toDate)} />} />
       ) : (
         <>
@@ -168,8 +168,8 @@ export function AuditLog() {
           </div>
           {exportError && <p role="alert" className="text-sm text-danger-400">{exportError}</p>}
 
-          <div className="oa-panel overflow-hidden rounded-md">
-            <table className="w-full text-sm">
+          <div className="oa-panel relative overflow-x-auto rounded-md">
+            <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b border-surface-700 text-surface-400">
                   <th className="px-4 py-3 text-left">Timestamp</th>
@@ -229,13 +229,20 @@ export function AuditLog() {
             )}
           </div>
 
-          {agentRuns && agentRuns.length > 0 && (
-            <div className="oa-panel overflow-hidden rounded-md">
+        </>
+      )}
+      <section aria-label="Recorded agent activity" className="space-y-3">
+        <p className="text-sm text-surface-400">Your latest 50 recorded agent runs. Inspect a run for its saved step summaries. This ledger is not a full execution transcript.</p>
+        {agentLoading && <p role="status" className="text-sm text-surface-400">Loading recorded agent activity...</p>}
+        {!agentLoading && agentError && <ErrorState title="Agent activity unavailable" description={agentError} action={<RetryButton onClick={() => setAgentRetry(value => value + 1)} />} />}
+        {!agentLoading && !agentError && agentRuns?.length === 0 && <p className="text-sm text-surface-400">No agent runs recorded for your account.</p>}
+        {!agentLoading && !agentError && agentRuns && agentRuns.length > 0 && (
+            <div className="oa-panel relative overflow-x-auto rounded-md">
               <h2 className="flex items-center gap-2 border-b border-surface-700 px-4 py-3 text-sm font-semibold text-surface-50">
                 <Bot className="w-4 h-4 text-primary-400" aria-hidden="true" />
                 Agent activity
               </h2>
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[720px] text-sm">
                 <thead>
                   <tr className="border-b border-surface-700 text-surface-400">
                     <th className="px-4 py-3 text-left">Started</th>
@@ -244,6 +251,7 @@ export function AuditLog() {
                     <th className="px-4 py-3 text-left">Model</th>
                     <th className="px-4 py-3 text-left">Tokens</th>
                     <th className="px-4 py-3 text-left">Result</th>
+                    <th className="px-4 py-3 text-left">Inspect</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -263,14 +271,15 @@ export function AuditLog() {
                       <td className="px-4 py-3 text-surface-500 text-xs max-w-xs truncate">
                         {run.result_summary || '-'}
                       </td>
+                      <td className="px-4 py-3"><button type="button" onClick={() => setSelectedRunId(run.id)} aria-label={`Inspect ${run.agent_type} run ${run.id}`} className="rounded-md border border-surface-600 px-3 py-1.5 text-xs text-primary-300">Inspect run</button></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-        </>
-      )}
+      </section>
+      {selectedRunId !== null && <AgentRunInspector key={selectedRunId} runId={selectedRunId} onClose={() => setSelectedRunId(null)} />}
     </div>
   );
 }
