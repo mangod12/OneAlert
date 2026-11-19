@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { AuditLog } from './AuditLog';
@@ -199,4 +199,30 @@ it('loads the owner ledger independently while admin audit records are pending',
   render(<AuditLog />);
   expect(await screen.findByRole('button', { name: 'Inspect triage run 3' })).toBeTruthy();
   expect(screen.getByText('Loading audit activity')).toBeTruthy();
+});
+
+
+it.each(['success', 'failure'])('ignores stale audit %s after the filter changed', async outcome => {
+  let resolveOld!: (value: unknown) => void;
+  let rejectOld!: (reason: unknown) => void;
+  get.mockImplementation((url, config) => {
+    if (url === '/cases/agents/runs') return Promise.resolve({ data: runs });
+    const action = (config?.params as { action?: string } | undefined)?.action;
+    if (action === 'old') return new Promise((resolve, reject) => { resolveOld = resolve; rejectOld = reject; });
+    if (action === 'new') return Promise.resolve({ data: { logs: [{ ...logs[0], action: 'new.action' }], total: 1 } });
+    return Promise.resolve({ data: { logs, total: logs.length } });
+  });
+  render(<AuditLog />);
+  const input = await screen.findByLabelText('Search audit actions');
+  fireEvent.change(input, { target: { value: 'old' } });
+  fireEvent.change(input, { target: { value: 'new' } });
+  await screen.findByText('new.action');
+  await act(async () => {
+    if (outcome === 'success') resolveOld({ data: { logs: [{ ...logs[0], action: 'stale.action' }], total: 999 } });
+    else rejectOld(new Error('Stale failure'));
+  });
+  expect(screen.getByText('new.action')).toBeTruthy();
+  expect(screen.queryByText('stale.action')).toBeNull();
+  expect(screen.queryByText('999 entries')).toBeNull();
+  expect(screen.queryByText('Audit log unavailable')).toBeNull();
 });

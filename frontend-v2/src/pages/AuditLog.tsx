@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { Bot, Download, Search } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
@@ -37,6 +37,7 @@ const runStatusTones: Record<string, 'success' | 'danger' | 'warning' | 'neutral
 };
 
 export function AuditLog() {
+  const logRequest = useRef(0);
   const [logs, setLogs] = useState<AuditEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -81,6 +82,7 @@ export function AuditLog() {
   const pages = Math.max(1, Math.ceil(total / SIZE));
 
   const fetchLogs = useCallback(async (targetPage: number, action: string, user: string, from: string, to: string) => {
+    const request = ++logRequest.current;
     setError('');
     try {
       const params: Record<string, string | number> = { page: targetPage, size: SIZE };
@@ -89,17 +91,19 @@ export function AuditLog() {
       if (from) params.from_date = `${from}T00:00:00`;
       if (to) params.to_date = `${to}T23:59:59`;
       const res = await apiClient.get('/auth/audit-logs', { params });
+      if (request !== logRequest.current) return;
       setLogs(res.data.logs);
       setTotal(res.data.total);
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'Audit activity could not be loaded.'));
+      if (request === logRequest.current) setError(getApiErrorMessage(err, 'Audit activity could not be loaded.'));
     } finally {
-      setLoading(false);
+      if (request === logRequest.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void fetchLogs(page, search, userFilter, fromDate, toDate);
+    return () => { logRequest.current += 1; };
   }, [page, search, userFilter, fromDate, toDate, fetchLogs]);
 
   useEffect(() => {
