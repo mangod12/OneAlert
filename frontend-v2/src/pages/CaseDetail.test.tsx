@@ -615,7 +615,7 @@ describe('Assignee view', () => {
 
     // Status actions and the note composer stay available.
     expect(screen.getByRole('button', { name: 'Start investigating' })).toBeTruthy();
-    expect(screen.getByPlaceholderText('Add an investigation note…')).toBeTruthy();
+    expect(screen.getByPlaceholderText(/Add an investigation note/)).toBeTruthy();
   });
 
   it('lets the assignee move the status', async () => {

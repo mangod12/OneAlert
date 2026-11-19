@@ -1,5 +1,6 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { MentionTextarea } from '../components/MentionTextarea';
 import apiClient from '../api/client';
 import { useAuthStore } from '../stores/authStore';
 import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil, Trash2, Download, Shield, Eye, EyeOff } from 'lucide-react';
@@ -676,13 +677,14 @@ export function CaseDetail() {
             </div>
             <form className="mb-4 flex items-start gap-2" onSubmit={e => { e.preventDefault(); void addNote(); }}>
               <label htmlFor="case-note" className="sr-only">Add a timeline note</label>
-              <textarea
+              <MentionTextarea
                 id="case-note"
                 rows={2}
                 value={noteText}
-                onChange={e => setNoteText(e.target.value)}
-                placeholder="Add an investigation note…"
-                className="min-w-0 flex-1 rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500"
+                members={members}
+                onChange={setNoteText}
+                placeholder="Add an investigation note… (@ to mention a teammate)"
+                className="min-h-9 w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500"
               />
               <button type="submit" disabled={addingNote || !noteText.trim()} className="min-h-9 rounded-md bg-primary-500 px-3 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">
                 {addingNote ? 'Adding…' : 'Add note'}

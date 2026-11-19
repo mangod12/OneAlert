@@ -1,5 +1,7 @@
 """Notes attached to alerts."""
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,9 +11,13 @@ from backend.dependencies.user_dependencies import get_current_user
 from backend.models.alert import Alert, AlertWatcher
 from backend.models.alert_note import AlertNote, AlertNoteCreate, AlertNoteResponse
 from backend.models.audit_log import AuditLog
+from backend.models.notification import Notification
 from backend.models.user import User
+from backend.services.investigation_notify import notify_investigation_event
 
 router = APIRouter()
+
+_MENTION_RE = re.compile(r"@([A-Za-z0-9._-]+)")
 
 
 async def _owned_alert(alert_id: int, user: User, db: AsyncSession) -> Alert:
@@ -90,14 +96,67 @@ async def add_alert_note(
     db: AsyncSession = Depends(get_async_db),
 ):
     """Attach a note to an alert."""
-    await _visible_alert(alert_id, current_user, db)
+    alert = await _visible_alert(alert_id, current_user, db)
     body = payload.body.strip()
     if not body:
         raise HTTPException(status_code=400, detail="Note cannot be blank")
     note = AlertNote(alert_id=alert_id, user_id=current_user.id, body=body)
     db.add(note)
+
+    # @mentions: "@will" pings will@<org> and, when the author can share the
+    # alert (owner or assignee), adds them as a watcher so the link works and
+    # they follow future status changes.
+    mention_hits = {token.lower() for token in _MENTION_RE.findall(body)}
+    notified: list[User] = []
+    if mention_hits and current_user.org_id is not None:
+        org_members = (await db.execute(
+            select(User).where(
+                User.org_id == current_user.org_id,
+                User.is_active == True,  # noqa: E712
+            )
+        )).scalars().all()
+        targets = [
+            u for u in org_members
+            if u.id != current_user.id and u.email.split("@", 1)[0].lower() in mention_hits
+        ]
+        if targets:
+            watcher_rows = (await db.execute(
+                select(AlertWatcher.user_id).where(AlertWatcher.alert_id == alert_id)
+            )).scalars().all()
+            watcher_ids = set(watcher_rows)
+            can_share = current_user.id in (alert.user_id, alert.assigned_to_id)
+            excerpt = body if len(body) <= 140 else body[:137] + "..."
+            for target in targets:
+                has_access = (
+                    target.id in (alert.user_id, alert.assigned_to_id)
+                    or target.id in watcher_ids
+                )
+                if not has_access:
+                    if not can_share:
+                        continue  # a watcher cannot pull new people onto the alert
+                    db.add(AlertWatcher(alert_id=alert_id, user_id=target.id))
+                    watcher_ids.add(target.id)
+                db.add(Notification(
+                    user_id=target.id,
+                    kind="alert_mention",
+                    title=f"{current_user.email} mentioned you in alert #{alert_id}",
+                    body=excerpt,
+                    link=f"/app/alerts?alert={alert_id}",
+                ))
+                notified.append(target)
+
     await db.commit()
     await db.refresh(note)
+
+    for target in notified:
+        await notify_investigation_event(
+            target,
+            kind="alert_mention",
+            severity=alert.severity,
+            title=f"{current_user.email} mentioned you in alert #{alert_id}",
+            body=f"{alert.title or alert.cve_id}. Open the alert to read the note.",
+            link_path=f"/app/alerts?alert={alert_id}",
+        )
     return note
 
 
