@@ -392,6 +392,31 @@ async def get_team_workload_report(
         .group_by(CaseTask.assignee_id)
     )).all()) if member_ids else {}
 
+    tasks_overdue = dict((await db.execute(
+        select(CaseTask.assignee_id, func.count())
+        .join(Case, Case.id == CaseTask.case_id)
+        .where(
+            CaseTask.assignee_id.in_(member_ids),
+            CaseTask.done == False,  # noqa: E712
+            CaseTask.due_date.is_not(None),
+            CaseTask.due_date < today,
+            Case.status.notin_(_DONE_CASE_STATUSES),
+        )
+        .group_by(CaseTask.assignee_id)
+    )).all()) if member_ids else {}
+    task_done_rows = (await db.execute(
+        select(CaseTask.assignee_id, CaseTask.created_at, CaseTask.completed_at)
+        .where(
+            CaseTask.assignee_id.in_(member_ids),
+            CaseTask.done == True,  # noqa: E712
+            CaseTask.completed_at.is_not(None),
+            CaseTask.completed_at >= window_start,
+        )
+    )).all() if member_ids else []
+    task_done_by_member: dict[int, list] = {}
+    for assignee_id, created_at, completed_at in task_done_rows:
+        task_done_by_member.setdefault(assignee_id, []).append((created_at, completed_at))
+
     rows = [
         {
             "user_id": m.id,
@@ -402,8 +427,10 @@ async def get_team_workload_report(
             "cases_open": cases_open.get(m.id, 0),
             "cases_overdue": cases_overdue.get(m.id, 0),
             "tasks_open": tasks_open.get(m.id, 0),
+            "tasks_overdue": tasks_overdue.get(m.id, 0),
             "mtta_seconds": _mean_delta_seconds(ack_by_member.get(m.id, [])),
             "mttr_seconds": _mean_delta_seconds(res_by_member.get(m.id, [])),
+            "mtct_seconds": _mean_delta_seconds(task_done_by_member.get(m.id, [])),
         }
         for m in members
     ]
