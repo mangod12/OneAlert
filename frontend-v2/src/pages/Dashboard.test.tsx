@@ -264,14 +264,42 @@ describe('My tasks', () => {
     expect((screen.getByText('Contain the host').closest('a') as HTMLAnchorElement).href).toContain('/cases/7');
   });
 
-  it('badges task due dates and marks overdue ones', async () => {
+  it('badges overdue tasks and groups rows by due window', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const inWeek = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+    const later = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
     mockWithTasks([
       { ...myTasks[0], due_date: '2000-01-01' },
-      { ...myTasks[1], due_date: '2999-01-01' },
+      { ...myTasks[1], title: 'Today task', task_id: 13, due_date: today },
+      { ...myTasks[1], title: 'Week task', task_id: 14, due_date: inWeek },
+      { ...myTasks[1], title: 'Later task', task_id: 15, due_date: later },
+      { ...myTasks[1], title: 'Undated task', task_id: 16, due_date: null },
     ]);
     renderDashboard();
     expect(await screen.findByText('Task overdue · due 2000-01-01')).toBeTruthy();
-    expect(screen.getByText('Task due 2999-01-01')).toBeTruthy();
+    expect(screen.getByText('Overdue (1)')).toBeTruthy();
+    expect(screen.getByText('Due today (1)')).toBeTruthy();
+    expect(screen.getByText('Due this week (1)')).toBeTruthy();
+    expect(screen.getByText('Later (1)')).toBeTruthy();
+    expect(screen.getByText('No due date (1)')).toBeTruthy();
+    expect((screen.getByLabelText('Due date for task Later task') as HTMLInputElement).value).toBe(later);
+  });
+
+  it('sets a task due date inline', async () => {
+    mockWithTasks(myTasks);
+    mockPatch.mockResolvedValue({ data: {} });
+    renderDashboard();
+    fireEvent.change(await screen.findByLabelText('Due date for task Contain the host'), { target: { value: '2026-12-01' } });
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/11', { due_date: '2026-12-01' }));
+    await waitFor(() => expect((screen.getByLabelText('Due date for task Contain the host') as HTMLInputElement).value).toBe('2026-12-01'));
+  });
+
+  it('clears a task due date inline', async () => {
+    mockWithTasks([{ ...myTasks[0], due_date: '2026-12-01' }]);
+    mockPatch.mockResolvedValue({ data: {} });
+    renderDashboard();
+    fireEvent.change(await screen.findByLabelText('Due date for task Contain the host'), { target: { value: '' } });
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/11', { due_date: null }));
   });
 
   it('hides the panel when no tasks are assigned', async () => {
