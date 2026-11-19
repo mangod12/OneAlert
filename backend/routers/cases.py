@@ -769,6 +769,8 @@ async def update_case_task(
 
     if "due_date" in payload.model_fields_set and payload.due_date != task.due_date:
         task.due_date = payload.due_date
+        task.due_soon_notified_at = None
+        task.overdue_notified_at = None
         timeline_notes.append(
             f"Task due date set to {payload.due_date.isoformat()}: {task.title}"
             if payload.due_date is not None
