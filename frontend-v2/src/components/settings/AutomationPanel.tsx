@@ -10,6 +10,7 @@ interface AutomationPreferences {
   auto_escalate_min_alerts: number;
   auto_escalate_min_severity: string;
   sla_due_dates_enabled: boolean;
+  auto_assign_new_alerts: boolean;
   sla_days_critical: number;
   sla_days_high: number;
   sla_days_medium: number;
@@ -34,6 +35,7 @@ export function AutomationPanel() {
   const [minAlerts, setMinAlerts] = useState('3');
   const [minSeverity, setMinSeverity] = useState('high');
   const [slaEnabled, setSlaEnabled] = useState(false);
+  const [autoAssign, setAutoAssign] = useState(false);
   const [slaDays, setSlaDays] = useState<Record<SlaKey, string>>({
     sla_days_critical: '1',
     sla_days_high: '3',
@@ -52,6 +54,7 @@ export function AutomationPanel() {
       setMinAlerts(String(resp.data.auto_escalate_min_alerts));
       setMinSeverity(resp.data.auto_escalate_min_severity);
       setSlaEnabled(resp.data.sla_due_dates_enabled);
+      setAutoAssign(resp.data.auto_assign_new_alerts);
       setSlaDays({
         sla_days_critical: String(resp.data.sla_days_critical),
         sla_days_high: String(resp.data.sla_days_high),
@@ -91,6 +94,7 @@ export function AutomationPanel() {
         auto_escalate_min_alerts: alerts,
         auto_escalate_min_severity: minSeverity,
         sla_due_dates_enabled: slaEnabled,
+        auto_assign_new_alerts: autoAssign,
         ...parsedSla,
       });
       toast('Automation preferences saved.', 'success');
@@ -183,6 +187,22 @@ export function AutomationPanel() {
           </div>
           <p className="mt-3 text-xs text-surface-500">
             Every new alert and investigation, opened manually or by automation, gets a target close date this many days out, based on its severity.
+          </p>
+        </div>
+
+        <div className="border-t border-surface-700 pt-4">
+          <label className="flex items-center gap-3 text-sm text-surface-200">
+            <input
+              type="checkbox"
+              checked={autoAssign}
+              onChange={(event) => setAutoAssign(event.target.checked)}
+              disabled={loading}
+              className="h-4 w-4 rounded border-surface-600 bg-surface-950 text-primary-500 focus:ring-2 focus:ring-primary-500"
+            />
+            Auto-assign new alerts across your organization
+          </label>
+          <p className="mt-3 text-xs text-surface-500">
+            Each new alert goes to the active org member with the fewest open assigned alerts, and they get a notification. Applies only when your organization has at least two active members.
           </p>
         </div>
 
