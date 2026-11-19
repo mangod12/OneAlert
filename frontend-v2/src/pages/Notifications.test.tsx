@@ -147,4 +147,34 @@ describe('Notifications page', () => {
     expect(await screen.findByText('All caught up')).toBeTruthy();
   });
 
+  it('keeps load errors distinct from no results or all caught up and retries', async () => {
+    mockGet.mockRejectedValueOnce(new Error('Offline'));
+    renderPage();
+    await screen.findByRole('button', { name: 'Retry notifications' });
+    expect(screen.queryByText('No notifications match these filters')).toBeNull();
+    expect(screen.queryByText('All caught up')).toBeNull();
+    mockGet.mockResolvedValue(listResponse([mk(1, 'alert_created', 'Recovered', false)], 1, 1) as never);
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry notifications' }));
+    expect(await screen.findByText('Recovered')).toBeTruthy();
+  });
+
+  it.each(['success', 'failure'])('ignores an obsolete filtered feed response (%s)', async result => {
+    let resolve!: (value: ReturnType<typeof listResponse>) => void;
+    let reject!: (reason: Error) => void;
+    const pending = new Promise<ReturnType<typeof listResponse>>((yes, no) => { resolve = yes; reject = no; });
+    mockGet.mockImplementation((_url, config) => config?.params && (config.params as { kind?: string }).kind
+      ? Promise.resolve(listResponse([mk(2, 'case_mention', 'Current mention', false)], 1, 1)) as never
+      : pending as never);
+    renderPage();
+    fireEvent.change(screen.getByLabelText('Filter by type'), { target: { value: 'case_mention' } });
+    expect(await screen.findByText('Current mention')).toBeTruthy();
+    await act(async () => {
+      if (result === 'success') resolve(listResponse([mk(1, 'alert_created', 'Obsolete alert', false)], 1, 1));
+      else reject(new Error('Old request failed'));
+    });
+    expect(screen.getByText('Current mention')).toBeTruthy();
+    expect(screen.queryByText('Obsolete alert')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retry notifications' })).toBeNull();
+  });
+
 });
