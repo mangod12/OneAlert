@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { MentionTextarea } from '../components/MentionTextarea';
 import apiClient from '../api/client';
 import { useAuthStore } from '../stores/authStore';
-import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil, Trash2, Download, Shield, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil, Trash2, Download, Shield, Eye, EyeOff, ListChecks, Square, CheckSquare } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { toast } from '../components/Toast';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -80,6 +80,7 @@ interface SimilarCase { case_id: number; title: string; similarity: number; shar
 interface RelatedEvent { id: number; severity: string; event_type: string; source_ip?: string | null; dest_ip?: string | null; signature?: string | null; }
 interface CasePlan { id: number; status: string; autonomy_level: string; created_by: string; created_at: string; actions: unknown[]; }
 interface CaseWatcher { user_id: number; email: string; full_name: string | null; }
+interface CaseTask { id: number; title: string; done: boolean; position: number; created_at: string; completed_at: string | null; }
 
 export function CaseDetail() {
   const { caseId } = useParams<{ caseId: string }>();
@@ -125,6 +126,10 @@ export function CaseDetail() {
   const [watchers, setWatchers] = useState<CaseWatcher[]>([]);
   const [watchBusy, setWatchBusy] = useState(false);
   const [savingDueDate, setSavingDueDate] = useState(false);
+  const [tasks, setTasks] = useState<CaseTask[]>([]);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [addingTask, setAddingTask] = useState(false);
+  const [taskBusyId, setTaskBusyId] = useState<number | null>(null);
   const currentUserId = useAuthStore(state => state.user?.id ?? null);
 
   useEffect(() => {
@@ -254,6 +259,40 @@ export function CaseDetail() {
     finally { setAddingNote(false); }
   };
 
+  const addTask = async () => {
+    const title = newTaskTitle.trim();
+    if (!title || addingTask) return;
+    setAddingTask(true);
+    try {
+      await apiClient.post(`/cases/${caseId}/tasks`, { title });
+      setNewTaskTitle('');
+      toast('Task added to the checklist.', 'success');
+      await fetchAll();
+    } catch (err) { toast(getApiErrorMessage(err, 'The task could not be added.'), 'error'); }
+    finally { setAddingTask(false); }
+  };
+
+  const toggleTask = async (task: CaseTask) => {
+    if (taskBusyId !== null) return;
+    setTaskBusyId(task.id);
+    try {
+      await apiClient.patch(`/cases/${caseId}/tasks/${task.id}`, { done: !task.done });
+      await fetchAll();
+    } catch (err) { toast(getApiErrorMessage(err, 'The task could not be updated.'), 'error'); }
+    finally { setTaskBusyId(null); }
+  };
+
+  const removeTask = async (taskId: number) => {
+    if (taskBusyId !== null) return;
+    setTaskBusyId(taskId);
+    try {
+      await apiClient.delete(`/cases/${caseId}/tasks/${taskId}`);
+      toast('Task removed from the checklist.', 'success');
+      await fetchAll();
+    } catch (err) { toast(getApiErrorMessage(err, 'The task could not be removed.'), 'error'); }
+    finally { setTaskBusyId(null); }
+  };
+
   const exportTimeline = async () => {
     if (exportingTimeline) return;
     setExportingTimeline(true);
@@ -349,11 +388,12 @@ export function CaseDetail() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [caseResult, alertsResult, eventsResult, blastResult, similarResult, plansResult, watchersResult] = await Promise.allSettled([
+    const [caseResult, alertsResult, eventsResult, blastResult, similarResult, plansResult, watchersResult, tasksResult] = await Promise.allSettled([
       apiClient.get(`/cases/${caseId}`), apiClient.get(`/cases/${caseId}/alerts`), apiClient.get(`/cases/${caseId}/events`),
       apiClient.get(`/cases/${caseId}/blast-radius`), apiClient.get(`/cases/${caseId}/similar`),
       apiClient.get('/response-plans/', { params: { case_id: caseId } }),
       apiClient.get(`/cases/${caseId}/watchers`),
+      apiClient.get(`/cases/${caseId}/tasks`),
     ]);
     if (caseResult.status === 'rejected') {
       setError(getApiErrorMessage(caseResult.reason, 'This case could not be loaded.'));
@@ -375,6 +415,8 @@ export function CaseDetail() {
     else { setPlans([]); partial.push('Response plans unavailable'); }
     if (watchersResult.status === 'fulfilled') setWatchers(Array.isArray(watchersResult.value.data) ? watchersResult.value.data : []);
     else setWatchers([]);
+    if (tasksResult.status === 'fulfilled') setTasks(Array.isArray(tasksResult.value.data) ? tasksResult.value.data : []);
+    else setTasks([]);
     setDegraded(partial);
     setLoading(false);
   }, [caseId]);
@@ -556,6 +598,86 @@ export function CaseDetail() {
           <p className="text-xs text-surface-500 uppercase">Created By</p>
           <p className="text-lg font-medium text-primary-400 mt-1 capitalize">{caseData.created_by}</p>
         </div>
+      </div>
+
+      {/* Investigation Tasks */}
+      <div className="oa-panel p-6">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-surface-50">
+            <ListChecks className="w-5 h-5 text-primary-400" /> Investigation Tasks
+          </h2>
+          {tasks.length > 0 && (
+            <span className="text-xs text-surface-400">{tasks.filter(t => t.done).length} of {tasks.length} done</span>
+          )}
+        </div>
+        {tasks.length > 0 && (
+          <div
+            className="mb-3 h-1.5 overflow-hidden rounded-full bg-surface-800"
+            role="progressbar"
+            aria-label="Task progress"
+            aria-valuenow={tasks.filter(t => t.done).length}
+            aria-valuemax={tasks.length}
+          >
+            <div
+              className="h-1.5 rounded-full bg-primary-500 transition-all"
+              style={{ width: `${Math.round((tasks.filter(t => t.done).length / tasks.length) * 100)}%` }}
+            />
+          </div>
+        )}
+        {tasks.length > 0 && (
+          <ul className="mb-3 space-y-1.5">
+            {tasks.map(task => (
+              <li key={task.id} className="flex items-center gap-2 rounded-md border border-surface-800 bg-surface-900/60 px-3 py-2">
+                <button
+                  type="button"
+                  aria-label={task.done ? `Reopen task ${task.title}` : `Complete task ${task.title}`}
+                  disabled={taskBusyId === task.id}
+                  onClick={() => void toggleTask(task)}
+                  className="shrink-0 text-primary-400 transition-colors hover:text-primary-300 disabled:opacity-40"
+                >
+                  {task.done
+                    ? <CheckSquare className="w-4.5 h-4.5" aria-hidden="true" />
+                    : <Square className="w-4.5 h-4.5" aria-hidden="true" />}
+                </button>
+                <span className={`flex-1 text-sm ${task.done ? 'text-surface-500 line-through' : 'text-surface-100'}`}>
+                  {task.title}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Delete task ${task.title}`}
+                  disabled={taskBusyId === task.id}
+                  onClick={() => void removeTask(task.id)}
+                  className="shrink-0 text-surface-500 transition-colors hover:text-danger disabled:opacity-40"
+                >
+                  <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {tasks.length === 0 && (
+          <p className="mb-3 text-sm text-surface-500">No tasks yet. Break the investigation into steps to track progress.</p>
+        )}
+        <form
+          onSubmit={e => { e.preventDefault(); void addTask(); }}
+          className="flex gap-2"
+        >
+          <input
+            value={newTaskTitle}
+            onChange={e => setNewTaskTitle(e.target.value)}
+            placeholder="Add an investigation task..."
+            aria-label="New task title"
+            maxLength={300}
+            className="min-h-9 flex-1 rounded-md border border-surface-700 bg-surface-950 px-3 text-sm text-surface-100 placeholder:text-surface-500 focus:border-primary-500 focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={!newTaskTitle.trim() || addingTask}
+            className="rounded-md bg-primary-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-500 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Add task
+          </button>
+        </form>
       </div>
 
       {/* Attack Narrative */}

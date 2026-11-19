@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.types import JSON
@@ -60,6 +60,9 @@ class Case(Base):
     timeline_entries = relationship(
         "CaseTimeline", back_populates="case", cascade="all, delete-orphan", order_by="CaseTimeline.timestamp"
     )
+    tasks = relationship(
+        "CaseTask", back_populates="case", cascade="all, delete-orphan", order_by="CaseTask.position, CaseTask.id"
+    )
 
 
 class CaseWatcher(Base):
@@ -101,6 +104,23 @@ class CaseEvent(Base):
 
     case = relationship("Case", back_populates="case_events")
     event = relationship("SecurityEvent")
+
+
+class CaseTask(Base):
+    """A checklist task tracking investigation progress on a case."""
+    __tablename__ = "case_tasks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_id = Column(Integer, ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String, nullable=False)
+    done = Column(Boolean, default=False, nullable=False)
+    position = Column(Integer, default=0, nullable=False)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    case = relationship("Case", back_populates="tasks")
+    created_by = relationship("User")
 
 
 class CaseTimeline(Base):
@@ -218,6 +238,31 @@ class CaseNoteCreate(BaseModel):
     """Schema for adding an investigator note to a case timeline."""
     content: str = Field(min_length=1, max_length=2000)
     model_config = {"extra": "forbid"}
+
+
+class CaseTaskCreate(BaseModel):
+    """Schema for adding a task to a case checklist."""
+    title: str = Field(min_length=1, max_length=300)
+    model_config = {"extra": "forbid"}
+
+
+class CaseTaskUpdate(BaseModel):
+    """Schema for renaming or toggling a case task."""
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    done: bool | None = None
+    model_config = {"extra": "forbid"}
+
+
+class CaseTaskResponse(BaseModel):
+    id: int
+    case_id: int
+    title: str
+    done: bool
+    position: int
+    created_at: datetime
+    completed_at: datetime | None = None
+    created_by_id: int | None = None
+    model_config = {"from_attributes": True}
 
 
 class TimelineEntryResponse(BaseModel):

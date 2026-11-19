@@ -26,6 +26,10 @@ from backend.models.case import (
     CaseListResponse,
     CaseNoteCreate,
     CaseResponse,
+    CaseTask,
+    CaseTaskCreate,
+    CaseTaskResponse,
+    CaseTaskUpdate,
     CaseTimeline,
     CaseWatcher,
     CaseWatcherAdd,
@@ -552,6 +556,125 @@ async def delete_case_note(
         raise HTTPException(status_code=422, detail="Only investigator notes can be deleted")
 
     await db.delete(entry)
+    await db.commit()
+
+
+# --- Investigation task checklist ---
+
+
+async def _get_visible_case(db: AsyncSession, case_id: int, current_user: User) -> Case:
+    case = (await db.execute(
+        _visible_cases(case_id, current_user)
+    )).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return case
+
+
+async def _get_case_task(db: AsyncSession, case_id: int, task_id: int) -> CaseTask:
+    task = (await db.execute(
+        select(CaseTask).where(CaseTask.id == task_id, CaseTask.case_id == case_id)
+    )).scalar_one_or_none()
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
+@router.get("/{case_id}/tasks", response_model=list[CaseTaskResponse])
+async def list_case_tasks(
+    case_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """List the investigation checklist for a case, in checklist order."""
+    case = await _get_visible_case(db, case_id, current_user)
+    return (await db.execute(
+        select(CaseTask)
+        .where(CaseTask.case_id == case.id)
+        .order_by(CaseTask.position, CaseTask.id)
+    )).scalars().all()
+
+
+@router.post("/{case_id}/tasks", response_model=CaseTaskResponse, status_code=status.HTTP_201_CREATED)
+async def create_case_task(
+    case_id: int,
+    payload: CaseTaskCreate,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Add a task to the end of the case checklist."""
+    case = await _get_visible_case(db, case_id, current_user)
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="Task title must not be blank")
+    next_position = (await db.execute(
+        select(func.coalesce(func.max(CaseTask.position), -1)).where(CaseTask.case_id == case.id)
+    )).scalar_one() + 1
+    task = CaseTask(
+        case_id=case.id,
+        title=title,
+        position=next_position,
+        created_by_id=current_user.id,
+    )
+    db.add(task)
+    await db.commit()
+    await db.refresh(task)
+    return task
+
+
+@router.patch("/{case_id}/tasks/{task_id}", response_model=CaseTaskResponse)
+async def update_case_task(
+    case_id: int,
+    task_id: int,
+    payload: CaseTaskUpdate,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Rename a task or toggle its done state.
+
+    Completing or reopening a task is recorded on the case timeline so the
+    investigation keeps an audit trail of checklist progress.
+    """
+    case = await _get_visible_case(db, case_id, current_user)
+    task = await _get_case_task(db, case.id, task_id)
+
+    if payload.title is not None:
+        title = payload.title.strip()
+        if not title:
+            raise HTTPException(status_code=422, detail="Task title must not be blank")
+        task.title = title
+
+    timeline_note: str | None = None
+    if payload.done is not None and payload.done != task.done:
+        task.done = payload.done
+        task.completed_at = datetime.now(UTC) if payload.done else None
+        timeline_note = f"Task {'completed' if payload.done else 'reopened'}: {task.title}"
+
+    if timeline_note is not None:
+        db.add(CaseTimeline(
+            case_id=case.id,
+            entry_type="action",
+            content=timeline_note,
+            source="human",
+            user_id=current_user.id,
+        ))
+
+    await db.commit()
+    await db.refresh(task)
+    return task
+
+
+@router.delete("/{case_id}/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_case_task(
+    case_id: int,
+    task_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Remove a task from the case checklist."""
+    case = await _get_visible_case(db, case_id, current_user)
+    task = await _get_case_task(db, case.id, task_id)
+    await db.delete(task)
     await db.commit()
 
 
