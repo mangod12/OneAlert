@@ -199,10 +199,10 @@ export function AutomationPanel() {
               disabled={loading}
               className="h-4 w-4 rounded border-surface-600 bg-surface-950 text-primary-500 focus:ring-2 focus:ring-primary-500"
             />
-            Auto-assign new alerts across your organization
+            Auto-assign new alerts and investigations across your organization
           </label>
           <p className="mt-3 text-xs text-surface-500">
-            Each new alert goes to the active org member with the fewest open assigned alerts, and they get a notification. Applies only when your organization has at least two active members.
+            Each new alert and auto-escalated investigation goes to the active org member with the fewest open assigned items, and they get a notification. Applies only when your organization has at least two active members.
           </p>
         </div>
 
