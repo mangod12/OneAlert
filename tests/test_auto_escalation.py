@@ -102,6 +102,7 @@ class TestAutomationPreferences:
             "auto_escalate_min_alerts": 3,
             "auto_escalate_min_severity": "high",
             "sla_due_dates_enabled": False,
+            "auto_assign_new_alerts": False,
             "sla_days_critical": 1,
             "sla_days_high": 3,
             "sla_days_medium": 7,
