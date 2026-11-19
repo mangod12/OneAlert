@@ -32,6 +32,7 @@ export function Dashboard() {
   const [myCases, setMyCases] = useState<Array<{ id: number; title: string; severity: string; status: string }> | null>(null);
   const [watchingAlerts, setWatchingAlerts] = useState<Alert[] | null>(null);
   const [watchingCases, setWatchingCases] = useState<Array<{ id: number; title: string; severity: string; status: string; due_date: string | null }> | null>(null);
+  const [myTasks, setMyTasks] = useState<Array<{ task_id: number; case_id: number; case_title: string; case_severity: string; case_status: string; case_due_date: string | null; title: string; created_at: string }> | null>(null);
   const [incidents, setIncidents] = useState<Array<{ asset_id: number; asset_name: string; max_severity: string; alert_count: number; blast_radius: number }> | null>(null);
   const [errors, setErrors] = useState<DashboardErrors>({});
   const [loading, setLoading] = useState(true);
@@ -59,6 +60,7 @@ export function Dashboard() {
         apiClient.get<{ incidents?: Array<{ asset_id: number; asset_name: string; max_severity: string; alert_count: number; blast_radius: number }> }>('/incidents'),
         apiClient.get<AlertListResponse>('/alerts/', { params: { size: 5, watching: 'me' } }),
         apiClient.get<{ cases?: Array<{ id: number; title: string; severity: string; status: string; due_date: string | null }> }>('/cases/', { params: { size: 5, watching: 'me' } }),
+        apiClient.get<Array<{ task_id: number; case_id: number; case_title: string; case_severity: string; case_status: string; case_due_date: string | null; title: string; created_at: string }>>('/cases/my-tasks'),
       ] as const;
       const results = await Promise.allSettled(requests);
       if (!active) return;
@@ -86,6 +88,8 @@ export function Dashboard() {
       else setWatchingAlerts([]);
       if (results[10].status === 'fulfilled') setWatchingCases(results[10].value.data.cases ?? []);
       else setWatchingCases([]);
+      if (results[11].status === 'fulfilled') setMyTasks(results[11].value.data ?? []);
+      else setMyTasks([]);
 
       setErrors(nextErrors);
       setLastUpdated(new Date());
@@ -200,6 +204,24 @@ export function Dashboard() {
                   <div className="px-5 py-6 text-center text-sm text-surface-400">{myCases === null ? 'Loading...' : 'No investigations assigned to you.'}</div>
                 )}
               </div>
+            </div>
+          </Panel>
+        </section>
+      )}
+
+      {(myTasks === null || myTasks.length > 0) && (
+        <section aria-label="My tasks">
+          <Panel title="My tasks" description="Open checklist tasks assigned to you across investigations.">
+            <div className="divide-y divide-surface-800">
+              {(myTasks ?? []).length > 0 ? (myTasks ?? []).map(t => (
+                <Link key={t.task_id} to={`/cases/${t.case_id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-800/45">
+                  <StatusBadge tone={t.case_severity === 'critical' ? 'danger' : t.case_severity === 'high' ? 'warning' : 'neutral'}>{t.case_severity}</StatusBadge>
+                  <div className="min-w-0"><p className="truncate text-sm font-semibold text-surface-100">{t.title}</p><p className="mt-0.5 truncate text-[11px] text-surface-500">{t.case_title} · Investigation #{t.case_id}{t.case_due_date ? ` · due ${t.case_due_date}` : ''}</p></div>
+                  <span className="ml-auto text-xs text-surface-500">{t.case_status}</span>
+                </Link>
+              )) : (
+                <div className="px-5 py-6 text-center text-sm text-surface-400">{myTasks === null ? 'Loading...' : 'No checklist tasks assigned to you.'}</div>
+              )}
             </div>
           </Panel>
         </section>

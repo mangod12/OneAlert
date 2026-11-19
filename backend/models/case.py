@@ -276,6 +276,18 @@ class SeedTasksFromPlanResponse(BaseModel):
     skipped: int
 
 
+class MyTaskResponse(BaseModel):
+    """An open checklist task assigned to the caller, with its case context."""
+    task_id: int
+    case_id: int
+    case_title: str
+    case_severity: str
+    case_status: str
+    case_due_date: date | None = None
+    title: str
+    created_at: datetime
+
+
 class TimelineEntryResponse(BaseModel):
     id: int
     timestamp: datetime
