@@ -182,7 +182,7 @@ export function Dashboard() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5">
       <PageHeader
         eyebrow="OneAlert command"
         title="Security Operations"
@@ -237,23 +237,23 @@ export function Dashboard() {
       {(myAlerts === null || myCases === null || myAlerts.length > 0 || myCases.length > 0) && (
         <section aria-label="My assignments">
           <Panel title="My assignments" description="Open alerts and investigations assigned to you." action={<Link to="/alerts" className="text-xs font-semibold text-primary-300 hover:text-primary-200">View alerts</Link>}>
-            <div className="grid gap-0 divide-y divide-surface-800 md:grid-cols-2 md:divide-x md:divide-y-0">
-              <div className="divide-y divide-surface-800">
+            <div className="grid min-w-0 gap-0 divide-y divide-surface-800 md:grid-cols-2 md:divide-x md:divide-y-0">
+              <div className="min-w-0 divide-y divide-surface-800">
                 {(myAlerts ?? []).length > 0 ? (myAlerts ?? []).map(alert => (
-                  <Link key={alert.id} to="/alerts" className="flex items-center gap-3 px-5 py-3 hover:bg-surface-800/45">
+                  <Link key={alert.id} to="/alerts" className="flex min-w-0 items-center gap-3 px-5 py-3 hover:bg-surface-800/45">
                     <StatusBadge tone={alert.severity === 'critical' ? 'danger' : alert.severity === 'high' ? 'warning' : 'neutral'}>{alert.severity}</StatusBadge>
-                    <div className="min-w-0"><p className="truncate text-sm font-semibold text-surface-100">{alert.title}</p><p className="mt-0.5 truncate font-mono text-[11px] text-surface-500">{alert.cve_id || alert.source}</p></div>
+                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-surface-100">{alert.title}</p><p className="mt-0.5 truncate font-mono text-[11px] text-surface-500">{alert.cve_id || alert.source}</p></div>
                     <span className="ml-auto text-xs text-surface-500">{alert.status}</span>
                   </Link>
                 )) : (
                   <div className="px-5 py-6 text-center text-sm text-surface-400">{myAlerts === null ? 'Loading...' : 'No alerts assigned to you.'}</div>
                 )}
               </div>
-              <div className="divide-y divide-surface-800">
+              <div className="min-w-0 divide-y divide-surface-800">
                 {(myCases ?? []).length > 0 ? (myCases ?? []).map(c => (
-                  <Link key={c.id} to={`/cases/${c.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-800/45">
+                  <Link key={c.id} to={`/cases/${c.id}`} className="flex min-w-0 items-center gap-3 px-5 py-3 hover:bg-surface-800/45">
                     <StatusBadge tone={c.severity === 'critical' ? 'danger' : c.severity === 'high' ? 'warning' : 'neutral'}>{c.severity}</StatusBadge>
-                    <div className="min-w-0"><p className="truncate text-sm font-semibold text-surface-100">{c.title}</p><p className="mt-0.5 truncate text-[11px] text-surface-500">Investigation #{c.id}</p></div>
+                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-surface-100">{c.title}</p><p className="mt-0.5 truncate text-[11px] text-surface-500">Investigation #{c.id}</p></div>
                     <span className="ml-auto text-xs text-surface-500">{c.status}</span>
                   </Link>
                 )) : (
@@ -320,23 +320,23 @@ export function Dashboard() {
       {(watchingAlerts === null || watchingCases === null || watchingAlerts.length > 0 || watchingCases.length > 0) && (
         <section aria-label="Watching">
           <Panel title="Watching" description="Alerts and investigations you follow across the org." action={<Link to="/watchlist" className="text-xs font-semibold text-primary-300 hover:text-primary-200">View watchlist</Link>}>
-            <div className="grid gap-0 divide-y divide-surface-800 md:grid-cols-2 md:divide-x md:divide-y-0">
-              <div className="divide-y divide-surface-800">
+            <div className="grid min-w-0 gap-0 divide-y divide-surface-800 md:grid-cols-2 md:divide-x md:divide-y-0">
+              <div className="min-w-0 divide-y divide-surface-800">
                 {(watchingAlerts ?? []).length > 0 ? (watchingAlerts ?? []).map(alert => (
-                  <Link key={alert.id} to={`/alerts?alert=${alert.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-800/45">
+                  <Link key={alert.id} to={`/alerts?alert=${alert.id}`} className="flex min-w-0 items-center gap-3 px-5 py-3 hover:bg-surface-800/45">
                     <StatusBadge tone={alert.severity === 'critical' ? 'danger' : alert.severity === 'high' ? 'warning' : 'neutral'}>{alert.severity}</StatusBadge>
-                    <div className="min-w-0"><p className="truncate text-sm font-semibold text-surface-100">{alert.title}</p><p className="mt-0.5 truncate font-mono text-[11px] text-surface-500">{alert.cve_id || alert.source}</p></div>
+                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-surface-100">{alert.title}</p><p className="mt-0.5 truncate font-mono text-[11px] text-surface-500">{alert.cve_id || alert.source}</p></div>
                     <span className="ml-auto text-xs text-surface-500">{alert.status}</span>
                   </Link>
                 )) : (
                   <div className="px-5 py-6 text-center text-sm text-surface-400">{watchingAlerts === null ? 'Loading...' : 'No watched alerts.'}</div>
                 )}
               </div>
-              <div className="divide-y divide-surface-800">
+              <div className="min-w-0 divide-y divide-surface-800">
                 {(watchingCases ?? []).length > 0 ? (watchingCases ?? []).map(c => (
-                  <Link key={c.id} to={`/cases/${c.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-800/45">
+                  <Link key={c.id} to={`/cases/${c.id}`} className="flex min-w-0 items-center gap-3 px-5 py-3 hover:bg-surface-800/45">
                     <StatusBadge tone={c.severity === 'critical' ? 'danger' : c.severity === 'high' ? 'warning' : 'neutral'}>{c.severity}</StatusBadge>
-                    <div className="min-w-0"><p className="truncate text-sm font-semibold text-surface-100">{c.title}</p><p className="mt-0.5 truncate text-[11px] text-surface-500">Investigation #{c.id}{c.due_date ? ` · due ${c.due_date}` : ''}</p></div>
+                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-surface-100">{c.title}</p><p className="mt-0.5 truncate text-[11px] text-surface-500">Investigation #{c.id}{c.due_date ? ` · due ${c.due_date}` : ''}</p></div>
                     <span className="ml-auto text-xs text-surface-500">{c.status}</span>
                   </Link>
                 )) : (
