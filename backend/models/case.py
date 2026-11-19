@@ -119,6 +119,8 @@ class CaseTask(Base):
     position = Column(Integer, default=0, nullable=False)
     assignee_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     due_date = Column(Date, nullable=True)  # optional target date for the task
+    due_soon_notified_at = Column(DateTime(timezone=True), nullable=True)  # due-tomorrow reminder marker
+    overdue_notified_at = Column(DateTime(timezone=True), nullable=True)  # overdue reminder marker
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)

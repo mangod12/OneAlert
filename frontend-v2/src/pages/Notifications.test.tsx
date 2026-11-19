@@ -43,6 +43,17 @@ describe('Notifications page', () => {
     expect(screen.getByText('2 unread')).toBeTruthy();
   });
 
+  it('labels task due reminders', async () => {
+    mockGet.mockResolvedValue(listResponse([
+      mk(5, 'case_task_overdue', 'Task overdue: Eradicate persistence', false),
+      mk(4, 'case_task_due_soon', 'Task due tomorrow: Collect triage image', false),
+    ], 2, 2) as never);
+    renderPage();
+    expect(await screen.findByText('Task overdue: Eradicate persistence')).toBeTruthy();
+    expect(screen.getByText('Task overdue')).toBeTruthy();
+    expect(screen.getByText('Task due soon')).toBeTruthy();
+  });
+
   it('passes the kind and unread filters to the API', async () => {
     mockGet.mockResolvedValue(listResponse([], 0, 0) as never);
     renderPage();

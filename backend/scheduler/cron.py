@@ -160,6 +160,8 @@ class VulnerabilityScheduler:
                 notify_breached_slas,
                 notify_due_soon_alert_slas,
                 notify_due_soon_slas,
+                notify_due_soon_tasks,
+                notify_overdue_tasks,
             )
 
             async with AsyncSessionLocal() as db:
@@ -175,6 +177,12 @@ class VulnerabilityScheduler:
                 alert_warned = await notify_due_soon_alert_slas(db)
                 if alert_warned:
                     logger.info("Alert SLA due-soon check notified for %d alerts", alert_warned)
+                task_warned = await notify_due_soon_tasks(db)
+                if task_warned:
+                    logger.info("Task due-soon check notified for %d tasks", task_warned)
+                task_overdue = await notify_overdue_tasks(db)
+                if task_overdue:
+                    logger.info("Task overdue check notified for %d tasks", task_overdue)
 
         except Exception as e:
             logger.error(f"Error during SLA breach check: {e}")

@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import select
 
 from backend.models.audit_log import AuditLog
-from backend.models.case import Case
+from backend.models.case import Case, CaseTask
 from backend.models.notification import Notification
 from backend.models.user import User
 from backend.services.investigation_notify import notify_investigation_event
@@ -183,6 +183,125 @@ async def notify_due_soon_slas(db) -> int:
                     link_path=f"/app/cases/{case.id}",
                 )
     return len(due_soon)
+
+
+async def notify_due_soon_tasks(db) -> int:
+    """Remind assignees the day before one of their open tasks is due.
+
+    Marks each reminded task so repeat runs do not re-notify; moving or
+    clearing the due date resets the marker. Returns the number of
+    notifications sent.
+    """
+    today = datetime.now(UTC).date()
+    tomorrow = today + timedelta(days=1)
+    rows = (await db.execute(
+        select(CaseTask, Case)
+        .join(Case, Case.id == CaseTask.case_id)
+        .where(
+            CaseTask.due_date == tomorrow,
+            CaseTask.done == False,  # noqa: E712
+            CaseTask.assignee_id.isnot(None),
+            CaseTask.due_soon_notified_at.is_(None),
+            Case.status.in_(_ACTIVE_CASE_STATUSES),
+        )
+    )).all()
+    now = datetime.now(UTC)
+    for task, case in rows:
+        db.add(Notification(
+            user_id=task.assignee_id,
+            kind="case_task_due_soon",
+            title=f"Task due tomorrow: {task.title}",
+            body=f"Investigation #{case.id}: {case.title}. Due {task.due_date.isoformat()}.",
+            link=f"/app/cases/{case.id}",
+        ))
+        db.add(AuditLog(
+            user_id=task.assignee_id, action="case_task_due_soon",
+            target_type="case", target_id=case.id,
+            detail=f"Task '{task.title}' on investigation #{case.id} is due {task.due_date.isoformat()}",
+        ))
+        task.due_soon_notified_at = now
+    if rows:
+        await db.commit()
+        logger.info("Sent %d task due-soon notifications", len(rows))
+        for task, case in rows:
+            user = await db.get(User, task.assignee_id)
+            if user is None:
+                continue
+            await notify_investigation_event(
+                user,
+                kind="case_task_due_soon",
+                severity=case.severity,
+                title=f"Task due tomorrow: {task.title}",
+                body=(
+                    f"Task '{task.title}' on investigation #{case.id} ({case.title}) "
+                    f"is due {task.due_date.isoformat()}."
+                ),
+                link_path=f"/app/cases/{case.id}",
+            )
+    return len(rows)
+
+
+async def notify_overdue_tasks(db) -> int:
+    """Remind assignees once when one of their open tasks passes its due date.
+
+    Marks each reminded task so repeat runs do not re-notify; moving or
+    clearing the due date resets the marker. Returns the number of
+    notifications sent.
+    """
+    today = datetime.now(UTC).date()
+    rows = (await db.execute(
+        select(CaseTask, Case)
+        .join(Case, Case.id == CaseTask.case_id)
+        .where(
+            CaseTask.due_date.isnot(None),
+            CaseTask.due_date < today,
+            CaseTask.done == False,  # noqa: E712
+            CaseTask.assignee_id.isnot(None),
+            CaseTask.overdue_notified_at.is_(None),
+            Case.status.in_(_ACTIVE_CASE_STATUSES),
+        )
+    )).all()
+    now = datetime.now(UTC)
+    for task, case in rows:
+        days_overdue = (today - task.due_date).days
+        db.add(Notification(
+            user_id=task.assignee_id,
+            kind="case_task_overdue",
+            title=f"Task overdue: {task.title}",
+            body=(
+                f"Investigation #{case.id}: {case.title}. Due {task.due_date.isoformat()}, "
+                f"{days_overdue} day{'s' if days_overdue != 1 else ''} ago."
+            ),
+            link=f"/app/cases/{case.id}",
+        ))
+        db.add(AuditLog(
+            user_id=task.assignee_id, action="case_task_overdue",
+            target_type="case", target_id=case.id,
+            detail=(
+                f"Task '{task.title}' on investigation #{case.id} is "
+                f"{days_overdue}d past due {task.due_date.isoformat()}"
+            ),
+        ))
+        task.overdue_notified_at = now
+    if rows:
+        await db.commit()
+        logger.info("Sent %d task overdue notifications", len(rows))
+        for task, case in rows:
+            user = await db.get(User, task.assignee_id)
+            if user is None:
+                continue
+            await notify_investigation_event(
+                user,
+                kind="case_task_overdue",
+                severity=case.severity,
+                title=f"Task overdue: {task.title}",
+                body=(
+                    f"Task '{task.title}' on investigation #{case.id} ({case.title}) "
+                    f"passed its due date {task.due_date.isoformat()}."
+                ),
+                link_path=f"/app/cases/{case.id}",
+            )
+    return len(rows)
 
 
 _ACTIVE_ALERT_STATUSES = ("pending", "sent", "acknowledged")
