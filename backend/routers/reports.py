@@ -313,6 +313,8 @@ async def get_team_workload_report(
     Counts span the whole org (assignments cross alert/case owners), so the
     caller sees every member of their org, or just themselves when they have
     no org. Overdue means past the triage or SLA due date while still open.
+    mtta_seconds/mttr_seconds are trailing-30-day mean acknowledge/resolve
+    times for alerts assigned to the member.
     """
     today = datetime.now(UTC).date()
 
@@ -354,6 +356,30 @@ async def get_team_workload_report(
         )
         .group_by(Case.assigned_to_id)
     )).all()) if member_ids else {}
+    window_start = datetime.now(UTC) - timedelta(days=30)
+    ack_rows = (await db.execute(
+        select(Alert.assigned_to_id, Alert.created_at, Alert.acknowledged_at)
+        .where(
+            Alert.assigned_to_id.in_(member_ids),
+            Alert.acknowledged_at.is_not(None),
+            Alert.acknowledged_at >= window_start,
+        )
+    )).all() if member_ids else []
+    res_rows = (await db.execute(
+        select(Alert.assigned_to_id, Alert.created_at, Alert.resolved_at)
+        .where(
+            Alert.assigned_to_id.in_(member_ids),
+            Alert.resolved_at.is_not(None),
+            Alert.resolved_at >= window_start,
+        )
+    )).all() if member_ids else []
+    ack_by_member: dict[int, list] = {}
+    for assignee_id, created_at, acked_at in ack_rows:
+        ack_by_member.setdefault(assignee_id, []).append((created_at, acked_at))
+    res_by_member: dict[int, list] = {}
+    for assignee_id, created_at, resolved_at in res_rows:
+        res_by_member.setdefault(assignee_id, []).append((created_at, resolved_at))
+
     from backend.models.case import CaseTask
     tasks_open = dict((await db.execute(
         select(CaseTask.assignee_id, func.count())
@@ -376,6 +402,8 @@ async def get_team_workload_report(
             "cases_open": cases_open.get(m.id, 0),
             "cases_overdue": cases_overdue.get(m.id, 0),
             "tasks_open": tasks_open.get(m.id, 0),
+            "mtta_seconds": _mean_delta_seconds(ack_by_member.get(m.id, [])),
+            "mttr_seconds": _mean_delta_seconds(res_by_member.get(m.id, [])),
         }
         for m in members
     ]
