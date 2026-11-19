@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BriefcaseMedical, Clock, ShieldAlert, Siren, Timer } from 'lucide-react';
+import { BriefcaseMedical, Clock, Download, ShieldAlert, ShieldCheck, Siren, Timer } from 'lucide-react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
 import { KPICard } from '../components/KPICard';
@@ -30,12 +30,44 @@ interface PostureReport {
   cases: { open: number; in_progress: number; closed: number; opened: number };
 }
 
+interface SlaBucket {
+  due: number;
+  met: number;
+  breached: number;
+  upcoming: number;
+  attainment_pct: number | null;
+  by_severity: Record<'critical' | 'high' | 'medium' | 'low', { due: number; met: number; breached: number }>;
+}
+
+interface SlaReport {
+  days: number;
+  alerts: SlaBucket;
+  cases: SlaBucket;
+}
+
+function slaCsv(sla: SlaReport): string {
+  const rows = [['scope', 'severity', 'due', 'met', 'breached', 'attainment_pct']];
+  for (const scope of ['alerts', 'cases'] as const) {
+    const bucket = sla[scope];
+    rows.push([
+      scope, 'all', String(bucket.due), String(bucket.met), String(bucket.breached),
+      bucket.attainment_pct === null ? '' : String(bucket.attainment_pct),
+    ]);
+    for (const sev of SEVERITIES) {
+      const s = bucket.by_severity[sev];
+      if (s.due > 0) rows.push([scope, sev, String(s.due), String(s.met), String(s.breached), '']);
+    }
+  }
+  return rows.map((r) => r.join(',')).join('\n');
+}
+
 const WINDOWS = [7, 30, 90];
 const SEVERITIES: Array<'critical' | 'high' | 'medium' | 'low'> = ['critical', 'high', 'medium', 'low'];
 
 export function Reports() {
   const [days, setDays] = useState(30);
   const [report, setReport] = useState<PostureReport | null>(null);
+  const [sla, setSla] = useState<SlaReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,17 +75,33 @@ export function Reports() {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiClient.get('/reports/posture', { params: { days: window } });
-      setReport(res.data);
+      const [postureRes, slaRes] = await Promise.all([
+        apiClient.get('/reports/posture', { params: { days: window } }),
+        apiClient.get('/reports/sla', { params: { days: window } }),
+      ]);
+      setReport(postureRes.data);
+      setSla(slaRes.data);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Could not load the posture report.'));
       setReport(null);
+      setSla(null);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => { void fetchReport(days); }, [days, fetchReport]);
+
+  const exportSlaCsv = () => {
+    if (!sla) return;
+    const blob = new Blob([slaCsv(sla)], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sla-compliance-${sla.days}d.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const maxSeverityCount = report
     ? Math.max(1, ...SEVERITIES.map((sev) => report.alerts.by_severity[sev]))
@@ -145,6 +193,66 @@ export function Reports() {
               </div>
             </Panel>
           </div>
+
+          {sla && (
+            <Panel
+              title="SLA compliance"
+              description={`Items whose due date fell inside the last ${sla.days} days: met when resolved or closed by the due date, breached otherwise.`}
+            >
+              <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
+                {([['Alerts', sla.alerts], ['Investigations', sla.cases]] as Array<[string, SlaBucket]>).map(([label, bucket]) => (
+                  <div key={label} className="rounded-lg border border-surface-800 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="flex items-center gap-2 text-sm font-semibold text-surface-100">
+                        <ShieldCheck className="h-4 w-4 text-primary-400" aria-hidden="true" />
+                        {label}
+                      </h3>
+                      {bucket.due > 0 ? (
+                        <span className={`text-2xl font-bold ${bucket.attainment_pct !== null && bucket.attainment_pct >= 90 ? 'text-success' : bucket.attainment_pct !== null && bucket.attainment_pct >= 70 ? 'text-warning' : 'text-danger'}`}>
+                          {bucket.attainment_pct}%
+                        </span>
+                      ) : (
+                        <span className="text-sm text-surface-500">No due dates in window</span>
+                      )}
+                    </div>
+                    {bucket.due > 0 && (
+                      <>
+                        <p className="mt-1 text-xs text-surface-400">
+                          {bucket.met} met · {bucket.breached} breached · {bucket.upcoming} upcoming
+                        </p>
+                        <div className="mt-3 space-y-2">
+                          {SEVERITIES.map((sev) => {
+                            const s = bucket.by_severity[sev];
+                            if (s.due === 0) return null;
+                            return (
+                              <div key={sev} className="flex items-center gap-3 text-xs">
+                                <span className="w-16 font-medium capitalize text-surface-300">{sev}</span>
+                                <div className="flex h-2.5 flex-1 overflow-hidden rounded-full bg-surface-800">
+                                  <div className="h-full bg-success" style={{ width: `${(s.met / s.due) * 100}%` }} />
+                                  <div className="h-full bg-danger" style={{ width: `${(s.breached / s.due) * 100}%` }} />
+                                </div>
+                                <span className="w-20 text-right text-surface-400">{s.met}/{s.due} met</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-end border-t border-surface-800 px-4 py-3">
+                <button
+                  type="button"
+                  onClick={exportSlaCsv}
+                  className="flex items-center gap-2 rounded-lg border border-surface-600 bg-surface-800 px-3 py-2 text-sm text-surface-200 transition-colors hover:bg-surface-700"
+                >
+                  <Download className="h-4 w-4" aria-hidden="true" />
+                  Export SLA CSV
+                </button>
+              </div>
+            </Panel>
+          )}
 
           <Panel
             title="Highest-risk assets"
