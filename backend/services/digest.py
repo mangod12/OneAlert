@@ -1,7 +1,8 @@
 """Daily digest email: a morning summary of the investigation queue.
 
 An hourly scheduler job emails each opted-in user at their chosen UTC
-hour: open and overdue investigations, plus fresh critical/high alerts
+hour: open and overdue investigations, assigned tasks nearing or past
+their due date, plus fresh critical/high alerts
 from the last 24 hours. Quiet users with nothing queued get no email.
 """
 
@@ -11,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, select
 
 from backend.models.alert import Alert
-from backend.models.case import Case
+from backend.models.case import Case, CaseTask
 from backend.models.user import User
 from backend.services.email_alert import email_service
 
@@ -55,6 +56,25 @@ async def build_digest(db, user: User) -> dict:
         )
     )).scalar_one()
 
+    task_rows = (await db.execute(
+        select(CaseTask, Case)
+        .join(Case, Case.id == CaseTask.case_id)
+        .where(
+            CaseTask.assignee_id == user.id,
+            CaseTask.done == False,  # noqa: E712
+            CaseTask.due_date.isnot(None),
+            Case.status.in_(_ACTIVE_CASE_STATUSES),
+        )
+        .order_by(CaseTask.due_date.asc())
+    )).all()
+    overdue_rows = [(t, c) for t, c in task_rows if t.due_date < today][:5]
+    overdue_tasks = [
+        {"title": t.title, "case_title": c.title, "due_date": t.due_date.isoformat()}
+        for t, c in overdue_rows
+    ]
+    tasks_due_today = sum(1 for t, _ in task_rows if t.due_date == today)
+    tasks_due_tomorrow = sum(1 for t, _ in task_rows if t.due_date == today + timedelta(days=1))
+
     return {
         "open": open_count,
         "investigating": investigating_count,
@@ -63,6 +83,9 @@ async def build_digest(db, user: User) -> dict:
             for c in overdue
         ],
         "new_urgent_alerts": new_urgent_alerts,
+        "overdue_tasks": overdue_tasks,
+        "tasks_due_today": tasks_due_today,
+        "tasks_due_tomorrow": tasks_due_tomorrow,
     }
 
 
@@ -73,12 +96,21 @@ def render_digest(digest: dict) -> str:
         f"Being investigated: {digest['investigating']}",
         f"New critical/high alerts (24h): {digest['new_urgent_alerts']}",
     ]
+    lines.append(f"Tasks due today: {digest['tasks_due_today']}")
+    lines.append(f"Tasks due tomorrow: {digest['tasks_due_tomorrow']}")
     if digest["overdue"]:
         lines.append("")
         lines.append("Overdue investigations:")
         lines.extend(
             f"- {case['title']} (was due {case['due_date']}, {case['severity']})"
             for case in digest["overdue"]
+        )
+    if digest["overdue_tasks"]:
+        lines.append("")
+        lines.append("Overdue tasks:")
+        lines.extend(
+            f"- {task['title']} ({task['case_title']}, was due {task['due_date']})"
+            for task in digest["overdue_tasks"]
         )
     return "\n".join(lines)
 
@@ -89,6 +121,9 @@ def _is_empty(digest: dict) -> bool:
         and digest["investigating"] == 0
         and digest["new_urgent_alerts"] == 0
         and not digest["overdue"]
+        and digest["tasks_due_today"] == 0
+        and digest["tasks_due_tomorrow"] == 0
+        and not digest["overdue_tasks"]
     )
 
 
