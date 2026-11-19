@@ -827,6 +827,39 @@ describe('Investigation tasks', () => {
     await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/2', { assignee_id: null }));
   });
 
+  it('sets a due date on a task', async () => {
+    mockLoadWithTasks(tasks);
+    mockPatch.mockResolvedValue({ data: { ...tasks[1], due_date: '2026-12-01' } });
+    renderDetail();
+    fireEvent.change(await screen.findByLabelText('Due date for task Collect triage image'), { target: { value: '2026-12-01' } });
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/2', { due_date: '2026-12-01' }));
+  });
+
+  it('clears a task due date back to none', async () => {
+    mockLoadWithTasks([{ ...tasks[1], due_date: '2026-12-01' }]);
+    mockPatch.mockResolvedValue({ data: { ...tasks[1], due_date: null } });
+    renderDetail();
+    fireEvent.change(await screen.findByLabelText('Due date for task Collect triage image'), { target: { value: '' } });
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/2', { due_date: null }));
+  });
+
+  it('badges an open task past its due date as overdue', async () => {
+    mockLoadWithTasks([
+      { ...tasks[1], due_date: '2000-01-01' },
+      { id: 3, title: 'Future work', done: false, position: 2, created_at: '2026-11-18T09:06:00Z', completed_at: null, due_date: '2999-01-01' },
+    ]);
+    renderDetail();
+    expect(await screen.findByText('Overdue · due 2000-01-01')).toBeTruthy();
+    expect(screen.getByText('due 2999-01-01')).toBeTruthy();
+  });
+
+  it('does not badge completed tasks as overdue', async () => {
+    mockLoadWithTasks([{ ...tasks[0], due_date: '2000-01-01' }]);
+    renderDetail();
+    expect(await screen.findByText('Contain the host')).toBeTruthy();
+    expect(screen.queryByText(/Overdue/)).toBeNull();
+  });
+
   it('shows the empty state when the checklist is empty', async () => {
     mockLoadWithTasks([]);
     renderDetail();

@@ -241,8 +241,8 @@ describe('My assignments', () => {
 
 describe('My tasks', () => {
   const myTasks = [
-    { task_id: 11, case_id: 7, case_title: 'Suspicious lateral movement', case_severity: 'critical', case_status: 'investigating', case_due_date: '2026-11-25', title: 'Contain the host', created_at: '2026-11-18T09:00:00Z' },
-    { task_id: 12, case_id: 9, case_title: 'Phishing follow-up', case_severity: 'low', case_status: 'open', case_due_date: null, title: 'Review firewall logs', created_at: '2026-11-18T09:05:00Z' },
+    { task_id: 11, case_id: 7, case_title: 'Suspicious lateral movement', case_severity: 'critical', case_status: 'investigating', case_due_date: '2026-11-25', title: 'Contain the host', due_date: null as string | null, created_at: '2026-11-18T09:00:00Z' },
+    { task_id: 12, case_id: 9, case_title: 'Phishing follow-up', case_severity: 'low', case_status: 'open', case_due_date: null, title: 'Review firewall logs', due_date: null as string | null, created_at: '2026-11-18T09:05:00Z' },
   ];
 
   function mockWithTasks(tasks: typeof myTasks) {
@@ -264,6 +264,16 @@ describe('My tasks', () => {
     expect((screen.getByText('Contain the host').closest('a') as HTMLAnchorElement).href).toContain('/cases/7');
   });
 
+  it('badges task due dates and marks overdue ones', async () => {
+    mockWithTasks([
+      { ...myTasks[0], due_date: '2000-01-01' },
+      { ...myTasks[1], due_date: '2999-01-01' },
+    ]);
+    renderDashboard();
+    expect(await screen.findByText('Task overdue · due 2000-01-01')).toBeTruthy();
+    expect(screen.getByText('Task due 2999-01-01')).toBeTruthy();
+  });
+
   it('hides the panel when no tasks are assigned', async () => {
     mockWithTasks([]);
     renderDashboard();
@@ -274,8 +284,8 @@ describe('My tasks', () => {
 
 describe('My tasks inline completion', () => {
   const tasks = [
-    { task_id: 11, case_id: 7, case_title: 'Suspicious lateral movement', case_severity: 'critical', case_status: 'investigating', case_due_date: '2026-11-25', title: 'Contain the host', created_at: '2026-11-18T09:00:00Z' },
-    { task_id: 12, case_id: 9, case_title: 'Phishing follow-up', case_severity: 'low', case_status: 'open', case_due_date: null, title: 'Review firewall logs', created_at: '2026-11-18T09:05:00Z' },
+    { task_id: 11, case_id: 7, case_title: 'Suspicious lateral movement', case_severity: 'critical', case_status: 'investigating', case_due_date: '2026-11-25', title: 'Contain the host', due_date: null as string | null, created_at: '2026-11-18T09:00:00Z' },
+    { task_id: 12, case_id: 9, case_title: 'Phishing follow-up', case_severity: 'low', case_status: 'open', case_due_date: null, title: 'Review firewall logs', due_date: null as string | null, created_at: '2026-11-18T09:05:00Z' },
   ];
 
   function mockWithTasks() {

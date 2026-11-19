@@ -367,6 +367,8 @@ async def list_my_tasks(
             severity_rank.get(case.severity or "medium", 5),
             case.due_date is None,
             case.due_date or date.max,
+            task.due_date is None,
+            task.due_date or date.max,
             task.position,
             task.id,
         )
@@ -380,6 +382,7 @@ async def list_my_tasks(
             case_status=case.status,
             case_due_date=case.due_date,
             title=task.title,
+            due_date=task.due_date,
             created_at=task.created_at,
         )
         for task, case in sorted(rows, key=_sort_key)
@@ -699,6 +702,7 @@ async def create_case_task(
         title=title,
         position=next_position,
         assignee_id=payload.assignee_id,
+        due_date=payload.due_date,
         created_by_id=current_user.id,
     )
     db.add(task)
@@ -762,6 +766,14 @@ async def update_case_task(
                 body=f"Investigation #{case.id}: {case.title}",
                 link=f"/app/cases/{case.id}",
             ))
+
+    if "due_date" in payload.model_fields_set and payload.due_date != task.due_date:
+        task.due_date = payload.due_date
+        timeline_notes.append(
+            f"Task due date set to {payload.due_date.isoformat()}: {task.title}"
+            if payload.due_date is not None
+            else f"Task due date cleared: {task.title}"
+        )
 
     for note in timeline_notes:
         db.add(CaseTimeline(

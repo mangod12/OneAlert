@@ -84,7 +84,7 @@ interface SimilarCase { case_id: number; title: string; similarity: number; shar
 interface RelatedEvent { id: number; severity: string; event_type: string; source_ip?: string | null; dest_ip?: string | null; signature?: string | null; }
 interface CasePlan { id: number; status: string; autonomy_level: string; created_by: string; created_at: string; actions: unknown[]; }
 interface CaseWatcher { user_id: number; email: string; full_name: string | null; }
-interface CaseTask { id: number; title: string; done: boolean; position: number; assignee_id: number | null; created_at: string; completed_at: string | null; }
+interface CaseTask { id: number; title: string; done: boolean; position: number; assignee_id: number | null; due_date: string | null; created_at: string; completed_at: string | null; }
 
 export function CaseDetail() {
   const { caseId } = useParams<{ caseId: string }>();
@@ -138,6 +138,10 @@ export function CaseDetail() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [addingTask, setAddingTask] = useState(false);
   const [taskBusyId, setTaskBusyId] = useState<number | null>(null);
+  const [todayStr, setTodayStr] = useState<string | null>(null);
+  useEffect(() => {
+    setTodayStr(new Date().toISOString().slice(0, 10));
+  }, []);
   const [seedingPlanId, setSeedingPlanId] = useState<number | null>(null);
   const currentUserId = useAuthStore(state => state.user?.id ?? null);
 
@@ -312,6 +316,16 @@ export function CaseDetail() {
       await apiClient.patch(`/cases/${caseId}/tasks/${task.id}`, { assignee_id: assigneeId });
       await fetchAll();
     } catch (err) { toast(getApiErrorMessage(err, 'The task could not be assigned.'), 'error'); }
+    finally { setTaskBusyId(null); }
+  };
+
+  const setTaskDueDate = async (task: CaseTask, dueDate: string | null) => {
+    if (taskBusyId !== null) return;
+    setTaskBusyId(task.id);
+    try {
+      await apiClient.patch(`/cases/${caseId}/tasks/${task.id}`, { due_date: dueDate });
+      await fetchAll();
+    } catch (err) { toast(getApiErrorMessage(err, 'The task due date could not be updated.'), 'error'); }
     finally { setTaskBusyId(null); }
   };
 
@@ -767,6 +781,11 @@ export function CaseDetail() {
                 <span className={`flex-1 text-sm ${task.done ? 'text-surface-500 line-through' : 'text-surface-100'}`}>
                   {task.title}
                 </span>
+                {task.due_date && !task.done && (
+                  task.due_date < (todayStr ?? '')
+                    ? <span className="shrink-0 rounded-full bg-danger/20 px-2 py-0.5 text-[10px] font-medium text-danger">Overdue · due {task.due_date}</span>
+                    : <span className="shrink-0 rounded-full bg-surface-800 px-2 py-0.5 text-[10px] text-surface-300">due {task.due_date}</span>
+                )}
                 {members.length > 0 && (
                   <select
                     aria-label={`Assign task ${task.title}`}
@@ -781,6 +800,14 @@ export function CaseDetail() {
                     ))}
                   </select>
                 )}
+                <input
+                  type="date"
+                  aria-label={`Due date for task ${task.title}`}
+                  value={task.due_date ?? ''}
+                  disabled={taskBusyId === task.id}
+                  onChange={e => void setTaskDueDate(task, e.target.value || null)}
+                  className="w-28 shrink-0 rounded-md border border-surface-700 bg-surface-950 px-1.5 py-1 text-xs text-surface-300 focus:border-primary-500 focus:outline-none disabled:opacity-40 [color-scheme:dark]"
+                />
                 <button
                   type="button"
                   aria-label={`Delete task ${task.title}`}
