@@ -508,9 +508,9 @@ export function CaseDetail() {
         <Link to="/cases" className="flex items-center gap-2 text-surface-400 hover:text-surface-50 text-sm mb-4 transition-colors">
           <ArrowLeft className="w-4 h-4" /> Back to Cases
         </Link>
-        <div className="flex items-start justify-between">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
+        <div className="flex flex-col items-start justify-between gap-3 xl:flex-row">
+          <div className="min-w-0 max-w-full">
+            <div className="mb-2 flex flex-wrap items-center gap-3">
               <StatusBadge tone={alertSeverityTones[caseData.severity] ?? 'neutral'}>{caseData.severity}</StatusBadge>
               <StatusBadge tone={caseStatusTones[caseData.status] ?? 'neutral'}>{caseData.status}</StatusBadge>
               {isOwner && (
@@ -519,7 +519,7 @@ export function CaseDetail() {
                   value={caseData.severity}
                   disabled={changingSeverity}
                   onChange={e => void changeSeverity(e.target.value)}
-                  className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200 disabled:opacity-40"
+                  className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200 disabled:opacity-40"
                 >
                   {['info', 'low', 'medium', 'high', 'critical'].map(sev => <option key={sev} value={sev}>{sev}</option>)}
                 </select>
@@ -530,7 +530,7 @@ export function CaseDetail() {
                   value={caseData.assigned_to_id ?? ''}
                   disabled={assigning}
                   onChange={e => void changeAssignee(e.target.value)}
-                  className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200 disabled:opacity-40"
+                  className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200 disabled:opacity-40"
                 >
                   <option value="">Unassigned</option>
                   {members.map(member => (
@@ -547,7 +547,7 @@ export function CaseDetail() {
                     value={caseData.due_date ?? ''}
                     disabled={savingDueDate}
                     onChange={e => void changeDueDate(e.target.value)}
-                    className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200 disabled:opacity-40"
+                    className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200 disabled:opacity-40"
                   />
                 </label>
               )}
@@ -557,8 +557,8 @@ export function CaseDetail() {
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-surface-50">{caseData.title}</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="min-w-0 max-w-full break-words text-2xl font-bold text-surface-50">{caseData.title}</h1>
               <button
                 type="button"
                 aria-label={isWatching ? 'Stop watching this case' : 'Watch this case'}
@@ -629,7 +629,7 @@ export function CaseDetail() {
             </div>
           </div>
           {(NEXT_STATUSES[caseData.status] ?? []).length > 0 && (
-            <div className="flex shrink-0 gap-2" aria-label="Case status actions">
+            <div className="flex shrink-0 flex-wrap gap-2" aria-label="Case status actions">
               {(NEXT_STATUSES[caseData.status] ?? []).map(action => (
                 <button
                   key={action.status}
@@ -672,7 +672,7 @@ export function CaseDetail() {
       {/* Close-out */}
       {DONE_CASE_STATUSES.includes(caseData.status) && (
         <div className="oa-panel p-6" data-testid="case-closeout">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="flex items-center gap-2 text-lg font-semibold text-surface-50">
               <CheckCircle2 className="w-5 h-5 text-success" /> Close-out
             </h2>
@@ -743,7 +743,7 @@ export function CaseDetail() {
 
       {/* Investigation Tasks */}
       <div className="oa-panel p-6">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="flex items-center gap-2 text-lg font-semibold text-surface-50">
             <ListChecks className="w-5 h-5 text-primary-400" /> Investigation Tasks
           </h2>
@@ -768,7 +768,7 @@ export function CaseDetail() {
         {tasks.length > 0 && (
           <ul className="mb-3 space-y-1.5">
             {tasks.map(task => (
-              <li key={task.id} className="flex items-center gap-2 rounded-md border border-surface-800 bg-surface-900/60 px-3 py-2">
+              <li key={task.id} className="flex min-w-0 flex-wrap items-center gap-2 rounded-md border border-surface-800 bg-surface-900/60 px-3 py-2">
                 <button
                   type="button"
                   aria-label={task.done ? `Reopen task ${task.title}` : `Complete task ${task.title}`}
@@ -780,45 +780,47 @@ export function CaseDetail() {
                     ? <CheckSquare className="w-4.5 h-4.5" aria-hidden="true" />
                     : <Square className="w-4.5 h-4.5" aria-hidden="true" />}
                 </button>
-                <span className={`flex-1 text-sm ${task.done ? 'text-surface-500 line-through' : 'text-surface-100'}`}>
+                <span className={`min-w-0 flex-1 break-words text-sm ${task.done ? 'text-surface-500 line-through' : 'text-surface-100'}`}>
                   {task.title}
                 </span>
-                {task.due_date && !task.done && (
-                  task.due_date < (todayStr ?? '')
-                    ? <span className="shrink-0 rounded-full bg-danger/20 px-2 py-0.5 text-[10px] font-medium text-danger">Overdue · due {task.due_date}</span>
-                    : <span className="shrink-0 rounded-full bg-surface-800 px-2 py-0.5 text-[10px] text-surface-300">due {task.due_date}</span>
-                )}
-                {members.length > 0 && (
-                  <select
-                    aria-label={`Assign task ${task.title}`}
-                    value={task.assignee_id ?? ''}
+                <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto">
+                  {task.due_date && !task.done && (
+                    task.due_date < (todayStr ?? '')
+                      ? <span className="shrink-0 rounded-full bg-danger/20 px-2 py-0.5 text-[10px] font-medium text-danger">Overdue · due {task.due_date}</span>
+                      : <span className="shrink-0 rounded-full bg-surface-800 px-2 py-0.5 text-[10px] text-surface-300">due {task.due_date}</span>
+                  )}
+                  {members.length > 0 && (
+                    <select
+                      aria-label={`Assign task ${task.title}`}
+                      value={task.assignee_id ?? ''}
+                      disabled={taskBusyId === task.id}
+                      onChange={e => void assignTask(task, e.target.value ? Number(e.target.value) : null)}
+                      className="max-w-36 shrink-0 truncate rounded-md border border-surface-700 bg-surface-950 px-1.5 py-1 text-xs text-surface-300 focus:border-primary-500 focus:outline-none disabled:opacity-40"
+                    >
+                      <option value="">Unassigned</option>
+                      {members.map(member => (
+                        <option key={member.id} value={member.id}>{member.full_name || member.email}</option>
+                      ))}
+                    </select>
+                  )}
+                  <input
+                    type="date"
+                    aria-label={`Due date for task ${task.title}`}
+                    value={task.due_date ?? ''}
                     disabled={taskBusyId === task.id}
-                    onChange={e => void assignTask(task, e.target.value ? Number(e.target.value) : null)}
-                    className="max-w-36 shrink-0 truncate rounded-md border border-surface-700 bg-surface-950 px-1.5 py-1 text-xs text-surface-300 focus:border-primary-500 focus:outline-none disabled:opacity-40"
+                    onChange={e => void setTaskDueDate(task, e.target.value || null)}
+                    className="w-28 shrink-0 rounded-md border border-surface-700 bg-surface-950 px-1.5 py-1 text-xs text-surface-300 focus:border-primary-500 focus:outline-none disabled:opacity-40 [color-scheme:dark]"
+                  />
+                  <button
+                    type="button"
+                    aria-label={`Delete task ${task.title}`}
+                    disabled={taskBusyId === task.id}
+                    onClick={() => void removeTask(task.id)}
+                    className="shrink-0 text-surface-500 transition-colors hover:text-danger disabled:opacity-40"
                   >
-                    <option value="">Unassigned</option>
-                    {members.map(member => (
-                      <option key={member.id} value={member.id}>{member.full_name || member.email}</option>
-                    ))}
-                  </select>
-                )}
-                <input
-                  type="date"
-                  aria-label={`Due date for task ${task.title}`}
-                  value={task.due_date ?? ''}
-                  disabled={taskBusyId === task.id}
-                  onChange={e => void setTaskDueDate(task, e.target.value || null)}
-                  className="w-28 shrink-0 rounded-md border border-surface-700 bg-surface-950 px-1.5 py-1 text-xs text-surface-300 focus:border-primary-500 focus:outline-none disabled:opacity-40 [color-scheme:dark]"
-                />
-                <button
-                  type="button"
-                  aria-label={`Delete task ${task.title}`}
-                  disabled={taskBusyId === task.id}
-                  onClick={() => void removeTask(task.id)}
-                  className="shrink-0 text-surface-500 transition-colors hover:text-danger disabled:opacity-40"
-                >
-                  <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                </button>
+                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -836,7 +838,7 @@ export function CaseDetail() {
             placeholder="Add an investigation task..."
             aria-label="New task title"
             maxLength={300}
-            className="min-h-9 flex-1 rounded-md border border-surface-700 bg-surface-950 px-3 text-sm text-surface-100 placeholder:text-surface-500 focus:border-primary-500 focus:outline-none"
+            className="min-h-9 min-w-0 flex-1 rounded-md border border-surface-700 bg-surface-950 px-3 text-sm text-surface-100 placeholder:text-surface-500 focus:border-primary-500 focus:outline-none"
           />
           <button
             type="submit"
