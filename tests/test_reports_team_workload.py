@@ -218,3 +218,46 @@ def test_team_workload_excludes_inactive_members(client):
 def test_team_workload_requires_auth(client):
     resp = client.get("/api/v1/reports/team-workload")
     assert resp.status_code == 401
+
+
+def _seed_response_times(owner_id: int, member_id: int) -> None:
+    with _TestingSessionLocal() as db:
+        asset = Asset(user_id=owner_id, name="edge-router", asset_type="hardware")
+        db.add(asset)
+        db.flush()
+        created = _naive(days_ago=10)
+        db.add(Alert(
+            user_id=owner_id, asset_id=asset.id, title="Acked in 2h",
+            severity="high", status="acknowledged", created_at=created,
+            acknowledged_at=created + timedelta(hours=2), assigned_to_id=owner_id,
+        ))
+        db.add(Alert(
+            user_id=owner_id, asset_id=asset.id, title="Resolved in 1d",
+            severity="medium", status="resolved", created_at=created,
+            resolved_at=created + timedelta(days=1), assigned_to_id=owner_id,
+        ))
+        # Outside the 30-day window: must not count.
+        old = _naive(days_ago=50)
+        db.add(Alert(
+            user_id=owner_id, asset_id=asset.id, title="Ancient ack",
+            severity="low", status="acknowledged", created_at=old,
+            acknowledged_at=old + timedelta(hours=1), assigned_to_id=member_id,
+        ))
+        db.commit()
+
+
+def test_team_workload_response_times(client):
+    owner = _register_and_login(client, "owner@example.com")
+    member = _register_and_login(client, "member@example.com")
+    owner_id = _user_id(client, owner)
+    member_id = _user_id(client, member)
+    _share_org(owner_id, member_id)
+    _seed_response_times(owner_id, member_id)
+
+    resp = client.get("/api/v1/reports/team-workload", headers=owner)
+    assert resp.status_code == 200, resp.text
+    rows = {m["user_id"]: m for m in resp.json()["members"]}
+    assert rows[owner_id]["mtta_seconds"] == 7200
+    assert rows[owner_id]["mttr_seconds"] == 86400
+    assert rows[member_id]["mtta_seconds"] is None
+    assert rows[member_id]["mttr_seconds"] is None

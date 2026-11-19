@@ -54,6 +54,8 @@ interface WorkloadMember {
   cases_open: number;
   cases_overdue: number;
   tasks_open: number;
+  mtta_seconds: number | null;
+  mttr_seconds: number | null;
 }
 
 interface TeamWorkload {
@@ -343,7 +345,7 @@ export function Reports() {
           {workload && workload.members.length > 0 && (
             <Panel
               title="Team workload"
-              description="Open assigned work across your organization: alerts past their triage due date, investigations past their SLA, and open checklist tasks."
+              description="Open assigned work across your organization: alerts past their triage due date, investigations past their SLA, and open checklist tasks. Response times are trailing-30-day averages for alerts assigned to each member."
             >
               <ul className="divide-y divide-surface-800" data-testid="team-workload">
                 {workload.members.map((member) => {
@@ -368,6 +370,12 @@ export function Reports() {
                               <span className="font-medium text-danger">{totalOverdue} overdue</span>
                             )}
                           </>
+                        )}
+                        {member.mtta_seconds !== null && (
+                          <span>avg ack {formatDuration(member.mtta_seconds)}</span>
+                        )}
+                        {member.mttr_seconds !== null && (
+                          <span>avg resolve {formatDuration(member.mttr_seconds)}</span>
                         )}
                       </div>
                     </li>
