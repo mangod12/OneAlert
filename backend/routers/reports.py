@@ -3,7 +3,7 @@
 from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -384,3 +384,48 @@ async def get_team_workload_report(
         reverse=True,
     )
     return {"success": True, "generated_at": datetime.now(UTC).isoformat(), "members": rows}
+
+
+@router.get("/alert-trend")
+async def get_alert_trend_report(
+    days: int = Query(30, ge=1, le=90),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Daily opened vs resolved alert counts over the trailing `days`-day window.
+
+    Days with no activity are included with zero counts so the chart has no
+    gaps. Owned alerts only, matching the posture report.
+    """
+    today = datetime.now(UTC).date()
+    # naive UTC, matching stored timestamps
+    start_dt = datetime.combine(today - timedelta(days=days - 1), datetime.min.time())
+
+    rows = (await db.execute(
+        select(Alert.created_at, Alert.resolved_at).where(
+            and_(
+                Alert.user_id == current_user.id,
+                or_(Alert.created_at >= start_dt, Alert.resolved_at >= start_dt),
+            )
+        )
+    )).all()
+
+    opened_by_day: dict[str, int] = {}
+    resolved_by_day: dict[str, int] = {}
+    for created_at, resolved_at in rows:
+        if created_at is not None and created_at >= start_dt:
+            key = created_at.date().isoformat()
+            opened_by_day[key] = opened_by_day.get(key, 0) + 1
+        if resolved_at is not None and resolved_at >= start_dt:
+            key = resolved_at.date().isoformat()
+            resolved_by_day[key] = resolved_by_day.get(key, 0) + 1
+
+    series = []
+    for offset in range(days):
+        day = (today - timedelta(days=days - 1 - offset)).isoformat()
+        series.append({
+            "date": day,
+            "opened": opened_by_day.get(day, 0),
+            "resolved": resolved_by_day.get(day, 0),
+        })
+    return {"success": True, "days": days, "generated_at": datetime.now(UTC).isoformat(), "series": series}

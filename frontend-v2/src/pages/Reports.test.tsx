@@ -76,10 +76,20 @@ const workload = {
   ],
 };
 
-function mockApis(posture: unknown = report, sla: unknown = slaReport, team: unknown = workload) {
+const trend = {
+  days: 30,
+  series: [
+    { date: '2026-10-20', opened: 0, resolved: 0 },
+    { date: '2026-11-17', opened: 3, resolved: 1 },
+    { date: '2026-11-18', opened: 2, resolved: 4 },
+  ],
+};
+
+function mockApis(posture: unknown = report, sla: unknown = slaReport, team: unknown = workload, alertTrend: unknown = trend) {
   get.mockImplementation(async (url: string) => {
     if (url === '/reports/sla') return { data: sla };
     if (url === '/reports/team-workload') return { data: team };
+    if (url === '/reports/alert-trend') return { data: alertTrend };
     return { data: posture };
   });
 }
@@ -155,6 +165,16 @@ describe('Reports', () => {
     expect(screen.getByText('sam@example.com')).toBeTruthy();
     expect(screen.getByText('No open work')).toBeTruthy();
     expect(get).toHaveBeenCalledWith('/reports/team-workload');
+  });
+
+  it('renders the alert volume trend with opened and resolved totals', async () => {
+    mockApis();
+    renderPage();
+    expect(await screen.findByText('Alert volume trend')).toBeTruthy();
+    expect(await screen.findByTestId('alert-trend')).toBeTruthy();
+    expect(screen.getByText('5 opened')).toBeTruthy();
+    expect(screen.getByText('5 resolved')).toBeTruthy();
+    expect(get).toHaveBeenCalledWith('/reports/alert-trend', { params: { days: 30 } });
   });
 
   it('switches the trailing window', async () => {

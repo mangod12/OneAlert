@@ -61,6 +61,17 @@ interface TeamWorkload {
   members: WorkloadMember[];
 }
 
+interface TrendPoint {
+  date: string;
+  opened: number;
+  resolved: number;
+}
+
+interface AlertTrend {
+  days: number;
+  series: TrendPoint[];
+}
+
 function slaCsv(sla: SlaReport): string {
   const rows = [['scope', 'severity', 'due', 'met', 'breached', 'attainment_pct']];
   for (const scope of ['alerts', 'cases'] as const) {
@@ -85,6 +96,7 @@ export function Reports() {
   const [report, setReport] = useState<PostureReport | null>(null);
   const [sla, setSla] = useState<SlaReport | null>(null);
   const [workload, setWorkload] = useState<TeamWorkload | null>(null);
+  const [trend, setTrend] = useState<AlertTrend | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -92,19 +104,22 @@ export function Reports() {
     setLoading(true);
     setError(null);
     try {
-      const [postureRes, slaRes, workloadRes] = await Promise.all([
+      const [postureRes, slaRes, workloadRes, trendRes] = await Promise.all([
         apiClient.get('/reports/posture', { params: { days: window } }),
         apiClient.get('/reports/sla', { params: { days: window } }),
         apiClient.get('/reports/team-workload'),
+        apiClient.get('/reports/alert-trend', { params: { days: window } }),
       ]);
       setReport(postureRes.data);
       setSla(slaRes.data);
       setWorkload(workloadRes.data);
+      setTrend(trendRes.data);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Could not load the posture report.'));
       setReport(null);
       setSla(null);
       setWorkload(null);
+      setTrend(null);
     } finally {
       setLoading(false);
     }
@@ -213,6 +228,57 @@ export function Reports() {
               </div>
             </Panel>
           </div>
+
+          {trend && trend.series.length > 0 && (
+            <Panel
+              title="Alert volume trend"
+              description={`Alerts opened vs resolved each day over the trailing ${trend.days} days.`}
+            >
+              <div className="p-4" data-testid="alert-trend">
+                {(() => {
+                  const maxCount = Math.max(1, ...trend.series.map((p) => Math.max(p.opened, p.resolved)));
+                  const totalOpened = trend.series.reduce((sum, p) => sum + p.opened, 0);
+                  const totalResolved = trend.series.reduce((sum, p) => sum + p.resolved, 0);
+                  return (
+                    <>
+                      <div className="flex h-28 items-end gap-px">
+                        {trend.series.map((p) => (
+                          <div
+                            key={p.date}
+                            className="flex h-full flex-1 items-end justify-center gap-px"
+                            title={`${p.date}: ${p.opened} opened, ${p.resolved} resolved`}
+                          >
+                            <div
+                              className="w-1/2 rounded-t-sm bg-primary-500"
+                              style={{ height: `${(p.opened / maxCount) * 100}%`, minHeight: p.opened > 0 ? '2px' : 0 }}
+                            />
+                            <div
+                              className="w-1/2 rounded-t-sm bg-success"
+                              style={{ height: `${(p.resolved / maxCount) * 100}%`, minHeight: p.resolved > 0 ? '2px' : 0 }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-xs text-surface-500">
+                        <span>{trend.series[0].date}</span>
+                        <div className="flex items-center gap-4">
+                          <span className="flex items-center gap-1.5">
+                            <span className="inline-block h-2 w-2 rounded-sm bg-primary-500" />
+                            {totalOpened} opened
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="inline-block h-2 w-2 rounded-sm bg-success" />
+                            {totalResolved} resolved
+                          </span>
+                        </div>
+                        <span>{trend.series[trend.series.length - 1].date}</span>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </Panel>
+          )}
 
           {sla && (
             <Panel
