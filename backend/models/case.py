@@ -118,6 +118,7 @@ class CaseTask(Base):
     done = Column(Boolean, default=False, nullable=False)
     position = Column(Integer, default=0, nullable=False)
     assignee_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    due_date = Column(Date, nullable=True)  # optional target date for the task
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
@@ -250,14 +251,16 @@ class CaseTaskCreate(BaseModel):
     """Schema for adding a task to a case checklist."""
     title: str = Field(min_length=1, max_length=300)
     assignee_id: int | None = None
+    due_date: date | None = None
     model_config = {"extra": "forbid"}
 
 
 class CaseTaskUpdate(BaseModel):
-    """Schema for renaming, reassigning, or toggling a case task."""
+    """Schema for renaming, reassigning, retargeting, or toggling a case task."""
     title: str | None = Field(default=None, min_length=1, max_length=300)
     done: bool | None = None
     assignee_id: int | None = None  # send explicit null to unassign
+    due_date: date | None = None  # send explicit null to clear the target date
     model_config = {"extra": "forbid"}
 
 
@@ -268,6 +271,7 @@ class CaseTaskResponse(BaseModel):
     done: bool
     position: int
     assignee_id: int | None = None
+    due_date: date | None = None
     created_at: datetime
     completed_at: datetime | None = None
     created_by_id: int | None = None
@@ -289,6 +293,7 @@ class MyTaskResponse(BaseModel):
     case_status: str
     case_due_date: date | None = None
     title: str
+    due_date: date | None = None
     created_at: datetime
 
 

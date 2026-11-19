@@ -32,7 +32,11 @@ export function Dashboard() {
   const [myCases, setMyCases] = useState<Array<{ id: number; title: string; severity: string; status: string }> | null>(null);
   const [watchingAlerts, setWatchingAlerts] = useState<Alert[] | null>(null);
   const [watchingCases, setWatchingCases] = useState<Array<{ id: number; title: string; severity: string; status: string; due_date: string | null }> | null>(null);
-  const [myTasks, setMyTasks] = useState<Array<{ task_id: number; case_id: number; case_title: string; case_severity: string; case_status: string; case_due_date: string | null; title: string; created_at: string }> | null>(null);
+  const [todayStr, setTodayStr] = useState<string | null>(null);
+  useEffect(() => {
+    setTodayStr(new Date().toISOString().slice(0, 10));
+  }, []);
+  const [myTasks, setMyTasks] = useState<Array<{ task_id: number; case_id: number; case_title: string; case_severity: string; case_status: string; case_due_date: string | null; title: string; due_date: string | null; created_at: string }> | null>(null);
   const [completingTaskId, setCompletingTaskId] = useState<number | null>(null);
 
   const completeTask = async (task: { task_id: number; case_id: number; title: string }) => {
@@ -74,7 +78,7 @@ export function Dashboard() {
         apiClient.get<{ incidents?: Array<{ asset_id: number; asset_name: string; max_severity: string; alert_count: number; blast_radius: number }> }>('/incidents'),
         apiClient.get<AlertListResponse>('/alerts/', { params: { size: 5, watching: 'me' } }),
         apiClient.get<{ cases?: Array<{ id: number; title: string; severity: string; status: string; due_date: string | null }> }>('/cases/', { params: { size: 5, watching: 'me' } }),
-        apiClient.get<Array<{ task_id: number; case_id: number; case_title: string; case_severity: string; case_status: string; case_due_date: string | null; title: string; created_at: string }>>('/cases/my-tasks'),
+        apiClient.get<Array<{ task_id: number; case_id: number; case_title: string; case_severity: string; case_status: string; case_due_date: string | null; title: string; due_date: string | null; created_at: string }>>('/cases/my-tasks'),
       ] as const;
       const results = await Promise.allSettled(requests);
       if (!active) return;
@@ -243,6 +247,11 @@ export function Dashboard() {
                   <StatusBadge tone={t.case_severity === 'critical' ? 'danger' : t.case_severity === 'high' ? 'warning' : 'neutral'}>{t.case_severity}</StatusBadge>
                   <Link to={`/cases/${t.case_id}`} className="flex min-w-0 flex-1 items-center gap-3">
                     <div className="min-w-0"><p className="truncate text-sm font-semibold text-surface-100">{t.title}</p><p className="mt-0.5 truncate text-[11px] text-surface-500">{t.case_title} · Investigation #{t.case_id}{t.case_due_date ? ` · due ${t.case_due_date}` : ''}</p></div>
+                    {t.due_date && (
+                      t.due_date < (todayStr ?? '')
+                        ? <span className="shrink-0 rounded-full bg-danger/20 px-2 py-0.5 text-[10px] font-medium text-danger">Task overdue · due {t.due_date}</span>
+                        : <span className="shrink-0 rounded-full bg-surface-800 px-2 py-0.5 text-[10px] text-surface-300">Task due {t.due_date}</span>
+                    )}
                     <span className="ml-auto shrink-0 text-xs text-surface-500">{t.case_status}</span>
                   </Link>
                 </div>

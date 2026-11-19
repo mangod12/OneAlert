@@ -490,3 +490,85 @@ def test_task_assignee_can_open_the_case(client):
     detail = client.get(f"/api/v1/cases/{case_id}", headers=member)
     assert detail.status_code == 200, detail.text
     assert detail.json()["title"] == "Beaconing host"
+
+
+class TestCaseTaskDueDates:
+    def test_create_task_with_due_date(self, client):
+        headers = _register_and_login(client, "due-owner@example.com")
+        owner_id = _user_id(client, headers)
+        other_headers = _register_and_login(client, "due-assignee@example.com")
+        other_id = _user_id(client, other_headers)
+        _share_org(owner_id, other_id)
+        case_id = _make_case(owner_id)
+        resp = client.post(f"/api/v1/cases/{case_id}/tasks", json={
+            "title": "Pull proxy logs",
+            "assignee_id": other_id,
+            "due_date": "2030-05-10",
+        }, headers=headers)
+        assert resp.status_code == 201, resp.text
+        data = resp.json()
+        assert data["due_date"] == "2030-05-10"
+        assert data["assignee_id"] == other_id
+
+    def test_create_task_due_date_defaults_null(self, client):
+        headers, case_id = _setup(client)
+        resp = client.post(f"/api/v1/cases/{case_id}/tasks", json={"title": "Triage"}, headers=headers)
+        assert resp.status_code == 201
+        assert resp.json()["due_date"] is None
+
+    def test_update_due_date_set_change_and_clear(self, client):
+        headers, case_id = _setup(client)
+        task = client.post(
+            f"/api/v1/cases/{case_id}/tasks",
+            json={"title": "Check firewall"}, headers=headers,
+        ).json()
+        url = f"/api/v1/cases/{case_id}/tasks/{task['id']}"
+
+        set_resp = client.patch(url, json={"due_date": "2030-06-01"}, headers=headers)
+        assert set_resp.status_code == 200
+        assert set_resp.json()["due_date"] == "2030-06-01"
+
+        change_resp = client.patch(url, json={"due_date": "2030-07-15"}, headers=headers)
+        assert change_resp.json()["due_date"] == "2030-07-15"
+
+        clear_resp = client.patch(url, json={"due_date": None}, headers=headers)
+        assert clear_resp.status_code == 200
+        assert clear_resp.json()["due_date"] is None
+
+        detail = client.get(f"/api/v1/cases/{case_id}", headers=headers).json()
+        texts = [t["content"] for t in detail["timeline"]]
+        assert any("due date set to 2030-06-01" in t for t in texts)
+        assert any("due date cleared" in t for t in texts)
+
+    def test_omitted_due_date_is_untouched(self, client):
+        headers, case_id = _setup(client)
+        task = client.post(
+            f"/api/v1/cases/{case_id}/tasks",
+            json={"title": "Review", "due_date": "2030-01-20"}, headers=headers,
+        ).json()
+        resp = client.patch(
+            f"/api/v1/cases/{case_id}/tasks/{task['id']}",
+            json={"done": True}, headers=headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["due_date"] == "2030-01-20"
+
+    def test_list_tasks_returns_due_date(self, client):
+        headers, case_id = _setup(client)
+        client.post(f"/api/v1/cases/{case_id}/tasks", json={
+            "title": "Dated", "due_date": "2030-03-03",
+        }, headers=headers)
+        tasks = client.get(f"/api/v1/cases/{case_id}/tasks", headers=headers).json()
+        assert tasks[-1]["due_date"] == "2030-03-03"
+
+    def test_my_tasks_includes_task_due_date(self, client):
+        headers, case_id = _setup(client)
+        me_id = _user_id(client, headers)
+        task = client.post(f"/api/v1/cases/{case_id}/tasks", json={
+            "title": "Follow up with vendor",
+            "assignee_id": me_id,
+            "due_date": "2030-04-01",
+        }, headers=headers).json()
+        mine = client.get("/api/v1/cases/my-tasks", headers=headers).json()
+        row = next(t for t in mine if t["task_id"] == task["id"])
+        assert row["due_date"] == "2030-04-01"
