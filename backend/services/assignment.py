@@ -13,7 +13,9 @@ from sqlalchemy import func, select
 
 from backend.models.alert import Alert
 from backend.models.case import Case
+from backend.models.organization import Organization
 from backend.models.user import User
+from backend.services.oncall import current_on_call_id
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +47,15 @@ async def _open_work_loads(db, member_ids: list[int]) -> dict[int, int]:
     return load
 
 
+async def _on_call_only(db, org_id: int, members: list) -> list:
+    """Restrict candidates to the on-call member when a rotation is set."""
+    org = await db.get(Organization, org_id)
+    on_call = await current_on_call_id(db, org)
+    if on_call is None:
+        return members
+    return [m for m in members if m.id == on_call] or members
+
+
 async def auto_assignee_id(db, user) -> int | None:
     """Return the least-loaded active org member's id, or None when not applicable."""
     if not getattr(user, "auto_assign_new_alerts", False):
@@ -56,17 +67,20 @@ async def auto_assignee_id(db, user) -> int | None:
     )).scalars().all()
     if len(members) < 2:
         return None
+    members = await _on_call_only(db, user.org_id, members)
     load = await _open_work_loads(db, [m.id for m in members])
     best = min(members, key=lambda m: (load.get(m.id, 0), m.id))
     return best.id
 
 
 async def org_members(db, user) -> list:
-    """Active members of the user's org; just the user when they have none."""
+    """Active members of the user's org; just the user when they have none.
+
+    Restricted to the on-call member while a rotation is set."""
     if isinstance(user.org_id, int) and not isinstance(user.org_id, bool):
         members = (await db.execute(
             select(User).where(User.org_id == user.org_id, User.is_active == True)  # noqa: E712
         )).scalars().all()
         if members:
-            return list(members)
+            return await _on_call_only(db, user.org_id, list(members))
     return [user]

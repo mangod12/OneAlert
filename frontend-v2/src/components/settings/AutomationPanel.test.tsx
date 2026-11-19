@@ -23,9 +23,19 @@ const DEFAULT_PREFS = {
   sla_days_info: 30,
 };
 
-function mockPrefs(prefs: unknown = DEFAULT_PREFS) {
+const MEMBERS = [
+  { id: 1, email: 'admin@example.com', full_name: 'Admin One', is_active: true },
+  { id: 2, email: 'sam@example.com', full_name: 'Sam Two', is_active: true },
+  { id: 3, email: 'gone@example.com', full_name: null, is_active: false },
+];
+
+const EMPTY_ROTATION = { member_ids: [], anchor_date: null, current_member_id: null };
+
+function mockPrefs(prefs: unknown = DEFAULT_PREFS, rotation: unknown = EMPTY_ROTATION) {
   get.mockImplementation(async (url: string) => {
     if (url === '/auth/me/automation-preferences') return { data: prefs };
+    if (url === '/orgs/me/on-call') return { data: rotation };
+    if (url === '/orgs/me/members') return { data: MEMBERS };
     throw new Error(`unexpected ${url}`);
   });
 }
@@ -83,6 +93,38 @@ describe('AutomationPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save automation' }));
     await waitFor(() => expect(patch).toHaveBeenCalledWith('/auth/me/automation-preferences',
       expect.objectContaining({ auto_assign_new_alerts: true })));
+  });
+
+  it('shows who is on call and saves rotation changes immediately', async () => {
+    mockPrefs(DEFAULT_PREFS, { member_ids: [2, 1], anchor_date: '2026-11-16', current_member_id: 2 });
+    patch.mockResolvedValue({ data: { member_ids: [1, 2], anchor_date: '2026-11-19', current_member_id: 1 } });
+    render(<AutomationPanel />);
+    await screen.findByText('On call this week: sam@example.com');
+    expect(screen.queryByRole('button', { name: /gone@example.com/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Admin One/ }));
+    // Admin One is already in the rotation; clicking removes them.
+    await waitFor(() => expect(patch).toHaveBeenCalledWith('/orgs/me/on-call', { member_ids: [2] }));
+  });
+
+  it('adds a member to an empty rotation', async () => {
+    mockPrefs();
+    patch.mockResolvedValue({ data: { member_ids: [2], anchor_date: '2026-11-19', current_member_id: 2 } });
+    render(<AutomationPanel />);
+    await screen.findByText('No rotation set: auto-assignment balances load across the whole organization.');
+    fireEvent.click(screen.getByRole('button', { name: 'Sam Two' }));
+    await waitFor(() => expect(patch).toHaveBeenCalledWith('/orgs/me/on-call', { member_ids: [2] }));
+  });
+
+  it('hides the rotation section for a solo organization', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/auth/me/automation-preferences') return { data: DEFAULT_PREFS };
+      if (url === '/orgs/me/on-call') return { data: EMPTY_ROTATION };
+      if (url === '/orgs/me/members') return { data: [MEMBERS[0]] };
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<AutomationPanel />);
+    await screen.findByLabelText('Auto-assign new alerts and investigations across your organization');
+    expect(screen.queryByText('On-call rotation')).toBeNull();
   });
 
   it('rejects an out-of-range alert threshold', async () => {
