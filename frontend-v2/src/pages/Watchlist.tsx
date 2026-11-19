@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Bell, BriefcaseMedical } from 'lucide-react';
 import apiClient from '../api/client';
 import type { Alert, AlertListResponse } from '../api/types';
@@ -46,7 +46,6 @@ function severityRank(severity: string): number {
 }
 
 export function Watchlist() {
-  const navigate = useNavigate();
   const [rows, setRows] = useState<WatchRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -173,8 +172,7 @@ export function Watchlist() {
               {rows.map((row) => (
                 <tr
                   key={`${row.kind}-${row.id}`}
-                  onClick={() => navigate(row.href)}
-                  className="cursor-pointer border-b border-surface-800 transition-colors last:border-0 hover:bg-surface-800/50"
+                  className="border-b border-surface-800 transition-colors last:border-0 hover:bg-surface-800/50"
                 >
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center gap-1.5 text-xs font-medium text-surface-300">
@@ -184,7 +182,7 @@ export function Watchlist() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="font-medium text-surface-100">{row.name}</span>
+                    <Link to={row.href} className="font-medium text-surface-100 underline-offset-4 hover:underline focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-400">{row.name}</Link>
                     {row.detail && <span className="ml-2 text-xs text-surface-500">{row.detail}</span>}
                     {isOverdue(row) && (
                       <span className="ml-2 text-xs font-semibold text-danger">Due {row.due_date} (overdue)</span>

@@ -139,7 +139,10 @@ describe('Watchlist page', () => {
       </MemoryRouter>
     );
     const caseName = await screen.findByText('Intrusion on the edge network');
-    fireEvent.click(caseName.closest('tr')!);
+    expect((caseName.closest('a') as HTMLAnchorElement).getAttribute('href')).toBe('/cases/3');
+    const alertLink = screen.getByRole('link', { name: /CVE-2026-0001/ });
+    expect(alertLink.getAttribute('href')).toBe('/alerts?alert=1');
+    fireEvent.click(caseName.closest('a')!);
     await waitFor(() => expect(screen.getByTestId('location').textContent).toContain('/cases/3'));
   });
   it('loads later pages, deduplicates records and ranks loaded items only', async () => {
