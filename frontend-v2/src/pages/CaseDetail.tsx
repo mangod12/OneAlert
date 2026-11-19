@@ -1,5 +1,6 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { TimelineExplorer } from '../components/TimelineExplorer';
 import { TaskTitleDialog } from '../components/TaskTitleDialog';
 import { CaseHandoff } from '../components/CaseHandoff';
 import { MentionTextarea } from '../components/MentionTextarea';
@@ -1019,11 +1020,8 @@ export function CaseDetail() {
                 {addingNote ? 'Adding…' : 'Add note'}
               </button>
             </form>
-            {caseData.timeline.length === 0 ? (
-              <p className="text-surface-500">No timeline entries yet.</p>
-            ) : (
-              <div className="space-y-4">
-                {caseData.timeline.map((entry) => {
+            <TimelineExplorer key={caseData.id} entries={caseData.timeline} pinnedIds={[highlightedNoteId, editingNoteId].filter((id): id is number => id !== null)}>
+                {(entry) => {
                   const Icon = timelineIcons[entry.entry_type] || Clock;
                   return (
                     <div
@@ -1039,8 +1037,8 @@ export function CaseDetail() {
                         </div>
                         <div className="flex-1 w-px bg-surface-700 mt-2" />
                       </div>
-                      <div className="flex-1 pb-4">
-                        <div className="flex items-center gap-2 mb-1">
+                      <div className="min-w-0 flex-1 pb-4">
+                        <div className="mb-1 flex flex-wrap items-center gap-2">
                           <span className="text-xs text-surface-500">{new Date(entry.timestamp).toLocaleString()}</span>
                           <span className="text-xs px-1.5 py-0.5 rounded bg-surface-700 text-surface-400">{entry.entry_type}</span>
                           <span className="text-xs text-surface-600">{entry.author_email ?? entry.source}</span>
@@ -1095,14 +1093,13 @@ export function CaseDetail() {
                             </div>
                           </div>
                         ) : (
-                          <p className="text-surface-300 text-sm">{entry.content}</p>
+                          <p className="break-words text-sm text-surface-300">{entry.content}</p>
                         )}
                       </div>
                     </div>
                   );
-                })}
-              </div>
-            )}
+                }}
+            </TimelineExplorer>
           </div>
         </div>
 
@@ -1123,7 +1120,7 @@ export function CaseDetail() {
               <div className="space-y-2">
                 {alerts.map(a => (
                   <div key={a.id} className="p-3 bg-surface-900/50 rounded-lg">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="mb-1 flex flex-wrap items-center gap-2">
                       <StatusBadge tone={alertSeverityTones[a.severity] ?? 'neutral'}>{a.severity}</StatusBadge>
                       {a.cve_id && <span className="text-xs text-primary-400">{a.cve_id}</span>}
                       {isOwner && (
@@ -1160,7 +1157,7 @@ export function CaseDetail() {
               <div className="space-y-2 max-h-80 overflow-y-auto">
                 {events.map(e => (
                   <div key={e.id} className="p-3 bg-surface-900/50 rounded-lg">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="mb-1 flex flex-wrap items-center gap-2">
                       <StatusBadge tone={eventSeverityTones[e.severity] ?? 'neutral'}>{e.severity}</StatusBadge>
                       <span className="text-xs text-surface-500">{e.event_type}</span>
                       {isOwner && (
