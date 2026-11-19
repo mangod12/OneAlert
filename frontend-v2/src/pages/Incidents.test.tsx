@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
@@ -59,6 +59,23 @@ describe('Incidents', () => {
     expect(await screen.findByText('Alert updated')).toBeTruthy();
     expect(screen.getByText(/status: pending -> acknowledged/)).toBeTruthy();
     expect((screen.getByText('View these alerts in the alert list') as HTMLAnchorElement).href).toContain('/alerts?asset_id=5');
+  });
+
+  it('passes the severity filter to the API when changed', async () => {
+    mockGets();
+    renderPage();
+    await screen.findByText('plc-01');
+    fireEvent.change(screen.getByLabelText('Minimum severity'), { target: { value: 'high' } });
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/incidents', { params: { severity: 'high' } }));
+  });
+
+  it('passes the asset filter to the API on submit', async () => {
+    mockGets();
+    renderPage();
+    await screen.findByText('plc-01');
+    fireEvent.change(screen.getByLabelText('Filter incidents by asset'), { target: { value: 'plc' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/incidents', { params: { asset: 'plc' } }));
   });
 
   it('shows the empty state when nothing correlates', async () => {

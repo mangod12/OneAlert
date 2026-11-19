@@ -1,6 +1,6 @@
 """Incident correlation: groups active alerts on shared assets into incidents."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -90,13 +90,25 @@ async def _active_alerts_by_asset(
 
 @router.get("")
 async def list_incidents(
+    severity: str | None = Query(None, description="Minimum max-severity to include"),
+    asset: str | None = Query(None, description="Case-insensitive asset name/vendor/product match"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Correlate active alerts into incidents: one per asset with 2+ active alerts.
 
     Incidents are computed on read, so they always reflect current alert state.
+    `severity` keeps only incidents whose worst alert is at least that severe;
+    `asset` keeps only incidents whose asset name, vendor, or product contains
+    the text (case-insensitive).
     """
+    min_rank = None
+    if severity is not None:
+        if severity not in _SEVERITY_RANK:
+            raise HTTPException(status_code=422, detail=f"Unknown severity: {severity}")
+        min_rank = _SEVERITY_RANK[severity]
+    asset_term = asset.strip().lower() if asset else None
+
     groups = await _active_alerts_by_asset(db, current_user.id)
 
     incidents = []
@@ -123,6 +135,16 @@ async def list_incidents(
             "linked_cases": await _linked_cases(db, current_user.id, alert_ids),
             "alerts": [_alert_dict(a) for a in alerts],
         })
+
+    if min_rank is not None:
+        incidents = [i for i in incidents if _SEVERITY_RANK.get(i["max_severity"], -1) >= min_rank]
+    if asset_term:
+        incidents = [
+            i for i in incidents
+            if asset_term in (i["asset_name"] or "").lower()
+            or asset_term in (i["asset_vendor"] or "").lower()
+            or asset_term in (i["asset_product"] or "").lower()
+        ]
 
     incidents.sort(
         key=lambda i: (_SEVERITY_RANK.get(i["max_severity"], -1), i["alert_count"]),
