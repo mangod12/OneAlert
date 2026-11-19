@@ -40,25 +40,33 @@ export function Dashboard() {
     setWeekStr(new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10));
   }, []);
   const [myTasks, setMyTasks] = useState<Array<{ task_id: number; case_id: number; case_title: string; case_severity: string; case_status: string; case_due_date: string | null; title: string; due_date: string | null; created_at: string }> | null>(null);
+  const [taskError, setTaskError] = useState<string | null>(null);
+  const [savingTaskId, setSavingTaskId] = useState<number | null>(null);
   const [completingTaskId, setCompletingTaskId] = useState<number | null>(null);
 
   const setMyTaskDueDate = async (task: { task_id: number; case_id: number; title: string }, dueDate: string | null) => {
+    if (savingTaskId !== null || completingTaskId !== null) return;
+    setSavingTaskId(task.task_id);
+    setTaskError(null);
     try {
       await apiClient.patch(`/cases/${task.case_id}/tasks/${task.task_id}`, { due_date: dueDate });
       setMyTasks(prev => prev?.map(t => t.task_id === task.task_id ? { ...t, due_date: dueDate } : t) ?? prev);
-    } catch {
-      // leave the row unchanged so the action can be retried
+    } catch (err) {
+      setTaskError(getApiErrorMessage(err, 'The task due date could not be saved. Try again.'));
+    } finally {
+      setSavingTaskId(null);
     }
   };
 
   const completeTask = async (task: { task_id: number; case_id: number; title: string }) => {
-    if (completingTaskId !== null) return;
+    if (savingTaskId !== null || completingTaskId !== null) return;
+    setTaskError(null);
     setCompletingTaskId(task.task_id);
     try {
       await apiClient.patch(`/cases/${task.case_id}/tasks/${task.task_id}`, { done: true });
       setMyTasks(prev => prev?.filter(t => t.task_id !== task.task_id) ?? prev);
-    } catch {
-      // leave the row in place so the action can be retried
+    } catch (err) {
+      setTaskError(getApiErrorMessage(err, 'The task could not be completed. Try again.'));
     } finally {
       setCompletingTaskId(null);
     }
@@ -155,6 +163,21 @@ export function Dashboard() {
     { label: 'Respond', value: 0, status: 'approval gated', icon: ShieldCheck },
   ];
 
+  const buckets: Array<{ key: string; label: string; items: typeof myTasks }> = [
+    { key: 'overdue', label: 'Overdue', items: [] },
+    { key: 'today', label: 'Due today', items: [] },
+    { key: 'week', label: 'Due this week', items: [] },
+    { key: 'later', label: 'Later', items: [] },
+    { key: 'none', label: 'No due date', items: [] },
+  ];
+  for (const t of myTasks ?? []) {
+    if (!t.due_date) buckets[4].items!.push(t);
+    else if (t.due_date < (todayStr ?? '')) buckets[0].items!.push(t);
+    else if (t.due_date === todayStr) buckets[1].items!.push(t);
+    else if (t.due_date <= (weekStr ?? '')) buckets[2].items!.push(t);
+    else buckets[3].items!.push(t);
+  }
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -242,23 +265,10 @@ export function Dashboard() {
       {(myTasks === null || myTasks.length > 0) && (
         <section aria-label="My tasks">
           <Panel title="My tasks" description="Open checklist tasks assigned to you across investigations, grouped by how soon they are due. Set or clear a due date inline.">
+            {taskError && <p role="alert" className="px-5 py-2 text-sm text-danger">{taskError}</p>}
+            {savingTaskId !== null && <p role="status" className="px-5 py-2 text-xs text-surface-400">Saving task due date...</p>}
             <div className="divide-y divide-surface-800">
-              {(myTasks ?? []).length > 0 ? (() => {
-                const buckets: Array<{ key: string; label: string; items: typeof myTasks }> = [
-                  { key: 'overdue', label: 'Overdue', items: [] },
-                  { key: 'today', label: 'Due today', items: [] },
-                  { key: 'week', label: 'Due this week', items: [] },
-                  { key: 'later', label: 'Later', items: [] },
-                  { key: 'none', label: 'No due date', items: [] },
-                ];
-                for (const t of myTasks ?? []) {
-                  if (!t.due_date) buckets[4].items!.push(t);
-                  else if (t.due_date < (todayStr ?? '')) buckets[0].items!.push(t);
-                  else if (t.due_date === todayStr) buckets[1].items!.push(t);
-                  else if (t.due_date <= (weekStr ?? '')) buckets[2].items!.push(t);
-                  else buckets[3].items!.push(t);
-                }
-                return buckets.filter(b => (b.items ?? []).length > 0).map(bucket => (
+              {(myTasks ?? []).length > 0 ? buckets.filter(b => (b.items ?? []).length > 0).map(bucket => (
                   <div key={bucket.key}>
                     <p className={`px-5 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide ${bucket.key === 'overdue' ? 'text-danger' : 'text-surface-500'}`}>
                       {bucket.label} ({bucket.items!.length})
@@ -268,7 +278,7 @@ export function Dashboard() {
                         <button
                           type="button"
                           aria-label={`Complete task ${t.title}`}
-                          disabled={completingTaskId !== null}
+                          disabled={completingTaskId !== null || savingTaskId !== null}
                           onClick={() => void completeTask(t)}
                           className="shrink-0 text-primary-400 transition-colors hover:text-primary-300 disabled:opacity-40"
                         >
@@ -287,6 +297,7 @@ export function Dashboard() {
                         <input
                           type="date"
                           aria-label={`Due date for task ${t.title}`}
+                          disabled={savingTaskId !== null || completingTaskId !== null}
                           value={t.due_date ?? ''}
                           onChange={e => void setMyTaskDueDate(t, e.target.value || null)}
                           className="w-28 shrink-0 rounded-md border border-surface-700 bg-surface-950 px-1.5 py-1 text-xs text-surface-300 focus:border-primary-500 focus:outline-none [color-scheme:dark]"
@@ -294,8 +305,7 @@ export function Dashboard() {
                       </div>
                     ))}
                   </div>
-                ));
-              })() : (
+                )) : (
                 <div className="px-5 py-6 text-center text-sm text-surface-400">{myTasks === null ? 'Loading...' : 'No checklist tasks assigned to you.'}</div>
               )}
             </div>

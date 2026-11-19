@@ -302,6 +302,36 @@ describe('My tasks', () => {
     await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/11', { due_date: null }));
   });
 
+  it('shows a failed date save without changing the saved date, then permits retry', async () => {
+    mockWithTasks([{ ...myTasks[0], due_date: '2026-12-01' }]);
+    mockPatch.mockRejectedValueOnce(new Error('unavailable'));
+    renderDashboard();
+    const input = await screen.findByLabelText('Due date for task Contain the host');
+    fireEvent.change(input, { target: { value: '2026-12-02' } });
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect((input as HTMLInputElement).value).toBe('2026-12-01');
+    mockPatch.mockResolvedValueOnce({ data: {} });
+    fireEvent.change(input, { target: { value: '2026-12-03' } });
+    await waitFor(() => expect((screen.getByLabelText('Due date for task Contain the host') as HTMLInputElement).value).toBe('2026-12-03'));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('blocks overlapping date saves and completion while a task save is pending', async () => {
+    mockWithTasks(myTasks);
+    let rejectSave!: (reason: Error) => void;
+    mockPatch.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectSave = reject; }));
+    renderDashboard();
+    const input = await screen.findByLabelText('Due date for task Contain the host');
+    fireEvent.change(input, { target: { value: '2026-12-02' } });
+    expect((screen.getByLabelText('Due date for task Review firewall logs') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Complete task Contain the host' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(input, { target: { value: '2026-12-03' } });
+    expect(mockPatch).toHaveBeenCalledTimes(1);
+    rejectSave(new Error('unavailable'));
+    await screen.findByRole('alert');
+    expect((screen.getByLabelText('Due date for task Review firewall logs') as HTMLInputElement).disabled).toBe(false);
+  });
+
   it('hides the panel when no tasks are assigned', async () => {
     mockWithTasks([]);
     renderDashboard();
@@ -342,5 +372,6 @@ describe('My tasks inline completion', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Complete task Contain the host' }));
     await waitFor(() => expect(mockPatch).toHaveBeenCalled());
     expect(screen.getByText('Contain the host')).toBeTruthy();
+    expect(await screen.findByRole('alert')).toBeTruthy();
   });
 });
