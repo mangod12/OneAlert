@@ -879,6 +879,20 @@ describe('Investigation tasks', () => {
     expect((screen.getByRole('textbox', { name: 'New task title' }) as HTMLInputElement).disabled).toBe(false);
   });
 
+  it('edits task wording without changing ownership, due date or completion', async () => {
+    const task = { ...tasks[1], assignee_id: 5, due_date: '2026-12-01' };
+    mockLoadWithTasks([task]);
+    mockPatch.mockResolvedValue({ data: { ...task, title: 'Collect memory image' } });
+    renderDetail();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit task Collect triage image' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Task title' }), { target: { value: 'Collect memory image' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save task title' }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/2', { title: 'Collect memory image' }));
+    expect(await screen.findByText('Collect memory image')).toBeTruthy();
+    expect((screen.getByLabelText('Due date for task Collect memory image') as HTMLInputElement).value).toBe('2026-12-01');
+    expect(screen.getByRole('button', { name: 'Complete task Collect memory image' })).toBeTruthy();
+  });
+
   it('shows the empty state when the checklist is empty', async () => {
     mockLoadWithTasks([]);
     renderDetail();

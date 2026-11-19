@@ -1,5 +1,6 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { TaskTitleDialog } from '../components/TaskTitleDialog';
 import { CaseHandoff } from '../components/CaseHandoff';
 import { MentionTextarea } from '../components/MentionTextarea';
 import apiClient from '../api/client';
@@ -137,6 +138,7 @@ export function CaseDetail() {
   const [savingDueDate, setSavingDueDate] = useState(false);
   const [tasks, setTasks] = useState<CaseTask[]>([]);
   const [tasksUnavailable, setTasksUnavailable] = useState(false);
+  const [editingTask, setEditingTask] = useState<CaseTask | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [addingTask, setAddingTask] = useState(false);
   const [taskBusyId, setTaskBusyId] = useState<number | null>(null);
@@ -818,6 +820,10 @@ export function CaseDetail() {
                     onChange={e => void setTaskDueDate(task, e.target.value || null)}
                     className="w-28 shrink-0 rounded-md border border-surface-700 bg-surface-950 px-1.5 py-1 text-xs text-surface-300 focus:border-primary-500 focus:outline-none disabled:opacity-40 [color-scheme:dark]"
                   />
+                  <button type="button" aria-label={`Edit task ${task.title}`} disabled={taskBusyId !== null}
+                    onClick={() => setEditingTask(task)} className="shrink-0 text-surface-400 hover:text-primary-300 disabled:opacity-40">
+                    <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
                   <button
                     type="button"
                     aria-label={`Delete task ${task.title}`}
@@ -1179,6 +1185,13 @@ export function CaseDetail() {
           </div>
         </div>
       </div>
+
+      {editingTask && <TaskTitleDialog key={editingTask.id} title={editingTask.title} onClose={() => setEditingTask(null)}
+        onSave={async title => {
+          const response = await apiClient.patch<CaseTask>(`/cases/${caseId}/tasks/${editingTask.id}`, { title });
+          if (response.data.id !== editingTask.id || typeof response.data.title !== 'string') throw new Error('The saved task could not be verified. Retry to refresh it.');
+          setTasks(current => current.map(task => task.id === editingTask.id ? response.data : task));
+        }} />}
 
       {pendingClose && (
         <ConfirmDialog
