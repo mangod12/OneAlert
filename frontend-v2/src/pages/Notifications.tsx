@@ -27,6 +27,7 @@ const KIND_LABELS: Array<[string, string]> = [
   ['case_mention', 'Case mentions'],
   ['incident_escalated', 'Incident escalations'],
   ['case_sla_breached', 'SLA breaches'],
+  ['case_sla_due_soon', 'SLA due soon'],
 ];
 
 function kindLabel(kind: string): string {

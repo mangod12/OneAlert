@@ -167,7 +167,9 @@ SEVERITY_LEVELS = ("low", "medium", "high", "critical")
 # In-app notification kinds that can be muted individually.
 KNOWN_NOTIFICATION_KINDS = (
     "alert_created", "case_assigned", "alert_assigned",
-    "incident_escalated", "case_sla_breached",
+    "incident_escalated", "case_sla_breached", "case_sla_due_soon",
+    "alert_updated", "alert_watching", "alert_mention",
+    "case_updated", "case_watching", "case_mention",
 )
 
 

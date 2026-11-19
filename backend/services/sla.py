@@ -98,3 +98,54 @@ async def notify_breached_slas(db) -> int:
                     link_path=f"/app/cases/{case.id}",
                 )
     return len(breached)
+
+
+async def notify_due_soon_slas(db) -> int:
+    """Warn owners the day before an investigation hits its SLA due date.
+
+    Marks each warned case so repeat runs do not re-notify; moving or
+    clearing the due date resets the marker. Returns the number of
+    notifications sent.
+    """
+    today = datetime.now(UTC).date()
+    tomorrow = today + timedelta(days=1)
+    due_soon = (await db.execute(
+        select(Case).where(
+            Case.due_date == tomorrow,
+            Case.status.in_(_ACTIVE_CASE_STATUSES),
+            Case.sla_due_soon_notified_at.is_(None),
+        )
+    )).scalars().all()
+    now = datetime.now(UTC)
+    for case in due_soon:
+        db.add(Notification(
+            user_id=case.user_id,
+            kind="case_sla_due_soon",
+            title=f"Investigation due tomorrow: {case.title}",
+            body=f"SLA target {case.due_date.isoformat()} is tomorrow. Severity: {case.severity}.",
+            link=f"/app/cases/{case.id}",
+        ))
+        db.add(AuditLog(
+            user_id=case.user_id, action="case_sla_due_soon",
+            target_type="case", target_id=case.id,
+            detail=f"Investigation reaches its SLA due date {case.due_date.isoformat()} tomorrow",
+        ))
+        case.sla_due_soon_notified_at = now
+    if due_soon:
+        await db.commit()
+        logger.info("Sent %d SLA due-soon notifications", len(due_soon))
+        for case in due_soon:
+            user = await db.get(User, case.user_id)
+            if user is not None:
+                await notify_investigation_event(
+                    user,
+                    kind="case_sla_due_soon",
+                    severity=case.severity,
+                    title=f"Investigation due tomorrow: {case.title}",
+                    body=(
+                        f"Investigation #{case.id} reaches its SLA target "
+                        f"{case.due_date.isoformat()} tomorrow. Severity: {case.severity}."
+                    ),
+                    link_path=f"/app/cases/{case.id}",
+                )
+    return len(due_soon)

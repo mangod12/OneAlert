@@ -609,6 +609,7 @@ async def update_case(
                 ) from None
         # A moved or cleared due date re-arms the SLA breach notification.
         case.sla_breach_notified_at = None
+        case.sla_due_soon_notified_at = None
 
     # Keep the assignee in the loop when the owner changes severity or due date.
     changes: list[str] = []
