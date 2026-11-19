@@ -278,6 +278,22 @@ export function Cases() {
       'investigations could not be deleted and remain selected.');
   };
 
+  const handleBulkWatch = async (watch: boolean) => {
+    if (bulkBusy) return;
+    const ids = visibleSelected();
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    setPendingIds(current => new Set([...current, ...ids]));
+    const results = await Promise.allSettled(ids.map(id =>
+      watch ? apiClient.post(`/cases/${id}/watch`) : apiClient.delete(`/cases/${id}/watch`)
+    ));
+    setBulkBusy(false);
+    const verb = watch ? 'watched' : 'unwatched';
+    await finishBulk(ids, results,
+      `${ids.length} investigations ${verb}.`,
+      `investigations could not be ${verb} and remain selected.`);
+  };
+
   const runSearch = async () => {
     const q = searchQuery.trim();
     if (q.length < 2 || searching) {
@@ -516,6 +532,24 @@ export function Cases() {
                   <option key={status} value={status}>{status}</option>
                 ))}
               </select>
+              <button
+                type="button"
+                disabled={bulkBusy}
+                onClick={() => void handleBulkWatch(true)}
+                aria-label="Watch selected investigations"
+                className="min-h-8 rounded-md border border-surface-600 bg-surface-800 px-2.5 text-xs font-medium text-surface-200 hover:border-primary-500/50 disabled:opacity-50"
+              >
+                Watch
+              </button>
+              <button
+                type="button"
+                disabled={bulkBusy}
+                onClick={() => void handleBulkWatch(false)}
+                aria-label="Unwatch selected investigations"
+                className="min-h-8 rounded-md border border-surface-600 bg-surface-800 px-2.5 text-xs font-medium text-surface-200 hover:border-primary-500/50 disabled:opacity-50"
+              >
+                Unwatch
+              </button>
               <button
                 type="button"
                 disabled={bulkBusy}
