@@ -19,9 +19,14 @@ from backend.models.alert import Alert  # noqa: F401  (mapper dependency)
 from backend.models.audit_log import AuditLog
 from backend.models.case import Case
 from backend.models.notification import Notification
+from backend.models.organization import Organization
 from backend.models.user import User
 from backend.services.auth_service import get_password_hash
-from backend.services.sla import notify_breached_slas, notify_due_soon_slas
+from backend.services.sla import (
+    notify_breached_alert_slas,
+    notify_breached_slas,
+    notify_due_soon_slas,
+)
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test_sla_breach.db"
 engine = create_engine(
@@ -352,4 +357,111 @@ class TestAssigneeSlaNotifications:
                 select(Notification.user_id).where(Notification.kind == "case_sla_breached")
             )).scalars().all()
             assert rows == [owner]
+            await session.rollback()
+
+
+def _seed_org(owner_id: int, members: list[dict]) -> list[int]:
+    """Put the owner and the given extra members into one org; return their ids."""
+    with TestingSessionLocal() as session:
+        org = Organization(name="Esc Org", slug="esc-org", plan="pro", max_assets=100, max_users=10)
+        session.add(org)
+        session.flush()
+        session.get(User, owner_id).org_id = org.id
+        ids = []
+        for spec in members:
+            member = User(
+                email=spec["email"],
+                hashed_password=get_password_hash("testpass123"),
+                full_name="Esc Member",
+                company="Test Corp",
+                is_active=spec.get("is_active", True),
+                is_verified=True,
+                role=spec.get("role", "admin"),
+                org_id=org.id,
+            )
+            session.add(member)
+            session.flush()
+            ids.append(member.id)
+        session.commit()
+        return ids
+
+
+def _seed_org_admin(owner_id: int, email: str, role: str = "admin", is_active: bool = True) -> int:
+    """Put the owner and one new member into an org; return the member's id."""
+    return _seed_org(owner_id, [{"email": email, "role": role, "is_active": is_active}])[0]
+
+
+class TestBreachEscalationToAdmins:
+    @pytest.mark.asyncio
+    async def test_case_breach_escalates_to_org_admin(self, client):
+        uid = _user_id()
+        admin_id = _seed_org_admin(uid, "escalation-admin@example.com")
+        _seed_cases(uid, [dict(
+            title="Overdue case", severity="high", status="open", due_date=YESTERDAY,
+        )])
+        async with AsyncTestingSessionLocal() as session:
+            sent = await notify_breached_slas(session)
+            assert sent == 1
+            kinds = (await session.execute(
+                select(Notification.user_id).where(Notification.kind == "case_sla_breached")
+            )).scalars().all()
+            assert sorted(kinds) == sorted([uid, admin_id])
+            await session.rollback()
+
+    @pytest.mark.asyncio
+    async def test_inactive_admin_and_non_admin_are_skipped(self, client):
+        uid = _user_id()
+        _, analyst_id = _seed_org(uid, [
+            {"email": "inactive-admin@example.com", "is_active": False},
+            {"email": "analyst@example.com", "role": "analyst"},
+        ])
+        _seed_cases(uid, [dict(
+            title="Overdue case", severity="high", status="open", due_date=YESTERDAY,
+        )])
+        async with AsyncTestingSessionLocal() as session:
+            await notify_breached_slas(session)
+            kinds = (await session.execute(
+                select(Notification.user_id).where(Notification.kind == "case_sla_breached")
+            )).scalars().all()
+            assert kinds == [uid]
+            await session.rollback()
+        assert analyst_id != uid
+
+    @pytest.mark.asyncio
+    async def test_due_soon_does_not_escalate(self, client):
+        uid = _user_id()
+        _seed_org_admin(uid, "due-soon-admin@example.com")
+        _seed_cases(uid, [dict(
+            title="Due soon case", severity="high", status="open", due_date=TOMORROW,
+        )])
+        async with AsyncTestingSessionLocal() as session:
+            await notify_due_soon_slas(session)
+            kinds = (await session.execute(
+                select(Notification.user_id).where(Notification.kind == "case_sla_due_soon")
+            )).scalars().all()
+            assert kinds == [uid]
+            await session.rollback()
+
+    @pytest.mark.asyncio
+    async def test_alert_breach_escalates_to_org_admin(self, client):
+        from backend.models.asset import Asset
+
+        uid = _user_id()
+        admin_id = _seed_org_admin(uid, "alert-escalation-admin@example.com")
+        with TestingSessionLocal() as session:
+            asset = Asset(user_id=uid, name="edge-router", asset_type="hardware")
+            session.add(asset)
+            session.flush()
+            session.add(Alert(
+                user_id=uid, asset_id=asset.id, title="Overdue alert",
+                severity="critical", status="pending", due_date=YESTERDAY,
+            ))
+            session.commit()
+        async with AsyncTestingSessionLocal() as session:
+            sent = await notify_breached_alert_slas(session)
+            assert sent == 1
+            kinds = (await session.execute(
+                select(Notification.user_id).where(Notification.kind == "alert_sla_breached")
+            )).scalars().all()
+            assert sorted(kinds) == sorted([uid, admin_id])
             await session.rollback()

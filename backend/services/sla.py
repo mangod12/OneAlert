@@ -2,7 +2,8 @@
 
 When a user enables SLA due dates, every new alert and investigation
 automatically gets a target close date derived from its severity. A periodic
-breach check notifies the owner once an open item passes its due date.
+breach check notifies the owner (and org admins, as an escalation) once an
+open item passes its due date.
 """
 
 import logging
@@ -44,6 +45,21 @@ def sla_due_date(user, severity) -> date | None:
 _ACTIVE_CASE_STATUSES = ("open", "investigating")
 
 
+async def _sla_escalation_recipients(db, owner_id: int, base: list[int]) -> list[int]:
+    """Active org admins beyond the owner/assignee, for breach escalation."""
+    owner = await db.get(User, owner_id)
+    if owner is None or not isinstance(owner.org_id, int) or isinstance(owner.org_id, bool):
+        return []
+    admins = (await db.execute(
+        select(User.id).where(
+            User.org_id == owner.org_id,
+            User.role == "admin",
+            User.is_active == True,  # noqa: E712
+        )
+    )).scalars().all()
+    return [a for a in admins if a not in base]
+
+
 def _case_sla_recipients(case) -> list[int]:
     """The owner plus the assignee (when different) own an investigation's SLA."""
     recipients = [case.user_id]
@@ -53,7 +69,7 @@ def _case_sla_recipients(case) -> list[int]:
 
 
 async def notify_breached_slas(db) -> int:
-    """Notify owners once per investigation that passed its SLA due date.
+    """Notify owner, assignee and org admins once per overdue investigation.
 
     Marks each breached case so repeat runs do not re-notify; moving or
     clearing the due date resets the marker. Returns the number of
@@ -71,7 +87,9 @@ async def notify_breached_slas(db) -> int:
     now = datetime.now(UTC)
     for case in breached:
         days_overdue = (today - case.due_date).days
-        for recipient_id in _case_sla_recipients(case):
+        recipients = _case_sla_recipients(case)
+        recipients += await _sla_escalation_recipients(db, case.user_id, recipients)
+        for recipient_id in recipients:
             db.add(Notification(
                 user_id=recipient_id,
                 kind="case_sla_breached",
@@ -93,7 +111,9 @@ async def notify_breached_slas(db) -> int:
         await db.commit()
         logger.info("Sent %d SLA breach notifications", len(breached))
         for case in breached:
-            for recipient_id in _case_sla_recipients(case):
+            recipients = _case_sla_recipients(case)
+            recipients += await _sla_escalation_recipients(db, case.user_id, recipients)
+            for recipient_id in recipients:
                 user = await db.get(User, recipient_id)
                 if user is None:
                     continue
@@ -177,7 +197,7 @@ def _alert_sla_recipients(alert) -> list[int]:
 
 
 async def notify_breached_alert_slas(db) -> int:
-    """Notify owner and assignee once per alert that passed its triage due date.
+    """Notify owner, assignee and org admins once per overdue alert.
 
     Marks each breached alert so repeat runs do not re-notify; moving or
     clearing the due date resets the marker. Returns the number of alerts
@@ -197,7 +217,9 @@ async def notify_breached_alert_slas(db) -> int:
     now = datetime.now(UTC)
     for alert in breached:
         days_overdue = (today - alert.due_date).days
-        for recipient_id in _alert_sla_recipients(alert):
+        recipients = _alert_sla_recipients(alert)
+        recipients += await _sla_escalation_recipients(db, alert.user_id, recipients)
+        for recipient_id in recipients:
             db.add(Notification(
                 user_id=recipient_id,
                 kind="alert_sla_breached",
