@@ -26,6 +26,9 @@ from backend.models.case import (
     CaseNoteCreate,
     CaseResponse,
     CaseTimeline,
+    CaseWatcher,
+    CaseWatcherAdd,
+    CaseWatcherResponse,
     TimelineEntryResponse,
 )
 from backend.models.notification import Notification
@@ -48,10 +51,15 @@ def _severity_rank(value: str | None) -> int:
 
 
 def _visible_cases(case_id: int, current_user: User):
-    """Cases the user may open: their own plus investigations assigned to them."""
+    """Cases the user may open: their own, assigned to them, or watched by them."""
+    watched = select(CaseWatcher.case_id).where(CaseWatcher.user_id == current_user.id)
     return select(Case).where(
         Case.id == case_id,
-        or_(Case.user_id == current_user.id, Case.assigned_to_id == current_user.id),
+        or_(
+            Case.user_id == current_user.id,
+            Case.assigned_to_id == current_user.id,
+            Case.id.in_(watched),
+        ),
     )
 
 
@@ -488,6 +496,13 @@ async def update_case(
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
 
+    is_editor = case.user_id == current_user.id or case.assigned_to_id == current_user.id
+    if not is_editor:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Watchers have read-only access to this case",
+        )
+
     if case.user_id != current_user.id and any(
         value is not None for value in (severity, title, summary, due_date)
     ):
@@ -498,6 +513,7 @@ async def update_case(
 
     old_severity = case.severity
     old_due_date = case.due_date
+    old_status = case.status
 
     if status_update:
         case.status = status_update
@@ -533,37 +549,50 @@ async def update_case(
         new_label = case.due_date.isoformat() if case.due_date else "cleared"
         changes.append(f"due date {old_label} -> {new_label}")
 
+    # Watchers follow every tracked change, including status transitions.
+    watcher_changes = list(changes)
+    if status_update and case.status != old_status:
+        watcher_changes.append(f"status {old_status} -> {case.status}")
+
+    # One notification per recipient with the fullest change list that
+    # applies to them: the assignee hears about severity/due date edits,
+    # watchers hear about those plus status changes.
+    recipients: dict[int, list[str]] = {}
     assignee_id = case.assigned_to_id
-    notify_assignee = (
-        bool(changes)
-        and assignee_id is not None
-        and assignee_id != current_user.id
-    )
-    if notify_assignee:
-        change_text = "; ".join(changes)
+    if changes and assignee_id is not None and assignee_id != current_user.id:
+        recipients[assignee_id] = list(changes)
+    if watcher_changes:
+        watcher_ids = (await db.execute(
+            select(CaseWatcher.user_id).where(CaseWatcher.case_id == case.id)
+        )).scalars().all()
+        for watcher_id in watcher_ids:
+            if watcher_id != current_user.id:
+                recipients[watcher_id] = list(watcher_changes)
+
+    for recipient_id, change_list in recipients.items():
         db.add(Notification(
-            user_id=assignee_id,
+            user_id=recipient_id,
             kind="case_updated",
             title=f"Case #{case.id} updated",
-            body=f"{change_text} - {case.title}",
+            body=f"{'; '.join(change_list)} - {case.title}",
             link=f"/app/cases/{case.id}",
         ))
 
     await db.commit()
 
-    if notify_assignee:
-        assignee = (await db.execute(
-            select(User).where(User.id == assignee_id)
+    for recipient_id, change_list in recipients.items():
+        recipient = (await db.execute(
+            select(User).where(User.id == recipient_id)
         )).scalar_one_or_none()
-        if assignee is not None:
+        if recipient is not None:
             await notify_investigation_event(
-                assignee,
+                recipient,
                 kind="case_updated",
                 severity=case.severity,
                 title=f"Case #{case.id} updated",
                 body=(
-                    f"{current_user.email} updated an investigation assigned "
-                    f"to you: {case.title}. Changes: {'; '.join(changes)}."
+                    f"{current_user.email} updated an investigation you "
+                    f"follow: {case.title}. Changes: {'; '.join(change_list)}."
                 ),
                 link_path=f"/app/cases/{case.id}",
             )
@@ -668,6 +697,159 @@ async def assign_case(
         "assigned_to_id": case.assigned_to_id,
         "assigned_to_email": assignee_email,
     }
+
+
+async def _get_watch_target(db: AsyncSession, case_id: int, current_user: User) -> Case:
+    """Fetch a case the user can at least read, or 404."""
+    case = (await db.execute(
+        _visible_cases(case_id, current_user)
+    )).scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return case
+
+
+@router.get("/{case_id}/watchers", response_model=list[CaseWatcherResponse])
+async def list_case_watchers(
+    case_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """List the members watching a case."""
+    case = await _get_watch_target(db, case_id, current_user)
+    rows = (await db.execute(
+        select(CaseWatcher, User)
+        .join(User, User.id == CaseWatcher.user_id)
+        .where(CaseWatcher.case_id == case.id)
+    )).all()
+    return [
+        CaseWatcherResponse(user_id=watcher.user_id, email=user.email, full_name=user.full_name)
+        for watcher, user in rows
+    ]
+
+
+@router.post("/{case_id}/watch")
+async def watch_case(
+    case_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Watch a case you can see. Idempotent."""
+    case = await _get_watch_target(db, case_id, current_user)
+    existing = (await db.execute(
+        select(CaseWatcher).where(
+            CaseWatcher.case_id == case.id, CaseWatcher.user_id == current_user.id
+        )
+    )).scalar_one_or_none()
+    if existing is None:
+        db.add(CaseWatcher(case_id=case.id, user_id=current_user.id))
+        await db.commit()
+    return {"success": True, "watching": True}
+
+
+@router.delete("/{case_id}/watch")
+async def unwatch_case(
+    case_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Stop watching a case. Idempotent."""
+    case = await _get_watch_target(db, case_id, current_user)
+    existing = (await db.execute(
+        select(CaseWatcher).where(
+            CaseWatcher.case_id == case.id, CaseWatcher.user_id == current_user.id
+        )
+    )).scalar_one_or_none()
+    if existing is not None:
+        await db.delete(existing)
+        await db.commit()
+    return {"success": True, "watching": False}
+
+
+@router.post("/{case_id}/watchers", response_model=list[CaseWatcherResponse])
+async def add_case_watcher(
+    case_id: int,
+    payload: CaseWatcherAdd,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Add an organization member as a watcher (owner only). Idempotent."""
+    case = (await db.execute(
+        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    if payload.user_id != current_user.id:
+        member = (await db.execute(
+            select(User).where(User.id == payload.user_id, User.is_active == True)  # noqa: E712
+        )).scalar_one_or_none()
+        wrong_org = (
+            current_user.org_id is not None
+            and member is not None
+            and member.org_id != current_user.org_id
+        )
+        no_org = current_user.org_id is None and payload.user_id != current_user.id
+        if member is None or wrong_org or no_org:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Watcher must be an active member of your organization"
+            )
+
+    existing = (await db.execute(
+        select(CaseWatcher).where(
+            CaseWatcher.case_id == case.id, CaseWatcher.user_id == payload.user_id
+        )
+    )).scalar_one_or_none()
+    if existing is None:
+        db.add(CaseWatcher(case_id=case.id, user_id=payload.user_id))
+        if payload.user_id != current_user.id:
+            db.add(Notification(
+                user_id=payload.user_id,
+                kind="case_watching",
+                title=f"You are now watching case #{case.id}",
+                body=case.title,
+                link=f"/app/cases/{case.id}",
+            ))
+        await db.commit()
+
+    rows = (await db.execute(
+        select(CaseWatcher, User)
+        .join(User, User.id == CaseWatcher.user_id)
+        .where(CaseWatcher.case_id == case.id)
+    )).all()
+    return [
+        CaseWatcherResponse(user_id=watcher.user_id, email=user.email, full_name=user.full_name)
+        for watcher, user in rows
+    ]
+
+
+@router.delete("/{case_id}/watchers/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_case_watcher(
+    case_id: int,
+    user_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Remove a watcher: the owner can remove anyone, members remove themselves."""
+    case = (await db.execute(
+        _visible_cases(case_id, current_user)
+    )).scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if current_user.id != case.user_id and user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the case owner can remove other watchers",
+        )
+    existing = (await db.execute(
+        select(CaseWatcher).where(
+            CaseWatcher.case_id == case.id, CaseWatcher.user_id == user_id
+        )
+    )).scalar_one_or_none()
+    if existing is not None:
+        await db.delete(existing)
+        await db.commit()
 
 
 @router.post("/pipeline")

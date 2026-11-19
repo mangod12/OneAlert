@@ -2,7 +2,7 @@ import { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import apiClient from '../api/client';
 import { useAuthStore } from '../stores/authStore';
-import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil, Trash2, Download, Shield } from 'lucide-react';
+import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil, Trash2, Download, Shield, Eye, EyeOff } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { toast } from '../components/Toast';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -77,6 +77,7 @@ interface BlastRadius {
 interface SimilarCase { case_id: number; title: string; similarity: number; shared_techniques: string[]; }
 interface RelatedEvent { id: number; severity: string; event_type: string; source_ip?: string | null; dest_ip?: string | null; signature?: string | null; }
 interface CasePlan { id: number; status: string; autonomy_level: string; created_by: string; created_at: string; actions: unknown[]; }
+interface CaseWatcher { user_id: number; email: string; full_name: string | null; }
 
 export function CaseDetail() {
   const { caseId } = useParams<{ caseId: string }>();
@@ -112,6 +113,8 @@ export function CaseDetail() {
   const navigate = useNavigate();
   const [members, setMembers] = useState<Array<{ id: number; email: string; full_name: string | null; is_active: boolean }>>([]);
   const [assigning, setAssigning] = useState(false);
+  const [watchers, setWatchers] = useState<CaseWatcher[]>([]);
+  const [watchBusy, setWatchBusy] = useState(false);
   const [savingDueDate, setSavingDueDate] = useState(false);
   const currentUserId = useAuthStore(state => state.user?.id ?? null);
 
@@ -301,12 +304,47 @@ export function CaseDetail() {
     finally { setDeletingNote(false); }
   };
 
+  const refreshWatchers = async () => {
+    try {
+      const res = await apiClient.get(`/cases/${caseId}/watchers`);
+      setWatchers(Array.isArray(res.data) ? res.data : []);
+    } catch { setWatchers([]); }
+  };
+
+  const toggleWatch = async () => {
+    if (watchBusy) return;
+    setWatchBusy(true);
+    try {
+      if (isWatching) await apiClient.delete(`/cases/${caseId}/watch`);
+      else await apiClient.post(`/cases/${caseId}/watch`);
+      await refreshWatchers();
+    } catch (err) { toast(getApiErrorMessage(err, 'Could not update your watch.'), 'error'); }
+    finally { setWatchBusy(false); }
+  };
+
+  const addWatcher = async (value: string) => {
+    if (!value) return;
+    try {
+      const res = await apiClient.post(`/cases/${caseId}/watchers`, { user_id: Number(value) });
+      setWatchers(Array.isArray(res.data) ? res.data : []);
+      toast('Watcher added.', 'success');
+    } catch (err) { toast(getApiErrorMessage(err, 'Could not add the watcher.'), 'error'); }
+  };
+
+  const removeWatcher = async (userId: number) => {
+    try {
+      await apiClient.delete(`/cases/${caseId}/watchers/${userId}`);
+      setWatchers(prev => prev.filter(w => w.user_id !== userId));
+    } catch (err) { toast(getApiErrorMessage(err, 'Could not remove the watcher.'), 'error'); }
+  };
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [caseResult, alertsResult, eventsResult, blastResult, similarResult, plansResult] = await Promise.allSettled([
+    const [caseResult, alertsResult, eventsResult, blastResult, similarResult, plansResult, watchersResult] = await Promise.allSettled([
       apiClient.get(`/cases/${caseId}`), apiClient.get(`/cases/${caseId}/alerts`), apiClient.get(`/cases/${caseId}/events`),
       apiClient.get(`/cases/${caseId}/blast-radius`), apiClient.get(`/cases/${caseId}/similar`),
       apiClient.get('/response-plans/', { params: { case_id: caseId } }),
+      apiClient.get(`/cases/${caseId}/watchers`),
     ]);
     if (caseResult.status === 'rejected') {
       setError(getApiErrorMessage(caseResult.reason, 'This case could not be loaded.'));
@@ -326,6 +364,8 @@ export function CaseDetail() {
     else setSimilarCases([]);
     if (plansResult.status === 'fulfilled') setPlans(plansResult.value.data?.data ?? []);
     else { setPlans([]); partial.push('Response plans unavailable'); }
+    if (watchersResult.status === 'fulfilled') setWatchers(Array.isArray(watchersResult.value.data) ? watchersResult.value.data : []);
+    else setWatchers([]);
     setDegraded(partial);
     setLoading(false);
   }, [caseId]);
@@ -333,6 +373,8 @@ export function CaseDetail() {
   useEffect(() => { void fetchAll(); }, [fetchAll]);
 
   const isOwner = caseData === null || currentUserId === null || caseData.user_id === currentUserId;
+  const isWatching = currentUserId !== null && watchers.some(w => w.user_id === currentUserId);
+  const watchCandidates = members.filter(m => !watchers.some(w => w.user_id === m.id));
 
   if (loading) {
     return <LoadingSurface rows={6} label="Loading case investigation" />;
@@ -401,6 +443,18 @@ export function CaseDetail() {
             </div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold text-surface-50">{caseData.title}</h1>
+              <button
+                type="button"
+                aria-label={isWatching ? 'Stop watching this case' : 'Watch this case'}
+                aria-pressed={isWatching}
+                disabled={watchBusy}
+                onClick={() => void toggleWatch()}
+                className={`grid h-9 w-9 place-items-center rounded-md hover:bg-surface-800 disabled:opacity-40 ${isWatching ? 'text-accent-400' : 'text-surface-400 hover:text-surface-50'}`}
+              >
+                {isWatching
+                  ? <EyeOff className="w-4 h-4" aria-hidden="true" />
+                  : <Eye className="w-4 h-4" aria-hidden="true" />}
+              </button>
               {isOwner && (
                 <button
                   type="button"
@@ -423,6 +477,39 @@ export function CaseDetail() {
               )}
             </div>
             {caseData.summary && <p className="text-surface-400 mt-2">{caseData.summary}</p>}
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-surface-400">
+              <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Watchers</span>
+              {watchers.length === 0 && <span className="text-surface-500">None yet</span>}
+              {watchers.map(w => (
+                <span key={w.user_id} className="inline-flex items-center gap-1 rounded-full border border-surface-700 bg-surface-900 px-2 py-0.5 text-surface-200">
+                  {w.full_name || w.email}
+                  {(isOwner || w.user_id === currentUserId) && (
+                    <button
+                      type="button"
+                      aria-label={`Remove watcher ${w.email}`}
+                      onClick={() => void removeWatcher(w.user_id)}
+                      className="text-surface-500 hover:text-danger"
+                    >
+                      <X className="w-3 h-3" aria-hidden="true" />
+                    </button>
+                  )}
+                </span>
+              ))}
+              {isOwner && watchCandidates.length > 0 && (
+                <select
+                  aria-label="Add a watcher"
+                  value=""
+                  onChange={e => void addWatcher(e.target.value)}
+                  className="min-h-7 rounded-md border border-surface-600 bg-surface-950 px-1.5 text-xs text-surface-200"
+                >
+                  <option value="">Add watcher...</option>
+                  {watchCandidates.map(m => (
+                    <option key={m.id} value={m.id}>{m.full_name ? `${m.full_name} (${m.email})` : m.email}</option>
+                  ))}
+                </select>
+              )}
+            </div>
           </div>
           {(NEXT_STATUSES[caseData.status] ?? []).length > 0 && (
             <div className="flex shrink-0 gap-2" aria-label="Case status actions">

@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.types import JSON
@@ -52,11 +52,29 @@ class Case(Base):
 
     # Relationships
     assignee = relationship("User", foreign_keys=[assigned_to_id])
+    watchers = relationship("CaseWatcher", back_populates="case", cascade="all, delete-orphan")
     case_alerts = relationship("CaseAlert", back_populates="case", cascade="all, delete-orphan")
     case_events = relationship("CaseEvent", back_populates="case", cascade="all, delete-orphan")
     timeline_entries = relationship(
         "CaseTimeline", back_populates="case", cascade="all, delete-orphan", order_by="CaseTimeline.timestamp"
     )
+
+
+class CaseWatcher(Base):
+    """An organization member following a case for update notifications."""
+    __tablename__ = "case_watchers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_id = Column(Integer, ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("case_id", "user_id", name="uq_case_watchers_case_user"),
+    )
+
+    case = relationship("Case", back_populates="watchers")
+    user = relationship("User")
 
 
 class CaseAlert(Base):
@@ -145,6 +163,16 @@ class CaseCreate(BaseModel):
     summary: str | None = Field(default=None, max_length=2000)
     severity: Literal["info", "low", "medium", "high", "critical"] = "medium"
     model_config = {"extra": "forbid"}
+
+
+class CaseWatcherAdd(BaseModel):
+    user_id: int
+
+
+class CaseWatcherResponse(BaseModel):
+    user_id: int
+    email: str
+    full_name: str | None = None
 
 
 class CaseAssign(BaseModel):

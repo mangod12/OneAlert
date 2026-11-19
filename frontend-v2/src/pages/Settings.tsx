@@ -667,7 +667,7 @@ export function Settings() {
             <div>
               <p className="mb-1.5 text-sm font-medium text-surface-300">In-app notifications</p>
               <p className="mb-2 text-xs text-surface-500">Muted kinds stay recorded but no longer appear in the notification feed or unread count.</p>
-              {([['alert_created', 'New alerts'], ['case_assigned', 'Case assignments'], ['case_updated', 'Case updates'], ['alert_assigned', 'Alert assignments'], ['incident_escalated', 'Incident escalations'], ['case_sla_breached', 'SLA breaches']] as Array<[string, string]>).map(([kind, label]) => (
+              {([['alert_created', 'New alerts'], ['case_assigned', 'Case assignments'], ['case_updated', 'Case updates'], ['case_watching', 'Case watch additions'], ['alert_assigned', 'Alert assignments'], ['incident_escalated', 'Incident escalations'], ['case_sla_breached', 'SLA breaches']] as Array<[string, string]>).map(([kind, label]) => (
                 <label key={kind} className="flex items-center gap-3 py-1 text-sm text-surface-200">
                   <input
                     type="checkbox"
