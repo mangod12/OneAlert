@@ -161,6 +161,10 @@ class AlertRead(AlertBase):
     model_config = {"from_attributes": True}
 
 
+class AutoAssignRequest(BaseModel):
+    alert_ids: list[int]
+
+
 class AlertSnoozeRequest(BaseModel):
     """Snooze an alert for a number of hours."""
     hours: int = Field(gt=0, le=720)

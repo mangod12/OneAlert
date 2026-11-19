@@ -27,6 +27,7 @@ from backend.models.alert import (
     AlertWatcher,
     AlertWatcherAdd,
     AlertWatcherResponse,
+    AutoAssignRequest,
     Severity,
 )
 from backend.models.asset import Asset
@@ -34,6 +35,7 @@ from backend.models.case import Case, CaseAlert
 from backend.models.notification import Notification
 from backend.models.user import User
 from backend.routers.auth import get_active_user
+from backend.services.assignment import _open_work_loads, org_members
 from backend.services.audit import add_audit_log
 from backend.services.investigation_notify import notify_investigation_event
 
@@ -392,6 +394,55 @@ async def get_kev_batch(
 
     entries = await get_kev_entries(ids)
     return {"entries": entries}
+
+
+@router.post("/auto-assign")
+async def auto_assign_alerts(
+    payload: AutoAssignRequest,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Spread the given open alerts across the org's active members,
+    least-loaded first. Explicit action: no opt-in required. Resolved
+    alerts and alerts owned by someone else are ignored."""
+    ids = payload.alert_ids[:500]
+    if not ids:
+        return {"assigned": {}}
+    alerts = (await db.execute(
+        select(Alert).where(
+            Alert.id.in_(ids),
+            Alert.user_id == current_user.id,
+            Alert.status.in_(("pending", "sent", "acknowledged")),
+        )
+    )).scalars().all()
+    if not alerts:
+        return {"assigned": {}}
+    members = await org_members(db, current_user)
+    load = await _open_work_loads(db, [m.id for m in members])
+    assigned: dict[int, int] = {}
+    for alert in sorted(alerts, key=lambda a: a.id):
+        best = min(members, key=lambda m: (load.get(m.id, 0), m.id))
+        alert.assigned_to_id = best.id
+        load[best.id] = load.get(best.id, 0) + 1
+        assigned[alert.id] = best.id
+        if best.id != current_user.id:
+            db.add(Notification(
+                user_id=best.id,
+                kind="alert_assigned",
+                title=f"Alert #{alert.id} assigned to you",
+                body=alert.title,
+                link="/app/alerts",
+            ))
+        add_audit_log(
+            db,
+            user_id=current_user.id,
+            action="alert_updated",
+            target_type="alert",
+            target_id=alert.id,
+            detail=f"assigned_to_id: None -> {best.id} (auto-assign)",
+        )
+    await db.commit()
+    return {"assigned": assigned}
 
 
 @router.get("/{alert_id}", response_model=AlertRead) # Use AlertRead as the response_model

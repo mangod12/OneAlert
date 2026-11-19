@@ -326,6 +326,28 @@ export function Alerts() {
 
   const handleBulkAssign = async (value: string) => {
     if (value === '' || bulkAssigning) return;
+    if (value === 'auto') {
+      const ids = Array.from(selectedIds).filter(id => !pendingIds.has(id));
+      if (ids.length === 0) return;
+      setBulkAssigning(true);
+      setPendingIds(current => new Set([...current, ...ids]));
+      try {
+        const { data } = await apiClient.post('/alerts/auto-assign', { alert_ids: ids });
+        const assignedCount = Object.keys(data.assigned ?? {}).length;
+        setSelectedIds(new Set());
+        await fetchAlerts();
+        const noun = assignedCount === 1 ? 'alert' : 'alerts';
+        toast(assignedCount === ids.length
+          ? `${assignedCount} ${noun} auto-assigned across your organization.`
+          : `${assignedCount} of ${ids.length} alerts auto-assigned (resolved alerts were skipped).`, 'success');
+      } catch (err) {
+        toast(getApiErrorMessage(err, 'Alerts could not be auto-assigned.'), 'error');
+      } finally {
+        setPendingIds(current => { const next = new Set(current); ids.forEach(id => next.delete(id)); return next; });
+        setBulkAssigning(false);
+      }
+      return;
+    }
     const assigneeId = value === 'none' ? null : Number(value);
     const member = members.find(m => m.id === assigneeId) ?? null;
     const ids = Array.from(selectedIds).filter(id => !pendingIds.has(id));
@@ -370,6 +392,7 @@ export function Alerts() {
                   <option key={m.id} value={m.id}>{m.email}</option>
                 ))}
                 <option value="none">Unassign</option>
+                <option value="auto">Auto: least loaded</option>
               </select>
             )}
             <select
