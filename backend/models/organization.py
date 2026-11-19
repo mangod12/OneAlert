@@ -9,13 +9,14 @@ schemas for organization-related API operations (create, update, list, invite).
   request/response validation and serialization.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import Column, DateTime, Integer, String
+from sqlalchemy import Column, Date, DateTime, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from sqlalchemy.types import JSON
 
 from backend.database.db import Base
 
@@ -31,6 +32,8 @@ class Organization(Base):
     plan = Column(String, default="free")  # free | starter | pro | enterprise
     max_assets = Column(Integer, default=50)
     max_users = Column(Integer, default=3)
+    on_call_member_ids = Column(JSON, nullable=True)  # ordered rotation of user ids
+    on_call_anchor_date = Column(Date, nullable=True)  # week 0 starts here
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -57,6 +60,19 @@ class OrgResponse(BaseModel):
     max_users: int
     created_at: datetime
     model_config = {"from_attributes": True}
+
+
+class OrgOnCallResponse(BaseModel):
+    """On-call rotation state."""
+    member_ids: list[int]
+    anchor_date: date | None
+    current_member_id: int | None
+
+
+class OrgOnCallUpdate(BaseModel):
+    """Set the rotation order. Empty list disables it."""
+    member_ids: list[int]
+    model_config = ConfigDict(extra="forbid")
 
 
 class OrgUpdate(BaseModel):

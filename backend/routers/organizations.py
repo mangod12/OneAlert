@@ -6,14 +6,24 @@ managing organization membership (inviting users, listing members).
 """
 
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
-from backend.models.organization import Organization, OrgCreate, OrgResponse, OrgUpdate
+from backend.models.organization import (
+    Organization,
+    OrgCreate,
+    OrgOnCallResponse,
+    OrgOnCallUpdate,
+    OrgResponse,
+    OrgUpdate,
+)
 from backend.models.user import User, UserResponse
 from backend.routers.auth import get_current_user
+from backend.services.oncall import current_on_call_id
 
 router = APIRouter()
 
@@ -122,6 +132,80 @@ async def update_my_organization(
     await db.commit()
     await db.refresh(org)
     return org
+
+
+@router.get("/me/on-call", response_model=OrgOnCallResponse)
+async def get_on_call_rotation(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """The org's on-call rotation and who is on call right now."""
+    if current_user.org_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User does not belong to an organization",
+        )
+    org = await db.get(Organization, current_user.org_id)
+    if org is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organization not found",
+        )
+    return OrgOnCallResponse(
+        member_ids=list(org.on_call_member_ids or []),
+        anchor_date=org.on_call_anchor_date,
+        current_member_id=await current_on_call_id(db, org),
+    )
+
+
+@router.patch("/me/on-call", response_model=OrgOnCallResponse)
+async def set_on_call_rotation(
+    payload: OrgOnCallUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Set the on-call rotation order (admin only). Empty list disables it."""
+    if current_user.org_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User does not belong to an organization",
+        )
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only organization admins can update organization settings",
+        )
+    org = await db.get(Organization, current_user.org_id)
+    if org is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organization not found",
+        )
+    # Dedupe, preserving order.
+    member_ids = list(dict.fromkeys(payload.member_ids))
+    if member_ids:
+        active = (await db.execute(
+            select(User.id).where(
+                User.id.in_(member_ids),
+                User.org_id == org.id,
+                User.is_active == True,  # noqa: E712
+            )
+        )).scalars().all()
+        if sorted(active) != sorted(member_ids):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Rotation members must be active members of your organization",
+            )
+    org.on_call_member_ids = member_ids or None
+    org.on_call_anchor_date = datetime.now(UTC).date() if member_ids else None
+    db.add(org)
+    await db.commit()
+    await db.refresh(org)
+    return OrgOnCallResponse(
+        member_ids=list(org.on_call_member_ids or []),
+        anchor_date=org.on_call_anchor_date,
+        current_member_id=await current_on_call_id(db, org),
+    )
 
 
 @router.post("/me/invite", status_code=status.HTTP_200_OK)
