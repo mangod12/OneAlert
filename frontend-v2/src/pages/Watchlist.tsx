@@ -4,6 +4,7 @@ import { Bell, BriefcaseMedical } from 'lucide-react';
 import apiClient from '../api/client';
 import type { Alert, AlertListResponse } from '../api/types';
 import { getApiErrorMessage } from '../api/errors';
+import { toast } from '../components/Toast';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
@@ -49,6 +50,7 @@ export function Watchlist() {
   const [rows, setRows] = useState<WatchRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
   const today = new Date().toISOString().slice(0, 10);
 
   const fetchWatchlist = useCallback(async () => {
@@ -100,6 +102,21 @@ export function Watchlist() {
   const isOverdue = (row: WatchRow) =>
     !!row.due_date && row.due_date < today && !DONE_STATUSES.includes(row.status);
 
+  const handleUnwatch = async (row: WatchRow) => {
+    const key = `${row.kind}-${row.id}`;
+    if (pendingKeys.has(key)) return;
+    setPendingKeys(current => new Set(current).add(key));
+    try {
+      await apiClient.delete(row.kind === 'alert' ? `/alerts/${row.id}/watch` : `/cases/${row.id}/watch`);
+      setRows(current => current.filter(r => !(r.kind === row.kind && r.id === row.id)));
+      toast(`${row.kind === 'alert' ? 'Alert' : 'Investigation'} removed from your watchlist.`, 'success');
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'The item could not be unwatched.'), 'error');
+    } finally {
+      setPendingKeys(current => { const next = new Set(current); next.delete(key); return next; });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -135,6 +152,7 @@ export function Watchlist() {
                 <th className="px-4 py-3">Severity</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Since</th>
+                <th className="px-4 py-3"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -170,6 +188,16 @@ export function Watchlist() {
                     </StatusBadge>
                   </td>
                   <td className="px-4 py-3 text-surface-400">{new Date(row.created_at).toLocaleDateString()}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); void handleUnwatch(row); }}
+                      disabled={pendingKeys.has(`${row.kind}-${row.id}`)}
+                      aria-label={`Unwatch ${row.name}`}
+                      className="rounded-md border border-surface-600 px-2.5 py-1 text-xs font-medium text-surface-300 hover:border-primary-500/50 hover:text-surface-100 disabled:opacity-50"
+                    >
+                      Unwatch
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -7,12 +7,14 @@ vi.mock('../api/client', () => ({
   SESSION_EXPIRED_EVENT: 'onealert:session-expired',
   default: {
     get: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
 import apiClient from '../api/client';
 
 const mockGet = vi.mocked(apiClient.get);
+const mockDelete = vi.mocked(apiClient.delete);
 
 function makeAlert(overrides: Record<string, unknown> = {}) {
   return {
@@ -60,6 +62,7 @@ afterEach(() => {
 
 beforeEach(() => {
   mockFeed([makeAlert()], [makeCase()]);
+  mockDelete.mockResolvedValue({ data: {} });
 });
 
 describe('Watchlist page', () => {
@@ -97,6 +100,33 @@ describe('Watchlist page', () => {
     await screen.findByText('Watchlist unavailable');
     mockFeed([makeAlert()], []);
     fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    await screen.findByText(/CVE-2026-0001/);
+  });
+
+  it('unwatches an alert from the list', async () => {
+    render(<MemoryRouter><Watchlist /></MemoryRouter>);
+    await screen.findByText(/CVE-2026-0001/);
+    fireEvent.click(screen.getByRole('button', { name: /unwatch CVE-2026-0001/i }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/alerts/1/watch'));
+    await waitFor(() => expect(screen.queryByText(/CVE-2026-0001/)).toBeNull());
+    // The investigation stays on the list.
+    screen.getByText('Intrusion on the edge network');
+  });
+
+  it('unwatches an investigation from the list', async () => {
+    render(<MemoryRouter><Watchlist /></MemoryRouter>);
+    await screen.findByText('Intrusion on the edge network');
+    fireEvent.click(screen.getByRole('button', { name: /unwatch Intrusion/i }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/3/watch'));
+    await waitFor(() => expect(screen.queryByText('Intrusion on the edge network')).toBeNull());
+  });
+
+  it('keeps the row when unwatching fails', async () => {
+    mockDelete.mockRejectedValue(new Error('boom'));
+    render(<MemoryRouter><Watchlist /></MemoryRouter>);
+    await screen.findByText(/CVE-2026-0001/);
+    fireEvent.click(screen.getByRole('button', { name: /unwatch CVE-2026-0001/i }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalled());
     await screen.findByText(/CVE-2026-0001/);
   });
 
