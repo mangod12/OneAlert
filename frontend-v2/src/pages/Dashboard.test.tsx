@@ -83,6 +83,8 @@ function mockAllFulfilled(alerts: Alert[] = [makeAlert()], myAlerts: Alert[] = [
         return Promise.resolve({ data: [] });
       case '/alerts/stats/timeline':
         return Promise.resolve({ data: { days: TIMELINE_DAYS } });
+      case '/cases/my-tasks':
+        return Promise.resolve({ data: [] });
       case '/incidents':
         return Promise.resolve({ data: { total: incidents.length, incidents } });
       case '/alerts/stats/response-metrics':
@@ -374,4 +376,27 @@ describe('My tasks inline completion', () => {
     expect(screen.getByText('Contain the host')).toBeTruthy();
     expect(await screen.findByRole('alert')).toBeTruthy();
   });
+});
+
+
+it('keeps assigned tasks visible as unavailable on failure and recovers on retry', async () => {
+  const base = mockGet.getMockImplementation()!;
+  let fail = true;
+  mockGet.mockImplementation((url, config) => {
+    if (url === '/cases/my-tasks') {
+      if (fail) return Promise.reject(new Error('Offline'));
+      return Promise.resolve({ data: [{ task_id: 91, case_id: 7, case_title: 'Edge investigation', case_severity: 'high', case_status: 'open', case_due_date: null, title: 'Collect host evidence', due_date: null, created_at: '2026-11-19T08:00:00Z' }] });
+    }
+    return base(url, config);
+  });
+  renderDashboard();
+  await screen.findByText('Assigned tasks unavailable');
+  expect(screen.getByRole('region', { name: 'My tasks' })).toBeTruthy();
+  expect(screen.queryByText('No checklist tasks assigned to you.')).toBeNull();
+  expect(screen.getByText('Test vulnerability')).toBeTruthy();
+  fail = false;
+  const region = screen.getByRole('region', { name: 'My tasks' });
+  fireEvent.click(region.querySelector('button')!);
+  await screen.findByText('Collect host evidence');
+  expect(screen.queryByText('Assigned tasks unavailable')).toBeNull();
 });
