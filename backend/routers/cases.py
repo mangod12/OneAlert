@@ -201,6 +201,8 @@ async def export_cases(
     if watching == "me":
         watched = select(CaseWatcher.case_id).where(CaseWatcher.user_id == current_user.id)
         query = base_query.where(Case.id.in_(watched))
+    elif assigned == "me":
+        query = base_query.where(Case.assigned_to_id == current_user.id)
     else:
         query = base_query.where(Case.user_id == current_user.id)
 

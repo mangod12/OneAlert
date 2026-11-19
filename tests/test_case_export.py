@@ -2,7 +2,7 @@
 
 import csv
 import io
-from datetime import date, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.database.db import Base, get_async_db, get_db
 from backend.main import app
+from backend.models.case import Case
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test_case_export.db"
 _engine = create_engine(
@@ -121,8 +122,8 @@ class TestCaseExport:
 
     def test_overdue_filter_applies(self, client):
         headers = _register_and_login(client, "overdue@example.com")
-        yesterday = (date.today() - timedelta(days=1)).isoformat()
-        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+        yesterday = (datetime.now(UTC).date() - timedelta(days=1)).isoformat()
+        tomorrow = (datetime.now(UTC).date() + timedelta(days=1)).isoformat()
         _make_case(client, headers, "past due", due_date=yesterday)
         _make_case(client, headers, "not due yet", due_date=tomorrow)
         _make_case(client, headers, "no date")
@@ -136,3 +137,27 @@ class TestCaseExport:
         _make_case(client, owner, "owner case")
         rows = _export(client, other)
         assert rows == []
+
+
+class TestAssignmentExportScope:
+    def test_my_assignments_export_matches_list_across_owners(self, client):
+        owner = _register_and_login(client, "owner-assignment@example.com")
+        member = _register_and_login(client, "member-assignment@example.com")
+        member_id = client.get("/api/v1/auth/me", headers=member).json()["id"]
+        assigned_id = _make_case(client, owner, "Assigned by another owner", severity="critical")
+        own_id = _make_case(client, member, "My own assigned case", severity="high")
+        _make_case(client, owner, "Private unrelated case")
+        _make_case(client, member, "My unassigned case")
+        with _TestingSessionLocal() as db:
+            db.get(Case, assigned_id).assigned_to_id = member_id
+            db.get(Case, own_id).assigned_to_id = member_id
+            db.commit()
+
+        listed = client.get("/api/v1/cases/", headers=member, params={"assigned": "me"}).json()
+        rows = _export(client, member, assigned="me")
+        assert {int(row["id"]) for row in rows} == {item["id"] for item in listed["cases"]}
+        assert {int(row["id"]) for row in rows} == {assigned_id, own_id}
+        assert [row["title"] for row in _export(client, member, assigned="me", severity="critical")] == [
+            "Assigned by another owner"
+        ]
+        assert {row["title"] for row in _export(client, member)} == {"My own assigned case", "My unassigned case"}
