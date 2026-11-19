@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bell, CheckCheck, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../../api/client';
+import { groupNotifications, type NotificationGroup } from './notificationGroups';
 
-interface AppNotification {
+export interface AppNotification {
   id: number;
   kind: string;
   title: string;
@@ -26,23 +27,6 @@ const POLL_MS = 60_000;
 function toRoutePath(link: string | null): string | null {
   if (!link) return null;
   return link.startsWith('/app') ? link.slice(4) || '/' : link;
-}
-
-export interface NotificationGroup {
-  key: string;
-  items: AppNotification[];
-}
-
-/** Collapse runs of consecutive notifications with the same kind + link. */
-export function groupNotifications(items: AppNotification[]): NotificationGroup[] {
-  const groups: NotificationGroup[] = [];
-  for (const item of items) {
-    const key = `${item.kind}|${item.link ?? ''}`;
-    const last = groups[groups.length - 1];
-    if (last && last.key === key) last.items.push(item);
-    else groups.push({ key, items: [item] });
-  }
-  return groups;
 }
 
 function relativeTime(iso: string): string {
