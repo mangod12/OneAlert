@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Activity, AlertTriangle, ArrowUpRight, Bot, Clock, Crosshair,
-  Radar, Server, ShieldAlert, ShieldCheck, Timer, Workflow,
+  Activity, AlertTriangle, ArrowUpRight, Bot, CheckSquare, Clock, Crosshair,
+  Radar, Server, ShieldAlert, ShieldCheck, Square, Timer, Workflow,
 } from 'lucide-react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
@@ -33,6 +33,20 @@ export function Dashboard() {
   const [watchingAlerts, setWatchingAlerts] = useState<Alert[] | null>(null);
   const [watchingCases, setWatchingCases] = useState<Array<{ id: number; title: string; severity: string; status: string; due_date: string | null }> | null>(null);
   const [myTasks, setMyTasks] = useState<Array<{ task_id: number; case_id: number; case_title: string; case_severity: string; case_status: string; case_due_date: string | null; title: string; created_at: string }> | null>(null);
+  const [completingTaskId, setCompletingTaskId] = useState<number | null>(null);
+
+  const completeTask = async (task: { task_id: number; case_id: number; title: string }) => {
+    if (completingTaskId !== null) return;
+    setCompletingTaskId(task.task_id);
+    try {
+      await apiClient.patch(`/cases/${task.case_id}/tasks/${task.task_id}`, { done: true });
+      setMyTasks(prev => prev?.filter(t => t.task_id !== task.task_id) ?? prev);
+    } catch {
+      // leave the row in place so the action can be retried
+    } finally {
+      setCompletingTaskId(null);
+    }
+  };
   const [incidents, setIncidents] = useState<Array<{ asset_id: number; asset_name: string; max_severity: string; alert_count: number; blast_radius: number }> | null>(null);
   const [errors, setErrors] = useState<DashboardErrors>({});
   const [loading, setLoading] = useState(true);
@@ -214,11 +228,24 @@ export function Dashboard() {
           <Panel title="My tasks" description="Open checklist tasks assigned to you across investigations.">
             <div className="divide-y divide-surface-800">
               {(myTasks ?? []).length > 0 ? (myTasks ?? []).map(t => (
-                <Link key={t.task_id} to={`/cases/${t.case_id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-800/45">
+                <div key={t.task_id} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-800/45">
+                  <button
+                    type="button"
+                    aria-label={`Complete task ${t.title}`}
+                    disabled={completingTaskId !== null}
+                    onClick={() => void completeTask(t)}
+                    className="shrink-0 text-primary-400 transition-colors hover:text-primary-300 disabled:opacity-40"
+                  >
+                    {completingTaskId === t.task_id
+                      ? <CheckSquare className="h-4 w-4" aria-hidden="true" />
+                      : <Square className="h-4 w-4" aria-hidden="true" />}
+                  </button>
                   <StatusBadge tone={t.case_severity === 'critical' ? 'danger' : t.case_severity === 'high' ? 'warning' : 'neutral'}>{t.case_severity}</StatusBadge>
-                  <div className="min-w-0"><p className="truncate text-sm font-semibold text-surface-100">{t.title}</p><p className="mt-0.5 truncate text-[11px] text-surface-500">{t.case_title} · Investigation #{t.case_id}{t.case_due_date ? ` · due ${t.case_due_date}` : ''}</p></div>
-                  <span className="ml-auto text-xs text-surface-500">{t.case_status}</span>
-                </Link>
+                  <Link to={`/cases/${t.case_id}`} className="flex min-w-0 flex-1 items-center gap-3">
+                    <div className="min-w-0"><p className="truncate text-sm font-semibold text-surface-100">{t.title}</p><p className="mt-0.5 truncate text-[11px] text-surface-500">{t.case_title} · Investigation #{t.case_id}{t.case_due_date ? ` · due ${t.case_due_date}` : ''}</p></div>
+                    <span className="ml-auto shrink-0 text-xs text-surface-500">{t.case_status}</span>
+                  </Link>
+                </div>
               )) : (
                 <div className="px-5 py-6 text-center text-sm text-surface-400">{myTasks === null ? 'Loading...' : 'No checklist tasks assigned to you.'}</div>
               )}
