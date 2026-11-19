@@ -69,8 +69,8 @@ describe('Watchlist page', () => {
   it('asks both endpoints for watched items', async () => {
     render(<MemoryRouter><Watchlist /></MemoryRouter>);
     await screen.findByText('Intrusion on the edge network');
-    expect(mockGet).toHaveBeenCalledWith('/alerts/', { params: { watching: 'me', size: 50 } });
-    expect(mockGet).toHaveBeenCalledWith('/cases/', { params: { watching: 'me', size: 50 } });
+    expect(mockGet).toHaveBeenCalledWith('/alerts/', { params: { watching: 'me', size: 50, page: 1 } });
+    expect(mockGet).toHaveBeenCalledWith('/cases/', { params: { watching: 'me', size: 50, page: 1 } });
   });
 
   it('merges alerts and investigations ranked by severity', async () => {
@@ -142,4 +142,37 @@ describe('Watchlist page', () => {
     fireEvent.click(caseName.closest('tr')!);
     await waitFor(() => expect(screen.getByTestId('location').textContent).toContain('/cases/3'));
   });
+  it('loads later pages, deduplicates records and ranks loaded items only', async () => {
+    mockGet.mockImplementation(async (url, config) => {
+      const page = (config?.params as { page?: number }).page;
+      if (url === '/alerts/') return { data: { alerts: page === 1 ? [makeAlert()] : [makeAlert(), makeAlert({ id: 2, title: 'Later critical alert', cve_id: null, severity: 'critical' })], total: 51 } };
+      return { data: { cases: [], total: 0 } };
+    });
+    render(<MemoryRouter><Watchlist /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more watched items' }));
+    expect(await screen.findByText('Later critical alert')).toBeTruthy();
+    expect(screen.getAllByText('CVE-2026-0001 - RouterOS remote code execution')).toHaveLength(1);
+    expect(screen.getAllByRole('row')[1].textContent).toContain('Later critical alert');
+    expect(screen.queryByRole('button', { name: 'Load more watched items' })).toBeNull();
+    expect(mockGet).toHaveBeenCalledWith('/alerts/', { params: { watching: 'me', size: 50, page: 2 } });
+  });
+
+  it('retains loaded items and retries the same page after a later failure', async () => {
+    let fail = true;
+    mockGet.mockImplementation(async (url, config) => {
+      const page = (config?.params as { page?: number }).page;
+      if (page === 2 && fail) throw new Error('Offline');
+      if (url === '/alerts/') return { data: { alerts: page === 1 ? [makeAlert()] : [makeAlert({ id: 2, title: 'Later alert', cve_id: null })], total: page === 1 ? 51 : 2 } };
+      return { data: { cases: [], total: 0 } };
+    });
+    render(<MemoryRouter><Watchlist /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more watched items' }));
+    await screen.findByRole('alert');
+    expect(screen.getByText('CVE-2026-0001 - RouterOS remote code execution')).toBeTruthy();
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Load more watched items' }));
+    expect(await screen.findByText('Later alert')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
 });
