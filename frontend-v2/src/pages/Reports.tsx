@@ -4,7 +4,7 @@ import { BriefcaseMedical, Clock, Download, ShieldAlert, ShieldCheck, Siren, Tim
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
 import { KPICard } from '../components/KPICard';
-import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Panel } from '../components/ui/Panel';
 import { StatusBadge } from '../components/ui/StatusBadge';
@@ -104,23 +104,31 @@ export function Reports() {
   const [trend, setTrend] = useState<AlertTrend | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [unavailable, setUnavailable] = useState<string[]>([]);
 
   const fetchReport = useCallback(async (window: number) => {
     const request = ++requestId.current;
     setLoading(true);
     setError(null);
+    setUnavailable([]);
     try {
-      const [postureRes, slaRes, workloadRes, trendRes] = await Promise.all([
+      const [postureRes, slaRes, workloadRes, trendRes] = await Promise.allSettled([
         apiClient.get('/reports/posture', { params: { days: window } }),
         apiClient.get('/reports/sla', { params: { days: window } }),
         apiClient.get('/reports/team-workload'),
         apiClient.get('/reports/alert-trend', { params: { days: window } }),
       ]);
       if (request !== requestId.current) return;
-      setReport(postureRes.data);
-      setSla(slaRes.data);
-      setWorkload(workloadRes.data);
-      setTrend(trendRes.data);
+      if (postureRes.status === 'rejected') throw postureRes.reason;
+      setReport(postureRes.value.data);
+      setSla(slaRes.status === 'fulfilled' ? slaRes.value.data : null);
+      setWorkload(workloadRes.status === 'fulfilled' ? workloadRes.value.data : null);
+      setTrend(trendRes.status === 'fulfilled' ? trendRes.value.data : null);
+      const missing = [];
+      if (slaRes.status === 'rejected') missing.push('SLA compliance unavailable. No attainment or breach totals are inferred.');
+      if (workloadRes.status === 'rejected') missing.push('Team workload unavailable. Assignment counts are unknown.');
+      if (trendRes.status === 'rejected') missing.push('Alert volume trend unavailable. Daily activity is unknown.');
+      setUnavailable(missing);
     } catch (err) {
       if (request !== requestId.current) return;
       setError(getApiErrorMessage(err, 'Could not load the posture report.'));
@@ -185,6 +193,7 @@ export function Reports() {
 
       {!loading && !error && report && (
         <>
+          {unavailable.length > 0 && <DegradedBanner messages={unavailable} onRetry={() => void fetchReport(days)} />}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <KPICard title="Alerts opened" value={report.alerts.opened} icon={ShieldAlert} color="info" detail={`${report.alerts.by_severity.critical} critical · ${report.days}d window`} />
             <KPICard title="Mean time to acknowledge" value={formatDuration(report.alerts.mtta_seconds)} icon={Clock} color="warning" detail={`${report.alerts.acknowledged} acknowledged · ${report.days}d`} />
