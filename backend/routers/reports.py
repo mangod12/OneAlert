@@ -3,7 +3,7 @@
 from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -301,3 +301,86 @@ async def get_sla_compliance_report(
         "alerts": _sla_finish(alerts, len(alert_upcoming)),
         "cases": _sla_finish(cases, len(case_upcoming)),
     }
+
+
+@router.get("/team-workload")
+async def get_team_workload_report(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Open assigned work per active organization member.
+
+    Counts span the whole org (assignments cross alert/case owners), so the
+    caller sees every member of their org, or just themselves when they have
+    no org. Overdue means past the triage or SLA due date while still open.
+    """
+    today = datetime.now(UTC).date()
+
+    if current_user.org_id is not None:
+        members = (await db.execute(
+            select(User).where(User.org_id == current_user.org_id, User.is_active == True)  # noqa: E712
+        )).scalars().all()
+    else:
+        members = [current_user]
+    member_ids = [m.id for m in members]
+
+    alerts_open = dict((await db.execute(
+        select(Alert.assigned_to_id, func.count())
+        .where(Alert.assigned_to_id.in_(member_ids), Alert.status.in_(_ACTIVE_ALERT_STATUSES))
+        .group_by(Alert.assigned_to_id)
+    )).all()) if member_ids else {}
+    alerts_overdue = dict((await db.execute(
+        select(Alert.assigned_to_id, func.count())
+        .where(
+            Alert.assigned_to_id.in_(member_ids),
+            Alert.status.in_(_ACTIVE_ALERT_STATUSES),
+            Alert.due_date.is_not(None),
+            Alert.due_date < today,
+        )
+        .group_by(Alert.assigned_to_id)
+    )).all()) if member_ids else {}
+    cases_open = dict((await db.execute(
+        select(Case.assigned_to_id, func.count())
+        .where(Case.assigned_to_id.in_(member_ids), Case.status.notin_(_DONE_CASE_STATUSES))
+        .group_by(Case.assigned_to_id)
+    )).all()) if member_ids else {}
+    cases_overdue = dict((await db.execute(
+        select(Case.assigned_to_id, func.count())
+        .where(
+            Case.assigned_to_id.in_(member_ids),
+            Case.status.notin_(_DONE_CASE_STATUSES),
+            Case.due_date.is_not(None),
+            Case.due_date < today,
+        )
+        .group_by(Case.assigned_to_id)
+    )).all()) if member_ids else {}
+    from backend.models.case import CaseTask
+    tasks_open = dict((await db.execute(
+        select(CaseTask.assignee_id, func.count())
+        .join(Case, Case.id == CaseTask.case_id)
+        .where(
+            CaseTask.assignee_id.in_(member_ids),
+            CaseTask.done == False,  # noqa: E712
+            Case.status.notin_(_DONE_CASE_STATUSES),
+        )
+        .group_by(CaseTask.assignee_id)
+    )).all()) if member_ids else {}
+
+    rows = [
+        {
+            "user_id": m.id,
+            "email": m.email,
+            "full_name": m.full_name,
+            "alerts_open": alerts_open.get(m.id, 0),
+            "alerts_overdue": alerts_overdue.get(m.id, 0),
+            "cases_open": cases_open.get(m.id, 0),
+            "cases_overdue": cases_overdue.get(m.id, 0),
+            "tasks_open": tasks_open.get(m.id, 0),
+        }
+        for m in members
+    ]
+    rows.sort(
+        key=lambda r: (r["alerts_open"] + r["cases_open"] + r["tasks_open"], r["email"]),
+        reverse=True,
+    )
+    return {"success": True, "generated_at": datetime.now(UTC).isoformat(), "members": rows}

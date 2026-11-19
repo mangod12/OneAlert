@@ -62,9 +62,24 @@ const slaReport = {
   },
 };
 
-function mockApis(posture: unknown = report, sla: unknown = slaReport) {
+const workload = {
+  generated_at: '2026-11-18T18:00:00Z',
+  members: [
+    {
+      user_id: 1, email: 'analyst@example.com', full_name: 'Ada Analyst',
+      alerts_open: 3, alerts_overdue: 1, cases_open: 1, cases_overdue: 0, tasks_open: 2,
+    },
+    {
+      user_id: 2, email: 'sam@example.com', full_name: null,
+      alerts_open: 0, alerts_overdue: 0, cases_open: 0, cases_overdue: 0, tasks_open: 0,
+    },
+  ],
+};
+
+function mockApis(posture: unknown = report, sla: unknown = slaReport, team: unknown = workload) {
   get.mockImplementation(async (url: string) => {
     if (url === '/reports/sla') return { data: sla };
+    if (url === '/reports/team-workload') return { data: team };
     return { data: posture };
   });
 }
@@ -126,6 +141,20 @@ describe('Reports', () => {
     renderPage();
     expect(await screen.findByText('SLA compliance')).toBeTruthy();
     expect(screen.getAllByText('No due dates in window')).toHaveLength(2);
+  });
+
+  it('renders team workload with overdue emphasis and an idle member', async () => {
+    mockApis();
+    renderPage();
+    expect(await screen.findByText('Team workload')).toBeTruthy();
+    expect(await screen.findByText('Ada Analyst')).toBeTruthy();
+    expect(screen.getByText('3 open alerts')).toBeTruthy();
+    expect(screen.getByText('1 open investigation')).toBeTruthy();
+    expect(screen.getByText('2 open tasks')).toBeTruthy();
+    expect(screen.getByText('1 overdue')).toBeTruthy();
+    expect(screen.getByText('sam@example.com')).toBeTruthy();
+    expect(screen.getByText('No open work')).toBeTruthy();
+    expect(get).toHaveBeenCalledWith('/reports/team-workload');
   });
 
   it('switches the trailing window', async () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BriefcaseMedical, Clock, Download, ShieldAlert, ShieldCheck, Siren, Timer } from 'lucide-react';
+import { BriefcaseMedical, Clock, Download, ShieldAlert, ShieldCheck, Siren, Timer, Users } from 'lucide-react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
 import { KPICard } from '../components/KPICard';
@@ -45,6 +45,22 @@ interface SlaReport {
   cases: SlaBucket;
 }
 
+interface WorkloadMember {
+  user_id: number;
+  email: string;
+  full_name: string | null;
+  alerts_open: number;
+  alerts_overdue: number;
+  cases_open: number;
+  cases_overdue: number;
+  tasks_open: number;
+}
+
+interface TeamWorkload {
+  generated_at: string;
+  members: WorkloadMember[];
+}
+
 function slaCsv(sla: SlaReport): string {
   const rows = [['scope', 'severity', 'due', 'met', 'breached', 'attainment_pct']];
   for (const scope of ['alerts', 'cases'] as const) {
@@ -68,6 +84,7 @@ export function Reports() {
   const [days, setDays] = useState(30);
   const [report, setReport] = useState<PostureReport | null>(null);
   const [sla, setSla] = useState<SlaReport | null>(null);
+  const [workload, setWorkload] = useState<TeamWorkload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,16 +92,19 @@ export function Reports() {
     setLoading(true);
     setError(null);
     try {
-      const [postureRes, slaRes] = await Promise.all([
+      const [postureRes, slaRes, workloadRes] = await Promise.all([
         apiClient.get('/reports/posture', { params: { days: window } }),
         apiClient.get('/reports/sla', { params: { days: window } }),
+        apiClient.get('/reports/team-workload'),
       ]);
       setReport(postureRes.data);
       setSla(slaRes.data);
+      setWorkload(workloadRes.data);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Could not load the posture report.'));
       setReport(null);
       setSla(null);
+      setWorkload(null);
     } finally {
       setLoading(false);
     }
@@ -251,6 +271,43 @@ export function Reports() {
                   Export SLA CSV
                 </button>
               </div>
+            </Panel>
+          )}
+
+          {workload && workload.members.length > 0 && (
+            <Panel
+              title="Team workload"
+              description="Open assigned work across your organization: alerts past their triage due date, investigations past their SLA, and open checklist tasks."
+            >
+              <ul className="divide-y divide-surface-800" data-testid="team-workload">
+                {workload.members.map((member) => {
+                  const totalOpen = member.alerts_open + member.cases_open + member.tasks_open;
+                  const totalOverdue = member.alerts_overdue + member.cases_overdue;
+                  return (
+                    <li key={member.user_id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Users className="h-4 w-4 shrink-0 text-surface-400" aria-hidden="true" />
+                        <span className="truncate font-medium text-surface-100">{member.full_name || member.email}</span>
+                        {member.full_name && <span className="truncate text-xs text-surface-500">{member.email}</span>}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-surface-300">
+                        {totalOpen === 0 ? (
+                          <span className="text-surface-500">No open work</span>
+                        ) : (
+                          <>
+                            <span>{member.alerts_open} open {member.alerts_open === 1 ? 'alert' : 'alerts'}</span>
+                            <span>{member.cases_open} open {member.cases_open === 1 ? 'investigation' : 'investigations'}</span>
+                            <span>{member.tasks_open} open {member.tasks_open === 1 ? 'task' : 'tasks'}</span>
+                            {totalOverdue > 0 && (
+                              <span className="font-medium text-danger">{totalOverdue} overdue</span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             </Panel>
           )}
 
