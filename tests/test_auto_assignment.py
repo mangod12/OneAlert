@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from backend.database.db import Base
 from backend.models.alert import Alert
 from backend.models.asset import Asset
+from backend.models.case import Case
 from backend.models.discovered_device import NetworkSensor  # noqa: F401 - mapper dependency
 from backend.models.organization import Organization
 from backend.models.user import User
@@ -138,6 +139,43 @@ async def test_resolved_alerts_do_not_count():
     _seed_alerts(owner.id, owner.id, ["resolved", "false_positive"])
     async with _AsyncTestingSessionLocal() as db:
         # Owner's resolved alerts are ignored; tie -> lowest id.
+        picked = await auto_assignee_id(db, owner)
+    assert picked == min(owner.id, member.id)
+
+
+def _seed_cases(owner_id: int, assignee_id: int, specs: list[str]) -> None:
+    with _TestingSessionLocal() as db:
+        for status in specs:
+            db.add(Case(
+                user_id=owner_id, title=f"Case {status}", severity="high",
+                status=status, assigned_to_id=assignee_id,
+            ))
+        db.commit()
+
+
+@pytest.mark.asyncio
+async def test_open_cases_count_toward_load():
+    owner = _user("owner@example.com")
+    member = _user("member@example.com")
+    _org_with_members(owner, member)
+    # Member has fewer alerts but an open investigation; owner should win.
+    _seed_alerts(owner.id, owner.id, ["pending"])
+    _seed_alerts(owner.id, member.id, ["pending"])
+    _seed_cases(owner.id, member.id, ["open"])
+    async with _AsyncTestingSessionLocal() as db:
+        assert await auto_assignee_id(db, owner) == owner.id
+
+
+@pytest.mark.asyncio
+async def test_closed_cases_do_not_count():
+    owner = _user("owner@example.com")
+    member = _user("member@example.com")
+    _org_with_members(owner, member)
+    _seed_alerts(owner.id, owner.id, ["pending"])
+    _seed_alerts(owner.id, member.id, ["pending"])
+    _seed_cases(owner.id, member.id, ["resolved", "closed"])
+    async with _AsyncTestingSessionLocal() as db:
+        # Tie on open work -> lowest id (the owner).
         picked = await auto_assignee_id(db, owner)
     assert picked == min(owner.id, member.id)
 

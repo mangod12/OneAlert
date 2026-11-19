@@ -20,6 +20,7 @@ from backend.models.alert import Alert
 from backend.models.asset import Asset
 from backend.models.case import Case, CaseAlert
 from backend.models.notification import Notification
+from backend.models.organization import Organization
 from backend.models.user import User
 from backend.services.alert_checker import _maybe_auto_escalate
 from backend.services.auth_service import get_password_hash
@@ -187,6 +188,69 @@ class TestCheckerAutoEscalation:
                 )
             )).scalar_one()
             assert notification.link == f"/app/cases/{case.id}"
+            await session.rollback()
+
+    @pytest.mark.asyncio
+    async def test_escalated_case_auto_assigned(self, client, auth_headers):
+        uid = _user_id()
+        with TestingSessionLocal() as session:
+            org = Organization(name="Esc Org", slug="esc-org", plan="pro", max_assets=100, max_users=10)
+            session.add(org)
+            session.flush()
+            owner = session.get(User, uid)
+            owner.org_id = org.id
+            owner.auto_assign_new_alerts = True
+            member = User(
+                email="esc_member@example.com",
+                hashed_password=get_password_hash("testpass123"),
+                full_name="Esc Member", company="Test Corp",
+                is_active=True, is_verified=True, org_id=org.id,
+            )
+            session.add(member)
+            session.flush()
+            member_id = member.id
+            session.commit()
+        # One open alert already on the owner, so the member is least-loaded.
+        asset_id = _seed_incident(
+            uid,
+            [("a1", "critical"), ("a2", "high"), ("a3", "medium")],
+            {"auto_escalate_incidents": True},
+        )
+        with TestingSessionLocal() as session:
+            alert = session.execute(
+                select(Alert).where(Alert.title == "a1")
+            ).scalar_one()
+            alert.assigned_to_id = uid
+            session.commit()
+        async with AsyncTestingSessionLocal() as session:
+            user = await session.get(User, uid)
+            asset = await session.get(Asset, asset_id)
+            await _maybe_auto_escalate(session, user, asset)
+            case = (await session.execute(select(Case).where(Case.user_id == uid))).scalar_one()
+            assert case.assigned_to_id == member_id
+            note = (await session.execute(
+                select(Notification).where(
+                    Notification.user_id == member_id,
+                    Notification.kind == "case_assigned",
+                )
+            )).scalar_one()
+            assert note.link == f"/app/cases/{case.id}"
+            await session.rollback()
+
+    @pytest.mark.asyncio
+    async def test_escalated_case_unassigned_without_opt_in(self, client, auth_headers):
+        uid = _user_id()
+        asset_id = _seed_incident(
+            uid,
+            [("a1", "critical"), ("a2", "high"), ("a3", "medium")],
+            {"auto_escalate_incidents": True},
+        )
+        async with AsyncTestingSessionLocal() as session:
+            user = await session.get(User, uid)
+            asset = await session.get(Asset, asset_id)
+            await _maybe_auto_escalate(session, user, asset)
+            case = (await session.execute(select(Case).where(Case.user_id == uid))).scalar_one()
+            assert case.assigned_to_id is None
             await session.rollback()
 
     @pytest.mark.asyncio

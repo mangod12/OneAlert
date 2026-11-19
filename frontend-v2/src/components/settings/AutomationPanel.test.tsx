@@ -77,7 +77,7 @@ describe('AutomationPanel', () => {
     mockPrefs();
     patch.mockResolvedValue({ data: {} });
     render(<AutomationPanel />);
-    const toggle = await screen.findByLabelText('Auto-assign new alerts across your organization');
+    const toggle = await screen.findByLabelText('Auto-assign new alerts and investigations across your organization');
     expect((toggle as HTMLInputElement).checked).toBe(false);
     fireEvent.click(toggle);
     fireEvent.click(screen.getByRole('button', { name: 'Save automation' }));

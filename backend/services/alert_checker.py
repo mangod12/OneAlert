@@ -90,9 +90,18 @@ async def _maybe_auto_escalate(db: AsyncSession, user: User, asset: Asset) -> No
         severity=max_severity,
         status="open",
         due_date=sla_due_date(user, max_severity),
+        assigned_to_id=await auto_assignee_id(db, user),
     )
     db.add(case)
     await db.flush()
+    if case.assigned_to_id is not None and case.assigned_to_id != user.id:
+        db.add(Notification(
+            user_id=case.assigned_to_id,
+            kind="case_assigned",
+            title=f"Case #{case.id} assigned to you",
+            body=case.title,
+            link=f"/app/cases/{case.id}",
+        ))
     for alert in alerts:
         db.add(CaseAlert(case_id=case.id, alert_id=alert.id))
     db.add(Notification(
