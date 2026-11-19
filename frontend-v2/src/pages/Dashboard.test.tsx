@@ -236,3 +236,36 @@ describe('My assignments', () => {
     expect(screen.queryByText('Active incidents')).toBeNull();
   });
 });
+
+describe('My tasks', () => {
+  const myTasks = [
+    { task_id: 11, case_id: 7, case_title: 'Suspicious lateral movement', case_severity: 'critical', case_status: 'investigating', case_due_date: '2026-11-25', title: 'Contain the host', created_at: '2026-11-18T09:00:00Z' },
+    { task_id: 12, case_id: 9, case_title: 'Phishing follow-up', case_severity: 'low', case_status: 'open', case_due_date: null, title: 'Review firewall logs', created_at: '2026-11-18T09:05:00Z' },
+  ];
+
+  function mockWithTasks(tasks: typeof myTasks) {
+    mockAllFulfilled();
+    const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation((url: string, config?: unknown) => {
+      if (url === '/cases/my-tasks') return Promise.resolve({ data: tasks });
+      return base(url, config as Parameters<typeof base>[1]);
+    });
+  }
+
+  it('lists open assigned tasks with case context and deep links', async () => {
+    mockWithTasks(myTasks);
+    renderDashboard();
+    expect(await screen.findByText('My tasks')).toBeTruthy();
+    expect(screen.getByText('Contain the host')).toBeTruthy();
+    expect(screen.getByText(/Suspicious lateral movement · Investigation #7 · due 2026-11-25/)).toBeTruthy();
+    expect(screen.getByText('Review firewall logs')).toBeTruthy();
+    expect((screen.getByText('Contain the host').closest('a') as HTMLAnchorElement).href).toContain('/cases/7');
+  });
+
+  it('hides the panel when no tasks are assigned', async () => {
+    mockWithTasks([]);
+    renderDashboard();
+    await screen.findByText('Total alerts');
+    await waitFor(() => expect(screen.queryByText('My tasks')).toBeNull());
+  });
+});

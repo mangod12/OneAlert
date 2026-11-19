@@ -396,3 +396,97 @@ def test_assigning_a_task_notifies_the_assignee(client):
     owner_inbox = client.get("/api/v1/notifications/", headers=owner).json()
     owner_notifs = owner_inbox["data"]
     assert not any(n["kind"] == "case_task_assigned" for n in owner_notifs)
+
+
+def _make_case_for(user_id: int, title: str, severity: str = "medium", status: str = "open",
+                   due_date=None) -> int:
+    with _TestingSessionLocal() as db:
+        case = Case(user_id=user_id, title=title, status=status, severity=severity, due_date=due_date)
+        db.add(case)
+        db.commit()
+        db.refresh(case)
+        return case.id
+
+
+class TestMyTasks:
+    def _setup_team(self, client):
+        owner = _register_and_login(client, "owner@example.com")
+        member = _register_and_login(client, "member@example.com")
+        owner_id = _user_id(client, owner)
+        member_id = _user_id(client, member)
+        _share_org(owner_id, member_id)
+        return owner, member, owner_id, member_id
+
+    def _assign(self, client, headers, case_id, title, assignee_id):
+        created = client.post(
+            f"/api/v1/cases/{case_id}/tasks",
+            json={"title": title, "assignee_id": assignee_id},
+            headers=headers,
+        )
+        assert created.status_code == 201, created.text
+        return created.json()["id"]
+
+    def test_lists_open_assigned_tasks_with_case_context(self, client):
+        owner, member, owner_id, member_id = self._setup_team(client)
+        low_case = _make_case_for(owner_id, "Low priority case", severity="low")
+        crit_case = _make_case_for(owner_id, "Critical breach", severity="critical")
+        self._assign(client, owner, low_case, "Review firewall logs", member_id)
+        self._assign(client, owner, crit_case, "Contain the host", member_id)
+
+        resp = client.get("/api/v1/cases/my-tasks", headers=member)
+        assert resp.status_code == 200, resp.text
+        rows = resp.json()
+        assert [r["title"] for r in rows] == ["Contain the host", "Review firewall logs"]
+        first = rows[0]
+        assert first["case_id"] == crit_case
+        assert first["case_title"] == "Critical breach"
+        assert first["case_severity"] == "critical"
+        assert first["task_id"]
+
+    def test_done_tasks_and_closed_cases_drop_out(self, client):
+        owner, member, owner_id, member_id = self._setup_team(client)
+        open_case = _make_case_for(owner_id, "Open case", severity="high")
+        closed_case = _make_case_for(owner_id, "Closed case", severity="critical", status="closed")
+        done_task = self._assign(client, owner, open_case, "Already finished", member_id)
+        self._assign(client, owner, open_case, "Still open", member_id)
+        self._assign(client, owner, closed_case, "On a closed case", member_id)
+        client.patch(
+            f"/api/v1/cases/{open_case}/tasks/{done_task}", json={"done": True}, headers=owner
+        )
+
+        rows = client.get("/api/v1/cases/my-tasks", headers=member).json()
+        assert [r["title"] for r in rows] == ["Still open"]
+
+    def test_only_the_assignee_sees_the_task(self, client):
+        owner, member, owner_id, member_id = self._setup_team(client)
+        case_id = _make_case_for(owner_id, "Open case", severity="high")
+        self._assign(client, owner, case_id, "Member task", member_id)
+        self._assign(client, owner, case_id, "Owner task", owner_id)
+
+        member_rows = client.get("/api/v1/cases/my-tasks", headers=member).json()
+        assert [r["title"] for r in member_rows] == ["Member task"]
+        owner_rows = client.get("/api/v1/cases/my-tasks", headers=owner).json()
+        assert [r["title"] for r in owner_rows] == ["Owner task"]
+
+    def test_requires_auth(self, client):
+        assert client.get("/api/v1/cases/my-tasks").status_code == 401
+
+
+def test_task_assignee_can_open_the_case(client):
+    """A member assigned a task on a case may open that case (the link in
+    their assignment notification must not 404)."""
+    owner = _register_and_login(client, "owner@example.com")
+    member = _register_and_login(client, "member@example.com")
+    owner_id = _user_id(client, owner)
+    member_id = _user_id(client, member)
+    _share_org(owner_id, member_id)
+    case_id = _make_case(owner_id)
+    client.post(
+        f"/api/v1/cases/{case_id}/tasks",
+        json={"title": "Contain the host", "assignee_id": member_id},
+        headers=owner,
+    )
+
+    detail = client.get(f"/api/v1/cases/{case_id}", headers=member)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["title"] == "Beaconing host"

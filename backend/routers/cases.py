@@ -34,6 +34,7 @@ from backend.models.case import (
     CaseWatcher,
     CaseWatcherAdd,
     CaseWatcherResponse,
+    MyTaskResponse,
     SeedTasksFromPlanResponse,
     TimelineEntryResponse,
 )
@@ -57,14 +58,17 @@ def _severity_rank(value: str | None) -> int:
 
 
 def _visible_cases(case_id: int, current_user: User):
-    """Cases the user may open: their own, assigned to them, or watched by them."""
+    """Cases the user may open: their own, assigned to them, watched by
+    them, or carrying a checklist task assigned to them."""
     watched = select(CaseWatcher.case_id).where(CaseWatcher.user_id == current_user.id)
+    tasked = select(CaseTask.case_id).where(CaseTask.assignee_id == current_user.id)
     return select(Case).where(
         Case.id == case_id,
         or_(
             Case.user_id == current_user.id,
             Case.assigned_to_id == current_user.id,
             Case.id.in_(watched),
+            Case.id.in_(tasked),
         ),
     )
 
@@ -322,6 +326,64 @@ async def search_cases_endpoint(
     from backend.services.semantic_search import search_cases
     results = await search_cases(db=db, user_id=current_user.id, query=q, max_results=max_results)
     return {"success": True, "data": results, "query": q}
+
+
+@router.get("/my-tasks", response_model=list[MyTaskResponse])
+async def list_my_tasks(
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Open checklist tasks assigned to the caller across visible investigations.
+
+    Only tasks on cases the caller may open (own, assigned, or watched) are
+    returned, and cases already resolved, closed, or marked false positive
+    drop out. Ordered by case severity, then the case due date, then
+    checklist position.
+    """
+    watched = select(CaseWatcher.case_id).where(CaseWatcher.user_id == current_user.id)
+    tasked = select(CaseTask.case_id).where(CaseTask.assignee_id == current_user.id)
+    rows = (await db.execute(
+        select(CaseTask, Case)
+        .join(Case, Case.id == CaseTask.case_id)
+        .where(
+            CaseTask.assignee_id == current_user.id,
+            CaseTask.done == False,  # noqa: E712
+            Case.status.notin_(("resolved", "closed", "false_positive")),
+            or_(
+                Case.user_id == current_user.id,
+                Case.assigned_to_id == current_user.id,
+                Case.id.in_(watched),
+                Case.id.in_(tasked),
+            ),
+        )
+        .limit(200)
+    )).all()
+
+    severity_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+
+    def _sort_key(row) -> tuple:
+        task, case = row
+        return (
+            severity_rank.get(case.severity or "medium", 5),
+            case.due_date is None,
+            case.due_date or date.max,
+            task.position,
+            task.id,
+        )
+
+    return [
+        MyTaskResponse(
+            task_id=task.id,
+            case_id=case.id,
+            case_title=case.title,
+            case_severity=case.severity or "medium",
+            case_status=case.status,
+            case_due_date=case.due_date,
+            title=task.title,
+            created_at=task.created_at,
+        )
+        for task, case in sorted(rows, key=_sort_key)
+    ]
 
 
 @router.get("/{case_id}", response_model=CaseDetailResponse)
