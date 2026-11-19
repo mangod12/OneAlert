@@ -42,7 +42,7 @@ describe('AutomationPanel', () => {
   it('loads and shows SLA due-date preferences', async () => {
     mockPrefs();
     render(<AutomationPanel />);
-    const slaToggle = await screen.findByLabelText('Set SLA due dates on new investigations');
+    const slaToggle = await screen.findByLabelText('Set SLA due dates on new alerts and investigations');
     expect((slaToggle as HTMLInputElement).checked).toBe(true);
     expect((screen.getByLabelText('Critical (days)') as HTMLInputElement).value).toBe('1');
     expect((screen.getByLabelText('Info (days)') as HTMLInputElement).value).toBe('30');
@@ -55,7 +55,7 @@ describe('AutomationPanel', () => {
     fireEvent.click(await screen.findByLabelText('Auto-escalate noisy incidents to an investigation'));
     fireEvent.change(screen.getByLabelText('Active alerts on one asset'), { target: { value: '5' } });
     fireEvent.change(screen.getByLabelText('Highest severity at least'), { target: { value: 'critical' } });
-    fireEvent.click(screen.getByLabelText('Set SLA due dates on new investigations'));
+    fireEvent.click(screen.getByLabelText('Set SLA due dates on new alerts and investigations'));
     fireEvent.change(screen.getByLabelText('High (days)'), { target: { value: '5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save automation' }));
     await waitFor(() => expect(patch).toHaveBeenCalledWith('/auth/me/automation-preferences', {
@@ -98,7 +98,7 @@ describe('AutomationPanel', () => {
   it('disables the SLA inputs while SLA due dates are off', async () => {
     mockPrefs({ ...DEFAULT_PREFS, sla_due_dates_enabled: false });
     render(<AutomationPanel />);
-    await screen.findByLabelText('Set SLA due dates on new investigations');
+    await screen.findByLabelText('Set SLA due dates on new alerts and investigations');
     expect((screen.getByLabelText('Critical (days)') as HTMLInputElement).disabled).toBe(true);
     expect((screen.getByLabelText('Info (days)') as HTMLInputElement).disabled).toBe(true);
   });
