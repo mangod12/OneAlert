@@ -96,7 +96,7 @@ export function Cases() {
           size: 20,
           ...(statusFilter ? { status: statusFilter } : {}),
           ...(severityFilter ? { severity: severityFilter } : {}),
-          ...(assignedFilter ? { assigned: assignedFilter } : {}),
+          ...(assignedFilter === 'watching' ? { watching: 'me' } : assignedFilter ? { assigned: assignedFilter } : {}),
           ...(overdueOnly ? { overdue: true } : {}),
           sort,
         },
@@ -175,7 +175,8 @@ export function Cases() {
       const params: Record<string, string | number | boolean> = { sort };
       if (statusFilter) params.status = statusFilter;
       if (severityFilter) params.severity = severityFilter;
-      if (assignedFilter) params.assigned = assignedFilter;
+      if (assignedFilter === 'watching') params.watching = 'me';
+      else if (assignedFilter) params.assigned = assignedFilter;
       if (overdueOnly) params.overdue = true;
       const res = await apiClient.get('/cases/export', { params, responseType: 'blob' });
       const url = URL.createObjectURL(res.data as Blob);
@@ -397,6 +398,7 @@ export function Cases() {
           <select id="case-assigned-filter" value={assignedFilter} onChange={e => { setPage(1); setAssignedFilter(e.target.value); }} className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200">
             <option value="">Anyone</option>
             <option value="me">Assigned to me</option>
+            <option value="watching">Watched by me</option>
             <option value="unassigned">Unassigned</option>
           </select>
           <button type="button" onClick={() => { setPage(1); setOverdueOnly(v => !v); }} aria-pressed={overdueOnly}
