@@ -667,7 +667,7 @@ export function Settings() {
             <div>
               <p className="mb-1.5 text-sm font-medium text-surface-300">In-app notifications</p>
               <p className="mb-2 text-xs text-surface-500">Muted kinds stay recorded but no longer appear in the notification feed or unread count.</p>
-              {([['alert_created', 'New alerts'], ['case_assigned', 'Case assignments'], ['case_updated', 'Case updates'], ['case_watching', 'Case watch additions'], ['case_mention', 'Case mentions'], ['alert_mention', 'Alert mentions'], ['alert_assigned', 'Alert assignments'], ['alert_updated', 'Alert updates'], ['alert_watching', 'Alert watch additions'], ['incident_escalated', 'Incident escalations'], ['case_sla_breached', 'SLA breaches'], ['case_sla_due_soon', 'SLA due soon'], ['alert_sla_breached', 'Alert SLA breaches'], ['alert_sla_due_soon', 'Alert SLA due soon']] as Array<[string, string]>).map(([kind, label]) => (
+              {([['alert_created', 'New alerts'], ['case_assigned', 'Case assignments'], ['case_task_assigned', 'Task assignments'], ['case_updated', 'Case updates'], ['case_watching', 'Case watch additions'], ['case_mention', 'Case mentions'], ['alert_mention', 'Alert mentions'], ['alert_assigned', 'Alert assignments'], ['alert_updated', 'Alert updates'], ['alert_watching', 'Alert watch additions'], ['incident_escalated', 'Incident escalations'], ['case_sla_breached', 'SLA breaches'], ['case_sla_due_soon', 'SLA due soon'], ['alert_sla_breached', 'Alert SLA breaches'], ['alert_sla_due_soon', 'Alert SLA due soon']] as Array<[string, string]>).map(([kind, label]) => (
                 <label key={kind} className="flex items-center gap-3 py-1 text-sm text-surface-200">
                   <input
                     type="checkbox"

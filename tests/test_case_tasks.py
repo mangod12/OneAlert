@@ -366,3 +366,33 @@ def test_omitting_assignee_leaves_it_untouched(client):
     )
     assert toggled.status_code == 200, toggled.text
     assert toggled.json()["assignee_id"] == member_id
+
+
+def test_assigning_a_task_notifies_the_assignee(client):
+    owner = _register_and_login(client, "owner@example.com")
+    member = _register_and_login(client, "member@example.com")
+    owner_id = _user_id(client, owner)
+    member_id = _user_id(client, member)
+    _share_org(owner_id, member_id)
+    case_id = _make_case(owner_id)
+    task = client.post(
+        f"/api/v1/cases/{case_id}/tasks", json={"title": "Contain the host"}, headers=owner
+    ).json()
+
+    resp = client.patch(
+        f"/api/v1/cases/{case_id}/tasks/{task['id']}", json={"assignee_id": member_id}, headers=owner
+    )
+    assert resp.status_code == 200, resp.text
+    inbox = client.get("/api/v1/notifications/", headers=member).json()
+    kinds = [n["kind"] for n in inbox["data"]]
+    assert "case_task_assigned" in kinds
+
+    # Self-assignment and re-assigning the same person stay quiet.
+    client.patch(f"/api/v1/cases/{case_id}/tasks/{task['id']}", json={"assignee_id": member_id}, headers=owner)
+    client.patch(f"/api/v1/cases/{case_id}/tasks/{task['id']}", json={"assignee_id": owner_id}, headers=owner)
+    inbox = client.get("/api/v1/notifications/", headers=member).json()
+    notifs = inbox["data"]
+    assert sum(1 for n in notifs if n["kind"] == "case_task_assigned") == 1
+    owner_inbox = client.get("/api/v1/notifications/", headers=owner).json()
+    owner_notifs = owner_inbox["data"]
+    assert not any(n["kind"] == "case_task_assigned" for n in owner_notifs)

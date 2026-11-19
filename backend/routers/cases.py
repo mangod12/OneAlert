@@ -640,6 +640,14 @@ async def create_case_task(
         created_by_id=current_user.id,
     )
     db.add(task)
+    if payload.assignee_id is not None and payload.assignee_id != current_user.id:
+        db.add(Notification(
+            user_id=payload.assignee_id,
+            kind="case_task_assigned",
+            title=f"Task assigned: {title}",
+            body=f"Investigation #{case.id}: {case.title}",
+            link=f"/app/cases/{case.id}",
+        ))
     await db.commit()
     await db.refresh(task)
     return task
@@ -684,6 +692,14 @@ async def update_case_task(
             if assignee is not None
             else f"Task unassigned: {task.title}"
         )
+        if assignee is not None and assignee.id != current_user.id:
+            db.add(Notification(
+                user_id=assignee.id,
+                kind="case_task_assigned",
+                title=f"Task assigned: {task.title}",
+                body=f"Investigation #{case.id}: {case.title}",
+                link=f"/app/cases/{case.id}",
+            ))
 
     for note in timeline_notes:
         db.add(CaseTimeline(
