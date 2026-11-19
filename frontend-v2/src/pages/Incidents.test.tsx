@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
@@ -9,7 +9,7 @@ const get = vi.mocked(apiClient.get);
 const post = vi.mocked(apiClient.post);
 
 beforeEach(() => { vi.resetAllMocks(); });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 const incident = {
   asset_id: 5, asset_name: 'plc-01', asset_vendor: 'Acme', asset_product: 'PLC-300',
@@ -105,5 +105,52 @@ describe('Incidents', () => {
     fireEvent.click(await screen.findByText('Escalate to investigation'));
     expect(await screen.findByText('Case 44 opened')).toBeTruthy();
     expect(post).toHaveBeenCalledWith('/incidents/5/escalate');
+  });
+});
+
+
+describe('Incident CSV export', () => {
+  it('downloads the loaded incident rows without another request', async () => {
+    mockGets();
+    const create = vi.fn(() => 'blob:incidents-test');
+    const revoke = vi.fn();
+    const OriginalURL = URL;
+    vi.stubGlobal('URL', class extends OriginalURL {
+      static createObjectURL = create;
+      static revokeObjectURL = revoke;
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    renderPage();
+    const button = screen.getByRole('button', { name: 'Export filtered CSV' });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    await screen.findByText('plc-01');
+    fireEvent.click(button);
+    expect(create).toHaveBeenCalledWith(expect.any(Blob));
+    expect(click).toHaveBeenCalledOnce();
+    expect(revoke).toHaveBeenCalledWith('blob:incidents-test');
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks export while filters load and ignores an older response', async () => {
+    mockGets();
+    renderPage();
+    await screen.findByText('plc-01');
+    let resolveOld!: (value: { data: { incidents: typeof incident[] } }) => void;
+    get.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
+    fireEvent.change(screen.getByLabelText('Minimum severity'), { target: { value: 'high' } });
+    expect((screen.getByRole('button', { name: 'Export filtered CSV' }) as HTMLButtonElement).disabled).toBe(true);
+    get.mockResolvedValueOnce({ data: { incidents: [{ ...incident, asset_id: 6, asset_name: 'hmi-02' }] } });
+    fireEvent.change(screen.getByLabelText('Minimum severity'), { target: { value: 'medium' } });
+    await screen.findByText('hmi-02');
+    await act(async () => { resolveOld({ data: { incidents: [incident] } }); });
+    expect(screen.queryByText('plc-01')).toBeNull();
+    expect(screen.getByText('hmi-02')).toBeTruthy();
+  });
+
+  it('blocks export when no filtered incidents match', async () => {
+    get.mockResolvedValue({ data: { incidents: [] } });
+    renderPage();
+    await screen.findByText('No incidents');
+    expect((screen.getByRole('button', { name: 'Export filtered CSV' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

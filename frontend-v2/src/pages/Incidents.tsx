@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Siren } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Siren } from 'lucide-react';
+import { incidentCsv } from '../utils/incidentCsv';
 import { toast } from '../components/Toast';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
@@ -95,6 +96,10 @@ export function Incidents() {
   const [severityFilter, setSeverityFilter] = useState('');
   const [assetQuery, setAssetQuery] = useState('');
   const [appliedAssetQuery, setAppliedAssetQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const requestId = useRef(0);
+  const [loadedFilterKey, setLoadedFilterKey] = useState<string | null>(null);
+  const filterKey = JSON.stringify([severityFilter, appliedAssetQuery.trim()]);
 
   const escalate = async (assetId: number) => {
     if (escalating !== null) return;
@@ -109,19 +114,38 @@ export function Incidents() {
   };
 
   const load = useCallback(async () => {
+    const id = ++requestId.current;
+    setLoading(true);
     setError(null);
     try {
       const params: Record<string, string> = {};
       if (severityFilter) params.severity = severityFilter;
       if (appliedAssetQuery.trim()) params.asset = appliedAssetQuery.trim();
       const res = await apiClient.get<{ incidents: Incident[] }>('/incidents', { params });
+      if (id !== requestId.current) return;
       setIncidents(res.data.incidents);
+      setLoadedFilterKey(JSON.stringify([severityFilter, appliedAssetQuery.trim()]));
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'Incidents could not be loaded.'));
+      if (id === requestId.current) setError(getApiErrorMessage(err, 'Incidents could not be loaded.'));
+    } finally {
+      if (id === requestId.current) setLoading(false);
     }
   }, [severityFilter, appliedAssetQuery]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const exportReady = !loading && loadedFilterKey === filterKey && !!incidents?.length;
+  const exportCsv = () => {
+    if (!exportReady || !incidents) return;
+    const url = URL.createObjectURL(new Blob([incidentCsv(incidents)], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'incidents.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   if (error) {
     return <ErrorState title="Incidents unavailable" description={error} action={<RetryButton onClick={() => void load()} />} />;
@@ -130,6 +154,10 @@ export function Incidents() {
   return (
     <div>
       <PageHeader
+        actions={<button type="button" onClick={exportCsv} disabled={!exportReady}
+          className="flex items-center gap-2 rounded-md border border-surface-700 px-3 py-2 text-xs text-surface-200 hover:bg-surface-800 disabled:opacity-40">
+          <Download className="h-4 w-4" aria-hidden="true" /> Export filtered CSV
+        </button>}
         title="Incidents"
         description="Correlated groups of active alerts hitting the same asset, with blast radius from observed network connections."
       />
@@ -166,7 +194,8 @@ export function Incidents() {
           </button>
         </form>
       </div>
-      {incidents === null ? (
+      <p className="mb-3 text-xs text-surface-500">CSV includes only the currently loaded filtered incidents. Downloads stay on your device.</p>
+      {loading || loadedFilterKey !== filterKey || incidents === null ? (
         <LoadingSurface label="Correlating alerts" />
       ) : incidents.length === 0 ? (
         <EmptyState
