@@ -52,6 +52,7 @@ function mockLoad(status = 'open') {
 
 function mockLoadWithPlans(plans: Array<Record<string, unknown>>) {
   mockGet.mockImplementation(url => {
+    if (url.endsWith('/tasks')) return Promise.resolve({ data: [] });
     if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
     if (url.endsWith('/alerts')) return Promise.resolve({ data: [] });
     if (url.endsWith('/events')) return Promise.resolve({ data: [] });
@@ -858,6 +859,24 @@ describe('Investigation tasks', () => {
     renderDetail();
     expect(await screen.findByText('Contain the host')).toBeTruthy();
     expect(screen.queryByText(/Overdue/)).toBeNull();
+  });
+
+  it.each(['rejected', 'malformed'])('does not report an unavailable checklist as empty (%s)', async failure => {
+    mockLoadWithTasks([]);
+    const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation((url, config) => url.endsWith('/tasks')
+      ? failure === 'rejected' ? Promise.reject(new Error('Offline')) : Promise.resolve({ data: { unexpected: true } })
+      : base(url, config));
+    renderDetail();
+    expect(await screen.findByText(/Checklist could not be loaded/)).toBeTruthy();
+    expect(screen.queryByText(/No tasks yet/)).toBeNull();
+    expect(screen.queryByRole('progressbar', { name: 'Task progress' })).toBeNull();
+    expect((screen.getByRole('textbox', { name: 'New task title' }) as HTMLInputElement).disabled).toBe(true);
+    mockLoadWithTasks(tasks);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry checklist' }));
+    expect(await screen.findByText('Collect triage image')).toBeTruthy();
+    expect(screen.queryByText(/Checklist could not be loaded/)).toBeNull();
+    expect((screen.getByRole('textbox', { name: 'New task title' }) as HTMLInputElement).disabled).toBe(false);
   });
 
   it('shows the empty state when the checklist is empty', async () => {

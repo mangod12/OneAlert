@@ -136,6 +136,7 @@ export function CaseDetail() {
   const [watchBusy, setWatchBusy] = useState(false);
   const [savingDueDate, setSavingDueDate] = useState(false);
   const [tasks, setTasks] = useState<CaseTask[]>([]);
+  const [tasksUnavailable, setTasksUnavailable] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [addingTask, setAddingTask] = useState(false);
   const [taskBusyId, setTaskBusyId] = useState<number | null>(null);
@@ -289,7 +290,7 @@ export function CaseDetail() {
 
   const addTask = async () => {
     const title = newTaskTitle.trim();
-    if (!title || addingTask) return;
+    if (!title || addingTask || tasksUnavailable) return;
     setAddingTask(true);
     try {
       await apiClient.post(`/cases/${caseId}/tasks`, { title });
@@ -342,7 +343,7 @@ export function CaseDetail() {
   };
 
   const seedTasksFromPlan = async (planId: number) => {
-    if (seedingPlanId !== null) return;
+    if (seedingPlanId !== null || tasksUnavailable) return;
     setSeedingPlanId(planId);
     try {
       const res = await apiClient.post(`/cases/${caseId}/tasks/from-plan/${planId}`);
@@ -480,8 +481,14 @@ export function CaseDetail() {
     else { setPlans([]); partial.push('Response plans unavailable'); }
     if (watchersResult.status === 'fulfilled') setWatchers(Array.isArray(watchersResult.value.data) ? watchersResult.value.data : []);
     else setWatchers([]);
-    if (tasksResult.status === 'fulfilled') setTasks(Array.isArray(tasksResult.value.data) ? tasksResult.value.data : []);
-    else setTasks([]);
+    if (tasksResult.status === 'fulfilled' && Array.isArray(tasksResult.value.data)) {
+      setTasks(tasksResult.value.data);
+      setTasksUnavailable(false);
+    } else {
+      setTasks([]);
+      setTasksUnavailable(true);
+      partial.push('Investigation tasks unavailable');
+    }
     setDegraded(partial);
     setLoading(false);
   }, [caseId]);
@@ -825,7 +832,10 @@ export function CaseDetail() {
             ))}
           </ul>
         )}
-        {tasks.length === 0 && (
+        {tasksUnavailable && (
+          <div role="alert" className="mb-3 text-sm text-danger">Checklist could not be loaded. Task counts and completion status are unknown. <button type="button" onClick={() => void fetchAll()} className="underline">Retry checklist</button></div>
+        )}
+        {!tasksUnavailable && tasks.length === 0 && (
           <p className="mb-3 text-sm text-surface-500">No tasks yet. Break the investigation into steps to track progress.</p>
         )}
         <form
@@ -837,12 +847,13 @@ export function CaseDetail() {
             onChange={e => setNewTaskTitle(e.target.value)}
             placeholder="Add an investigation task..."
             aria-label="New task title"
+            disabled={tasksUnavailable}
             maxLength={300}
             className="min-h-9 min-w-0 flex-1 rounded-md border border-surface-700 bg-surface-950 px-3 text-sm text-surface-100 placeholder:text-surface-500 focus:border-primary-500 focus:outline-none"
           />
           <button
             type="submit"
-            disabled={!newTaskTitle.trim() || addingTask}
+            disabled={tasksUnavailable || !newTaskTitle.trim() || addingTask}
             className="rounded-md bg-primary-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Add task
@@ -957,7 +968,7 @@ export function CaseDetail() {
                   <button
                     type="button"
                     aria-label={`Seed checklist from plan ${plan.id}`}
-                    disabled={seedingPlanId === plan.id}
+                    disabled={tasksUnavailable || seedingPlanId === plan.id}
                     onClick={() => void seedTasksFromPlan(plan.id)}
                     className="shrink-0 rounded-md border border-surface-700 px-3 text-xs font-medium text-surface-200 transition-colors hover:bg-surface-800 disabled:opacity-40"
                   >
