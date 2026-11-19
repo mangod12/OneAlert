@@ -257,3 +257,112 @@ def test_seed_tasks_hidden_from_users_without_case_access(client):
     outsider = _register_and_login(client, "outsider@example.com")
     resp = client.post(f"/api/v1/cases/{case_id}/tasks/from-plan/{plan_id}", headers=outsider)
     assert resp.status_code == 404
+
+
+def _share_org(*user_ids: int) -> None:
+    """Put the given users into one organization."""
+    from backend.models.organization import Organization
+    with _TestingSessionLocal() as db:
+        org = Organization(name="Task SOC", slug="task-soc", plan="pro", max_assets=100, max_users=10)
+        db.add(org)
+        db.flush()
+        for uid in user_ids:
+            db.get(User, uid).org_id = org.id
+        db.commit()
+
+
+def test_assign_task_to_org_member_on_create(client):
+    owner = _register_and_login(client, "owner@example.com")
+    member = _register_and_login(client, "member@example.com")
+    owner_id = _user_id(client, owner)
+    member_id = _user_id(client, member)
+    _share_org(owner_id, member_id)
+    case_id = _make_case(owner_id)
+
+    created = client.post(
+        f"/api/v1/cases/{case_id}/tasks",
+        json={"title": "Contain the host", "assignee_id": member_id},
+        headers=owner,
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["assignee_id"] == member_id
+
+
+def test_reassign_and_unassign_task_records_timeline(client):
+    owner = _register_and_login(client, "owner@example.com")
+    member = _register_and_login(client, "member@example.com")
+    owner_id = _user_id(client, owner)
+    member_id = _user_id(client, member)
+    _share_org(owner_id, member_id)
+    case_id = _make_case(owner_id)
+    task = client.post(
+        f"/api/v1/cases/{case_id}/tasks", json={"title": "Contain the host"}, headers=owner
+    ).json()
+
+    assigned = client.patch(
+        f"/api/v1/cases/{case_id}/tasks/{task['id']}", json={"assignee_id": member_id}, headers=owner
+    )
+    assert assigned.status_code == 200, assigned.text
+    assert assigned.json()["assignee_id"] == member_id
+
+    detail = client.get(f"/api/v1/cases/{case_id}", headers=owner).json()
+    actions = [e["content"] for e in detail["timeline"] if e["entry_type"] == "action"]
+    assert "Task assigned to member@example.com: Contain the host" in actions
+
+    unassigned = client.patch(
+        f"/api/v1/cases/{case_id}/tasks/{task['id']}", json={"assignee_id": None}, headers=owner
+    )
+    assert unassigned.status_code == 200, unassigned.text
+    assert unassigned.json()["assignee_id"] is None
+
+    detail = client.get(f"/api/v1/cases/{case_id}", headers=owner).json()
+    actions = [e["content"] for e in detail["timeline"] if e["entry_type"] == "action"]
+    assert "Task unassigned: Contain the host" in actions
+
+
+def test_assign_task_unknown_user_returns_400(client):
+    headers, case_id = _setup(client)
+    task = client.post(
+        f"/api/v1/cases/{case_id}/tasks", json={"title": "Contain the host"}, headers=headers
+    ).json()
+    resp = client.patch(
+        f"/api/v1/cases/{case_id}/tasks/{task['id']}", json={"assignee_id": 99999}, headers=headers
+    )
+    assert resp.status_code == 400, resp.text
+
+
+def test_assign_task_outside_org_returns_400(client):
+    owner = _register_and_login(client, "owner@example.com")
+    outsider = _register_and_login(client, "outsider@example.com")
+    owner_id = _user_id(client, owner)
+    outsider_id = _user_id(client, outsider)
+    other_org = _register_and_login(client, "third@example.com")
+    third_id = _user_id(client, other_org)
+    _share_org(owner_id, third_id)  # owner has an org; the outsider is not in it
+    case_id = _make_case(owner_id)
+    task = client.post(
+        f"/api/v1/cases/{case_id}/tasks", json={"title": "Contain the host"}, headers=owner
+    ).json()
+    resp = client.patch(
+        f"/api/v1/cases/{case_id}/tasks/{task['id']}", json={"assignee_id": outsider_id}, headers=owner
+    )
+    assert resp.status_code == 400, resp.text
+
+
+def test_omitting_assignee_leaves_it_untouched(client):
+    owner = _register_and_login(client, "owner@example.com")
+    member = _register_and_login(client, "member@example.com")
+    owner_id = _user_id(client, owner)
+    member_id = _user_id(client, member)
+    _share_org(owner_id, member_id)
+    case_id = _make_case(owner_id)
+    task = client.post(
+        f"/api/v1/cases/{case_id}/tasks",
+        json={"title": "Contain the host", "assignee_id": member_id},
+        headers=owner,
+    ).json()
+    toggled = client.patch(
+        f"/api/v1/cases/{case_id}/tasks/{task['id']}", json={"done": True}, headers=owner
+    )
+    assert toggled.status_code == 200, toggled.text
+    assert toggled.json()["assignee_id"] == member_id

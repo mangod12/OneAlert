@@ -581,6 +581,25 @@ async def _get_case_task(db: AsyncSession, case_id: int, task_id: int) -> CaseTa
     return task
 
 
+async def _validate_task_assignee(db: AsyncSession, assignee_id: int, current_user: User) -> User:
+    """Return the assignee, who must be an active member of the user's org."""
+    assignee = (await db.execute(
+        select(User).where(User.id == assignee_id, User.is_active == True)  # noqa: E712
+    )).scalar_one_or_none()
+    wrong_org = (
+        current_user.org_id is not None
+        and assignee is not None
+        and assignee.org_id != current_user.org_id
+    )
+    no_org = current_user.org_id is None and assignee_id != current_user.id
+    if assignee is None or wrong_org or no_org:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Assignee must be an active member of your organization",
+        )
+    return assignee
+
+
 @router.get("/{case_id}/tasks", response_model=list[CaseTaskResponse])
 async def list_case_tasks(
     case_id: int,
@@ -611,10 +630,13 @@ async def create_case_task(
     next_position = (await db.execute(
         select(func.coalesce(func.max(CaseTask.position), -1)).where(CaseTask.case_id == case.id)
     )).scalar_one() + 1
+    if payload.assignee_id is not None:
+        await _validate_task_assignee(db, payload.assignee_id, current_user)
     task = CaseTask(
         case_id=case.id,
         title=title,
         position=next_position,
+        assignee_id=payload.assignee_id,
         created_by_id=current_user.id,
     )
     db.add(task)
@@ -631,10 +653,11 @@ async def update_case_task(
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Rename a task or toggle its done state.
+    """Rename, reassign, or toggle a task's done state.
 
-    Completing or reopening a task is recorded on the case timeline so the
-    investigation keeps an audit trail of checklist progress.
+    Completing, reopening, assigning, or unassigning a task is recorded on
+    the case timeline so the investigation keeps an audit trail of
+    checklist progress. Send ``assignee_id: null`` to unassign.
     """
     case = await _get_visible_case(db, case_id, current_user)
     task = await _get_case_task(db, case.id, task_id)
@@ -645,17 +668,28 @@ async def update_case_task(
             raise HTTPException(status_code=422, detail="Task title must not be blank")
         task.title = title
 
-    timeline_note: str | None = None
+    timeline_notes: list[str] = []
     if payload.done is not None and payload.done != task.done:
         task.done = payload.done
         task.completed_at = datetime.now(UTC) if payload.done else None
-        timeline_note = f"Task {'completed' if payload.done else 'reopened'}: {task.title}"
+        timeline_notes.append(f"Task {'completed' if payload.done else 'reopened'}: {task.title}")
 
-    if timeline_note is not None:
+    if "assignee_id" in payload.model_fields_set and payload.assignee_id != task.assignee_id:
+        assignee = None
+        if payload.assignee_id is not None:
+            assignee = await _validate_task_assignee(db, payload.assignee_id, current_user)
+        task.assignee_id = payload.assignee_id
+        timeline_notes.append(
+            f"Task assigned to {assignee.email}: {task.title}"
+            if assignee is not None
+            else f"Task unassigned: {task.title}"
+        )
+
+    for note in timeline_notes:
         db.add(CaseTimeline(
             case_id=case.id,
             entry_type="action",
-            content=timeline_note,
+            content=note,
             source="human",
             user_id=current_user.id,
         ))
