@@ -50,16 +50,21 @@ export function Watchlist() {
   const [rows, setRows] = useState<WatchRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [nextPage, setNextPage] = useState(2);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState('');
   const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
   const today = new Date().toISOString().slice(0, 10);
 
-  const fetchWatchlist = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const fetchWatchlist = useCallback(async (page = 1) => {
+    if (page === 1) { setLoading(true); setError(null); }
+    else setLoadingMore(true);
+    setMoreError('');
     try {
       const [alertsRes, casesRes] = await Promise.all([
-        apiClient.get<AlertListResponse>('/alerts/', { params: { watching: 'me', size: 50 } }),
-        apiClient.get<CaseListResponse>('/cases/', { params: { watching: 'me', size: 50 } }),
+        apiClient.get<AlertListResponse>('/alerts/', { params: { watching: 'me', size: 50, page } }),
+        apiClient.get<CaseListResponse>('/cases/', { params: { watching: 'me', size: 50, page } }),
       ]);
       const alertRows: WatchRow[] = alertsRes.data.alerts.map((a: Alert) => ({
         kind: 'alert',
@@ -83,15 +88,22 @@ export function Watchlist() {
         due_date: c.due_date,
         href: `/cases/${c.id}`,
       }));
-      const merged = [...alertRows, ...caseRows].sort((a, b) =>
+      const incoming = [...alertRows, ...caseRows];
+      setHasMore(alertsRes.data.total > page * 50 || casesRes.data.total > page * 50);
+      setNextPage(page + 1);
+      setRows(current => {
+        const unique = new Map((page === 1 ? incoming : [...current, ...incoming]).map(row => [`${row.kind}-${row.id}`, row]));
+        return [...unique.values()].sort((a, b) =>
         severityRank(a.severity) - severityRank(b.severity)
         || new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
-      setRows(merged);
+      });
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'Your watchlist could not be loaded.'));
+      if (page === 1) setError(getApiErrorMessage(err, 'Your watchlist could not be loaded.'));
+      else setMoreError(getApiErrorMessage(err, 'More watched items could not be loaded. Existing items are kept. Try again.'));
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, []);
 
@@ -118,11 +130,11 @@ export function Watchlist() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <PageHeader
         eyebrow="Command"
         title="Watchlist"
-        description="Every alert and investigation you follow, in one place, ranked by severity."
+        description="Alerts and investigations you follow, ranked by severity within the loaded items. Load more to review larger watchlists."
       />
 
       {loading && <LoadingSurface label="Loading your watchlist" />}
@@ -142,9 +154,11 @@ export function Watchlist() {
         />
       )}
 
+      {!loading && !error && <p role="status" className="text-sm text-surface-400">{rows.length} watched items loaded. {hasMore ? 'More watched records are available. Ranking applies only to loaded items.' : 'All records returned by this load are shown.'}</p>}
       {!loading && !error && rows.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-surface-700">
-          <table className="w-full text-sm">
+        <div className="relative max-w-full overflow-x-auto rounded-lg border border-surface-700">
+          <p className="px-4 py-2 text-xs text-surface-500 sm:hidden">Scroll the table horizontally for dates and Unwatch controls.</p>
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-surface-700 bg-surface-800/60 text-left text-[11px] font-semibold uppercase tracking-wider text-surface-400">
                 <th className="px-4 py-3">Type</th>
@@ -191,7 +205,7 @@ export function Watchlist() {
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={(e) => { e.stopPropagation(); void handleUnwatch(row); }}
-                      disabled={pendingKeys.has(`${row.kind}-${row.id}`)}
+                      disabled={loadingMore || pendingKeys.has(`${row.kind}-${row.id}`)}
                       aria-label={`Unwatch ${row.name}`}
                       className="rounded-md border border-surface-600 px-2.5 py-1 text-xs font-medium text-surface-300 hover:border-primary-500/50 hover:text-surface-100 disabled:opacity-50"
                     >
@@ -204,6 +218,11 @@ export function Watchlist() {
           </table>
         </div>
       )}
+      {!loading && !error && hasMore && <div className="space-y-2">
+        {moreError && <p role="alert" className="text-sm text-danger">{moreError}</p>}
+        <button type="button" disabled={loadingMore || pendingKeys.size > 0} onClick={() => void fetchWatchlist(nextPage)} className="rounded-md border border-surface-600 px-3 py-2 text-sm text-surface-200 disabled:opacity-40">{loadingMore ? 'Loading more watched items...' : 'Load more watched items'}</button>
+        <p className="text-xs text-surface-500">The list is fetched in pages, not as an atomic snapshot. Records can change while you review it.</p>
+      </div>}
     </div>
   );
 }
