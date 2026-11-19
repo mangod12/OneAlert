@@ -499,3 +499,39 @@ describe('Alerts deep link', () => {
     expect((await screen.findAllByText('Deep linked alert')).length).toBeGreaterThan(0);
   });
 });
+
+describe('Alerts overdue triage filter', () => {
+  it('adds the overdue param when the Overdue chip is toggled', async () => {
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
+    expect(await screen.findByText('CVE-2026-0001')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Overdue' }));
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/alerts/', {
+      params: expect.objectContaining({ overdue: 'true' }),
+    }));
+  });
+
+  it('flags rows past their triage due date', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (typeof url === 'string' && url.endsWith('/notes')) return { data: [] };
+      if (url === '/alerts/epss-batch') return { data: { scores: {} } };
+      if (url === '/alerts/kev-batch') return { data: { entries: {} } };
+      if (url === '/assets/') return { data: { assets: [], total: 0 } };
+      return listResponse([makeAlert({ due_date: '2020-01-01' })]);
+    });
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
+    expect(await screen.findByText('Overdue · due 2020-01-01')).toBeTruthy();
+  });
+
+  it('does not flag resolved alerts past their due date', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (typeof url === 'string' && url.endsWith('/notes')) return { data: [] };
+      if (url === '/alerts/epss-batch') return { data: { scores: {} } };
+      if (url === '/alerts/kev-batch') return { data: { entries: {} } };
+      if (url === '/assets/') return { data: { assets: [], total: 0 } };
+      return listResponse([makeAlert({ due_date: '2020-01-01', status: 'resolved' })]);
+    });
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
+    expect(await screen.findByText('CVE-2026-0001')).toBeTruthy();
+    expect(screen.queryByText(/Overdue · due/)).toBeNull();
+  });
+});

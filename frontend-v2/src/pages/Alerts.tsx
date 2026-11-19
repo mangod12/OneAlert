@@ -38,6 +38,11 @@ export function Alerts() {
   const [assetOptions, setAssetOptions] = useState<{ id: number; name: string }[]>([]);
   const [sort, setSort] = useState('created_at_desc');
   const [showSnoozedOnly, setShowSnoozedOnly] = useState(false);
+  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [todayStr, setTodayStr] = useState<string | null>(null);
+  useEffect(() => {
+    setTodayStr(new Date().toISOString().slice(0, 10));
+  }, []);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
@@ -81,6 +86,7 @@ export function Alerts() {
       if (ageFilter === 'lt1') params.max_age_days = 1;
       else if (ageFilter === '1to7') { params.min_age_days = 1; params.max_age_days = 7; }
       else if (ageFilter === 'gt7') params.min_age_days = 7;
+      if (overdueOnly) params.overdue = 'true';
       const res = await apiClient.get('/alerts/export', { params, responseType: 'blob' });
       const url = URL.createObjectURL(res.data as Blob);
       const link = document.createElement('a');
@@ -110,6 +116,7 @@ export function Alerts() {
       if (ageFilter === 'lt1') params.max_age_days = 1;
       else if (ageFilter === '1to7') { params.min_age_days = 1; params.max_age_days = 7; }
       else if (ageFilter === 'gt7') params.min_age_days = 7;
+      if (overdueOnly) params.overdue = 'true';
       params.sort = sort;
 
       const res = await apiClient.get<AlertListResponse>('/alerts/', { params });
@@ -121,7 +128,7 @@ export function Alerts() {
     } finally {
       setLoading(false);
     }
-  }, [page, severityFilter, statusFilter, cveSearch, assetFilter, assignedFilter, showSnoozedOnly, ageFilter, sort]);
+  }, [page, severityFilter, statusFilter, cveSearch, assetFilter, assignedFilter, showSnoozedOnly, overdueOnly, ageFilter, sort]);
 
   useEffect(() => {
     fetchAlerts();
@@ -177,6 +184,15 @@ export function Alerts() {
     setSelectedAlert(current => current && current.id === alertId ? { ...current, assigned_to_id: assigneeId, assigned_to_email: assigneeEmail } : current);
     toast(assigneeEmail ? `Alert assigned to ${assigneeEmail}.` : 'Alert unassigned.', 'success');
   };
+
+  const handleDueDateChange = (alertId: number, dueDate: string | null) => {
+    setAlerts(current => current.map(a => a.id === alertId ? { ...a, due_date: dueDate } : a));
+    setSelectedAlert(current => current && current.id === alertId ? { ...current, due_date: dueDate } : current);
+    toast(dueDate ? `Triage due date set to ${dueDate}.` : 'Triage due date cleared.', 'success');
+  };
+
+  const isAlertOverdue = (a: Alert) =>
+    !!a.due_date && todayStr !== null && a.due_date < todayStr && a.status !== 'resolved';
 
   const handleBulkAcknowledge = async () => {
     const ids = Array.from(selectedIds).filter(id => !pendingIds.has(id));
@@ -408,6 +424,14 @@ export function Alerts() {
         >
           Snoozed
         </button>
+        <button
+          type="button"
+          aria-pressed={overdueOnly}
+          onClick={() => { setOverdueOnly(current => !current); setPage(1); }}
+          className={`px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 ${overdueOnly ? 'bg-danger/15 border-danger/40 text-danger' : 'bg-surface-800 border-surface-600 text-surface-50 hover:bg-surface-700'}`}
+        >
+          Overdue
+        </button>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
           <input
@@ -587,6 +611,11 @@ export function Alerts() {
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge tone={alertStatusTones[alert.status] ?? 'neutral'}>{alert.status}</StatusBadge>
+                    {isAlertOverdue(alert) && (
+                      <span className="mt-1 block text-xs font-sans font-semibold text-danger">
+                        Overdue · due {alert.due_date}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-surface-500 hidden md:table-cell">
                     {new Date(alert.created_at).toLocaleDateString()}
@@ -635,6 +664,7 @@ export function Alerts() {
           onReopen={handleReopen}
           onSnooze={handleSnooze}
           onAssigned={handleAssigned}
+          onDueDateChange={handleDueDateChange}
         />
       )}
     </div>

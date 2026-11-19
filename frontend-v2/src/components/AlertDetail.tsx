@@ -26,6 +26,7 @@ interface Props {
   onReopen: (id: number) => void;
   onSnooze: (id: number, hours: number | null) => void;
   onAssigned: (id: number, assigneeId: number | null, assigneeEmail: string | null) => void;
+  onDueDateChange?: (id: number, dueDate: string | null) => void;
   highlightNoteId?: number | null;
 }
 
@@ -61,7 +62,7 @@ interface AlertActivity {
   timestamp: string | null;
 }
 
-export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen, onSnooze, onAssigned, highlightNoteId = null }: Props) {
+export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen, onSnooze, onAssigned, onDueDateChange, highlightNoteId = null }: Props) {
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
     setNow(Date.now());
@@ -82,6 +83,9 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [assigning, setAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
+  const [dueDateDraft, setDueDateDraft] = useState(alert.due_date ?? '');
+  const [savingDueDate, setSavingDueDate] = useState(false);
+  const [dueDateError, setDueDateError] = useState<string | null>(null);
   const [watchers, setWatchers] = useState<Array<{ user_id: number; email: string; full_name: string | null }>>([]);
   const [watchBusy, setWatchBusy] = useState(false);
   const currentUserId = useAuthStore(state => state.user?.id ?? null);
@@ -89,6 +93,28 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
   const isOwner = currentUserId === null || alert.user_id === currentUserId;
   const isWatching = currentUserId !== null && watchers.some(w => w.user_id === currentUserId);
   const watchCandidates = members.filter(m => !watchers.some(w => w.user_id === m.id));
+
+  const isOverdue = !!alert.due_date && now !== null
+    && alert.due_date < new Date(now).toISOString().slice(0, 10)
+    && alert.status !== 'resolved';
+
+  const saveDueDate = async (value: string) => {
+    if (savingDueDate) return;
+    setSavingDueDate(true);
+    setDueDateError(null);
+    try {
+      await apiClient.patch(`/alerts/${alert.id}`, { due_date: value || null });
+      onDueDateChange?.(alert.id, value || null);
+    } catch (error: unknown) {
+      setDueDateError(getApiErrorMessage(error, 'The due date could not be saved.'));
+    } finally {
+      setSavingDueDate(false);
+    }
+  };
+
+  useEffect(() => {
+    setDueDateDraft(alert.due_date ?? '');
+  }, [alert.id, alert.due_date]);
 
   useEffect(() => {
     apiClient.get<OrgMember[]>('/orgs/me/members')
@@ -501,6 +527,41 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
               {assignError && <p role="alert" className="mt-1.5 text-xs text-danger-400">{assignError}</p>}
             </div>
           )}
+          <div className="pt-4 border-t border-surface-700">
+            <label htmlFor="alert-due-date" className="block text-xs text-surface-500 mb-1.5">Triage due date</label>
+            <div className="flex items-center gap-2">
+              <input
+                id="alert-due-date"
+                type="date"
+                value={dueDateDraft}
+                disabled={savingDueDate}
+                onChange={(e) => setDueDateDraft(e.target.value)}
+                className="px-3 py-2 bg-surface-800 border border-surface-700 rounded-lg text-sm text-surface-200 focus:outline-none focus:ring-2 focus:ring-primary-500 [color-scheme:dark]"
+              />
+              {dueDateDraft !== (alert.due_date ?? '') && (
+                <button
+                  type="button"
+                  onClick={() => { void saveDueDate(dueDateDraft); }}
+                  disabled={savingDueDate}
+                  className="px-3 py-2 rounded-lg bg-primary-600 text-xs font-medium text-white hover:bg-primary-500 disabled:opacity-40"
+                >
+                  Save
+                </button>
+              )}
+              {alert.due_date && (
+                <button
+                  type="button"
+                  onClick={() => { setDueDateDraft(''); void saveDueDate(''); }}
+                  disabled={savingDueDate}
+                  className="px-3 py-2 rounded-lg border border-surface-700 text-xs text-surface-300 hover:bg-surface-800 disabled:opacity-40"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            {isOverdue && <p className="mt-1.5 text-xs text-danger-400">Overdue: the triage target has passed.</p>}
+            {dueDateError && <p role="alert" className="mt-1.5 text-xs text-danger-400">{dueDateError}</p>}
+          </div>
           <div className="pt-4 border-t border-surface-700">
             <p className="flex items-center gap-1.5 text-xs text-surface-500 mb-1.5"><Eye className="w-3.5 h-3.5" aria-hidden="true" /> Watchers</p>
             <div className="flex flex-wrap items-center gap-2 text-xs">

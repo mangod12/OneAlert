@@ -149,3 +149,99 @@ async def notify_due_soon_slas(db) -> int:
                     link_path=f"/app/cases/{case.id}",
                 )
     return len(due_soon)
+
+
+_ACTIVE_ALERT_STATUSES = ("pending", "sent", "acknowledged")
+
+
+def _alert_sla_recipients(alert) -> list[int]:
+    """The owner plus the assignee (when different) own an alert's triage SLA."""
+    recipients = [alert.user_id]
+    if alert.assigned_to_id is not None and alert.assigned_to_id != alert.user_id:
+        recipients.append(alert.assigned_to_id)
+    return recipients
+
+
+async def notify_breached_alert_slas(db) -> int:
+    """Notify owner and assignee once per alert that passed its triage due date.
+
+    Marks each breached alert so repeat runs do not re-notify; moving or
+    clearing the due date resets the marker. Returns the number of alerts
+    that notified.
+    """
+    from backend.models.alert import Alert
+
+    today = datetime.now(UTC).date()
+    breached = (await db.execute(
+        select(Alert).where(
+            Alert.due_date.isnot(None),
+            Alert.due_date < today,
+            Alert.status.in_(_ACTIVE_ALERT_STATUSES),
+            Alert.sla_breach_notified_at.is_(None),
+        )
+    )).scalars().all()
+    now = datetime.now(UTC)
+    for alert in breached:
+        days_overdue = (today - alert.due_date).days
+        for recipient_id in _alert_sla_recipients(alert):
+            db.add(Notification(
+                user_id=recipient_id,
+                kind="alert_sla_breached",
+                title=f"Alert overdue: {alert.title}",
+                body=(
+                    f"Triage target {alert.due_date.isoformat()} passed "
+                    f"{days_overdue} day{'s' if days_overdue != 1 else ''} ago. "
+                    f"Severity: {alert.severity}."
+                ),
+                link=f"/app/alerts?alert={alert.id}",
+            ))
+            db.add(AuditLog(
+                user_id=recipient_id, action="alert_sla_breached",
+                target_type="alert", target_id=alert.id,
+                detail=f"Alert {days_overdue}d past its triage due date {alert.due_date.isoformat()}",
+            ))
+        alert.sla_breach_notified_at = now
+    if breached:
+        await db.commit()
+        logger.info("Sent SLA breach notifications for %d alerts", len(breached))
+    return len(breached)
+
+
+async def notify_due_soon_alert_slas(db) -> int:
+    """Warn owner and assignee the day before an alert hits its triage due date.
+
+    Marks each warned alert so repeat runs do not re-notify; moving or
+    clearing the due date resets the marker. Returns the number of alerts
+    that warned.
+    """
+    from backend.models.alert import Alert
+
+    today = datetime.now(UTC).date()
+    tomorrow = today + timedelta(days=1)
+    due_soon = (await db.execute(
+        select(Alert).where(
+            Alert.due_date == tomorrow,
+            Alert.status.in_(_ACTIVE_ALERT_STATUSES),
+            Alert.sla_due_soon_notified_at.is_(None),
+        )
+    )).scalars().all()
+    now = datetime.now(UTC)
+    for alert in due_soon:
+        for recipient_id in _alert_sla_recipients(alert):
+            db.add(Notification(
+                user_id=recipient_id,
+                kind="alert_sla_due_soon",
+                title=f"Alert due tomorrow: {alert.title}",
+                body=f"Triage target {alert.due_date.isoformat()} is tomorrow. Severity: {alert.severity}.",
+                link=f"/app/alerts?alert={alert.id}",
+            ))
+            db.add(AuditLog(
+                user_id=recipient_id, action="alert_sla_due_soon",
+                target_type="alert", target_id=alert.id,
+                detail=f"Alert reaches its triage due date {alert.due_date.isoformat()} tomorrow",
+            ))
+        alert.sla_due_soon_notified_at = now
+    if due_soon:
+        await db.commit()
+        logger.info("Sent SLA due-soon notifications for %d alerts", len(due_soon))
+    return len(due_soon)

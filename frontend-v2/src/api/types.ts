@@ -35,6 +35,7 @@ export interface Alert {
   created_at: string;
   acknowledged_at: string | null;
   snoozed_until?: string | null;
+  due_date?: string | null;
 }
 
 export interface AlertListResponse {

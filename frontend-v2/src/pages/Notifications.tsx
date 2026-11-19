@@ -28,6 +28,8 @@ const KIND_LABELS: Array<[string, string]> = [
   ['incident_escalated', 'Incident escalations'],
   ['case_sla_breached', 'SLA breaches'],
   ['case_sla_due_soon', 'SLA due soon'],
+  ['alert_sla_breached', 'Alert SLA breaches'],
+  ['alert_sla_due_soon', 'Alert SLA due soon'],
 ];
 
 function kindLabel(kind: string): string {
