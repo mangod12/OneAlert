@@ -240,6 +240,20 @@ describe('Editing timeline notes', () => {
     await screen.findByText('Original note');
     expect(document.getElementById('case-note-21')?.className).toContain('ring-2');
     expect(document.getElementById('case-note-22')?.className).not.toContain('ring-2');
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Find timeline evidence' }), { target: { value: 'no matching content' } });
+    expect(document.getElementById('case-note-21')).toBeTruthy();
+    expect(document.getElementById('case-note-22')).toBeNull();
+    expect(screen.getByText(/linked or edited entry is kept visible/)).toBeTruthy();
+  });
+
+  it('keeps an active note edit visible while timeline filters change', async () => {
+    mockLoadWithTimeline([noteEntry, actionEntry]);
+    renderDetail();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit note' }));
+    fireEvent.change(screen.getByLabelText('Edit note'), { target: { value: 'Unsaved draft' } });
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Find timeline evidence' }), { target: { value: 'no match' } });
+    expect((screen.getByLabelText('Edit note') as HTMLTextAreaElement).value).toBe('Unsaved draft');
+    expect(mockPatch).not.toHaveBeenCalled();
   });
 
   it('cancel leaves the note untouched', async () => {
