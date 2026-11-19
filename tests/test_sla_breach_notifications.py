@@ -21,7 +21,7 @@ from backend.models.case import Case
 from backend.models.notification import Notification
 from backend.models.user import User
 from backend.services.auth_service import get_password_hash
-from backend.services.sla import notify_breached_slas
+from backend.services.sla import notify_breached_slas, notify_due_soon_slas
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test_sla_breach.db"
 engine = create_engine(
@@ -207,3 +207,82 @@ class TestDueDateChangeRearms:
             case = session.get(Case, case_id)
             assert case.due_date is None
             assert case.sla_breach_notified_at is None
+
+
+class TestNotifyDueSoonSlas:
+    @pytest.mark.asyncio
+    async def test_case_due_tomorrow_warns_once_with_audit(self, client):
+        uid = _user_id()
+        (case_id,) = _seed_cases(uid, [
+            {"title": "Firmware audit", "severity": "high",
+             "status": "open", "due_date": TOMORROW},
+        ])
+        async with AsyncTestingSessionLocal() as session:
+            sent = await notify_due_soon_slas(session)
+            assert sent == 1
+            notification = (await session.execute(
+                select(Notification).where(
+                    Notification.user_id == uid, Notification.kind == "case_sla_due_soon"
+                )
+            )).scalar_one()
+            assert "Firmware audit" in notification.title
+            assert "due tomorrow" in notification.title
+            assert notification.link == f"/app/cases/{case_id}"
+            audit = (await session.execute(
+                select(AuditLog).where(AuditLog.action == "case_sla_due_soon")
+            )).scalar_one()
+            assert audit.target_id == case_id
+            case = await session.get(Case, case_id)
+            assert case.sla_due_soon_notified_at is not None
+
+            # A second run must not duplicate the warning.
+            assert await notify_due_soon_slas(session) == 0
+            await session.rollback()
+
+    @pytest.mark.asyncio
+    async def test_today_later_done_and_unscheduled_cases_are_skipped(self, client):
+        uid = _user_id()
+        _seed_cases(uid, [
+            {"title": "Due today", "severity": "high",
+             "status": "open", "due_date": TODAY},
+            {"title": "Due later", "severity": "high",
+             "status": "open", "due_date": TOMORROW + timedelta(days=1)},
+            {"title": "Already resolved", "severity": "high",
+             "status": "resolved", "due_date": TOMORROW},
+            {"title": "No date", "severity": "high",
+             "status": "open", "due_date": None},
+        ])
+        async with AsyncTestingSessionLocal() as session:
+            assert await notify_due_soon_slas(session) == 0
+
+    @pytest.mark.asyncio
+    async def test_breach_check_does_not_double_as_due_soon(self, client):
+        uid = _user_id()
+        _seed_cases(uid, [
+            {"title": "Overdue already", "severity": "critical",
+             "status": "open", "due_date": YESTERDAY},
+        ])
+        async with AsyncTestingSessionLocal() as session:
+            assert await notify_due_soon_slas(session) == 0
+
+
+class TestDueDateChangeRearmsDueSoon:
+    def test_moving_due_date_rearms_due_soon_warning(self, client):
+        uid = _user_id()
+        (case_id,) = _seed_cases(uid, [
+            {"title": "Warned once", "severity": "high", "status": "open",
+             "due_date": TOMORROW,
+             "sla_due_soon_notified_at": datetime.now(UTC)},
+        ])
+        login = client.post("/api/v1/auth/login", data={
+            "username": "sla_breach@example.com", "password": "testpass123",
+        })
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        later = (TOMORROW + timedelta(days=2)).isoformat()
+        resp = client.patch(
+            f"/api/v1/cases/{case_id}", params={"due_date": later},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        with TestingSessionLocal() as session:
+            assert session.get(Case, case_id).sla_due_soon_notified_at is None

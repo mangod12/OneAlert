@@ -155,12 +155,15 @@ class VulnerabilityScheduler:
         """Notify owners of investigations that passed their SLA due date."""
         try:
             from backend.database.db import AsyncSessionLocal
-            from backend.services.sla import notify_breached_slas
+            from backend.services.sla import notify_breached_slas, notify_due_soon_slas
 
             async with AsyncSessionLocal() as db:
                 sent = await notify_breached_slas(db)
                 if sent:
                     logger.info("SLA breach check sent %d notifications", sent)
+                warned = await notify_due_soon_slas(db)
+                if warned:
+                    logger.info("SLA due-soon check sent %d notifications", warned)
 
         except Exception as e:
             logger.error(f"Error during SLA breach check: {e}")

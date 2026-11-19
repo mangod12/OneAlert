@@ -46,6 +46,8 @@ class Case(Base):
     attack_narrative = Column(Text, nullable=True)  # AI-generated attack story
     due_date = Column(Date, nullable=True)  # target date to close the case
     sla_breach_notified_at = Column(DateTime(timezone=True), nullable=True)  # set once an overdue notification was sent
+    # set once a due-tomorrow warning was sent
+    sla_due_soon_notified_at = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(String, default="system")  # "agent", "human", "system"
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
