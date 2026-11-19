@@ -179,3 +179,80 @@ describe('Watchlist page', () => {
   });
 
 });
+
+
+describe('Watchlist loaded-record triage', () => {
+  it('searches CVE, asset and record ID without changing endpoint scope', async () => {
+    render(<MemoryRouter><Watchlist /></MemoryRouter>);
+    const input = await screen.findByLabelText('Find watched items');
+    fireEvent.change(input, { target: { value: 'EDGE-ROUTER' } });
+    expect(screen.queryByText('Intrusion on the edge network')).toBeNull();
+    expect(screen.getByText(/RouterOS remote code execution/)).toBeTruthy();
+    fireEvent.change(input, { target: { value: 'CVE-2026-0001' } });
+    expect(screen.getByText('1 of 2 loaded items match.', { exact: false })).toBeTruthy();
+    fireEvent.change(input, { target: { value: '3' } });
+    expect(screen.getByText('Intrusion on the edge network')).toBeTruthy();
+    expect(mockGet).toHaveBeenCalledTimes(2);
+  });
+
+  it('combines type, severity and lifecycle, then clears the view', async () => {
+    mockFeed([makeAlert()], [makeCase(), makeCase({ id: 4, title: 'Closed case', status: 'closed' }), makeCase({ id: 5, title: 'False positive case', status: 'false_positive' })]);
+    render(<MemoryRouter><Watchlist /></MemoryRouter>);
+    await screen.findByLabelText('Find watched items');
+    fireEvent.change(screen.getByLabelText('Watched item type'), { target: { value: 'case' } });
+    fireEvent.change(screen.getByLabelText('Watched severity'), { target: { value: 'critical' } });
+    fireEvent.change(screen.getByLabelText('Watched work scope'), { target: { value: 'done' } });
+    expect(screen.getByText('Closed case')).toBeTruthy();
+    expect(screen.getByText('False positive case')).toBeTruthy();
+    expect(screen.queryByText('Intrusion on the edge network')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear watchlist filters' }));
+    expect(screen.getByText('Intrusion on the edge network')).toBeTruthy();
+    expect(screen.getByText(/RouterOS remote code execution/)).toBeTruthy();
+  });
+
+  it('shows only active overdue investigations, not completed ones or future work', async () => {
+    mockFeed([makeAlert()], [makeCase({ due_date: '2020-01-01' }), makeCase({ id: 4, title: 'Closed overdue case', due_date: '2020-01-01', status: 'closed' }), makeCase({ id: 5, title: 'Future case', due_date: '2099-01-01' })]);
+    render(<MemoryRouter><Watchlist /></MemoryRouter>);
+    await screen.findByLabelText('Find watched items');
+    fireEvent.change(screen.getByLabelText('Watched work scope'), { target: { value: 'overdue' } });
+    expect(screen.getByText('Intrusion on the edge network')).toBeTruthy();
+    expect(screen.queryByText('Closed overdue case')).toBeNull();
+    expect(screen.queryByText('Future case')).toBeNull();
+    expect(screen.queryByText(/RouterOS remote code execution/)).toBeNull();
+    expect(screen.getByText(/Alert due dates are not included/)).toBeTruthy();
+  });
+
+  it('sorts the loaded rows by creation date and name without mutating the severity default', async () => {
+    render(<MemoryRouter><Watchlist /></MemoryRouter>);
+    await screen.findByLabelText('Find watched items');
+    fireEvent.change(screen.getByLabelText('Watched item order'), { target: { value: 'oldest' } });
+    expect(screen.getAllByRole('row')[1].textContent).toContain('RouterOS');
+    fireEvent.change(screen.getByLabelText('Watched item order'), { target: { value: 'newest' } });
+    expect(screen.getAllByRole('row')[1].textContent).toContain('Intrusion');
+    fireEvent.change(screen.getByLabelText('Watched item order'), { target: { value: 'name' } });
+    expect(screen.getAllByRole('row')[1].textContent).toContain('CVE-2026-0001');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear watchlist filters' }));
+    expect(screen.getAllByRole('row')[1].textContent).toContain('Intrusion');
+  });
+
+  it('keeps load-more reachable with no current matches and applies filters to later pages', async () => {
+    mockGet.mockImplementation(async (url, config) => {
+      const page = (config?.params as { page?: number }).page;
+      if (url === '/alerts/') return { data: { alerts: [makeAlert(page === 2 ? { id: 2, title: 'Later needle alert' } : {})], total: 51 } };
+      return { data: { cases: [], total: 0 } };
+    });
+    render(<MemoryRouter><Watchlist /></MemoryRouter>);
+    const input = await screen.findByLabelText('Find watched items');
+    fireEvent.change(input, { target: { value: 'needle' } });
+    expect(screen.getByText(/No loaded items match/)).toBeTruthy();
+    expect(screen.queryByText('Nothing on your watchlist')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Load more watched items' }));
+    await screen.findByText('CVE-2026-0001 - Later needle alert');
+    expect(screen.getByText(/1 of 2 loaded items match/)).toBeTruthy();
+    expect((input as HTMLInputElement).value).toBe('needle');
+    fireEvent.click(screen.getByRole('button', { name: /Unwatch CVE-2026-0001 - Later/ }));
+    await waitFor(() => expect(screen.queryByText('CVE-2026-0001 - Later needle alert')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Clear watchlist filters' }));
+    expect(screen.getByText(/RouterOS remote code execution/)).toBeTruthy();
+  });
+});

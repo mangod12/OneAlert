@@ -46,6 +46,11 @@ function severityRank(severity: string): number {
 }
 
 export function Watchlist() {
+  const [query, setQuery] = useState('');
+  const [kind, setKind] = useState('all');
+  const [severity, setSeverity] = useState('all');
+  const [scope, setScope] = useState('all');
+  const [order, setOrder] = useState('severity');
   const [rows, setRows] = useState<WatchRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +118,18 @@ export function Watchlist() {
   const isOverdue = (row: WatchRow) =>
     !!row.due_date && row.due_date < today && !DONE_STATUSES.includes(row.status);
 
+  const needle = query.trim().toLowerCase();
+  const visible = rows.filter(row => (!needle || [row.name, row.detail, String(row.id)].some(value => value?.toLowerCase().includes(needle)))
+    && (kind === 'all' || row.kind === kind) && (severity === 'all' || row.severity === severity)
+    && (scope === 'all' || (scope === 'overdue' ? isOverdue(row) : scope === 'open' ? !DONE_STATUSES.includes(row.status) : DONE_STATUSES.includes(row.status))));
+  if (order !== 'severity') visible.sort((a, b) => {
+    if (order === 'name') return a.name.localeCompare(b.name) || a.id - b.id;
+    const time = (row: WatchRow) => Number.isFinite(Date.parse(row.created_at)) ? Date.parse(row.created_at) : 0;
+    return (order === 'newest' ? time(b) - time(a) : time(a) - time(b)) || a.id - b.id;
+  });
+  const activeFilters = !!query || kind !== 'all' || severity !== 'all' || scope !== 'all' || order !== 'severity';
+  const clearFilters = () => { setQuery(''); setKind('all'); setSeverity('all'); setScope('all'); setOrder('severity'); };
+
   const handleUnwatch = async (row: WatchRow) => {
     const key = `${row.kind}-${row.id}`;
     if (pendingKeys.has(key)) return;
@@ -153,8 +170,22 @@ export function Watchlist() {
         />
       )}
 
-      {!loading && !error && <p role="status" className="text-sm text-surface-400">{rows.length} watched items loaded. {hasMore ? 'More watched records are available. Ranking applies only to loaded items.' : 'All records returned by this load are shown.'}</p>}
-      {!loading && !error && rows.length > 0 && (
+      {!loading && !error && rows.length > 0 && <section aria-label="Watchlist triage" className="space-y-3 rounded-lg border border-surface-700 p-4">
+        <label htmlFor="watchlist-search" className="block text-sm font-medium text-surface-200">Find watched items</label>
+        <input id="watchlist-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Title, CVE, asset or record ID" className="min-h-10 w-full min-w-0 rounded-md border border-surface-600 bg-surface-950 px-3 text-sm text-surface-100" />
+        <div className="flex flex-wrap gap-2">
+          <select aria-label="Watched item type" value={kind} onChange={event => setKind(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200"><option value="all">All types</option><option value="alert">Alerts</option><option value="case">Investigations</option></select>
+          <select aria-label="Watched severity" value={severity} onChange={event => setSeverity(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200"><option value="all">All severities</option>{Object.keys(SEVERITY_RANK).map(value => <option key={value} value={value}>{value}</option>)}</select>
+          <select aria-label="Watched work scope" value={scope} onChange={event => setScope(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200"><option value="all">All statuses</option><option value="open">Active records</option><option value="done">Resolved / closed / false positive</option><option value="overdue">Overdue investigations</option></select>
+          <select aria-label="Watched item order" value={order} onChange={event => setOrder(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200"><option value="severity">Severity first</option><option value="newest">Newest created first</option><option value="oldest">Oldest created first</option><option value="name">Name A to Z</option></select>
+          {activeFilters && <button type="button" onClick={clearFilters} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-200">Clear watchlist filters</button>}
+        </div>
+        <p role="status" className="text-xs text-surface-300">{visible.length} of {rows.length} loaded items match. Search, filters and order apply only to loaded records, not your entire watchlist.</p>
+        {scope === 'overdue' && <p className="text-xs text-surface-400">Overdue uses investigation due dates before today in UTC, excluding resolved, closed and false-positive records. Alert due dates are not included.</p>}
+      </section>}
+      {!loading && !error && rows.length > 0 && visible.length === 0 && <p className="text-sm text-surface-400">No loaded items match. Clear filters or load more watched items to widen the review.</p>}
+      {!loading && !error && <p role="status" className="text-sm text-surface-400">{rows.length} watched items loaded. {hasMore ? 'More watched records are available. Ranking applies only to loaded items.' : 'No more pages were reported by this load.'}</p>}
+      {!loading && !error && visible.length > 0 && (
         <div className="relative max-w-full overflow-x-auto rounded-lg border border-surface-700">
           <p className="px-4 py-2 text-xs text-surface-500 sm:hidden">Scroll the table horizontally for dates and Unwatch controls.</p>
           <table className="w-full min-w-[640px] text-sm">
@@ -169,7 +200,7 @@ export function Watchlist() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {visible.map((row) => (
                 <tr
                   key={`${row.kind}-${row.id}`}
                   className="border-b border-surface-800 transition-colors last:border-0 hover:bg-surface-800/50"
