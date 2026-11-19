@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import {
-  Activity, Bell, BriefcaseMedical, ChartColumn, ClipboardList, ShieldCheck, FileCheck,
+  Activity, Bell, BriefcaseMedical, ChartColumn, ClipboardList, Eye, ShieldCheck, FileCheck,
   LayoutDashboard, LogOut, Network, Package, Search, Share2, Server, Settings, Shield, Siren,
   Swords, Target, X,
 } from 'lucide-react';
@@ -11,6 +11,7 @@ import clsx from 'clsx';
 const navigation = [
   { label: 'Command', items: [
     { to: '/', icon: LayoutDashboard, label: 'Overview' },
+    { to: '/watchlist', icon: Eye, label: 'Watchlist' },
     { to: '/cases', icon: BriefcaseMedical, label: 'Investigations' },
     { to: '/incidents', icon: Siren, label: 'Incidents' },
     { to: '/reports', icon: ChartColumn, label: 'Reports' },
