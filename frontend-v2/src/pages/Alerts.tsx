@@ -75,7 +75,8 @@ export function Alerts() {
       if (statusFilter) params.status = statusFilter;
       if (cveSearch) params.search = cveSearch;
       if (assetFilter) params.asset_id = Number(assetFilter);
-      if (assignedFilter) params.assigned = assignedFilter;
+      if (assignedFilter === 'watching') params.watching = 'me';
+      else if (assignedFilter) params.assigned = assignedFilter;
       if (showSnoozedOnly) params.snoozed = 'only';
       if (ageFilter === 'lt1') params.max_age_days = 1;
       else if (ageFilter === '1to7') { params.min_age_days = 1; params.max_age_days = 7; }
@@ -103,7 +104,8 @@ export function Alerts() {
       if (statusFilter) params.status = statusFilter;
       if (cveSearch) params.search = cveSearch;
       if (assetFilter) params.asset_id = Number(assetFilter);
-      if (assignedFilter) params.assigned = assignedFilter;
+      if (assignedFilter === 'watching') params.watching = 'me';
+      else if (assignedFilter) params.assigned = assignedFilter;
       if (showSnoozedOnly) params.snoozed = 'only';
       if (ageFilter === 'lt1') params.max_age_days = 1;
       else if (ageFilter === '1to7') { params.min_age_days = 1; params.max_age_days = 7; }
@@ -250,6 +252,22 @@ export function Alerts() {
     else toast(`${ids.length} alerts resolved.`, 'success');
   };
 
+  const handleBulkWatch = async (watch: boolean) => {
+    const ids = Array.from(selectedIds).filter(id => !pendingIds.has(id));
+    if (ids.length === 0) return;
+    setPendingIds(current => new Set([...current, ...ids]));
+    const results = await Promise.allSettled(ids.map(id =>
+      watch ? apiClient.post(`/alerts/${id}/watch`) : apiClient.delete(`/alerts/${id}/watch`)
+    ));
+    const failedIds = ids.filter((_, index) => results[index].status === 'rejected');
+    setSelectedIds(new Set(failedIds));
+    setPendingIds(current => { const next = new Set(current); ids.forEach(id => next.delete(id)); return next; });
+    await fetchAlerts();
+    const verb = watch ? 'watched' : 'unwatched';
+    if (failedIds.length > 0) toast(`${failedIds.length} alerts could not be ${verb} and remain selected.`, 'error');
+    else toast(`${ids.length} alerts ${verb}.`, 'success');
+  };
+
   const handleBulkSnooze = async (value: string) => {
     if (value === '') return;
     const hours = Number(value);
@@ -325,6 +343,20 @@ export function Alerts() {
               <option value="168">7 days</option>
               <option value="720">30 days</option>
             </select>
+            <button
+              onClick={() => void handleBulkWatch(true)}
+              disabled={Array.from(selectedIds).some(id => pendingIds.has(id))}
+              className="flex min-h-9 items-center gap-2 rounded-md border border-surface-600 px-3.5 text-sm font-semibold text-surface-200 hover:border-primary-500/50 disabled:opacity-50"
+            >
+              Watch ({selectedIds.size})
+            </button>
+            <button
+              onClick={() => void handleBulkWatch(false)}
+              disabled={Array.from(selectedIds).some(id => pendingIds.has(id))}
+              className="flex min-h-9 items-center gap-2 rounded-md border border-surface-600 px-3.5 text-sm font-semibold text-surface-200 hover:border-primary-500/50 disabled:opacity-50"
+            >
+              Unwatch ({selectedIds.size})
+            </button>
             <button
               onClick={handleBulkAcknowledge}
               disabled={Array.from(selectedIds).some(id => pendingIds.has(id))}
@@ -430,6 +462,7 @@ export function Alerts() {
           <option value="">Anyone</option>
           <option value="me">Assigned to me</option>
           <option value="unassigned">Unassigned</option>
+          <option value="watching">Watched by me</option>
         </select>
         <select
           aria-label="Filter by age"

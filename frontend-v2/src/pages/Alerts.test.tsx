@@ -10,6 +10,7 @@ vi.mock('../api/client', () => ({
     get: vi.fn(),
     post: vi.fn(),
     patch: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
@@ -18,6 +19,7 @@ import apiClient from '../api/client';
 const mockGet = vi.mocked(apiClient.get);
 const mockPost = vi.mocked(apiClient.post);
 const mockPatch = vi.mocked(apiClient.patch);
+const mockDelete = vi.mocked(apiClient.delete);
 
 function makeAlert(overrides: Partial<Alert> = {}): Alert {
   return {
@@ -57,6 +59,7 @@ beforeEach(() => {
   });
   mockPost.mockResolvedValue({ data: {} });
   mockPatch.mockResolvedValue({ data: {} });
+  mockDelete.mockResolvedValue({ data: {} });
 });
 
 describe('Alerts page', () => {
@@ -270,9 +273,43 @@ describe('Alerts page', () => {
       expect(mockPost).toHaveBeenCalledWith('/alerts/2/resolve');
     });
   });
+  it('bulk-watches selected alerts', async () => {
+    const alerts = [makeAlert({ id: 1, cve_id: 'CVE-2026-0001' }), makeAlert({ id: 2, cve_id: 'CVE-2026-0002' })];
+    mockGet.mockResolvedValue(listResponse(alerts));
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
+    await screen.findByText('CVE-2026-0002');
+    fireEvent.click(screen.getByRole('checkbox', { name: /select all alerts/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^watch \(2\)$/i }));
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/alerts/1/watch');
+      expect(mockPost).toHaveBeenCalledWith('/alerts/2/watch');
+    });
+  });
+  it('bulk-unwatches selected alerts', async () => {
+    const alerts = [makeAlert({ id: 1, cve_id: 'CVE-2026-0001' }), makeAlert({ id: 2, cve_id: 'CVE-2026-0002' })];
+    mockGet.mockResolvedValue(listResponse(alerts));
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
+    await screen.findByText('CVE-2026-0002');
+    fireEvent.click(screen.getByRole('checkbox', { name: /select all alerts/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^unwatch \(2\)$/i }));
+    await waitFor(() => {
+      expect(mockDelete).toHaveBeenCalledWith('/alerts/1/watch');
+      expect(mockDelete).toHaveBeenCalledWith('/alerts/2/watch');
+    });
+  });
 });
 
 describe('Assignee filter', () => {
+  it('sends watching=me when "Watched by me" is selected', async () => {
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
+    await screen.findByRole('combobox', { name: 'Filter by status' });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter by assignee' }), { target: { value: 'watching' } });
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith('/alerts/', {
+        params: { page: 1, size: 15, watching: 'me', sort: 'created_at_desc' },
+      });
+    });
+  });
   it('sends assigned=me when "Assigned to me" is selected', async () => {
     render(<MemoryRouter><Alerts /></MemoryRouter>);
     await screen.findByRole('combobox', { name: 'Filter by status' });

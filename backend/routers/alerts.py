@@ -104,6 +104,9 @@ async def list_alerts(
     assigned: str | None = Query(
         None, pattern="^(me|unassigned)$", description="Filter by assignment: 'me' or 'unassigned'"
     ),
+    watching: str | None = Query(
+        None, pattern="^(me)$", description="'me' lists only alerts the user watches"
+    ),
     snoozed: str = Query(
         "active", pattern="^(active|all|only)$",
         description="Snooze visibility: 'active' hides snoozed alerts, 'all' includes them, 'only' returns snoozed"
@@ -121,6 +124,17 @@ async def list_alerts(
     """List user's alerts with pagination and filtering."""
     skip = (page - 1) * size
 
+    if watching == "me":
+        # "Watched by me" spans the org: any alert the user follows as a watcher.
+        base_filter = Alert.id.in_(
+            select(AlertWatcher.alert_id).where(AlertWatcher.user_id == current_user.id)
+        )
+    elif assigned == "me":
+        # "Assigned to me" spans the org, not just alerts the caller owns.
+        base_filter = Alert.assigned_to_id == current_user.id
+    else:
+        base_filter = Alert.user_id == current_user.id
+
     # Build base query for fetching alert data and related asset info
     query = select(
         Alert,
@@ -131,19 +145,10 @@ async def list_alerts(
         Asset, Alert.asset_id == Asset.id
     ).options(
         joinedload(Alert.assignee)
-    ).where(
-        Alert.assigned_to_id == current_user.id
-        if assigned == "me"
-        # "Assigned to me" spans the org, not just alerts the caller owns.
-        else Alert.user_id == current_user.id
-    )
+    ).where(base_filter)
 
     # Build base for count query. Filters will be added to this.
-    count_base_query = select(Alert.id).where(
-        Alert.assigned_to_id == current_user.id
-        if assigned == "me"
-        else Alert.user_id == current_user.id
-    )
+    count_base_query = select(Alert.id).where(base_filter)
 
     # Apply filters to both the main query and the count base query
     if status:
@@ -238,6 +243,9 @@ async def export_alerts(
     assigned: str | None = Query(
         None, pattern="^(me|unassigned)$", description="Filter by assignment: 'me' or 'unassigned'"
     ),
+    watching: str | None = Query(
+        None, pattern="^(me)$", description="'me' exports only alerts the user watches"
+    ),
     snoozed: str = Query(
         "active", pattern="^(active|all|only)$",
         description="Snooze visibility: 'active' hides snoozed alerts, 'all' includes them, 'only' returns snoozed"
@@ -248,11 +256,18 @@ async def export_alerts(
     db: AsyncSession = Depends(get_async_db)
 ):
     """Export the filtered alert list as CSV (same filters as the list, max 5000 rows)."""
+    if watching == "me":
+        # "Watched by me" spans the org: any alert the user follows as a watcher.
+        export_base = Alert.id.in_(
+            select(AlertWatcher.alert_id).where(AlertWatcher.user_id == current_user.id)
+        )
+    else:
+        export_base = Alert.user_id == current_user.id
     query = select(Alert, Asset.name.label("asset_name")).join(
         Asset, Alert.asset_id == Asset.id
     ).options(
         joinedload(Alert.assignee)
-    ).where(Alert.user_id == current_user.id)
+    ).where(export_base)
 
     if status:
         query = query.filter(Alert.status == status)
