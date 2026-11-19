@@ -535,3 +535,40 @@ describe('Alerts overdue triage filter', () => {
     expect(screen.queryByText(/Overdue · due/)).toBeNull();
   });
 });
+
+describe('Alerts bulk triage due date', () => {
+  it('applies a due date to the selected alerts', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (typeof url === 'string' && url.endsWith('/notes')) return { data: [] };
+      if (url === '/alerts/epss-batch') return { data: { scores: {} } };
+      if (url === '/alerts/kev-batch') return { data: { entries: {} } };
+      if (url === '/assets/') return { data: { assets: [], total: 0 } };
+      return listResponse([makeAlert({ id: 1 }), makeAlert({ id: 2, cve_id: 'CVE-2026-0002' })]);
+    });
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
+    await screen.findByText('CVE-2026-0001');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select alert CVE-2026-0001' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select alert CVE-2026-0002' }));
+    fireEvent.change(screen.getByLabelText('Set due date for selected alerts'), { target: { value: '7' } });
+    const expected = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    await waitFor(() => {
+      expect(mockPatch).toHaveBeenCalledWith('/alerts/1', { due_date: expected });
+      expect(mockPatch).toHaveBeenCalledWith('/alerts/2', { due_date: expected });
+    });
+  });
+
+  it('clears due dates on the selected alerts', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (typeof url === 'string' && url.endsWith('/notes')) return { data: [] };
+      if (url === '/alerts/epss-batch') return { data: { scores: {} } };
+      if (url === '/alerts/kev-batch') return { data: { entries: {} } };
+      if (url === '/assets/') return { data: { assets: [], total: 0 } };
+      return listResponse([makeAlert({ id: 1, due_date: '2026-11-25' })]);
+    });
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
+    await screen.findByText('CVE-2026-0001');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select alert CVE-2026-0001' }));
+    fireEvent.change(screen.getByLabelText('Set due date for selected alerts'), { target: { value: 'clear' } });
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/alerts/1', { due_date: null }));
+  });
+});

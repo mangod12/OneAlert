@@ -17,7 +17,7 @@ export function PageHeader({ eyebrow, title, description, actions, meta }: PageH
         <p className="mt-1.5 max-w-3xl text-sm leading-6 text-surface-400">{description}</p>
         {meta && <div className="mt-3">{meta}</div>}
       </div>
-      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2 xl:max-w-2xl xl:justify-end">{actions}</div>}
     </header>
   );
 }
