@@ -115,12 +115,14 @@ class CaseTask(Base):
     title = Column(String, nullable=False)
     done = Column(Boolean, default=False, nullable=False)
     position = Column(Integer, default=0, nullable=False)
+    assignee_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
     case = relationship("Case", back_populates="tasks")
-    created_by = relationship("User")
+    assignee = relationship("User", foreign_keys=[assignee_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
 
 
 class CaseTimeline(Base):
@@ -243,13 +245,15 @@ class CaseNoteCreate(BaseModel):
 class CaseTaskCreate(BaseModel):
     """Schema for adding a task to a case checklist."""
     title: str = Field(min_length=1, max_length=300)
+    assignee_id: int | None = None
     model_config = {"extra": "forbid"}
 
 
 class CaseTaskUpdate(BaseModel):
-    """Schema for renaming or toggling a case task."""
+    """Schema for renaming, reassigning, or toggling a case task."""
     title: str | None = Field(default=None, min_length=1, max_length=300)
     done: bool | None = None
+    assignee_id: int | None = None  # send explicit null to unassign
     model_config = {"extra": "forbid"}
 
 
@@ -259,6 +263,7 @@ class CaseTaskResponse(BaseModel):
     title: str
     done: bool
     position: int
+    assignee_id: int | None = None
     created_at: datetime
     completed_at: datetime | None = None
     created_by_id: int | None = None

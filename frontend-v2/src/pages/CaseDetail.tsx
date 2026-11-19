@@ -80,7 +80,7 @@ interface SimilarCase { case_id: number; title: string; similarity: number; shar
 interface RelatedEvent { id: number; severity: string; event_type: string; source_ip?: string | null; dest_ip?: string | null; signature?: string | null; }
 interface CasePlan { id: number; status: string; autonomy_level: string; created_by: string; created_at: string; actions: unknown[]; }
 interface CaseWatcher { user_id: number; email: string; full_name: string | null; }
-interface CaseTask { id: number; title: string; done: boolean; position: number; created_at: string; completed_at: string | null; }
+interface CaseTask { id: number; title: string; done: boolean; position: number; assignee_id: number | null; created_at: string; completed_at: string | null; }
 
 export function CaseDetail() {
   const { caseId } = useParams<{ caseId: string }>();
@@ -280,6 +280,16 @@ export function CaseDetail() {
       await apiClient.patch(`/cases/${caseId}/tasks/${task.id}`, { done: !task.done });
       await fetchAll();
     } catch (err) { toast(getApiErrorMessage(err, 'The task could not be updated.'), 'error'); }
+    finally { setTaskBusyId(null); }
+  };
+
+  const assignTask = async (task: CaseTask, assigneeId: number | null) => {
+    if (taskBusyId !== null) return;
+    setTaskBusyId(task.id);
+    try {
+      await apiClient.patch(`/cases/${caseId}/tasks/${task.id}`, { assignee_id: assigneeId });
+      await fetchAll();
+    } catch (err) { toast(getApiErrorMessage(err, 'The task could not be assigned.'), 'error'); }
     finally { setTaskBusyId(null); }
   };
 
@@ -660,6 +670,20 @@ export function CaseDetail() {
                 <span className={`flex-1 text-sm ${task.done ? 'text-surface-500 line-through' : 'text-surface-100'}`}>
                   {task.title}
                 </span>
+                {members.length > 0 && (
+                  <select
+                    aria-label={`Assign task ${task.title}`}
+                    value={task.assignee_id ?? ''}
+                    disabled={taskBusyId === task.id}
+                    onChange={e => void assignTask(task, e.target.value ? Number(e.target.value) : null)}
+                    className="max-w-36 shrink-0 truncate rounded-md border border-surface-700 bg-surface-950 px-1.5 py-1 text-xs text-surface-300 focus:border-primary-500 focus:outline-none disabled:opacity-40"
+                  >
+                    <option value="">Unassigned</option>
+                    {members.map(member => (
+                      <option key={member.id} value={member.id}>{member.full_name || member.email}</option>
+                    ))}
+                  </select>
+                )}
                 <button
                   type="button"
                   aria-label={`Delete task ${task.title}`}

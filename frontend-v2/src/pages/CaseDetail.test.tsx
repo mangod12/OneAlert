@@ -791,6 +791,40 @@ describe('Investigation tasks', () => {
     await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/7/tasks/1'));
   });
 
+  it('assigns a task to an org member', async () => {
+    mockLoadWithTasks(tasks);
+    const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/orgs/me/members') {
+        return Promise.resolve({ data: [
+          { id: 2, email: 'soc-lead@example.com', full_name: 'Sam Oclead', is_active: true },
+        ] });
+      }
+      return base(url);
+    });
+    mockPatch.mockResolvedValue({ data: { ...tasks[1], assignee_id: 2 } });
+    renderDetail();
+    fireEvent.change(await screen.findByLabelText('Assign task Collect triage image'), { target: { value: '2' } });
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/2', { assignee_id: 2 }));
+  });
+
+  it('unassigns a task back to nobody', async () => {
+    mockLoadWithTasks([{ ...tasks[1], assignee_id: 2 }]);
+    const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/orgs/me/members') {
+        return Promise.resolve({ data: [
+          { id: 2, email: 'soc-lead@example.com', full_name: 'Sam Oclead', is_active: true },
+        ] });
+      }
+      return base(url);
+    });
+    mockPatch.mockResolvedValue({ data: { ...tasks[1], assignee_id: null } });
+    renderDetail();
+    fireEvent.change(await screen.findByLabelText('Assign task Collect triage image'), { target: { value: '' } });
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/2', { assignee_id: null }));
+  });
+
   it('shows the empty state when the checklist is empty', async () => {
     mockLoadWithTasks([]);
     renderDetail();
