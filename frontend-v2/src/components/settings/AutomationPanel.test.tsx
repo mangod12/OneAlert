@@ -15,6 +15,7 @@ const DEFAULT_PREFS = {
   auto_escalate_min_alerts: 4,
   auto_escalate_min_severity: 'critical',
   sla_due_dates_enabled: true,
+  auto_assign_new_alerts: false,
   sla_days_critical: 1,
   sla_days_high: 3,
   sla_days_medium: 7,
@@ -63,12 +64,25 @@ describe('AutomationPanel', () => {
       auto_escalate_min_alerts: 5,
       auto_escalate_min_severity: 'critical',
       sla_due_dates_enabled: true,
+      auto_assign_new_alerts: false,
       sla_days_critical: 1,
       sla_days_high: 5,
       sla_days_medium: 7,
       sla_days_low: 14,
       sla_days_info: 30,
     }));
+  });
+
+  it('saves the auto-assign toggle', async () => {
+    mockPrefs();
+    patch.mockResolvedValue({ data: {} });
+    render(<AutomationPanel />);
+    const toggle = await screen.findByLabelText('Auto-assign new alerts across your organization');
+    expect((toggle as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole('button', { name: 'Save automation' }));
+    await waitFor(() => expect(patch).toHaveBeenCalledWith('/auth/me/automation-preferences',
+      expect.objectContaining({ auto_assign_new_alerts: true })));
   });
 
   it('rejects an out-of-range alert threshold', async () => {

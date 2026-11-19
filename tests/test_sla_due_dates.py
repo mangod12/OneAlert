@@ -93,6 +93,18 @@ class TestSlaPreferences:
         again = client.get("/api/v1/auth/me/automation-preferences", headers=headers)
         assert again.json()["sla_days_high"] == 5
 
+    def test_auto_assign_roundtrip(self, client):
+        headers = register_and_login(client, "auto_assign@example.com")
+        before = client.get("/api/v1/auth/me/automation-preferences", headers=headers)
+        assert before.json()["auto_assign_new_alerts"] is False
+        resp = client.patch("/api/v1/auth/me/automation-preferences", headers=headers, json={
+            "auto_assign_new_alerts": True,
+        })
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["auto_assign_new_alerts"] is True
+        again = client.get("/api/v1/auth/me/automation-preferences", headers=headers)
+        assert again.json()["auto_assign_new_alerts"] is True
+
     def test_validation(self, client):
         headers = register_and_login(client, "sla_valid@example.com")
         assert client.patch(

@@ -21,6 +21,7 @@ from backend.models.notification import Notification
 from backend.models.security_event import SecurityEvent as _SecurityEvent  # noqa: F401  (Case mapper dependency)
 from backend.models.suppression_rule import AlertSuppressionRule, rule_matches
 from backend.models.user import User
+from backend.services.assignment import auto_assignee_id
 from backend.services.cve_enrichment import CVEEnrichmentService
 from backend.services.cve_scraper import cve_scraper
 from backend.services.email_alert import email_service
@@ -422,10 +423,19 @@ class AlertChecker:
                 source_url=cve.get('source_url'),
                 status=AlertStatus.PENDING,
                 due_date=sla_due_date(user, cve.get('severity', 'unknown')),
+                assigned_to_id=await auto_assignee_id(db, user),
             )
 
             db.add(alert)
             await db.flush()  # Get the ID
+            if alert.assigned_to_id is not None and alert.assigned_to_id != user.id:
+                db.add(Notification(
+                    user_id=alert.assigned_to_id,
+                    kind="alert_assigned",
+                    title=f"Alert #{alert.id} assigned to you",
+                    body=alert.title,
+                    link="/app/alerts",
+                ))
             await _apply_suppression_rules(db, user, alert)
             await _notify_incident_formed(db, user, asset)
             await _maybe_auto_escalate(db, user, asset)
@@ -483,10 +493,19 @@ class AlertChecker:
                 source_url=advisory.get('source_url'),
                 status=AlertStatus.PENDING,
                 due_date=sla_due_date(user, advisory.get('severity', 'unknown')),
+                assigned_to_id=await auto_assignee_id(db, user),
             )
 
             db.add(alert)
             await db.flush()  # Get the ID
+            if alert.assigned_to_id is not None and alert.assigned_to_id != user.id:
+                db.add(Notification(
+                    user_id=alert.assigned_to_id,
+                    kind="alert_assigned",
+                    title=f"Alert #{alert.id} assigned to you",
+                    body=alert.title,
+                    link="/app/alerts",
+                ))
             await _apply_suppression_rules(db, user, alert)
             await _notify_incident_formed(db, user, asset)
             await _maybe_auto_escalate(db, user, asset)
@@ -669,10 +688,19 @@ class AlertChecker:
                 source_url=advisory.get('source_url'),
                 status=AlertStatus.PENDING,
                 due_date=sla_due_date(user, severity),
+                assigned_to_id=await auto_assignee_id(db, user),
             )
 
             db.add(alert)
             await db.flush()  # Get the ID
+            if alert.assigned_to_id is not None and alert.assigned_to_id != user.id:
+                db.add(Notification(
+                    user_id=alert.assigned_to_id,
+                    kind="alert_assigned",
+                    title=f"Alert #{alert.id} assigned to you",
+                    body=alert.title,
+                    link="/app/alerts",
+                ))
             await _apply_suppression_rules(db, user, alert)
             await _notify_incident_formed(db, user, asset)
             await _maybe_auto_escalate(db, user, asset)

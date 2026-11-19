@@ -62,6 +62,7 @@ class User(Base):
     auto_escalate_min_alerts = Column(Integer, nullable=False, server_default="3")
     auto_escalate_min_severity = Column(String, nullable=False, server_default="high")
     sla_due_dates_enabled = Column(Boolean, nullable=False, server_default="0")
+    auto_assign_new_alerts = Column(Boolean, nullable=False, server_default="0")
     sla_days_critical = Column(Integer, nullable=False, server_default="1")
     sla_days_high = Column(Integer, nullable=False, server_default="3")
     sla_days_medium = Column(Integer, nullable=False, server_default="7")
@@ -260,6 +261,7 @@ class AutomationPreferences(BaseModel):
     auto_escalate_min_alerts: int
     auto_escalate_min_severity: str
     sla_due_dates_enabled: bool
+    auto_assign_new_alerts: bool
     sla_days_critical: int
     sla_days_high: int
     sla_days_medium: int
@@ -277,6 +279,7 @@ class AutomationPreferencesUpdate(BaseModel):
         default=None, pattern="^(low|medium|high|critical)$"
     )
     sla_due_dates_enabled: bool | None = None
+    auto_assign_new_alerts: bool | None = None
     sla_days_critical: int | None = Field(default=None, ge=1, le=90)
     sla_days_high: int | None = Field(default=None, ge=1, le=90)
     sla_days_medium: int | None = Field(default=None, ge=1, le=90)
