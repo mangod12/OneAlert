@@ -186,3 +186,74 @@ def test_tasks_hidden_from_users_without_case_access(client):
             **({"json": {"title": "Nope"}} if method == "post" else {}),
         )
         assert resp.status_code == 404, resp.text
+
+
+PLAN_ACTIONS = [
+    {"action_type": "block_ip", "target": "10.0.4.9", "reason": "C2 traffic", "priority": 2},
+    {"action_type": "isolate_host", "target": "eng-ws-04", "reason": "containment", "priority": 1},
+    {"action_type": "notify", "target": "soc-oncall", "reason": "awareness", "priority": 3},
+]
+
+
+def _seed_plan(case_id: int, user_id: int, actions=None) -> int:
+    from backend.models.response_plan import ResponsePlan
+    with _TestingSessionLocal() as db:
+        plan = ResponsePlan(
+            case_id=case_id, user_id=user_id,
+            actions=PLAN_ACTIONS if actions is None else actions,
+            status="approved", autonomy_level="L1",
+        )
+        db.add(plan)
+        db.commit()
+        db.refresh(plan)
+        return plan.id
+
+
+def test_seed_tasks_from_plan_in_priority_order(client):
+    headers, case_id = _setup(client)
+    plan_id = _seed_plan(case_id, _user_id(client, headers))
+
+    resp = client.post(f"/api/v1/cases/{case_id}/tasks/from-plan/{plan_id}", headers=headers)
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["skipped"] == 0
+    assert [t["title"] for t in body["created"]] == [
+        "isolate_host: eng-ws-04", "block_ip: 10.0.4.9", "notify: soc-oncall",
+    ]
+
+    listed = client.get(f"/api/v1/cases/{case_id}/tasks", headers=headers).json()
+    assert [t["title"] for t in listed] == [
+        "isolate_host: eng-ws-04", "block_ip: 10.0.4.9", "notify: soc-oncall",
+    ]
+
+    detail = client.get(f"/api/v1/cases/{case_id}", headers=headers).json()
+    actions = [e["content"] for e in detail["timeline"] if e["entry_type"] == "action"]
+    assert f"Checklist seeded from response plan #{plan_id}: 3 tasks" in actions
+
+
+def test_seed_tasks_from_plan_skips_existing(client):
+    headers, case_id = _setup(client)
+    plan_id = _seed_plan(case_id, _user_id(client, headers))
+    client.post(f"/api/v1/cases/{case_id}/tasks", json={"title": "block_ip: 10.0.4.9"}, headers=headers)
+
+    resp = client.post(f"/api/v1/cases/{case_id}/tasks/from-plan/{plan_id}", headers=headers)
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["skipped"] == 1
+    assert [t["title"] for t in body["created"]] == ["isolate_host: eng-ws-04", "notify: soc-oncall"]
+
+
+def test_seed_tasks_from_plan_rejects_other_cases_plan(client):
+    headers, case_id = _setup(client)
+    other_case = _make_case(_user_id(client, headers), title="Other case")
+    plan_id = _seed_plan(other_case, _user_id(client, headers))
+    resp = client.post(f"/api/v1/cases/{case_id}/tasks/from-plan/{plan_id}", headers=headers)
+    assert resp.status_code == 404
+
+
+def test_seed_tasks_hidden_from_users_without_case_access(client):
+    headers, case_id = _setup(client)
+    plan_id = _seed_plan(case_id, _user_id(client, headers))
+    outsider = _register_and_login(client, "outsider@example.com")
+    resp = client.post(f"/api/v1/cases/{case_id}/tasks/from-plan/{plan_id}", headers=outsider)
+    assert resp.status_code == 404
