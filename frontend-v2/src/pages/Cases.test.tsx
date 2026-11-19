@@ -257,6 +257,14 @@ describe('Case filters', () => {
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/', { params: { page: 1, size: 20, assigned: 'me', sort: 'created_at_desc' } }));
   });
 
+  it('refetches with watching=me when the watched-by-me filter is chosen', async () => {
+    mockGet.mockResolvedValue({ data: { cases: [makeCase()], total: 1 } });
+    renderCases();
+    await screen.findByText('Credential dumping on edge router');
+    fireEvent.change(screen.getByLabelText('Filter by assignee'), { target: { value: 'watching' } });
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/', { params: { page: 1, size: 20, watching: 'me', sort: 'created_at_desc' } }));
+  });
+
   it('sends the chosen sort order to the API', async () => {
     mockGet.mockResolvedValue({ data: { cases: [makeCase()], total: 1 } });
     renderCases();

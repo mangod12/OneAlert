@@ -257,3 +257,45 @@ class TestWatcherNotifications:
         feed = client.get("/api/v1/notifications/", headers=owner).json()
         updates = [n for n in feed["data"] if n["kind"] == "case_updated"]
         assert updates == []
+
+
+class TestWatchedByMeFilter:
+    def test_watching_me_lists_watched_cases_across_the_org(self, client):
+        owner, member, _, _, member_id, _, case_id = _setup_org_with_case(client)
+        client.post(f"/api/v1/cases/{case_id}/watchers", json={"user_id": member_id}, headers=owner)
+
+        resp = client.get("/api/v1/cases/?watching=me", headers=member)
+        assert resp.status_code == 200, resp.text
+        ids = [c["id"] for c in resp.json()["cases"]]
+        assert ids == [case_id]
+
+    def test_watching_me_excludes_unwatched_cases(self, client):
+        owner, member, member2, _, _, _, case_id = _setup_org_with_case(client)
+        # member watches nothing; member2 watches the case.
+        resp = client.get("/api/v1/cases/?watching=me", headers=member)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["cases"] == []
+        assert resp.json()["total"] == 0
+
+        member2_id = _user_id(client, member2)
+        client.post(f"/api/v1/cases/{case_id}/watchers", json={"user_id": member2_id}, headers=owner)
+        resp = client.get("/api/v1/cases/?watching=me", headers=member2)
+        assert [c["id"] for c in resp.json()["cases"]] == [case_id]
+
+    def test_watching_me_rejects_invalid_values(self, client):
+        _, member, _, _, _, _, _ = _setup_org_with_case(client)
+        resp = client.get("/api/v1/cases/?watching=everyone", headers=member)
+        assert resp.status_code == 422, resp.text
+
+    def test_export_csv_honors_watching_me(self, client):
+        owner, member, _, _, member_id, _, case_id = _setup_org_with_case(client)
+        client.post(f"/api/v1/cases/{case_id}/watchers", json={"user_id": member_id}, headers=owner)
+
+        resp = client.get("/api/v1/cases/export?watching=me", headers=member)
+        assert resp.status_code == 200, resp.text
+        assert "Beaconing host" in resp.text
+
+        other = _register_and_login(client, "nobody@example.com")
+        resp = client.get("/api/v1/cases/export?watching=me", headers=other)
+        assert resp.status_code == 200, resp.text
+        assert "Beaconing host" not in resp.text

@@ -79,6 +79,9 @@ async def list_cases(
     assigned: str | None = Query(
         None, pattern="^(me|unassigned)$", description="Filter by assignment: 'me' or 'unassigned'"
     ),
+    watching: str | None = Query(
+        None, pattern="^(me)$", description="'me' lists only cases the user watches"
+    ),
     overdue: bool = Query(False, description="Only open cases past their due date"),
     sort: str = Query(
         "created_at_desc",
@@ -91,7 +94,12 @@ async def list_cases(
     """List investigation cases with pagination and filters."""
     skip = (page - 1) * size
 
-    if assigned == "me":
+    if watching == "me":
+        # "Watched by me" spans the org: any case the user follows as a watcher.
+        watched = select(CaseWatcher.case_id).where(CaseWatcher.user_id == current_user.id)
+        query = select(Case).options(joinedload(Case.assignee)).where(Case.id.in_(watched))
+        count_q = select(func.count(Case.id)).where(Case.id.in_(watched))
+    elif assigned == "me":
         # "My assignments" spans the org: cases others assigned to me, not just my own.
         query = select(Case).options(joinedload(Case.assignee)).where(Case.assigned_to_id == current_user.id)
         count_q = select(func.count(Case.id)).where(Case.assigned_to_id == current_user.id)
@@ -161,6 +169,7 @@ async def export_cases(
     severity: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
     assigned: str | None = Query(None, pattern="^(me|unassigned)$"),
+    watching: str | None = Query(None, pattern="^(me)$"),
     overdue: bool = Query(False),
     sort: str = Query(
         "created_at_desc",
@@ -176,11 +185,15 @@ async def export_cases(
     event_counts = (
         select(func.count(CaseEvent.id)).where(CaseEvent.case_id == Case.id).correlate(Case).scalar_subquery()
     )
-    query = (
+    base_query = (
         select(Case, alert_counts.label("alert_count"), event_counts.label("event_count"))
         .options(joinedload(Case.assignee))
-        .where(Case.user_id == current_user.id)
     )
+    if watching == "me":
+        watched = select(CaseWatcher.case_id).where(CaseWatcher.user_id == current_user.id)
+        query = base_query.where(Case.id.in_(watched))
+    else:
+        query = base_query.where(Case.user_id == current_user.id)
 
     if severity:
         query = query.filter(Case.severity == severity)
