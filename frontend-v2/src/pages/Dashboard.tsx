@@ -30,6 +30,8 @@ export function Dashboard() {
   const [responseMetrics, setResponseMetrics] = useState<ResponseMetrics | null>(null);
   const [myAlerts, setMyAlerts] = useState<Alert[] | null>(null);
   const [myCases, setMyCases] = useState<Array<{ id: number; title: string; severity: string; status: string }> | null>(null);
+  const [watchingAlerts, setWatchingAlerts] = useState<Alert[] | null>(null);
+  const [watchingCases, setWatchingCases] = useState<Array<{ id: number; title: string; severity: string; status: string; due_date: string | null }> | null>(null);
   const [incidents, setIncidents] = useState<Array<{ asset_id: number; asset_name: string; max_severity: string; alert_count: number; blast_radius: number }> | null>(null);
   const [errors, setErrors] = useState<DashboardErrors>({});
   const [loading, setLoading] = useState(true);
@@ -55,6 +57,8 @@ export function Dashboard() {
         apiClient.get<{ days?: TimelineDay[] }>('/alerts/stats/timeline', { params: { days: 14 } }),
         apiClient.get<ResponseMetrics>('/alerts/stats/response-metrics', { params: { days: 30 } }),
         apiClient.get<{ incidents?: Array<{ asset_id: number; asset_name: string; max_severity: string; alert_count: number; blast_radius: number }> }>('/incidents'),
+        apiClient.get<AlertListResponse>('/alerts/', { params: { size: 5, watching: 'me' } }),
+        apiClient.get<{ cases?: Array<{ id: number; title: string; severity: string; status: string; due_date: string | null }> }>('/cases/', { params: { size: 5, watching: 'me' } }),
       ] as const;
       const results = await Promise.allSettled(requests);
       if (!active) return;
@@ -78,6 +82,10 @@ export function Dashboard() {
       else setResponseMetrics(null);
       if (results[8].status === 'fulfilled') setIncidents(results[8].value.data.incidents ?? []);
       else setIncidents([]);
+      if (results[9].status === 'fulfilled') setWatchingAlerts(results[9].value.data.alerts ?? []);
+      else setWatchingAlerts([]);
+      if (results[10].status === 'fulfilled') setWatchingCases(results[10].value.data.cases ?? []);
+      else setWatchingCases([]);
 
       setErrors(nextErrors);
       setLastUpdated(new Date());
@@ -190,6 +198,37 @@ export function Dashboard() {
                   </Link>
                 )) : (
                   <div className="px-5 py-6 text-center text-sm text-surface-400">{myCases === null ? 'Loading...' : 'No investigations assigned to you.'}</div>
+                )}
+              </div>
+            </div>
+          </Panel>
+        </section>
+      )}
+
+      {(watchingAlerts === null || watchingCases === null || watchingAlerts.length > 0 || watchingCases.length > 0) && (
+        <section aria-label="Watching">
+          <Panel title="Watching" description="Alerts and investigations you follow across the org." action={<Link to="/watchlist" className="text-xs font-semibold text-primary-300 hover:text-primary-200">View watchlist</Link>}>
+            <div className="grid gap-0 divide-y divide-surface-800 md:grid-cols-2 md:divide-x md:divide-y-0">
+              <div className="divide-y divide-surface-800">
+                {(watchingAlerts ?? []).length > 0 ? (watchingAlerts ?? []).map(alert => (
+                  <Link key={alert.id} to={`/alerts?alert=${alert.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-800/45">
+                    <StatusBadge tone={alert.severity === 'critical' ? 'danger' : alert.severity === 'high' ? 'warning' : 'neutral'}>{alert.severity}</StatusBadge>
+                    <div className="min-w-0"><p className="truncate text-sm font-semibold text-surface-100">{alert.title}</p><p className="mt-0.5 truncate font-mono text-[11px] text-surface-500">{alert.cve_id || alert.source}</p></div>
+                    <span className="ml-auto text-xs text-surface-500">{alert.status}</span>
+                  </Link>
+                )) : (
+                  <div className="px-5 py-6 text-center text-sm text-surface-400">{watchingAlerts === null ? 'Loading...' : 'No watched alerts.'}</div>
+                )}
+              </div>
+              <div className="divide-y divide-surface-800">
+                {(watchingCases ?? []).length > 0 ? (watchingCases ?? []).map(c => (
+                  <Link key={c.id} to={`/cases/${c.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-800/45">
+                    <StatusBadge tone={c.severity === 'critical' ? 'danger' : c.severity === 'high' ? 'warning' : 'neutral'}>{c.severity}</StatusBadge>
+                    <div className="min-w-0"><p className="truncate text-sm font-semibold text-surface-100">{c.title}</p><p className="mt-0.5 truncate text-[11px] text-surface-500">Investigation #{c.id}{c.due_date ? ` · due ${c.due_date}` : ''}</p></div>
+                    <span className="ml-auto text-xs text-surface-500">{c.status}</span>
+                  </Link>
+                )) : (
+                  <div className="px-5 py-6 text-center text-sm text-surface-400">{watchingCases === null ? 'Loading...' : 'No watched investigations.'}</div>
                 )}
               </div>
             </div>

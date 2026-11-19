@@ -54,7 +54,7 @@ const STATS: AlertStats = {
   acknowledged_alerts: 2,
 };
 
-function mockAllFulfilled(alerts: Alert[] = [makeAlert()], myAlerts: Alert[] = [], myCases: Array<{ id: number; title: string; severity: string; status: string }> = [], incidents: Array<{ asset_id: number; asset_name: string; max_severity: string; alert_count: number; blast_radius: number }> = []) {
+function mockAllFulfilled(alerts: Alert[] = [makeAlert()], myAlerts: Alert[] = [], myCases: Array<{ id: number; title: string; severity: string; status: string }> = [], incidents: Array<{ asset_id: number; asset_name: string; max_severity: string; alert_count: number; blast_radius: number }> = [], watchingAlerts: Alert[] = [], watchingCases: Array<{ id: number; title: string; severity: string; status: string; due_date: string | null }> = []) {
   mockGet.mockImplementation((url: string, config?: unknown) => {
     const params = (config as { params?: Record<string, unknown> } | undefined)?.params;
     switch (url) {
@@ -68,8 +68,14 @@ function mockAllFulfilled(alerts: Alert[] = [makeAlert()], myAlerts: Alert[] = [
         if (params?.assigned === 'me') {
           return Promise.resolve({ data: { alerts: myAlerts, total: myAlerts.length, page: 1, size: 5, pages: 1 } });
         }
+        if (params?.watching === 'me') {
+          return Promise.resolve({ data: { alerts: watchingAlerts, total: watchingAlerts.length, page: 1, size: 5, pages: 1 } });
+        }
         return Promise.resolve({ data: { alerts, total: alerts.length, page: 1, size: 50, pages: 1 } });
       case '/cases/':
+        if (params?.watching === 'me') {
+          return Promise.resolve({ data: { cases: watchingCases, total: watchingCases.length, page: 1, size: 5 } });
+        }
         return Promise.resolve({ data: { cases: myCases, total: myCases.length, page: 1, size: 5 } });
       case '/ot/devices-by-zone':
         return Promise.resolve({ data: [] });
@@ -189,6 +195,27 @@ describe('My assignments', () => {
     renderDashboard();
     await screen.findByText('42');
     await waitFor(() => expect(screen.queryByText('My assignments')).toBeNull());
+  });
+
+  it('lists watched alerts and investigations with a link to the watchlist', async () => {
+    mockAllFulfilled(
+      [makeAlert()], [], [], [],
+      [makeAlert({ id: 21, title: 'Watched vuln' })],
+      [{ id: 8, title: 'Watched investigation', severity: 'critical', status: 'open', due_date: '2026-11-25' }],
+    );
+    renderDashboard();
+    expect(await screen.findByText('Watching')).toBeTruthy();
+    expect(screen.getByText('Watched vuln')).toBeTruthy();
+    expect(screen.getByText('Watched investigation')).toBeTruthy();
+    expect(screen.getByText(/due 2026-11-25/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'View watchlist' }).getAttribute('href')).toBe('/watchlist');
+  });
+
+  it('hides the Watching panel when nothing is watched', async () => {
+    mockAllFulfilled();
+    renderDashboard();
+    await screen.findByText('42');
+    await waitFor(() => expect(screen.queryByText('Watching')).toBeNull());
   });
 
 
