@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BriefcaseMedical, Clock, Download, ShieldAlert, ShieldCheck, Siren, Timer, Users } from 'lucide-react';
 import apiClient from '../api/client';
@@ -96,6 +96,7 @@ const WINDOWS = [7, 30, 90];
 const SEVERITIES: Array<'critical' | 'high' | 'medium' | 'low'> = ['critical', 'high', 'medium', 'low'];
 
 export function Reports() {
+  const requestId = useRef(0);
   const [days, setDays] = useState(30);
   const [report, setReport] = useState<PostureReport | null>(null);
   const [sla, setSla] = useState<SlaReport | null>(null);
@@ -105,6 +106,7 @@ export function Reports() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchReport = useCallback(async (window: number) => {
+    const request = ++requestId.current;
     setLoading(true);
     setError(null);
     try {
@@ -114,25 +116,30 @@ export function Reports() {
         apiClient.get('/reports/team-workload'),
         apiClient.get('/reports/alert-trend', { params: { days: window } }),
       ]);
+      if (request !== requestId.current) return;
       setReport(postureRes.data);
       setSla(slaRes.data);
       setWorkload(workloadRes.data);
       setTrend(trendRes.data);
     } catch (err) {
+      if (request !== requestId.current) return;
       setError(getApiErrorMessage(err, 'Could not load the posture report.'));
       setReport(null);
       setSla(null);
       setWorkload(null);
       setTrend(null);
     } finally {
-      setLoading(false);
+      if (request === requestId.current) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { void fetchReport(days); }, [days, fetchReport]);
+  useEffect(() => {
+    void fetchReport(days);
+    return () => { requestId.current += 1; };
+  }, [days, fetchReport]);
 
   const exportSlaCsv = () => {
-    if (!sla) return;
+    if (!sla || loading || error || sla.days !== days) return;
     const blob = new Blob([slaCsv(sla)], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

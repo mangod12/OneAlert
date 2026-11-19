@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
@@ -188,6 +188,32 @@ describe('Reports', () => {
     fireEvent.click(await screen.findByRole('button', { name: '7 days' }));
     expect(get).toHaveBeenCalledWith('/reports/posture', { params: { days: 7 } });
     expect(get).toHaveBeenCalledWith('/reports/sla', { params: { days: 7 } });
+  });
+
+  it.each(['success', 'failure'])('ignores an obsolete window response (%s)', async oldResult => {
+    let resolveOld!: (value: { data: unknown }) => void;
+    let rejectOld!: (reason: Error) => void;
+    const oldRequest = new Promise<{ data: unknown }>((resolve, reject) => { resolveOld = resolve; rejectOld = reject; });
+    get.mockImplementation(async (url, config) => {
+      const days = (config?.params as { days?: number } | undefined)?.days ?? 30;
+      if (url === '/reports/posture') {
+        if (days === 30) return oldRequest;
+        return { data: { ...report, days, alerts: { ...report.alerts, opened: 77 } } };
+      }
+      if (url === '/reports/sla') return { data: { ...slaReport, days } };
+      if (url === '/reports/alert-trend') return { data: { ...trend, days } };
+      return { data: workload };
+    });
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: '7 days' }));
+    expect(await screen.findByText('77')).toBeTruthy();
+    await act(async () => {
+      if (oldResult === 'success') resolveOld({ data: report });
+      else rejectOld(new Error('Old window failed'));
+    });
+    await waitFor(() => expect(screen.getByText('77')).toBeTruthy());
+    expect(screen.queryByText('Report unavailable')).toBeNull();
+    expect(screen.getByText('5 acknowledged · 7d')).toBeTruthy();
   });
 
   it('shows the empty state when no assets are at risk', async () => {
