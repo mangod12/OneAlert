@@ -9,6 +9,7 @@ const Login = lazy(() => import('./pages/Login').then(module => ({ default: modu
 const Register = lazy(() => import('./pages/Register').then(module => ({ default: module.Register })));
 const Dashboard = lazy(() => import('./pages/Dashboard').then(module => ({ default: module.Dashboard })));
 const Cases = lazy(() => import('./pages/Cases').then(module => ({ default: module.Cases })));
+const Watchlist = lazy(() => import('./pages/Watchlist').then(module => ({ default: module.Watchlist })));
 const Incidents = lazy(() => import('./pages/Incidents').then(module => ({ default: module.Incidents })));
 const Reports = lazy(() => import('./pages/Reports').then(module => ({ default: module.Reports })));
 const CaseDetail = lazy(() => import('./pages/CaseDetail').then(module => ({ default: module.CaseDetail })));
@@ -52,6 +53,7 @@ function App() {
         >
           <Route path="/" element={<Dashboard />} />
           <Route path="/cases" element={<Cases />} />
+          <Route path="/watchlist" element={<Watchlist />} />
           <Route path="/incidents" element={<Incidents />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/cases/:caseId" element={<CaseDetail />} />
