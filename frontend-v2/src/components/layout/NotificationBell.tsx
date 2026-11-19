@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bell, CheckCheck, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../../api/client';
+import { groupNotifications, type NotificationGroup } from './notificationGroups';
 
-interface AppNotification {
+export interface AppNotification {
   id: number;
   kind: string;
   title: string;
@@ -90,11 +91,13 @@ export function NotificationBell() {
     setItems(current => current?.map(item => ({ ...item, read_at: item.read_at ?? new Date().toISOString() })) ?? current);
   };
 
-  const deleteItem = async (item: AppNotification) => {
-    setItems(current => current?.filter(entry => entry.id !== item.id) ?? current);
-    if (!item.read_at) setUnread(count => Math.max(0, count - 1));
+  const deleteGroup = async (group: NotificationGroup) => {
+    const ids = new Set(group.items.map(item => item.id));
+    setItems(current => current?.filter(entry => !ids.has(entry.id)) ?? current);
+    const unreadInGroup = group.items.filter(item => !item.read_at).length;
+    if (unreadInGroup > 0) setUnread(count => Math.max(0, count - unreadInGroup));
     try {
-      await apiClient.delete(`/notifications/${item.id}`);
+      await Promise.all(group.items.map(item => apiClient.delete(`/notifications/${item.id}`)));
     } catch {
       void refreshUnread();
     }
@@ -110,13 +113,17 @@ export function NotificationBell() {
     }
   };
 
-  const openItem = async (item: AppNotification) => {
-    if (!item.read_at) {
-      void apiClient.post(`/notifications/${item.id}/read`).catch(() => undefined);
-      setUnread(count => Math.max(0, count - 1));
-      setItems(current => current?.map(entry => (entry.id === item.id ? { ...entry, read_at: new Date().toISOString() } : entry)) ?? current);
+  const openGroup = async (group: NotificationGroup) => {
+    const latest = group.items[0];
+    const unreadItems = group.items.filter(item => !item.read_at);
+    if (unreadItems.length > 0) {
+      const ids = new Set(unreadItems.map(item => item.id));
+      const now = new Date().toISOString();
+      unreadItems.forEach(item => void apiClient.post(`/notifications/${item.id}/read`).catch(() => undefined));
+      setUnread(count => Math.max(0, count - unreadItems.length));
+      setItems(current => current?.map(entry => (ids.has(entry.id) ? { ...entry, read_at: entry.read_at ?? now } : entry)) ?? current);
     }
-    const path = toRoutePath(item.link);
+    const path = toRoutePath(latest.link);
     if (path) {
       setOpen(false);
       navigate(path);
@@ -171,30 +178,39 @@ export function NotificationBell() {
             {items !== null && items.length === 0 && (
               <li className="px-3 py-4 text-center text-xs text-surface-500">No notifications yet</li>
             )}
-            {items?.map(item => (
-              <li key={item.id} className="group relative">
+            {items && groupNotifications(items).map(group => {
+              const item = group.items[0];
+              const anyUnread = group.items.some(entry => !entry.read_at);
+              return (
+              <li key={group.items.map(entry => entry.id).join('-')} className="group relative">
                 <button
                   type="button"
-                  onClick={() => void openItem(item)}
-                  className={`flex w-full flex-col gap-0.5 px-3 py-2.5 pr-9 text-left hover:bg-surface-800 ${item.read_at ? 'opacity-60' : ''}`}
+                  onClick={() => void openGroup(group)}
+                  className={`flex w-full flex-col gap-0.5 px-3 py-2.5 pr-9 text-left hover:bg-surface-800 ${anyUnread ? '' : 'opacity-60'}`}
                 >
                   <span className="flex items-center gap-2">
-                    {!item.read_at && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent-400" aria-hidden="true" />}
+                    {anyUnread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent-400" aria-hidden="true" />}
                     <span className="truncate text-xs font-semibold text-surface-100">{item.title}</span>
+                    {group.items.length > 1 && (
+                      <span className="shrink-0 rounded-full bg-surface-700 px-1.5 text-[10px] font-bold leading-4 text-surface-200">
+                        ×{group.items.length}
+                      </span>
+                    )}
                   </span>
                   {item.body && <span className="truncate pl-3.5 text-[11px] text-surface-400">{item.body}</span>}
                   <span className="pl-3.5 text-[10px] uppercase tracking-wide text-surface-500">{relativeTime(item.created_at)}</span>
                 </button>
                 <button
                   type="button"
-                  aria-label={`Delete notification ${item.title}`}
-                  onClick={() => void deleteItem(item)}
+                  aria-label={group.items.length > 1 ? `Delete ${group.items.length} notifications: ${item.title}` : `Delete notification ${item.title}`}
+                  onClick={() => void deleteGroup(group)}
                   className="absolute right-2 top-2.5 grid h-6 w-6 place-items-center rounded text-surface-500 opacity-0 transition-opacity hover:bg-surface-700 hover:text-surface-200 focus:opacity-100 group-hover:opacity-100"
                 >
                   <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               </li>
-            ))}
+              );
+            })}
           </ul>
         </div>
       )}
