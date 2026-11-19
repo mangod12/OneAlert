@@ -22,7 +22,7 @@ from backend.models.asset import Asset
 from backend.models.case import Case
 from backend.models.user import User
 from backend.services.auth_service import get_password_hash
-from backend.services.digest import build_digest, render_digest, send_due_digests
+from backend.services.digest import _is_empty, build_digest, render_digest, send_due_digests
 from backend.services.email_alert import email_service
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test_daily_digest.db"
@@ -41,6 +41,7 @@ AsyncTestingSessionLocal = async_sessionmaker(
 
 TODAY = datetime.now(UTC).date()
 YESTERDAY = TODAY - timedelta(days=1)
+TOMORROW = TODAY + timedelta(days=1)
 
 
 def override_get_db():
@@ -233,3 +234,79 @@ class TestDigestPreferences:
             "/api/v1/auth/me/notification-preferences", headers=headers,
             json={"digest_hour_utc": 24},
         ).status_code == 422
+
+
+class TestDigestTasks:
+    @pytest.mark.asyncio
+    async def test_task_sections(self, client):
+        from backend.models.case import Case, CaseTask
+        uid = _user_id()
+        with TestingSessionLocal() as session:
+            case = Case(user_id=uid, title="Beaconing host", severity="high", status="open")
+            session.add(case)
+            session.flush()
+            session.add(CaseTask(case_id=case.id, title="Late task", position=0,
+                                 assignee_id=uid, done=False, due_date=YESTERDAY))
+            session.add(CaseTask(case_id=case.id, title="Today task", position=1,
+                                 assignee_id=uid, done=False, due_date=TODAY))
+            session.add(CaseTask(case_id=case.id, title="Tomorrow task", position=2,
+                                 assignee_id=uid, done=False, due_date=TOMORROW))
+            session.add(CaseTask(case_id=case.id, title="Done late task", position=3,
+                                 assignee_id=uid, done=True, due_date=YESTERDAY))
+            session.add(CaseTask(case_id=case.id, title="Undated task", position=4,
+                                 assignee_id=uid, done=False))
+            session.commit()
+        async with AsyncTestingSessionLocal() as session:
+            user = await session.get(User, uid)
+            digest = await build_digest(session, user)
+            await session.rollback()
+        assert digest["overdue_tasks"] == [
+            {"title": "Late task", "case_title": "Beaconing host", "due_date": YESTERDAY.isoformat()}
+        ]
+        assert digest["tasks_due_today"] == 1
+        assert digest["tasks_due_tomorrow"] == 1
+        rendered = render_digest(digest)
+        assert "Tasks due today: 1" in rendered
+        assert "Tasks due tomorrow: 1" in rendered
+        assert "Late task (Beaconing host, was due " in rendered
+        assert "Done late task" not in rendered
+
+    @pytest.mark.asyncio
+    async def test_tasks_alone_make_the_digest_non_empty(self, client):
+        from backend.models.case import Case, CaseTask
+        uid = _user_id()
+        with TestingSessionLocal() as session:
+            case = Case(user_id=uid, title="Solo case", severity="low", status="resolved")
+            session.add(case)
+            session.flush()
+            # A task on an active case assigned to the user, due today.
+            active = Case(user_id=uid, title="Active case", severity="low", status="open")
+            session.add(active)
+            session.flush()
+            session.add(CaseTask(case_id=active.id, title="Due today", position=0,
+                                 assignee_id=uid, done=False, due_date=TODAY))
+            session.commit()
+        async with AsyncTestingSessionLocal() as session:
+            user = await session.get(User, uid)
+            digest = await build_digest(session, user)
+            await session.rollback()
+        assert digest["tasks_due_today"] == 1
+        assert _is_empty(digest) is False
+
+    @pytest.mark.asyncio
+    async def test_tasks_on_closed_cases_are_skipped(self, client):
+        from backend.models.case import Case, CaseTask
+        uid = _user_id()
+        with TestingSessionLocal() as session:
+            case = Case(user_id=uid, title="Closed case", severity="low", status="closed")
+            session.add(case)
+            session.flush()
+            session.add(CaseTask(case_id=case.id, title="Stale task", position=0,
+                                 assignee_id=uid, done=False, due_date=YESTERDAY))
+            session.commit()
+        async with AsyncTestingSessionLocal() as session:
+            user = await session.get(User, uid)
+            digest = await build_digest(session, user)
+            await session.rollback()
+        assert digest["overdue_tasks"] == []
+        assert digest["tasks_due_today"] == 0
