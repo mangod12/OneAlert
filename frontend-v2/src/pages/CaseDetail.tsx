@@ -130,6 +130,7 @@ export function CaseDetail() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [addingTask, setAddingTask] = useState(false);
   const [taskBusyId, setTaskBusyId] = useState<number | null>(null);
+  const [seedingPlanId, setSeedingPlanId] = useState<number | null>(null);
   const currentUserId = useAuthStore(state => state.user?.id ?? null);
 
   useEffect(() => {
@@ -291,6 +292,23 @@ export function CaseDetail() {
       await fetchAll();
     } catch (err) { toast(getApiErrorMessage(err, 'The task could not be removed.'), 'error'); }
     finally { setTaskBusyId(null); }
+  };
+
+  const seedTasksFromPlan = async (planId: number) => {
+    if (seedingPlanId !== null) return;
+    setSeedingPlanId(planId);
+    try {
+      const res = await apiClient.post(`/cases/${caseId}/tasks/from-plan/${planId}`);
+      const created = Array.isArray(res.data?.created) ? res.data.created.length : 0;
+      toast(
+        created > 0
+          ? `${created} task${created === 1 ? '' : 's'} added to the checklist.`
+          : 'Every plan action is already on the checklist.',
+        'success',
+      );
+      await fetchAll();
+    } catch (err) { toast(getApiErrorMessage(err, 'The checklist could not be seeded.'), 'error'); }
+    finally { setSeedingPlanId(null); }
   };
 
   const exportTimeline = async () => {
@@ -771,18 +789,30 @@ export function CaseDetail() {
           </h2>
           <div className="space-y-2">
             {plans.map(plan => (
-              <Link
-                key={plan.id}
-                to="/response-plans"
-                className="flex items-center justify-between gap-3 rounded-md border border-surface-700 bg-surface-800/50 p-3 transition-colors hover:border-primary-500/40"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="text-sm font-medium text-surface-100">Plan #{plan.id}</span>
-                  <StatusBadge tone={plan.status === 'approved' || plan.status === 'completed' ? 'success' : plan.status === 'rejected' ? 'danger' : plan.status === 'pending_approval' ? 'warning' : plan.status === 'executing' ? 'info' : 'neutral'}>{plan.status.replace('_', ' ')}</StatusBadge>
-                  <span className="text-xs text-surface-500">{plan.actions?.length ?? 0} actions · {plan.autonomy_level} · {plan.created_by}</span>
-                </div>
-                <span className="shrink-0 text-xs text-surface-500">{new Date(plan.created_at).toLocaleDateString()}</span>
-              </Link>
+              <div key={plan.id} className="flex items-stretch gap-2">
+                <Link
+                  to="/response-plans"
+                  className="flex flex-1 items-center justify-between gap-3 rounded-md border border-surface-700 bg-surface-800/50 p-3 transition-colors hover:border-primary-500/40"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="text-sm font-medium text-surface-100">Plan #{plan.id}</span>
+                    <StatusBadge tone={plan.status === 'approved' || plan.status === 'completed' ? 'success' : plan.status === 'rejected' ? 'danger' : plan.status === 'pending_approval' ? 'warning' : plan.status === 'executing' ? 'info' : 'neutral'}>{plan.status.replace('_', ' ')}</StatusBadge>
+                    <span className="text-xs text-surface-500">{plan.actions?.length ?? 0} actions · {plan.autonomy_level} · {plan.created_by}</span>
+                  </div>
+                  <span className="shrink-0 text-xs text-surface-500">{new Date(plan.created_at).toLocaleDateString()}</span>
+                </Link>
+                {(plan.actions?.length ?? 0) > 0 && (
+                  <button
+                    type="button"
+                    aria-label={`Seed checklist from plan ${plan.id}`}
+                    disabled={seedingPlanId === plan.id}
+                    onClick={() => void seedTasksFromPlan(plan.id)}
+                    className="shrink-0 rounded-md border border-surface-700 px-3 text-xs font-medium text-surface-200 transition-colors hover:bg-surface-800 disabled:opacity-40"
+                  >
+                    Add to checklist
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         </div>

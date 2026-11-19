@@ -265,6 +265,12 @@ class CaseTaskResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SeedTasksFromPlanResponse(BaseModel):
+    """Result of seeding a case checklist from a response plan."""
+    created: list[CaseTaskResponse]
+    skipped: int
+
+
 class TimelineEntryResponse(BaseModel):
     id: int
     timestamp: datetime

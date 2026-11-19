@@ -34,6 +34,7 @@ from backend.models.case import (
     CaseWatcher,
     CaseWatcherAdd,
     CaseWatcherResponse,
+    SeedTasksFromPlanResponse,
     TimelineEntryResponse,
 )
 from backend.models.notification import Notification
@@ -676,6 +677,77 @@ async def delete_case_task(
     task = await _get_case_task(db, case.id, task_id)
     await db.delete(task)
     await db.commit()
+
+
+@router.post(
+    "/{case_id}/tasks/from-plan/{plan_id}",
+    response_model=SeedTasksFromPlanResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def seed_case_tasks_from_plan(
+    case_id: int,
+    plan_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Turn a response plan's actions into checklist tasks on the case.
+
+    Actions are added in priority order as ``action_type: target`` titles.
+    Re-seeding skips actions already on the checklist, so an updated plan
+    only adds its new steps.
+    """
+    case = await _get_visible_case(db, case_id, current_user)
+    plan = (await db.execute(
+        select(ResponsePlan).where(ResponsePlan.id == plan_id, ResponsePlan.case_id == case.id)
+    )).scalar_one_or_none()
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Response plan not found")
+
+    def _task_title(action: dict) -> str:
+        action_type = str(action.get("action_type", "action"))
+        target = str(action.get("target", ""))
+        title = f"{action_type}: {target}" if target else action_type
+        return title[:300]
+
+    actions = [a for a in (plan.actions or []) if isinstance(a, dict)]
+    actions.sort(key=lambda a: a.get("priority", 1000))
+
+    existing_titles = set((await db.execute(
+        select(CaseTask.title).where(CaseTask.case_id == case.id)
+    )).scalars().all())
+    next_position = (await db.execute(
+        select(func.coalesce(func.max(CaseTask.position), -1)).where(CaseTask.case_id == case.id)
+    )).scalar_one() + 1
+
+    created: list[CaseTask] = []
+    skipped = 0
+    for action in actions:
+        title = _task_title(action)
+        if title in existing_titles:
+            skipped += 1
+            continue
+        task = CaseTask(
+            case_id=case.id, title=title, position=next_position,
+            created_by_id=current_user.id,
+        )
+        next_position += 1
+        existing_titles.add(title)
+        db.add(task)
+        created.append(task)
+
+    if created:
+        suffix = "s" if len(created) != 1 else ""
+        db.add(CaseTimeline(
+            case_id=case.id,
+            entry_type="action",
+            content=f"Checklist seeded from response plan #{plan.id}: {len(created)} task{suffix}",
+            source="human",
+            user_id=current_user.id,
+        ))
+    await db.commit()
+    for task in created:
+        await db.refresh(task)
+    return SeedTasksFromPlanResponse(created=created, skipped=skipped)
 
 
 @router.patch("/{case_id}")
