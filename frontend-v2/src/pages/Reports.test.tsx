@@ -67,13 +67,13 @@ const workload = {
   members: [
     {
       user_id: 1, email: 'analyst@example.com', full_name: 'Ada Analyst',
-      alerts_open: 3, alerts_overdue: 1, cases_open: 1, cases_overdue: 0, tasks_open: 2,
-      mtta_seconds: 7200, mttr_seconds: 90000,
+      alerts_open: 3, alerts_overdue: 1, cases_open: 1, cases_overdue: 0, tasks_open: 2, tasks_overdue: 1,
+      mtta_seconds: 7200, mttr_seconds: 90000, mtct_seconds: 180000,
     },
     {
       user_id: 2, email: 'sam@example.com', full_name: null,
-      alerts_open: 0, alerts_overdue: 0, cases_open: 0, cases_overdue: 0, tasks_open: 0,
-      mtta_seconds: null, mttr_seconds: null,
+      alerts_open: 0, alerts_overdue: 0, cases_open: 0, cases_overdue: 0, tasks_open: 0, tasks_overdue: 0,
+      mtta_seconds: null, mttr_seconds: null, mtct_seconds: null,
     },
   ],
 };
@@ -163,11 +163,12 @@ describe('Reports', () => {
     expect(screen.getByText('3 open alerts')).toBeTruthy();
     expect(screen.getByText('1 open investigation')).toBeTruthy();
     expect(screen.getByText('2 open tasks')).toBeTruthy();
-    expect(screen.getByText('1 overdue')).toBeTruthy();
+    expect(screen.getByText('2 overdue')).toBeTruthy(); // 1 alert + 1 task
     expect(screen.getByText('sam@example.com')).toBeTruthy();
     expect(screen.getByText('No open work')).toBeTruthy();
     expect(screen.getByText('avg ack 2.0h')).toBeTruthy();
     expect(screen.getByText('avg resolve 1.0d')).toBeTruthy();
+    expect(screen.getByText('avg task done 2.1d')).toBeTruthy();
     expect(get).toHaveBeenCalledWith('/reports/team-workload');
   });
 

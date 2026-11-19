@@ -54,8 +54,10 @@ interface WorkloadMember {
   cases_open: number;
   cases_overdue: number;
   tasks_open: number;
+  tasks_overdue: number;
   mtta_seconds: number | null;
   mttr_seconds: number | null;
+  mtct_seconds: number | null;
 }
 
 interface TeamWorkload {
@@ -345,12 +347,12 @@ export function Reports() {
           {workload && workload.members.length > 0 && (
             <Panel
               title="Team workload"
-              description="Open assigned work across your organization: alerts past their triage due date, investigations past their SLA, and open checklist tasks. Response times are trailing-30-day averages for alerts assigned to each member."
+              description="Open assigned work across your organization: alerts past their triage due date, investigations past their SLA, and checklist tasks past their due date. Response and task completion times are trailing-30-day averages for work assigned to each member."
             >
               <ul className="divide-y divide-surface-800" data-testid="team-workload">
                 {workload.members.map((member) => {
                   const totalOpen = member.alerts_open + member.cases_open + member.tasks_open;
-                  const totalOverdue = member.alerts_overdue + member.cases_overdue;
+                  const totalOverdue = member.alerts_overdue + member.cases_overdue + member.tasks_overdue;
                   return (
                     <li key={member.user_id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                       <div className="flex min-w-0 items-center gap-2">
@@ -376,6 +378,9 @@ export function Reports() {
                         )}
                         {member.mttr_seconds !== null && (
                           <span>avg resolve {formatDuration(member.mttr_seconds)}</span>
+                        )}
+                        {member.mtct_seconds !== null && (
+                          <span>avg task done {formatDuration(member.mtct_seconds)}</span>
                         )}
                       </div>
                     </li>

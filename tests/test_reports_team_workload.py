@@ -261,3 +261,52 @@ def test_team_workload_response_times(client):
     assert rows[owner_id]["mttr_seconds"] == 86400
     assert rows[member_id]["mtta_seconds"] is None
     assert rows[member_id]["mttr_seconds"] is None
+
+
+def test_team_workload_task_overdue_and_completion_times(client):
+    owner = _register_and_login(client, "owner@example.com")
+    member = _register_and_login(client, "member@example.com")
+    owner_id = _user_id(client, owner)
+    member_id = _user_id(client, member)
+    _share_org(owner_id, member_id)
+
+    with _TestingSessionLocal() as db:
+        case = Case(
+            user_id=owner_id, title="Open investigation", severity="medium",
+            status="investigating", created_at=_naive(days_ago=6),
+        )
+        db.add(case)
+        db.flush()
+        db.add(CaseTask(
+            case_id=case.id, title="Late task", done=False,
+            assignee_id=owner_id, position=0, due_date=TODAY - timedelta(days=1),
+        ))
+        db.add(CaseTask(
+            case_id=case.id, title="Upcoming task", done=False,
+            assignee_id=owner_id, position=1, due_date=TODAY + timedelta(days=2),
+        ))
+        db.add(CaseTask(
+            case_id=case.id, title="Finished in window", done=True,
+            assignee_id=member_id, position=2,
+            created_at=_naive(days_ago=3), completed_at=_naive(days_ago=1),
+        ))
+        db.add(CaseTask(
+            case_id=case.id, title="Finished long ago", done=True,
+            assignee_id=member_id, position=3,
+            created_at=_naive(days_ago=45), completed_at=_naive(days_ago=40),
+        ))
+        db.commit()
+
+    resp = client.get("/api/v1/reports/team-workload", headers=owner)
+    assert resp.status_code == 200, resp.text
+    rows = {r["user_id"]: r for r in resp.json()["members"]}
+
+    o = rows[owner_id]
+    assert o["tasks_open"] == 2
+    assert o["tasks_overdue"] == 1  # only the past-due open task
+    assert o["mtct_seconds"] is None  # no completed tasks
+
+    m = rows[member_id]
+    assert m["tasks_open"] == 0
+    assert m["tasks_overdue"] == 0
+    assert m["mtct_seconds"] == pytest.approx(172800, abs=1)  # 2 days, 30d window only
