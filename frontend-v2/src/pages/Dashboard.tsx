@@ -18,7 +18,7 @@ import { Panel } from '../components/ui/Panel';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { formatDuration } from '../utils/formatDuration';
 
-type DashboardErrors = Partial<Record<'stats' | 'assets' | 'devices' | 'alerts', string>>;
+type DashboardErrors = Partial<Record<'stats' | 'assets' | 'devices' | 'alerts' | 'tasks', string>>;
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -127,7 +127,10 @@ export function Dashboard() {
       if (results[10].status === 'fulfilled') setWatchingCases(results[10].value.data.cases ?? []);
       else setWatchingCases([]);
       if (results[11].status === 'fulfilled') setMyTasks(results[11].value.data ?? []);
-      else setMyTasks([]);
+      else {
+        setMyTasks(null);
+        nextErrors.tasks = getApiErrorMessage(results[11].reason, 'Your assigned checklist tasks are unavailable.');
+      }
 
       setErrors(nextErrors);
       setLastUpdated(new Date());
@@ -265,9 +268,10 @@ export function Dashboard() {
       {(myTasks === null || myTasks.length > 0) && (
         <section aria-label="My tasks">
           <Panel title="My tasks" description="Open checklist tasks assigned to you across investigations, grouped by how soon they are due. Set or clear a due date inline.">
+            {errors.tasks && <div className="px-5 py-4"><ErrorState title="Assigned tasks unavailable" description={errors.tasks} action={<RetryButton onClick={loadDashboard} />} /></div>}
             {taskError && <p role="alert" className="px-5 py-2 text-sm text-danger">{taskError}</p>}
             {savingTaskId !== null && <p role="status" className="px-5 py-2 text-xs text-surface-400">Saving task due date...</p>}
-            <div className="divide-y divide-surface-800">
+            {!errors.tasks && <div className="divide-y divide-surface-800">
               {(myTasks ?? []).length > 0 ? buckets.filter(b => (b.items ?? []).length > 0).map(bucket => (
                   <div key={bucket.key}>
                     <p className={`px-5 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide ${bucket.key === 'overdue' ? 'text-danger' : 'text-surface-500'}`}>
@@ -308,7 +312,7 @@ export function Dashboard() {
                 )) : (
                 <div className="px-5 py-6 text-center text-sm text-surface-400">{myTasks === null ? 'Loading...' : 'No checklist tasks assigned to you.'}</div>
               )}
-            </div>
+            </div>}
           </Panel>
         </section>
       )}
