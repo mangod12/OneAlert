@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BellOff, CheckCheck, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import apiClient from '../api/client';
@@ -46,6 +46,8 @@ const PAGE_SIZE = 20;
 
 export function Notifications() {
   const navigate = useNavigate();
+  const requestId = useRef(0);
+  const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<AppNotification[] | null>(null);
   const [total, setTotal] = useState(0);
   const [unread, setUnread] = useState(0);
@@ -57,21 +59,31 @@ export function Notifications() {
   const [actionError, setActionError] = useState('');
 
   const load = useCallback(async () => {
+    const request = ++requestId.current;
+    setLoading(true);
+    setLoadError(false);
     try {
       const resp = await apiClient.get<NotificationListResponse>('/notifications/', {
         params: { page, size: PAGE_SIZE, unread_only: unreadOnly, ...(kind ? { kind } : {}) },
       });
+      if (request !== requestId.current) return;
       setLoadError(false);
       setUnread(resp.data.unread_count);
       setTotal(resp.data.total);
       setItems(resp.data.data);
     } catch {
+      if (request !== requestId.current) return;
       setLoadError(true);
-      setItems([]);
+      setItems(null);
+    } finally {
+      if (request === requestId.current) setLoading(false);
     }
   }, [page, unreadOnly, kind]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    return () => { requestId.current += 1; };
+  }, [load]);
 
   const markAllRead = async () => {
     if (busy) return;
@@ -127,20 +139,20 @@ export function Notifications() {
   };
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  useEffect(() => { if (!busy && page > totalPages) setPage(totalPages); }, [busy, page, totalPages]);
+  useEffect(() => { if (!busy && !loading && !loadError && page > totalPages) setPage(totalPages); }, [busy, loading, loadError, page, totalPages]);
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-surface-50">Notifications</h1>
-          <p className="text-sm text-surface-400">{unread > 0 ? `${unread} unread` : 'All caught up'}</p>
+          <p className="text-sm text-surface-400">{loading ? 'Loading notifications...' : loadError ? 'Unread count unavailable' : unread > 0 ? `${unread} unread` : 'All caught up'}</p>
         </div>
         <div className="flex items-center gap-2">
           {items?.some(item => item.read_at) && (
             <button
               type="button"
-              disabled={busy || loadError}
+              disabled={busy || loading || loadError}
               onClick={() => void clearRead()}
               className="flex items-center gap-1.5 rounded-md border border-surface-700 px-3 py-1.5 text-xs font-semibold text-surface-300 hover:bg-surface-800"
             >
@@ -151,7 +163,7 @@ export function Notifications() {
           {unread > 0 && (
             <button
               type="button"
-              disabled={busy || loadError}
+              disabled={busy || loading || loadError}
               onClick={() => void markAllRead()}
               className="flex items-center gap-1.5 rounded-md bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-500"
             >
@@ -188,17 +200,17 @@ export function Notifications() {
 
       {actionError && <p role="alert" className="rounded-md border border-danger/40 px-3 py-2 text-sm text-danger">{actionError}</p>}
       {busy && <p role="status" className="text-sm text-surface-400">Updating notifications...</p>}
-      {loadError && <p className="rounded-md border border-danger-500/40 bg-danger-500/10 px-3 py-2 text-sm text-danger-300">Notifications could not be loaded.</p>}
+      {loadError && <p className="rounded-md border border-danger-500/40 bg-danger-500/10 px-3 py-2 text-sm text-danger-300">Notifications could not be loaded. <button type="button" onClick={() => void load()} className="underline">Retry notifications</button></p>}
 
       <ul className="divide-y divide-surface-800 overflow-hidden rounded-lg border border-surface-800 bg-surface-900">
-        {items === null && <li className="px-4 py-8 text-center text-sm text-surface-500">Loading…</li>}
-        {items !== null && items.length === 0 && (
+        {loading && <li className="px-4 py-8 text-center text-sm text-surface-500">Loading…</li>}
+        {!loading && !loadError && items !== null && items.length === 0 && (
           <li className="flex flex-col items-center gap-2 px-4 py-10 text-sm text-surface-500">
             <BellOff className="h-6 w-6" aria-hidden="true" />
             No notifications match these filters
           </li>
         )}
-        {items && groupNotifications(items).map(group => {
+        {!loading && !loadError && items && groupNotifications(items).map(group => {
           const item = group.items[0];
           const anyUnread = group.items.some(entry => !entry.read_at);
           return (
@@ -237,7 +249,7 @@ export function Notifications() {
         })}
       </ul>
 
-      {totalPages > 1 && (
+      {!loading && !loadError && totalPages > 1 && (
         <div className="flex items-center justify-between text-sm text-surface-400">
           <button
             type="button"
