@@ -33,6 +33,7 @@ afterEach(() => {
 describe('AlertDetail', () => {
   it('shows the EPSS score and percentile when available', async () => {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: 0.42, epss_percentile: 0.97 } };
       if (url === '/alerts/1/remediations') return { data: [] };
       throw new Error(`unexpected ${url}`);
@@ -44,6 +45,7 @@ describe('AlertDetail', () => {
 
   it('shows the fallback message when no EPSS data exists', async () => {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null, message: 'EPSS data not available' } };
       if (url === '/alerts/1/remediations') return { data: [] };
       throw new Error(`unexpected ${url}`);
@@ -54,6 +56,7 @@ describe('AlertDetail', () => {
 
   it('lists remediation actions ordered by priority with downtime details', async () => {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [
         { id: 2, alert_id: 1, action_type: 'network_segmentation', description: 'Isolate the router VLAN.',
@@ -80,7 +83,7 @@ describe('AlertDetail', () => {
     get.mockRejectedValue(new Error('offline'));
     render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />);
     expect(screen.getByText('RouterOS RCE')).toBeTruthy();
-    await waitFor(() => expect(get).toHaveBeenCalledTimes(7));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(8));
     expect(screen.queryByText(/Exploit probability/)).toBeNull();
     expect(screen.queryByText('Remediation plan')).toBeNull();
   });
@@ -89,6 +92,7 @@ describe('AlertDetail', () => {
 describe('Escalate to investigation', () => {
   function mockDetailGets() {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       throw new Error(`unexpected ${url}`);
@@ -126,6 +130,7 @@ describe('Escalate to investigation', () => {
 
   it('assigns the alert to an org member and reports the change', async () => {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/orgs/me/members') return { data: [
@@ -149,6 +154,7 @@ describe('Escalate to investigation', () => {
 
   it('shows an inline error when assignment fails', async () => {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/orgs/me/members') return { data: [
@@ -168,6 +174,7 @@ describe('Escalate to investigation', () => {
 describe('Resolve action', () => {
   it('shows Resolve Alert for non-resolved alerts and calls onResolve', async () => {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null, message: 'EPSS data not available' } };
       if (url === '/alerts/1/remediations') return { data: [] };
       throw new Error(`unexpected ${url}`);
@@ -181,6 +188,7 @@ describe('Resolve action', () => {
 
   it('hides Resolve Alert when the alert is already resolved', async () => {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null, message: 'EPSS data not available' } };
       if (url === '/alerts/1/remediations') return { data: [] };
       throw new Error(`unexpected ${url}`);
@@ -194,6 +202,7 @@ describe('Resolve action', () => {
 describe('KEV panel', () => {
   it('shows KEV details when the CVE is catalogued', async () => {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null, message: 'EPSS data not available' } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/alerts/kev-batch') return { data: { entries: { 'CVE-2026-0001': { date_added: '2026-05-01', due_date: '2026-05-22', known_ransomware_campaign_use: 'Known', required_action: 'Apply updates per vendor.' } } } };
@@ -209,6 +218,7 @@ describe('KEV panel', () => {
 
   it('shows no KEV panel when the CVE is not catalogued', async () => {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null, message: 'EPSS data not available' } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/alerts/kev-batch') return { data: { entries: {} } };
@@ -223,6 +233,7 @@ describe('KEV panel', () => {
 describe('Reopen action', () => {
   function mockResolvedGets() {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null, message: 'EPSS data not available' } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/alerts/kev-batch') return { data: { entries: {} } };
@@ -251,6 +262,7 @@ describe('Reopen action', () => {
 describe('AlertDetail snooze', () => {
   it('offers 24h, 7d and 30d snooze options for a non-resolved alert', async () => {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/orgs/me/members') return { data: [] };
@@ -268,6 +280,7 @@ describe('AlertDetail snooze', () => {
 
   it('shows the snooze state and clear action when snoozed', async () => {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/orgs/me/members') return { data: [] };
@@ -284,6 +297,7 @@ describe('AlertDetail snooze', () => {
 
   it('hides snooze options for a resolved alert', async () => {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/orgs/me/members') return { data: [] };
@@ -326,6 +340,7 @@ describe('AlertDetail investigations', () => {
 
   it('hides the investigations section when the fetch fails', async () => {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/alerts/1/cases') throw new Error('upstream down');
       return baseMocks([])(url);
     });
@@ -338,6 +353,7 @@ describe('AlertDetail investigations', () => {
 describe('AlertDetail notes', () => {
   function mockNotesGets(notes: unknown[] = []) {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/orgs/me/members') return { data: [] };
@@ -377,6 +393,7 @@ describe('AlertDetail notes', () => {
 describe('AlertDetail activity', () => {
   it('lists audit activity for the alert', async () => {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/orgs/me/members') return { data: [] };
@@ -393,6 +410,7 @@ describe('AlertDetail activity', () => {
 
   it('hides the activity section when there is no activity', async () => {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/orgs/me/members') return { data: [] };
@@ -416,6 +434,7 @@ describe('Assignee gating', () => {
   );
   const mockDrawerGets = () => {
     get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
       if (url === '/orgs/me/members') return { data: [{ id: 42, email: 'member@example.com', full_name: 'Member', is_active: true }] };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null } };
       return { data: [] };
@@ -435,5 +454,67 @@ describe('Assignee gating', () => {
     mockDrawerGets();
     renderDetail();
     expect(await screen.findByLabelText('Assigned to')).toBeTruthy();
+  });
+});
+
+describe('Alert watchers', () => {
+  const ownerUser = {
+    id: 5, email: 'owner@example.com', full_name: 'Owner', company: 'Acme',
+    role: 'admin', is_active: true, is_verified: true, mfa_enabled: false,
+    created_at: '2026-01-01T00:00:00Z',
+  };
+  const memberUser = {
+    id: 42, email: 'member@example.com', full_name: 'Member', company: 'Acme',
+    role: 'analyst', is_active: true, is_verified: true, mfa_enabled: false,
+    created_at: '2026-01-01T00:00:00Z',
+  };
+  const renderDetail = () => render(
+    <AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />
+  );
+  const mockGets = (watchers: unknown[] = []) => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: watchers };
+      if (url === '/orgs/me/members') return { data: [{ id: 42, email: 'member@example.com', full_name: 'Member', is_active: true }] };
+      if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null } };
+      return { data: [] };
+    });
+  };
+
+  it('toggles watching on and off for the current user', async () => {
+    useAuthStore.setState({ user: memberUser });
+    let watching: unknown[] = [];
+    get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: watching };
+      if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null } };
+      return { data: [] };
+    });
+    post.mockImplementation(async () => {
+      watching = [{ user_id: 42, email: 'member@example.com', full_name: 'Member' }];
+      return { data: {} };
+    });
+    renderDetail();
+    const toggle = await screen.findByLabelText('Watch this alert');
+    fireEvent.click(toggle);
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/alerts/1/watch'));
+    await waitFor(() => expect(screen.getByLabelText('Stop watching this alert')).toBeTruthy());
+  });
+
+  it('lets the owner add a watcher from the member list', async () => {
+    useAuthStore.setState({ user: ownerUser });
+    mockGets([]);
+    post.mockResolvedValue({ data: [{ user_id: 42, email: 'member@example.com', full_name: 'Member' }] });
+    renderDetail();
+    const select = await screen.findByLabelText('Add an alert watcher');
+    fireEvent.change(select, { target: { value: '42' } });
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/alerts/1/watchers', { user_id: 42 }));
+    await screen.findByText('Member');
+  });
+
+  it('hides the add-watcher select from non-owners but keeps the watch toggle', async () => {
+    useAuthStore.setState({ user: memberUser });
+    mockGets([]);
+    renderDetail();
+    await screen.findByLabelText('Watch this alert');
+    await waitFor(() => expect(screen.queryByLabelText('Add an alert watcher')).toBeNull());
   });
 });

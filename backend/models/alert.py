@@ -14,7 +14,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, Field  # Ensure compatibility with Pydantic v2
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -67,6 +67,7 @@ class Alert(Base):
     user = relationship("User", back_populates="alerts", foreign_keys=[user_id])
     assignee = relationship("User", foreign_keys=[assigned_to_id])
     asset = relationship("Asset", back_populates="alerts")
+    watchers = relationship("AlertWatcher", back_populates="alert", cascade="all, delete-orphan")
 
     def to_dict(self):
         return {
@@ -91,6 +92,33 @@ class Alert(Base):
 
 
 # Pydantic models for API
+class AlertWatcher(Base):
+    """An organization member following an alert for status notifications."""
+    __tablename__ = "alert_watchers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    alert_id = Column(Integer, ForeignKey("alerts.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("alert_id", "user_id", name="uq_alert_watchers_alert_user"),
+    )
+
+    alert = relationship("Alert", back_populates="watchers")
+    user = relationship("User")
+
+
+class AlertWatcherAdd(BaseModel):
+    user_id: int
+
+
+class AlertWatcherResponse(BaseModel):
+    user_id: int
+    email: str
+    full_name: str | None = None
+
+
 class AlertBase(BaseModel):
     """Base alert schema."""
     cve_id: str | None = None
