@@ -51,6 +51,7 @@ export function Alerts() {
   const [kevEntries, setKevEntries] = useState<Record<string, { date_added: string | null; due_date: string | null; known_ransomware_campaign_use: string | null }>>({});
   const [members, setMembers] = useState<Array<{ id: number; email: string; is_active: boolean }>>([]);
   const [bulkAssigning, setBulkAssigning] = useState(false);
+  const [bulkDueApplying, setBulkDueApplying] = useState(false);
 
   // Deep link: /alerts?alert=<id> opens the detail drawer for that alert.
   useEffect(() => {
@@ -284,6 +285,29 @@ export function Alerts() {
     else toast(`${ids.length} alerts ${verb}.`, 'success');
   };
 
+  const handleBulkDueDate = async (value: string) => {
+    if (value === '') return;
+    if (bulkDueApplying) return;
+    const ids = Array.from(selectedIds).filter(id => !pendingIds.has(id));
+    if (ids.length === 0) return;
+    const dueDate = value === 'clear'
+      ? null
+      : new Date(Date.now() + Number(value) * 86400000).toISOString().slice(0, 10);
+    setBulkDueApplying(true);
+    setPendingIds(current => new Set([...current, ...ids]));
+    const results = await Promise.allSettled(ids.map(id =>
+      apiClient.patch(`/alerts/${id}`, { due_date: dueDate })
+    ));
+    const failedIds = ids.filter((_, index) => results[index].status === 'rejected');
+    setSelectedIds(new Set(failedIds));
+    setPendingIds(current => { const next = new Set(current); ids.forEach(id => next.delete(id)); return next; });
+    await fetchAlerts();
+    setBulkDueApplying(false);
+    const verb = dueDate === null ? 'cleared' : `set to ${dueDate}`;
+    if (failedIds.length > 0) toast(`${failedIds.length} alerts could not be updated and remain selected.`, 'error');
+    else toast(`Triage due date ${verb} for ${ids.length} alerts.`, 'success');
+  };
+
   const handleBulkSnooze = async (value: string) => {
     if (value === '') return;
     const hours = Number(value);
@@ -332,7 +356,7 @@ export function Alerts() {
     <div className="space-y-6">
       <PageHeader eyebrow="Observe" title="Alerts" description={`${total} vulnerability and threat alerts across the monitored estate.`} actions={
         selectedIds.size > 0 ? (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
             {members.length > 0 && (
               <select
                 aria-label="Assign selected alerts"
@@ -358,6 +382,19 @@ export function Alerts() {
               <option value="24">24 hours</option>
               <option value="168">7 days</option>
               <option value="720">30 days</option>
+            </select>
+            <select
+              aria-label="Set due date for selected alerts"
+              value=""
+              disabled={bulkDueApplying}
+              onChange={(e) => { void handleBulkDueDate(e.target.value); }}
+              className="min-h-9 rounded-md border border-surface-600 bg-surface-800 px-2.5 text-sm text-surface-200 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+            >
+              <option value="" disabled>Due date for {selectedIds.size} selected...</option>
+              <option value="3">Due in 3 days</option>
+              <option value="7">Due in 7 days</option>
+              <option value="30">Due in 30 days</option>
+              <option value="clear">Clear due date</option>
             </select>
             <button
               onClick={() => void handleBulkWatch(true)}
