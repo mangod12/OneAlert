@@ -113,6 +113,7 @@ async def list_alerts(
     ),
     min_age_days: int | None = Query(None, ge=0, le=365, description="Only alerts at least this many days old"),
     max_age_days: int | None = Query(None, ge=0, le=365, description="Only alerts at most this many days old"),
+    overdue: bool | None = Query(None, description="Only unresolved alerts past their triage due date"),
     sort: str = Query(
         "created_at_desc",
         pattern="^(created_at_desc|created_at_asc|cvss_desc|cvss_asc|severity_desc|severity_asc)$",
@@ -188,6 +189,13 @@ async def list_alerts(
         oldest = datetime.now(UTC) - timedelta(days=min_age_days)
         query = query.filter(Alert.created_at <= oldest)
         count_base_query = count_base_query.filter(Alert.created_at <= oldest)
+    if overdue:
+        today = datetime.now(UTC).date()
+        active_statuses = (AlertStatus.PENDING, AlertStatus.SENT, AlertStatus.ACKNOWLEDGED)
+        query = query.filter(Alert.due_date.isnot(None), Alert.due_date < today, Alert.status.in_(active_statuses))
+        count_base_query = count_base_query.filter(
+            Alert.due_date.isnot(None), Alert.due_date < today, Alert.status.in_(active_statuses)
+        )
 
     # Finalize count query using a subquery for explicitness and to avoid deprecation warnings
     final_count_query = select(func.count()).select_from(count_base_query.subquery())
@@ -252,6 +260,7 @@ async def export_alerts(
     ),
     min_age_days: int | None = Query(None, ge=0, le=365, description="Only alerts at least this many days old"),
     max_age_days: int | None = Query(None, ge=0, le=365, description="Only alerts at most this many days old"),
+    overdue: bool | None = Query(None, description="Only unresolved alerts past their triage due date"),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -294,6 +303,10 @@ async def export_alerts(
         query = query.filter(Alert.created_at >= datetime.now(UTC) - timedelta(days=max_age_days))
     if min_age_days is not None:
         query = query.filter(Alert.created_at <= datetime.now(UTC) - timedelta(days=min_age_days))
+    if overdue:
+        today = datetime.now(UTC).date()
+        active_statuses = (AlertStatus.PENDING, AlertStatus.SENT, AlertStatus.ACKNOWLEDGED)
+        query = query.filter(Alert.due_date.isnot(None), Alert.due_date < today, Alert.status.in_(active_statuses))
 
     query = query.order_by(Alert.created_at.desc()).limit(5000)
     rows = (await db.execute(query)).all()
@@ -459,11 +472,17 @@ async def update_alert(
             ))
 
     changes = []
+    old_due_date = alert.due_date
     for field, value in update_data.items():
         old_value = getattr(alert, field)
         if old_value != value:
             changes.append(f"{field}: {old_value} -> {value}")
         setattr(alert, field, value)
+
+    # Moving or clearing the triage target re-arms SLA notifications.
+    if "due_date" in update_data and alert.due_date != old_due_date:
+        alert.sla_breach_notified_at = None
+        alert.sla_due_soon_notified_at = None
 
     if changes:
         add_audit_log(

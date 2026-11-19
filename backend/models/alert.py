@@ -10,11 +10,11 @@ schemas for alert-related API operations (create, read, etc).
   for request/response validation and serialization.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, Field  # Ensure compatibility with Pydantic v2
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -59,6 +59,10 @@ class Alert(Base):
     acknowledged_at = Column(DateTime(timezone=True), nullable=True)
     resolved_at = Column(DateTime(timezone=True), nullable=True)
     snoozed_until = Column(DateTime(timezone=True), nullable=True)
+    due_date = Column(Date, nullable=True)  # analyst-set triage target date
+    sla_breach_notified_at = Column(DateTime(timezone=True), nullable=True)  # set once an overdue notification was sent
+    # set once a due-tomorrow warning was sent
+    sla_due_soon_notified_at = Column(DateTime(timezone=True), nullable=True)
     source_url = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -88,6 +92,7 @@ class Alert(Base):
             "acknowledged_at": self.acknowledged_at.isoformat() if self.acknowledged_at else None,
             "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
             "snoozed_until": self.snoozed_until.isoformat() if self.snoozed_until else None,
+            "due_date": self.due_date.isoformat() if self.due_date else None,
         }
 
 
@@ -149,6 +154,7 @@ class AlertRead(AlertBase):
     acknowledged_at: datetime | None = None
     resolved_at: datetime | None = None
     snoozed_until: datetime | None = None
+    due_date: date | None = None
     created_at: datetime
     updated_at: datetime | None = None
 
@@ -166,6 +172,7 @@ class AlertUpdate(BaseModel):
     status: AlertStatus | None = None
     acknowledged_at: datetime | None = None
     assigned_to_id: int | None = None  # send explicit null to unassign
+    due_date: date | None = None  # send explicit null to clear the triage target
 
     model_config = {"from_attributes": True}
 
@@ -180,6 +187,7 @@ class AlertResponse(AlertBase):
     acknowledged_at: datetime | None = None
     resolved_at: datetime | None = None
     snoozed_until: datetime | None = None
+    due_date: date | None = None
     created_at: datetime
     updated_at: datetime | None = None
 

@@ -554,3 +554,44 @@ describe('Alert watchers', () => {
     await waitFor(() => expect(screen.queryByLabelText('Add an alert watcher')).toBeNull());
   });
 });
+
+describe('AlertDetail triage due date', () => {
+  function mockDetailEndpoints() {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/alerts/1/watchers') return { data: [] };
+      if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null } };
+      if (url === '/alerts/1/remediations') return { data: [] };
+      return { data: [] };
+    });
+  }
+
+  it('saves a triage due date from the drawer', async () => {
+    mockDetailEndpoints();
+    const patch = vi.mocked(apiClient.patch);
+    patch.mockResolvedValue({ data: {} });
+    const onDueDateChange = vi.fn();
+    render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} onDueDateChange={onDueDateChange} />);
+    const input = await screen.findByLabelText('Triage due date');
+    fireEvent.change(input, { target: { value: '2026-11-25' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(patch).toHaveBeenCalledWith('/alerts/1', { due_date: '2026-11-25' }));
+    expect(onDueDateChange).toHaveBeenCalledWith(1, '2026-11-25');
+  });
+
+  it('clears a saved due date', async () => {
+    mockDetailEndpoints();
+    const patch = vi.mocked(apiClient.patch);
+    patch.mockResolvedValue({ data: {} });
+    const onDueDateChange = vi.fn();
+    render(<AlertDetail alert={{ ...alert, due_date: '2026-11-25' }} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} onDueDateChange={onDueDateChange} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear' }));
+    await waitFor(() => expect(patch).toHaveBeenCalledWith('/alerts/1', { due_date: null }));
+    expect(onDueDateChange).toHaveBeenCalledWith(1, null);
+  });
+
+  it('flags an overdue alert in the drawer', async () => {
+    mockDetailEndpoints();
+    render(<AlertDetail alert={{ ...alert, due_date: '2020-01-01' }} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />);
+    expect(await screen.findByText(/Overdue: the triage target has passed/)).toBeTruthy();
+  });
+});
