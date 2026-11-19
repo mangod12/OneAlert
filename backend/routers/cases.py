@@ -3,6 +3,7 @@
 
 import csv
 import io
+import re
 from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -61,6 +62,9 @@ def _visible_cases(case_id: int, current_user: User):
             Case.id.in_(watched),
         ),
     )
+
+
+_MENTION_RE = re.compile(r"@([A-Za-z0-9._-]+)")
 
 
 router = APIRouter()
@@ -402,8 +406,61 @@ async def add_case_note(
         source="human",
     )
     db.add(entry)
+
+    # @mentions: "@will" pings will@<org> and, when the author can share the
+    # case (owner or assignee), adds them as a watcher so the link works and
+    # they follow the rest of the investigation.
+    mention_hits = {token.lower() for token in _MENTION_RE.findall(content)}
+    notified: list[User] = []
+    if mention_hits and current_user.org_id is not None:
+        org_members = (await db.execute(
+            select(User).where(
+                User.org_id == current_user.org_id,
+                User.is_active == True,  # noqa: E712
+            )
+        )).scalars().all()
+        targets = [
+            u for u in org_members
+            if u.id != current_user.id and u.email.split("@", 1)[0].lower() in mention_hits
+        ]
+        if targets:
+            watcher_rows = (await db.execute(
+                select(CaseWatcher.user_id).where(CaseWatcher.case_id == case.id)
+            )).scalars().all()
+            watcher_ids = set(watcher_rows)
+            can_share = current_user.id in (case.user_id, case.assigned_to_id)
+            excerpt = content if len(content) <= 140 else content[:137] + "..."
+            for target in targets:
+                has_access = (
+                    target.id in (case.user_id, case.assigned_to_id)
+                    or target.id in watcher_ids
+                )
+                if not has_access:
+                    if not can_share:
+                        continue  # a watcher cannot pull new people into the case
+                    db.add(CaseWatcher(case_id=case.id, user_id=target.id))
+                    watcher_ids.add(target.id)
+                db.add(Notification(
+                    user_id=target.id,
+                    kind="case_mention",
+                    title=f"{current_user.email} mentioned you in case #{case.id}",
+                    body=excerpt,
+                    link=f"/app/cases/{case.id}",
+                ))
+                notified.append(target)
+
     await db.commit()
     await db.refresh(entry)
+
+    for target in notified:
+        await notify_investigation_event(
+            target,
+            kind="case_mention",
+            severity=case.severity,
+            title=f"{current_user.email} mentioned you in case #{case.id}",
+            body=f"{case.title}. Open the case to read the note.",
+            link_path=f"/app/cases/{case.id}",
+        )
     return entry
 
 
