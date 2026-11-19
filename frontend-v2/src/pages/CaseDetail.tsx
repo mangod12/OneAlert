@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { MentionTextarea } from '../components/MentionTextarea';
 import apiClient from '../api/client';
 import { useAuthStore } from '../stores/authStore';
-import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil, Trash2, Download, Shield, Eye, EyeOff, ListChecks, Square, CheckSquare } from 'lucide-react';
+import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil, Trash2, Download, Shield, Eye, EyeOff, ListChecks, Square, CheckSquare, CheckCircle2 } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { toast } from '../components/Toast';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -38,6 +38,8 @@ const NEXT_STATUSES: Record<string, Array<{ status: string; label: string }>> = 
   closed: [{ status: 'open', label: 'Reopen' }],
 };
 
+const DONE_CASE_STATUSES = ['resolved', 'closed', 'false_positive'];
+
 interface TimelineEntry {
   id: number;
   timestamp: string;
@@ -66,6 +68,8 @@ interface CaseData {
   assigned_to_id: number | null;
   assigned_to_email: string | null;
   due_date: string | null;
+  closed_at: string | null;
+  resolution: string | null;
   timeline: TimelineEntry[];
 }
 interface RelatedAlert { id: number; severity: string; cve_id?: string | null; title: string; }
@@ -98,6 +102,10 @@ export function CaseDetail() {
   const [error, setError] = useState('');
   const [degraded, setDegraded] = useState<string[]>([]);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [pendingClose, setPendingClose] = useState<{ status: string; label: string } | null>(null);
+  const [editingResolution, setEditingResolution] = useState(false);
+  const [resolutionDraft, setResolutionDraft] = useState('');
+  const [savingResolution, setSavingResolution] = useState(false);
   const [blastRadius, setBlastRadius] = useState<BlastRadius | null>(null);
   const [similarCases, setSimilarCases] = useState<SimilarCase[]>([]);
   const [plans, setPlans] = useState<CasePlan[]>([]);
@@ -162,15 +170,29 @@ export function CaseDetail() {
     finally { setSavingDueDate(false); }
   };
 
-  const changeStatus = async (status: string) => {
+  const changeStatus = async (status: string, resolution?: string) => {
     if (updatingStatus) return;
     setUpdatingStatus(true);
     try {
-      await apiClient.patch(`/cases/${caseId}`, null, { params: { status_update: status } });
+      const params: Record<string, string> = { status_update: status };
+      if (resolution && resolution.trim()) params.resolution = resolution.trim();
+      await apiClient.patch(`/cases/${caseId}`, null, { params });
       toast(`Case marked ${status}`, 'success');
       await fetchAll();
     } catch (err) { toast(getApiErrorMessage(err, 'Case status could not be updated.'), 'error'); }
     finally { setUpdatingStatus(false); }
+  };
+
+  const saveResolution = async () => {
+    if (savingResolution) return;
+    setSavingResolution(true);
+    try {
+      await apiClient.patch(`/cases/${caseId}`, null, { params: { resolution: resolutionDraft } });
+      toast('Resolution updated', 'success');
+      setEditingResolution(false);
+      await fetchAll();
+    } catch (err) { toast(getApiErrorMessage(err, 'The resolution could not be updated.'), 'error'); }
+    finally { setSavingResolution(false); }
   };
 
   const changeSeverity = async (severity: string) => {
@@ -597,7 +619,10 @@ export function CaseDetail() {
                   key={action.status}
                   type="button"
                   disabled={updatingStatus}
-                  onClick={() => void changeStatus(action.status)}
+                  onClick={() => {
+                    if (DONE_CASE_STATUSES.includes(action.status)) setPendingClose(action);
+                    else void changeStatus(action.status);
+                  }}
                   className="rounded-md border border-surface-700 px-3 py-1.5 text-xs font-medium text-surface-200 transition-colors hover:bg-surface-800 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {action.label}
@@ -627,6 +652,78 @@ export function CaseDetail() {
           <p className="text-lg font-medium text-primary-400 mt-1 capitalize">{caseData.created_by}</p>
         </div>
       </div>
+
+      {/* Close-out */}
+      {DONE_CASE_STATUSES.includes(caseData.status) && (
+        <div className="oa-panel p-6" data-testid="case-closeout">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-surface-50">
+              <CheckCircle2 className="w-5 h-5 text-success" /> Close-out
+            </h2>
+            {isOwner && !editingResolution && (
+              <button
+                type="button"
+                onClick={() => { setResolutionDraft(caseData.resolution ?? ''); setEditingResolution(true); }}
+                className="flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300"
+              >
+                <Pencil className="w-3 h-3" /> {caseData.resolution ? 'Edit resolution' : 'Add resolution'}
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-surface-400">
+            {caseData.closed_at && (
+              <span>Closed {new Date(caseData.closed_at).toLocaleDateString()}</span>
+            )}
+            {caseData.closed_at && (
+              <span>
+                Took {Math.max(0, Math.round((new Date(caseData.closed_at).getTime() - new Date(caseData.created_at).getTime()) / 86400000))} days
+              </span>
+            )}
+            {caseData.due_date && caseData.closed_at && (
+              (caseData.closed_at.slice(0, 10) <= caseData.due_date)
+                ? <span className="text-success">SLA met</span>
+                : <span className="text-danger">SLA breached</span>
+            )}
+            {tasks.length > 0 && (
+              <span>{tasks.filter(t => t.done).length} of {tasks.length} tasks done</span>
+            )}
+          </div>
+          {editingResolution ? (
+            <div className="mt-3 space-y-2">
+              <textarea
+                aria-label="Resolution summary"
+                value={resolutionDraft}
+                onChange={e => setResolutionDraft(e.target.value)}
+                rows={3}
+                placeholder="What was the outcome? Root cause, containment, follow-ups."
+                className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-200 placeholder-surface-500"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={savingResolution}
+                  onClick={() => void saveResolution()}
+                  className="rounded-md bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-500 disabled:opacity-40"
+                >
+                  Save resolution
+                </button>
+                <button
+                  type="button"
+                  disabled={savingResolution}
+                  onClick={() => setEditingResolution(false)}
+                  className="rounded-md border border-surface-700 px-3 py-1.5 text-xs text-surface-300 hover:bg-surface-800 disabled:opacity-40"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className={`mt-3 text-sm ${caseData.resolution ? 'text-surface-200' : 'text-surface-500'}`}>
+              {caseData.resolution ?? 'No resolution recorded.'}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Investigation Tasks */}
       <div className="oa-panel p-6">
@@ -1040,6 +1137,20 @@ export function CaseDetail() {
           </div>
         </div>
       </div>
+
+      {pendingClose && (
+        <ConfirmDialog
+          title={`${pendingClose.label} this case?`}
+          description="The case moves to a done state. You can reopen it later from the case page."
+          confirmLabel={pendingClose.label}
+          reasonLabel={isOwner ? 'Resolution summary (optional)' : undefined}
+          reasonPlaceholder="Root cause, containment, follow-ups."
+          defaultReason={caseData.resolution ?? ''}
+          busy={updatingStatus}
+          onCancel={() => { if (!updatingStatus) setPendingClose(null); }}
+          onConfirm={(reason) => { setPendingClose(null); void changeStatus(pendingClose.status, reason); }}
+        />
+      )}
 
       {pendingDeleteNote && (
         <ConfirmDialog

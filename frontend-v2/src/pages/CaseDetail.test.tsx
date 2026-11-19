@@ -129,6 +129,8 @@ describe('Case status transitions', () => {
     mockPatch.mockRejectedValue(new Error('Conflict'));
     renderDetail();
     fireEvent.click(await screen.findByRole('button', { name: 'Resolve' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Resolve' }));
     await waitFor(() => expect(mockPatch).toHaveBeenCalled());
     // Still showing the open-case actions; no crash, badge unchanged.
     expect(await screen.findByRole('button', { name: 'Start investigating' })).toBeTruthy();
@@ -846,5 +848,86 @@ describe('Seed checklist from a response plan', () => {
     renderDetail();
     expect(await screen.findByText('Plan #43')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Seed checklist from plan 43' })).toBeNull();
+  });
+});
+
+describe('Case close-out', () => {
+  function mockClosed(overrides: Record<string, unknown> = {}) {
+    mockGet.mockImplementation(url => {
+      if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
+      if (url.endsWith('/alerts')) return Promise.resolve({ data: [] });
+      if (url.endsWith('/events')) return Promise.resolve({ data: [] });
+      if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: null } });
+      if (url.endsWith('/similar')) return Promise.resolve({ data: { success: true, data: [] } });
+      return Promise.resolve({
+        data: {
+          ...caseData,
+          status: 'closed',
+          closed_at: '2026-11-18T08:00:00Z',
+          resolution: 'Contained and re-imaged.',
+          due_date: '2026-11-19',
+          ...overrides,
+        },
+      });
+    });
+  }
+
+  it('shows the close-out panel with resolution, timing and SLA result', async () => {
+    mockClosed();
+    renderDetail();
+    expect(await screen.findByTestId('case-closeout')).toBeTruthy();
+    expect(screen.getByText('Contained and re-imaged.')).toBeTruthy();
+    expect(screen.getByText('Took 2 days')).toBeTruthy();
+    expect(screen.getByText('SLA met')).toBeTruthy();
+  });
+
+  it('marks the SLA breached when the case closed after its due date', async () => {
+    mockClosed({ due_date: '2026-11-17' });
+    renderDetail();
+    expect(await screen.findByTestId('case-closeout')).toBeTruthy();
+    expect(screen.getByText('SLA breached')).toBeTruthy();
+  });
+
+  it('shows the empty state when no resolution was recorded', async () => {
+    mockClosed({ resolution: null });
+    renderDetail();
+    expect(await screen.findByTestId('case-closeout')).toBeTruthy();
+    expect(screen.getByText('No resolution recorded.')).toBeTruthy();
+  });
+
+  it('records a resolution from the close confirmation dialog', async () => {
+    mockLoad();
+    mockPatch.mockResolvedValue({ data: { success: true } });
+    renderDetail();
+    fireEvent.click(await screen.findByRole('button', { name: 'Resolve' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText(/Resolution summary/), {
+      target: { value: 'False positive, tuning rule added.' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Resolve' }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7', null, {
+      params: { status_update: 'resolved', resolution: 'False positive, tuning rule added.' },
+    }));
+  });
+
+  it('lets the owner edit the resolution from the close-out panel', async () => {
+    mockClosed();
+    mockPatch.mockResolvedValue({ data: { success: true } });
+    renderDetail();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit resolution' }));
+    fireEvent.change(screen.getByLabelText('Resolution summary'), {
+      target: { value: 'Updated close-out notes.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save resolution' }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7', null, {
+      params: { resolution: 'Updated close-out notes.' },
+    }));
+  });
+
+  it('hides the close-out panel while the case is open', async () => {
+    mockLoad();
+    renderDetail();
+    await screen.findByText('Suspicious lateral movement');
+    expect(screen.queryByTestId('case-closeout')).toBeNull();
   });
 });
