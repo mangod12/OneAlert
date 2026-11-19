@@ -1,6 +1,6 @@
 """Posture report: on-demand security posture summary over a trailing window."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import and_, select
@@ -43,6 +43,49 @@ def _mean_delta_seconds(rows: list) -> float | None:
     if not deltas:
         return None
     return sum(deltas) / len(deltas)
+
+
+def _as_date(value) -> date | None:
+    """Date part of a stored timestamp, tolerant of naive and aware values."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    return value
+
+
+def _sla_bucket() -> dict:
+    return {
+        "due": 0,
+        "met": 0,
+        "breached": 0,
+        "by_severity": {
+            sev: {"due": 0, "met": 0, "breached": 0}
+            for sev in ("critical", "high", "medium", "low")
+        },
+    }
+
+
+def _sla_tally(bucket: dict, severity: str, met: bool) -> None:
+    bucket["due"] += 1
+    bucket["met" if met else "breached"] += 1
+    sev = severity if severity in bucket["by_severity"] else "low"
+    entry = bucket["by_severity"][sev]
+    entry["due"] += 1
+    entry["met" if met else "breached"] += 1
+
+
+def _sla_finish(bucket: dict, upcoming: int) -> dict:
+    decided = bucket["met"] + bucket["breached"]
+    attainment = round(bucket["met"] / decided * 100, 1) if decided else None
+    return {
+        "due": bucket["due"],
+        "met": bucket["met"],
+        "breached": bucket["breached"],
+        "upcoming": upcoming,
+        "attainment_pct": attainment,
+        "by_severity": bucket["by_severity"],
+    }
 
 
 @router.get("/posture")
@@ -164,4 +207,97 @@ async def get_posture_report(
             "closed": cases_done,
             "opened": cases_opened,
         },
+    }
+
+
+@router.get("/sla")
+async def get_sla_compliance_report(
+    days: int = Query(30, ge=1, le=90),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """SLA compliance over the trailing `days`-day window.
+
+    The scored cohort is every alert and investigation whose due date fell
+    inside the window: an item met its SLA when it was resolved or closed on
+    or before its due date, and breached it otherwise (resolved late or
+    still unresolved). Items due after today are reported separately as
+    upcoming. Investigation completion uses updated_at as a proxy, since
+    cases carry no resolved_at timestamp.
+    """
+    today = datetime.now(UTC).date()
+    start = today - timedelta(days=days)
+
+    # Alerts with a triage due date in the window.
+    alert_rows = (
+        await db.execute(
+            select(Alert).where(
+                and_(
+                    Alert.user_id == current_user.id,
+                    Alert.due_date.is_not(None),
+                    Alert.due_date >= start,
+                    Alert.due_date <= today,
+                )
+            )
+        )
+    ).scalars().all()
+    alerts = _sla_bucket()
+    for alert in alert_rows:
+        resolved_on = _as_date(alert.resolved_at)
+        met = resolved_on is not None and resolved_on <= alert.due_date
+        _sla_tally(alerts, _severity_value(alert), met)
+
+    alert_upcoming = (
+        await db.execute(
+            select(Alert.id).where(
+                and_(
+                    Alert.user_id == current_user.id,
+                    Alert.due_date.is_not(None),
+                    Alert.due_date > today,
+                    Alert.status.in_(_ACTIVE_ALERT_STATUSES),
+                )
+            )
+        )
+    ).all()
+
+    # Investigations with an SLA due date in the window.
+    case_rows = (
+        await db.execute(
+            select(Case).where(
+                and_(
+                    Case.user_id == current_user.id,
+                    Case.due_date.is_not(None),
+                    Case.due_date >= start,
+                    Case.due_date <= today,
+                )
+            )
+        )
+    ).scalars().all()
+    cases = _sla_bucket()
+    for case in case_rows:
+        completed_on = (
+            _as_date(case.updated_at) if case.status in _DONE_CASE_STATUSES else None
+        )
+        met = completed_on is not None and completed_on <= case.due_date
+        _sla_tally(cases, case.severity or "medium", met)
+
+    case_upcoming = (
+        await db.execute(
+            select(Case.id).where(
+                and_(
+                    Case.user_id == current_user.id,
+                    Case.due_date.is_not(None),
+                    Case.due_date > today,
+                    Case.status.notin_(_DONE_CASE_STATUSES),
+                )
+            )
+        )
+    ).all()
+
+    return {
+        "success": True,
+        "days": days,
+        "generated_at": datetime.now(UTC).isoformat(),
+        "alerts": _sla_finish(alerts, len(alert_upcoming)),
+        "cases": _sla_finish(cases, len(case_upcoming)),
     }
