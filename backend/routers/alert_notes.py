@@ -61,7 +61,16 @@ async def list_alert_notes(
     result = await db.execute(
         select(AlertNote).where(AlertNote.alert_id == alert_id).order_by(AlertNote.created_at, AlertNote.id)
     )
-    return list(result.scalars().all())
+    notes = list(result.scalars().all())
+    author_ids = {note.user_id for note in notes}
+    if author_ids:
+        authors = (await db.execute(
+            select(User.id, User.email).where(User.id.in_(author_ids))
+        )).all()
+        email_by_id = dict(authors)
+        for note in notes:
+            note.user_email = email_by_id.get(note.user_id)
+    return notes
 
 
 @router.get("/{alert_id}/activity")
@@ -158,6 +167,7 @@ async def add_alert_note(
             body=f"{alert.title or alert.cve_id}. Open the alert to read the note.",
             link_path=f"/app/alerts?alert={alert_id}",
         )
+    note.user_email = current_user.email
     return note
 
 
@@ -188,6 +198,7 @@ async def update_alert_note(
     note.edited_at = datetime.now(UTC).replace(tzinfo=None)
     await db.commit()
     await db.refresh(note)
+    note.user_email = current_user.email
     return note
 
 

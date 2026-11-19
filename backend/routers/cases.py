@@ -339,6 +339,14 @@ async def get_case(
         .where(CaseTimeline.case_id == case_id)
         .order_by(CaseTimeline.timestamp)
     )).scalars().all()
+    author_ids = {entry.user_id for entry in timeline if entry.user_id is not None}
+    if author_ids:
+        authors = (await db.execute(
+            select(User.id, User.email).where(User.id.in_(author_ids))
+        )).all()
+        email_by_id = dict(authors)
+        for entry in timeline:
+            entry.author_email = email_by_id.get(entry.user_id)
 
     # Get counts
     alert_count = (await db.execute(
@@ -417,6 +425,7 @@ async def add_case_note(
         entry_type="note",
         content=content,
         source="human",
+        user_id=current_user.id,
     )
     db.add(entry)
 

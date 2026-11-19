@@ -47,6 +47,7 @@ interface AlertNote {
   id: number;
   alert_id: number;
   user_id: number;
+  user_email: string | null;
   body: string;
   created_at: string;
   edited_at: string | null;
@@ -392,6 +393,7 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
                     )}
                     <div className="mt-1.5 flex items-center justify-between">
                       <span className="text-[11px] text-surface-500">
+                        {note.user_email && `${note.user_email} · `}
                         {new Date(note.created_at).toLocaleString()}
                         {note.edited_at && ' · edited'}
                       </span>

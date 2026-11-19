@@ -363,9 +363,10 @@ describe('AlertDetail notes', () => {
   }
 
   it('lists existing notes', async () => {
-    mockNotesGets([{ id: 5, alert_id: 1, body: 'Vendor confirms patch due Friday', created_at: '2026-11-17T09:00:00Z' }]);
+    mockNotesGets([{ id: 5, alert_id: 1, user_id: 5, user_email: 'owner@example.com', body: 'Vendor confirms patch due Friday', created_at: '2026-11-17T09:00:00Z', edited_at: null }]);
     render(<AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />);
     expect(await screen.findByText('Vendor confirms patch due Friday')).toBeTruthy();
+    expect(screen.getByText(/owner@example\.com/)).toBeTruthy();
   });
 
   it('adds a note and shows it', async () => {

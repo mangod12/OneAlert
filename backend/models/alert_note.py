@@ -30,6 +30,7 @@ class AlertNoteResponse(BaseModel):
     id: int
     alert_id: int
     user_id: int
+    user_email: str | None = None
     body: str
     created_at: datetime
     edited_at: datetime | None = None

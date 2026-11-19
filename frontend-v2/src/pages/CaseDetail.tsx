@@ -44,6 +44,7 @@ interface TimelineEntry {
   entry_type: string;
   content: string;
   source: string;
+  author_email: string | null;
   metadata_json: Record<string, unknown> | null;
 }
 
@@ -708,7 +709,7 @@ export function CaseDetail() {
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs text-surface-500">{new Date(entry.timestamp).toLocaleString()}</span>
                           <span className="text-xs px-1.5 py-0.5 rounded bg-surface-700 text-surface-400">{entry.entry_type}</span>
-                          <span className="text-xs text-surface-600">{entry.source}</span>
+                          <span className="text-xs text-surface-600">{entry.author_email ?? entry.source}</span>
                           {entry.metadata_json?.edited ? <span className="text-xs text-surface-600">(edited)</span> : null}
                           {isOwner && entry.entry_type === 'note' && editingNoteId !== entry.id && (
                             <span className="ml-auto flex items-center gap-2">

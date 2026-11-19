@@ -123,6 +123,23 @@ class TestCaseMentions:
             ).all()
         assert len(rows) == 1
 
+    def test_note_carries_author_email_on_the_timeline(self, client):
+        owner, will, _, _, _, case_id = _setup(client)
+        resp = client.post(
+            f"/api/v1/cases/{case_id}/notes",
+            json={"content": "@will can you check the beacon cadence?"},
+            headers=owner,
+        )
+        assert resp.status_code in (200, 201), resp.text
+
+        detail = client.get(f"/api/v1/cases/{case_id}", headers=owner)
+        assert detail.status_code == 200, detail.text
+        notes = [e for e in detail.json()["timeline"] if e["entry_type"] == "note"]
+        assert any(
+            e["author_email"] == "owner@example.com" and "beacon cadence" in e["content"]
+            for e in notes
+        )
+
     def test_mention_is_case_insensitive_on_local_part(self, client):
         owner, will, _, _, _, case_id = _setup(client)
         resp = client.post(
