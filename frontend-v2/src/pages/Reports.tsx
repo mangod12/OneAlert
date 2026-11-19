@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { BriefcaseMedical, Clock, Download, ShieldAlert, ShieldCheck, Siren, Timer, Users } from 'lucide-react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
+import { WorkloadExplorer } from '../components/WorkloadExplorer';
 import { KPICard } from '../components/KPICard';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -365,8 +366,8 @@ export function Reports() {
               title="Team workload"
               description="Open assigned work across your organization: alerts past their triage due date, investigations past their SLA, and checklist tasks past their due date. Response and task completion times are trailing-30-day averages for work assigned to each member."
             >
-              <ul className="divide-y divide-surface-800" data-testid="team-workload">
-                {workload.members.map((member) => {
+              <WorkloadExplorer members={workload.members} generatedAt={workload.generated_at}>
+                {(member) => {
                   const totalOpen = member.alerts_open + member.cases_open + member.tasks_open;
                   const totalOverdue = member.alerts_overdue + member.cases_overdue + member.tasks_overdue;
                   return (
@@ -401,8 +402,8 @@ export function Reports() {
                       </div>
                     </li>
                   );
-                })}
-              </ul>
+                }}
+              </WorkloadExplorer>
             </Panel>
           )}
 
