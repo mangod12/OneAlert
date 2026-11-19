@@ -1,6 +1,7 @@
 """Notes attached to alerts."""
 
 import re
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_, select
@@ -157,6 +158,36 @@ async def add_alert_note(
             body=f"{alert.title or alert.cve_id}. Open the alert to read the note.",
             link_path=f"/app/alerts?alert={alert_id}",
         )
+    return note
+
+
+@router.patch("/{alert_id}/notes/{note_id}", response_model=AlertNoteResponse)
+async def update_alert_note(
+    alert_id: int,
+    note_id: int,
+    payload: AlertNoteCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Edit a note. Only its author may edit it."""
+    await _visible_alert(alert_id, current_user, db)
+    result = await db.execute(
+        select(AlertNote).where(
+            AlertNote.id == note_id,
+            AlertNote.alert_id == alert_id,
+            AlertNote.user_id == current_user.id,
+        )
+    )
+    note = result.scalar_one_or_none()
+    if note is None:
+        raise HTTPException(status_code=404, detail="Note not found")
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Note cannot be blank")
+    note.body = body
+    note.edited_at = datetime.now(UTC).replace(tzinfo=None)
+    await db.commit()
+    await db.refresh(note)
     return note
 
 

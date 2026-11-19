@@ -46,8 +46,10 @@ interface LinkedCase {
 interface AlertNote {
   id: number;
   alert_id: number;
+  user_id: number;
   body: string;
   created_at: string;
+  edited_at: string | null;
 }
 
 interface AlertActivity {
@@ -186,6 +188,21 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
       setNoteError(getApiErrorMessage(error, 'The note could not be saved.'));
     } finally {
       setNoteSaving(false);
+    }
+  };
+
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [editNoteDraft, setEditNoteDraft] = useState('');
+
+  const saveNoteEdit = async (noteId: number) => {
+    const body = editNoteDraft.trim();
+    if (!body) return;
+    try {
+      const res = await apiClient.patch<AlertNote>(`/alerts/${alert.id}/notes/${noteId}`, { body });
+      setNotes(current => current?.map(note => (note.id === noteId ? res.data : note)) ?? current);
+      setEditingNoteId(null);
+    } catch (error: unknown) {
+      setNoteError(getApiErrorMessage(error, 'The note could not be saved.'));
     }
   };
 
@@ -342,17 +359,62 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
                 {notes.length === 0 && <li className="text-xs text-surface-500">No notes yet</li>}
                 {notes.map(note => (
                   <li key={note.id} className="rounded-md border border-surface-700 bg-surface-800/50 p-3">
-                    <p className="text-sm text-surface-300 whitespace-pre-wrap">{note.body}</p>
+                    {editingNoteId === note.id ? (
+                      <div className="flex items-start gap-2">
+                        <MentionTextarea
+                          aria-label="Edit note"
+                          value={editNoteDraft}
+                          members={members}
+                          maxLength={4000}
+                          rows={2}
+                          onChange={setEditNoteDraft}
+                          className="min-h-9 w-full rounded-md border border-surface-700 bg-surface-800 px-2.5 py-1.5 text-sm text-surface-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        />
+                        <button
+                          type="button"
+                          disabled={!editNoteDraft.trim()}
+                          onClick={() => void saveNoteEdit(note.id)}
+                          className="shrink-0 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-500 disabled:opacity-40"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Cancel note edit"
+                          onClick={() => setEditingNoteId(null)}
+                          className="shrink-0 rounded-md px-2 py-1.5 text-sm text-surface-400 hover:text-surface-200"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-surface-300 whitespace-pre-wrap">{note.body}</p>
+                    )}
                     <div className="mt-1.5 flex items-center justify-between">
-                      <span className="text-[11px] text-surface-500">{new Date(note.created_at).toLocaleString()}</span>
-                      <button
-                        type="button"
-                        aria-label={`Delete note ${note.id}`}
-                        onClick={() => void deleteNote(note.id)}
-                        className="text-[11px] font-medium text-surface-500 hover:text-danger-400"
-                      >
-                        Delete
-                      </button>
+                      <span className="text-[11px] text-surface-500">
+                        {new Date(note.created_at).toLocaleString()}
+                        {note.edited_at && ' · edited'}
+                      </span>
+                      <span className="flex items-center gap-3">
+                        {note.user_id === currentUserId && editingNoteId !== note.id && (
+                          <button
+                            type="button"
+                            aria-label={`Edit note ${note.id}`}
+                            onClick={() => { setEditingNoteId(note.id); setEditNoteDraft(note.body); }}
+                            className="text-[11px] font-medium text-surface-500 hover:text-surface-200"
+                          >
+                            Edit
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          aria-label={`Delete note ${note.id}`}
+                          onClick={() => void deleteNote(note.id)}
+                          className="text-[11px] font-medium text-surface-500 hover:text-danger-400"
+                        >
+                          Delete
+                        </button>
+                      </span>
                     </div>
                   </li>
                 ))}
