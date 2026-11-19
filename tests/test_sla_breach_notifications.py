@@ -286,3 +286,70 @@ class TestDueDateChangeRearmsDueSoon:
         assert resp.status_code == 200, resp.text
         with TestingSessionLocal() as session:
             assert session.get(Case, case_id).sla_due_soon_notified_at is None
+
+
+def _second_user_id() -> int:
+    with TestingSessionLocal() as session:
+        user = User(
+            email="sla_assignee@example.com",
+            hashed_password=get_password_hash("testpass123"),
+            full_name="SLA Assignee",
+            company="Test Corp",
+            is_active=True,
+            is_verified=True,
+        )
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        return user.id
+
+
+class TestAssigneeSlaNotifications:
+    @pytest.mark.asyncio
+    async def test_breach_notifies_owner_and_assignee(self, client):
+        owner = _user_id()
+        assignee = _second_user_id()
+        (case_id,) = _seed_cases(owner, [
+            {"title": "Overdue investigation", "severity": "high",
+             "status": "open", "due_date": YESTERDAY, "assigned_to_id": assignee},
+        ])
+        async with AsyncTestingSessionLocal() as session:
+            assert await notify_breached_slas(session) == 1
+            rows = (await session.execute(
+                select(Notification.user_id).where(Notification.kind == "case_sla_breached")
+            )).scalars().all()
+            assert sorted(rows) == sorted([owner, assignee])
+            case = await session.get(Case, case_id)
+            assert case.sla_breach_notified_at is not None
+            await session.rollback()
+
+    @pytest.mark.asyncio
+    async def test_due_soon_notifies_owner_and_assignee(self, client):
+        owner = _user_id()
+        assignee = _second_user_id()
+        _seed_cases(owner, [
+            {"title": "Due tomorrow", "severity": "medium",
+             "status": "investigating", "due_date": TOMORROW, "assigned_to_id": assignee},
+        ])
+        async with AsyncTestingSessionLocal() as session:
+            assert await notify_due_soon_slas(session) == 1
+            rows = (await session.execute(
+                select(Notification.user_id).where(Notification.kind == "case_sla_due_soon")
+            )).scalars().all()
+            assert sorted(rows) == sorted([owner, assignee])
+            await session.rollback()
+
+    @pytest.mark.asyncio
+    async def test_unassigned_case_notifies_only_owner(self, client):
+        owner = _user_id()
+        _seed_cases(owner, [
+            {"title": "Unassigned overdue", "severity": "low",
+             "status": "open", "due_date": YESTERDAY},
+        ])
+        async with AsyncTestingSessionLocal() as session:
+            assert await notify_breached_slas(session) == 1
+            rows = (await session.execute(
+                select(Notification.user_id).where(Notification.kind == "case_sla_breached")
+            )).scalars().all()
+            assert rows == [owner]
+            await session.rollback()

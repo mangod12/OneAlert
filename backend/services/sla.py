@@ -44,6 +44,14 @@ def sla_due_date(user, severity) -> date | None:
 _ACTIVE_CASE_STATUSES = ("open", "investigating")
 
 
+def _case_sla_recipients(case) -> list[int]:
+    """The owner plus the assignee (when different) own an investigation's SLA."""
+    recipients = [case.user_id]
+    if case.assigned_to_id is not None and case.assigned_to_id != case.user_id:
+        recipients.append(case.assigned_to_id)
+    return recipients
+
+
 async def notify_breached_slas(db) -> int:
     """Notify owners once per investigation that passed its SLA due date.
 
@@ -63,29 +71,32 @@ async def notify_breached_slas(db) -> int:
     now = datetime.now(UTC)
     for case in breached:
         days_overdue = (today - case.due_date).days
-        db.add(Notification(
-            user_id=case.user_id,
-            kind="case_sla_breached",
-            title=f"Investigation overdue: {case.title}",
-            body=(
-                f"SLA target {case.due_date.isoformat()} passed "
-                f"{days_overdue} day{'s' if days_overdue != 1 else ''} ago. "
-                f"Severity: {case.severity}."
-            ),
-            link=f"/app/cases/{case.id}",
-        ))
-        db.add(AuditLog(
-            user_id=case.user_id, action="case_sla_breached",
-            target_type="case", target_id=case.id,
-            detail=f"Investigation {days_overdue}d past its SLA due date {case.due_date.isoformat()}",
-        ))
+        for recipient_id in _case_sla_recipients(case):
+            db.add(Notification(
+                user_id=recipient_id,
+                kind="case_sla_breached",
+                title=f"Investigation overdue: {case.title}",
+                body=(
+                    f"SLA target {case.due_date.isoformat()} passed "
+                    f"{days_overdue} day{'s' if days_overdue != 1 else ''} ago. "
+                    f"Severity: {case.severity}."
+                ),
+                link=f"/app/cases/{case.id}",
+            ))
+            db.add(AuditLog(
+                user_id=recipient_id, action="case_sla_breached",
+                target_type="case", target_id=case.id,
+                detail=f"Investigation {days_overdue}d past its SLA due date {case.due_date.isoformat()}",
+            ))
         case.sla_breach_notified_at = now
     if breached:
         await db.commit()
         logger.info("Sent %d SLA breach notifications", len(breached))
         for case in breached:
-            user = await db.get(User, case.user_id)
-            if user is not None:
+            for recipient_id in _case_sla_recipients(case):
+                user = await db.get(User, recipient_id)
+                if user is None:
+                    continue
                 await notify_investigation_event(
                     user,
                     kind="case_sla_breached",
@@ -118,25 +129,28 @@ async def notify_due_soon_slas(db) -> int:
     )).scalars().all()
     now = datetime.now(UTC)
     for case in due_soon:
-        db.add(Notification(
-            user_id=case.user_id,
-            kind="case_sla_due_soon",
-            title=f"Investigation due tomorrow: {case.title}",
-            body=f"SLA target {case.due_date.isoformat()} is tomorrow. Severity: {case.severity}.",
-            link=f"/app/cases/{case.id}",
-        ))
-        db.add(AuditLog(
-            user_id=case.user_id, action="case_sla_due_soon",
-            target_type="case", target_id=case.id,
-            detail=f"Investigation reaches its SLA due date {case.due_date.isoformat()} tomorrow",
-        ))
+        for recipient_id in _case_sla_recipients(case):
+            db.add(Notification(
+                user_id=recipient_id,
+                kind="case_sla_due_soon",
+                title=f"Investigation due tomorrow: {case.title}",
+                body=f"SLA target {case.due_date.isoformat()} is tomorrow. Severity: {case.severity}.",
+                link=f"/app/cases/{case.id}",
+            ))
+            db.add(AuditLog(
+                user_id=recipient_id, action="case_sla_due_soon",
+                target_type="case", target_id=case.id,
+                detail=f"Investigation reaches its SLA due date {case.due_date.isoformat()} tomorrow",
+            ))
         case.sla_due_soon_notified_at = now
     if due_soon:
         await db.commit()
         logger.info("Sent %d SLA due-soon notifications", len(due_soon))
         for case in due_soon:
-            user = await db.get(User, case.user_id)
-            if user is not None:
+            for recipient_id in _case_sla_recipients(case):
+                user = await db.get(User, recipient_id)
+                if user is None:
+                    continue
                 await notify_investigation_event(
                     user,
                     kind="case_sla_due_soon",
