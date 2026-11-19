@@ -447,6 +447,18 @@ describe('Bulk assign', () => {
     await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/alerts/1', { assigned_to_id: null }));
   });
 
+  it('auto-assigns selected alerts across the org', async () => {
+    mockWithMembers();
+    mockPost.mockResolvedValue({ data: { assigned: { 1: 2 } } });
+    render(<MemoryRouter><Alerts /></MemoryRouter>);
+    await screen.findByText('CVE-2026-0001');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select alert CVE-2026-0001' }));
+    const select = await screen.findByRole('combobox', { name: 'Assign selected alerts' });
+    fireEvent.change(select, { target: { value: 'auto' } });
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/alerts/auto-assign', { alert_ids: [1] }));
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+
   it('hides the assign control when no alerts are selected', async () => {
     mockWithMembers();
     render(<MemoryRouter><Alerts /></MemoryRouter>);

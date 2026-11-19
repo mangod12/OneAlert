@@ -59,3 +59,14 @@ async def auto_assignee_id(db, user) -> int | None:
     load = await _open_work_loads(db, [m.id for m in members])
     best = min(members, key=lambda m: (load.get(m.id, 0), m.id))
     return best.id
+
+
+async def org_members(db, user) -> list:
+    """Active members of the user's org; just the user when they have none."""
+    if isinstance(user.org_id, int) and not isinstance(user.org_id, bool):
+        members = (await db.execute(
+            select(User).where(User.org_id == user.org_id, User.is_active == True)  # noqa: E712
+        )).scalars().all()
+        if members:
+            return list(members)
+    return [user]
