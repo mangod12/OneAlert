@@ -2,7 +2,7 @@ import type { Alert, EpssScore, RemediationAction } from '../api/types';
 import apiClient from '../api/client';
 import { useAuthStore } from '../stores/authStore';
 import { getApiErrorMessage } from '../api/errors';
-import { X, ExternalLink, Wrench, FolderOpen, Briefcase } from 'lucide-react';
+import { X, ExternalLink, Wrench, FolderOpen, Briefcase, Eye, EyeOff } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBadge } from './ui/StatusBadge';
@@ -77,9 +77,13 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [assigning, setAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
+  const [watchers, setWatchers] = useState<Array<{ user_id: number; email: string; full_name: string | null }>>([]);
+  const [watchBusy, setWatchBusy] = useState(false);
   const currentUserId = useAuthStore(state => state.user?.id ?? null);
   // Assignment is owner-only on the API; everyone else keeps the actions below.
   const isOwner = currentUserId === null || alert.user_id === currentUserId;
+  const isWatching = currentUserId !== null && watchers.some(w => w.user_id === currentUserId);
+  const watchCandidates = members.filter(m => !watchers.some(w => w.user_id === m.id));
 
   useEffect(() => {
     apiClient.get<OrgMember[]>('/orgs/me/members')
@@ -101,6 +105,47 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
     } finally {
       setAssigning(false);
     }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient.get<Array<{ user_id: number; email: string; full_name: string | null }>>(`/alerts/${alert.id}/watchers`)
+      .then(res => { if (!cancelled) setWatchers(Array.isArray(res.data) ? res.data : []); })
+      .catch(() => { if (!cancelled) setWatchers([]); });
+    return () => { cancelled = true; };
+  }, [alert.id]);
+
+  const refreshWatchers = async () => {
+    try {
+      const res = await apiClient.get(`/alerts/${alert.id}/watchers`);
+      setWatchers(Array.isArray(res.data) ? res.data : []);
+    } catch { setWatchers([]); }
+  };
+
+  const toggleWatch = async () => {
+    if (watchBusy) return;
+    setWatchBusy(true);
+    try {
+      if (isWatching) await apiClient.delete(`/alerts/${alert.id}/watch`);
+      else await apiClient.post(`/alerts/${alert.id}/watch`);
+      await refreshWatchers();
+    } catch { /* the button simply keeps its previous state */ }
+    finally { setWatchBusy(false); }
+  };
+
+  const addWatcher = async (value: string) => {
+    if (!value) return;
+    try {
+      const res = await apiClient.post(`/alerts/${alert.id}/watchers`, { user_id: Number(value) });
+      setWatchers(Array.isArray(res.data) ? res.data : []);
+    } catch { /* the select stays put */ }
+  };
+
+  const removeWatcher = async (userId: number) => {
+    try {
+      await apiClient.delete(`/alerts/${alert.id}/watchers/${userId}`);
+      setWatchers(prev => prev.filter(w => w.user_id !== userId));
+    } catch { /* the chip stays put */ }
   };
 
   useEffect(() => {
@@ -178,6 +223,17 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="alert-detail-title" className="animate-in relative h-full w-full max-w-lg overflow-y-auto border-l border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]">
         <div className="flex items-center justify-between mb-2">
           <h2 id="alert-detail-title" className="text-lg font-semibold font-mono text-surface-50">{alert.cve_id}</h2>
+          <button
+            onClick={() => void toggleWatch()}
+            disabled={watchBusy}
+            aria-label={isWatching ? 'Stop watching this alert' : 'Watch this alert'}
+            aria-pressed={isWatching}
+            className={`grid h-9 w-9 place-items-center rounded-md hover:bg-surface-800 disabled:opacity-40 ${isWatching ? 'text-accent-400' : 'text-surface-400 hover:text-surface-50'}`}
+          >
+            {isWatching
+              ? <EyeOff className="w-5 h-5" aria-hidden="true" />
+              : <Eye className="w-5 h-5" aria-hidden="true" />}
+          </button>
           <button onClick={onClose} aria-label="Close alert details" className="grid h-9 w-9 place-items-center rounded-md text-surface-400 hover:bg-surface-800 hover:text-surface-50">
             <X className="w-5 h-5" aria-hidden="true" />
           </button>
@@ -367,6 +423,40 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
               {assignError && <p role="alert" className="mt-1.5 text-xs text-danger-400">{assignError}</p>}
             </div>
           )}
+          <div className="pt-4 border-t border-surface-700">
+            <p className="flex items-center gap-1.5 text-xs text-surface-500 mb-1.5"><Eye className="w-3.5 h-3.5" aria-hidden="true" /> Watchers</p>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {watchers.length === 0 && <span className="text-surface-500">None yet</span>}
+              {watchers.map(w => (
+                <span key={w.user_id} className="inline-flex items-center gap-1 rounded-full border border-surface-700 bg-surface-900 px-2 py-0.5 text-surface-200">
+                  {w.full_name || w.email}
+                  {(isOwner || w.user_id === currentUserId) && (
+                    <button
+                      type="button"
+                      aria-label={`Remove watcher ${w.email}`}
+                      onClick={() => void removeWatcher(w.user_id)}
+                      className="text-surface-500 hover:text-danger"
+                    >
+                      <X className="w-3 h-3" aria-hidden="true" />
+                    </button>
+                  )}
+                </span>
+              ))}
+              {isOwner && watchCandidates.length > 0 && (
+                <select
+                  aria-label="Add an alert watcher"
+                  value=""
+                  onChange={e => void addWatcher(e.target.value)}
+                  className="min-h-7 rounded-md border border-surface-600 bg-surface-950 px-1.5 text-xs text-surface-200"
+                >
+                  <option value="">Add watcher...</option>
+                  {watchCandidates.map(m => (
+                    <option key={m.id} value={m.id}>{m.full_name ? `${m.full_name} (${m.email})` : m.email}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
           <div className="pt-4 border-t border-surface-700 space-y-3">
             {isSnoozed ? (
               <div className="rounded-lg border border-surface-700 bg-surface-800/60 p-3 space-y-2">

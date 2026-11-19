@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
 from backend.dependencies.user_dependencies import get_current_user
-from backend.models.alert import Alert
+from backend.models.alert import Alert, AlertWatcher
 from backend.models.alert_note import AlertNote, AlertNoteCreate, AlertNoteResponse
 from backend.models.audit_log import AuditLog
 from backend.models.user import User
@@ -25,11 +25,16 @@ async def _owned_alert(alert_id: int, user: User, db: AsyncSession) -> Alert:
 
 
 async def _visible_alert(alert_id: int, user: User, db: AsyncSession) -> Alert:
-    """Alert the user may open and annotate: their own or one assigned to them."""
+    """Alert the user may open and annotate: their own, assigned, or watched."""
+    watched = select(AlertWatcher.alert_id).where(AlertWatcher.user_id == user.id)
     result = await db.execute(
         select(Alert).where(
             Alert.id == alert_id,
-            or_(Alert.user_id == user.id, Alert.assigned_to_id == user.id),
+            or_(
+                Alert.user_id == user.id,
+                Alert.assigned_to_id == user.id,
+                Alert.id.in_(watched),
+            ),
         )
     )
     alert = result.scalar_one_or_none()

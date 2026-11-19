@@ -24,6 +24,9 @@ from backend.models.alert import (
     AlertStats,
     AlertStatus,
     AlertUpdate,
+    AlertWatcher,
+    AlertWatcherAdd,
+    AlertWatcherResponse,
     Severity,
 )
 from backend.models.asset import Asset
@@ -32,14 +35,58 @@ from backend.models.notification import Notification
 from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.services.audit import add_audit_log
+from backend.services.investigation_notify import notify_investigation_event
 
 
 def _visible_alerts(alert_id: int, current_user: User):
-    """Alerts the user may open: their own plus alerts assigned to them."""
+    """Alerts the user may open: their own, assigned to them, or watched by them."""
+    watched = select(AlertWatcher.alert_id).where(AlertWatcher.user_id == current_user.id)
     return select(Alert).where(
         Alert.id == alert_id,
-        or_(Alert.user_id == current_user.id, Alert.assigned_to_id == current_user.id),
+        or_(
+            Alert.user_id == current_user.id,
+            Alert.assigned_to_id == current_user.id,
+            Alert.id.in_(watched),
+        ),
     )
+
+
+async def _fan_out_alert_update(
+    db: AsyncSession, alert: Alert, actor: User, change: str
+) -> list[int]:
+    """Queue in-app update notifications for the alert's watchers (never the actor)."""
+    watcher_ids = (await db.execute(
+        select(AlertWatcher.user_id).where(AlertWatcher.alert_id == alert.id)
+    )).scalars().all()
+    recipient_ids = [uid for uid in watcher_ids if uid != actor.id]
+    for uid in recipient_ids:
+        db.add(Notification(
+            user_id=uid,
+            kind="alert_updated",
+            title=f"Alert #{alert.id} updated",
+            body=f"{change} - {alert.title}",
+            link=f"/app/alerts?alert={alert.id}",
+        ))
+    return recipient_ids
+
+
+async def _email_alert_update(
+    db: AsyncSession, alert: Alert, actor: User, recipient_ids: list[int], change: str
+) -> None:
+    """Deliver the same update through email/Slack/webhooks per recipient preferences."""
+    for uid in recipient_ids:
+        recipient = (await db.execute(
+            select(User).where(User.id == uid)
+        )).scalar_one_or_none()
+        if recipient is not None:
+            await notify_investigation_event(
+                recipient,
+                kind="alert_updated",
+                severity=alert.severity,
+                title=f"Alert #{alert.id} updated",
+                body=f"{actor.email} changed an alert you follow ({change}): {alert.title}.",
+                link_path=f"/app/alerts?alert={alert.id}",
+            )
 
 
 router = APIRouter()
@@ -442,12 +489,16 @@ async def acknowledge_alert(
             detail="Alert not found"
         )
 
+    old_status = alert.status
     alert.status = AlertStatus.ACKNOWLEDGED
     alert.acknowledged_at = datetime.now(UTC)
     alert.snoozed_until = None
 
+    change = f"status {old_status} -> {AlertStatus.ACKNOWLEDGED}"
+    notified = await _fan_out_alert_update(db, alert, current_user, change)
     await db.commit()
     await db.refresh(alert)
+    await _email_alert_update(db, alert, current_user, notified, change)
 
     return {"message": "Alert acknowledged successfully"}
 
@@ -473,12 +524,16 @@ async def resolve_alert(
             detail="Alert not found"
         )
 
+    old_status = alert.status
     alert.status = AlertStatus.RESOLVED
     alert.resolved_at = datetime.now(UTC)
     alert.snoozed_until = None
 
+    change = f"status {old_status} -> {AlertStatus.RESOLVED}"
+    notified = await _fan_out_alert_update(db, alert, current_user, change)
     await db.commit()
     await db.refresh(alert)
+    await _email_alert_update(db, alert, current_user, notified, change)
 
     return {"message": "Alert resolved successfully"}
 
@@ -504,11 +559,15 @@ async def reopen_alert(
             detail="Alert not found"
         )
 
+    old_status = alert.status
     alert.status = AlertStatus.PENDING
     alert.resolved_at = None
 
+    change = f"status {old_status} -> {AlertStatus.PENDING}"
+    notified = await _fan_out_alert_update(db, alert, current_user, change)
     await db.commit()
     await db.refresh(alert)
+    await _email_alert_update(db, alert, current_user, notified, change)
 
     return {"message": "Alert reopened successfully"}
 
@@ -569,6 +628,159 @@ async def unsnooze_alert(
     await db.commit()
 
     return {"message": "Snooze cleared successfully"}
+
+
+async def _get_watch_target(db: AsyncSession, alert_id: int, current_user: User) -> Alert:
+    """Fetch an alert the user can at least read, or 404."""
+    alert = (await db.execute(
+        _visible_alerts(alert_id, current_user)
+    )).scalar_one_or_none()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return alert
+
+
+@router.get("/{alert_id}/watchers", response_model=list[AlertWatcherResponse])
+async def list_alert_watchers(
+    alert_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """List the members watching an alert."""
+    alert = await _get_watch_target(db, alert_id, current_user)
+    rows = (await db.execute(
+        select(AlertWatcher, User)
+        .join(User, User.id == AlertWatcher.user_id)
+        .where(AlertWatcher.alert_id == alert.id)
+    )).all()
+    return [
+        AlertWatcherResponse(user_id=watcher.user_id, email=user.email, full_name=user.full_name)
+        for watcher, user in rows
+    ]
+
+
+@router.post("/{alert_id}/watch")
+async def watch_alert(
+    alert_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Watch an alert you can see. Idempotent."""
+    alert = await _get_watch_target(db, alert_id, current_user)
+    existing = (await db.execute(
+        select(AlertWatcher).where(
+            AlertWatcher.alert_id == alert.id, AlertWatcher.user_id == current_user.id
+        )
+    )).scalar_one_or_none()
+    if existing is None:
+        db.add(AlertWatcher(alert_id=alert.id, user_id=current_user.id))
+        await db.commit()
+    return {"success": True, "watching": True}
+
+
+@router.delete("/{alert_id}/watch")
+async def unwatch_alert(
+    alert_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Stop watching an alert. Idempotent."""
+    alert = await _get_watch_target(db, alert_id, current_user)
+    existing = (await db.execute(
+        select(AlertWatcher).where(
+            AlertWatcher.alert_id == alert.id, AlertWatcher.user_id == current_user.id
+        )
+    )).scalar_one_or_none()
+    if existing is not None:
+        await db.delete(existing)
+        await db.commit()
+    return {"success": True, "watching": False}
+
+
+@router.post("/{alert_id}/watchers", response_model=list[AlertWatcherResponse])
+async def add_alert_watcher(
+    alert_id: int,
+    payload: AlertWatcherAdd,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Add an organization member as a watcher (owner only). Idempotent."""
+    alert = (await db.execute(
+        select(Alert).where(Alert.id == alert_id, Alert.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    if payload.user_id != current_user.id:
+        member = (await db.execute(
+            select(User).where(User.id == payload.user_id, User.is_active == True)  # noqa: E712
+        )).scalar_one_or_none()
+        wrong_org = (
+            current_user.org_id is not None
+            and member is not None
+            and member.org_id != current_user.org_id
+        )
+        no_org = current_user.org_id is None and payload.user_id != current_user.id
+        if member is None or wrong_org or no_org:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Watcher must be an active member of your organization"
+            )
+
+    existing = (await db.execute(
+        select(AlertWatcher).where(
+            AlertWatcher.alert_id == alert.id, AlertWatcher.user_id == payload.user_id
+        )
+    )).scalar_one_or_none()
+    if existing is None:
+        db.add(AlertWatcher(alert_id=alert.id, user_id=payload.user_id))
+        if payload.user_id != current_user.id:
+            db.add(Notification(
+                user_id=payload.user_id,
+                kind="alert_watching",
+                title=f"You are now watching alert #{alert.id}",
+                body=alert.title,
+                link=f"/app/alerts?alert={alert.id}",
+            ))
+        await db.commit()
+
+    rows = (await db.execute(
+        select(AlertWatcher, User)
+        .join(User, User.id == AlertWatcher.user_id)
+        .where(AlertWatcher.alert_id == alert.id)
+    )).all()
+    return [
+        AlertWatcherResponse(user_id=watcher.user_id, email=user.email, full_name=user.full_name)
+        for watcher, user in rows
+    ]
+
+
+@router.delete("/{alert_id}/watchers/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_alert_watcher(
+    alert_id: int,
+    user_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Remove a watcher: the owner can remove anyone, members remove themselves."""
+    alert = (await db.execute(
+        _visible_alerts(alert_id, current_user)
+    )).scalar_one_or_none()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    if current_user.id != alert.user_id and user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the alert owner can remove other watchers",
+        )
+    existing = (await db.execute(
+        select(AlertWatcher).where(
+            AlertWatcher.alert_id == alert.id, AlertWatcher.user_id == user_id
+        )
+    )).scalar_one_or_none()
+    if existing is not None:
+        await db.delete(existing)
+        await db.commit()
 
 
 @router.get("/{alert_id}/cases")
