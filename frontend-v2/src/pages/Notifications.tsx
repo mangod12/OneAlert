@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BellOff, CheckCheck, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import apiClient from '../api/client';
+import { getApiErrorMessage } from '../api/errors';
 import { groupNotifications, type NotificationGroup } from '../components/layout/notificationGroups';
 import type { AppNotification } from '../components/layout/NotificationBell';
 import { relativeTime } from '../utils/relativeTime';
@@ -52,6 +53,8 @@ export function Notifications() {
   const [kind, setKind] = useState('');
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -71,22 +74,31 @@ export function Notifications() {
   useEffect(() => { void load(); }, [load]);
 
   const markAllRead = async () => {
-    await apiClient.post('/notifications/read-all');
-    setUnread(0);
-    setItems(current => current?.map(item => ({ ...item, read_at: item.read_at ?? new Date().toISOString() })) ?? current);
+    if (busy) return;
+    setBusy(true);
+    setActionError('');
+    try {
+      await apiClient.post('/notifications/read-all');
+      setUnread(0);
+      setItems(current => current?.map(item => ({ ...item, read_at: item.read_at ?? new Date().toISOString() })) ?? current);
+      if (unreadOnly) await load();
+    } catch (err) { setActionError(getApiErrorMessage(err, 'Notifications could not be marked read. Try again.')); }
+    finally { setBusy(false); }
   };
 
   const clearRead = async () => {
-    setItems(current => current?.filter(item => !item.read_at) ?? current);
+    if (busy) return;
+    setBusy(true);
+    setActionError('');
     try {
       await apiClient.delete('/notifications/read');
-      void load();
-    } catch {
-      void load();
-    }
+      await load();
+    } catch (err) { setActionError(getApiErrorMessage(err, 'Read notifications could not be cleared. Try again.')); }
+    finally { setBusy(false); }
   };
 
   const openGroup = async (group: NotificationGroup) => {
+    if (busy) return;
     const latest = group.items[0];
     const unreadItems = group.items.filter(item => !item.read_at);
     if (unreadItems.length > 0) {
@@ -101,18 +113,21 @@ export function Notifications() {
   };
 
   const deleteGroup = async (group: NotificationGroup) => {
-    const ids = new Set(group.items.map(item => item.id));
-    setItems(current => current?.filter(entry => !ids.has(entry.id)) ?? current);
-    const unreadInGroup = group.items.filter(item => !item.read_at).length;
-    if (unreadInGroup > 0) setUnread(count => Math.max(0, count - unreadInGroup));
-    try {
-      await Promise.all(group.items.map(item => apiClient.delete(`/notifications/${item.id}`)));
-    } catch {
-      void load();
-    }
+    if (busy) return;
+    setBusy(true);
+    setActionError('');
+    const results = await Promise.allSettled(group.items.map(item => apiClient.delete(`/notifications/${item.id}`)));
+    const removed = new Set(group.items.filter((_, index) => results[index].status === 'fulfilled').map(item => item.id));
+    setItems(current => current?.filter(item => !removed.has(item.id)) ?? current);
+    setTotal(count => Math.max(0, count - removed.size));
+    setUnread(count => Math.max(0, count - group.items.filter(item => removed.has(item.id) && !item.read_at).length));
+    const failed = results.length - removed.size;
+    if (failed) setActionError(`${failed} notification${failed === 1 ? '' : 's'} could not be deleted. Remaining items are still shown. Try again.`);
+    setBusy(false);
   };
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  useEffect(() => { if (!busy && page > totalPages) setPage(totalPages); }, [busy, page, totalPages]);
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-6">
@@ -125,6 +140,7 @@ export function Notifications() {
           {items?.some(item => item.read_at) && (
             <button
               type="button"
+              disabled={busy || loadError}
               onClick={() => void clearRead()}
               className="flex items-center gap-1.5 rounded-md border border-surface-700 px-3 py-1.5 text-xs font-semibold text-surface-300 hover:bg-surface-800"
             >
@@ -135,6 +151,7 @@ export function Notifications() {
           {unread > 0 && (
             <button
               type="button"
+              disabled={busy || loadError}
               onClick={() => void markAllRead()}
               className="flex items-center gap-1.5 rounded-md bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-500"
             >
@@ -149,6 +166,7 @@ export function Notifications() {
         <label className="sr-only" htmlFor="notif-kind">Filter by type</label>
         <select
           id="notif-kind"
+          disabled={busy}
           value={kind}
           onChange={e => { setKind(e.target.value); setPage(1); }}
           className="rounded-md border border-surface-700 bg-surface-900 px-2.5 py-1.5 text-sm text-surface-200"
@@ -159,6 +177,7 @@ export function Notifications() {
         <label className="flex items-center gap-2 text-sm text-surface-300">
           <input
             type="checkbox"
+            disabled={busy}
             checked={unreadOnly}
             onChange={e => { setUnreadOnly(e.target.checked); setPage(1); }}
             className="h-4 w-4 rounded border-surface-600"
@@ -167,6 +186,8 @@ export function Notifications() {
         </label>
       </div>
 
+      {actionError && <p role="alert" className="rounded-md border border-danger/40 px-3 py-2 text-sm text-danger">{actionError}</p>}
+      {busy && <p role="status" className="text-sm text-surface-400">Updating notifications...</p>}
       {loadError && <p className="rounded-md border border-danger-500/40 bg-danger-500/10 px-3 py-2 text-sm text-danger-300">Notifications could not be loaded.</p>}
 
       <ul className="divide-y divide-surface-800 overflow-hidden rounded-lg border border-surface-800 bg-surface-900">
@@ -184,6 +205,7 @@ export function Notifications() {
             <li key={group.items.map(entry => entry.id).join('-')} className="group relative">
               <button
                 type="button"
+                disabled={busy}
                 onClick={() => void openGroup(group)}
                 className={`flex w-full items-start gap-3 px-4 py-3 pr-12 text-left hover:bg-surface-800 ${anyUnread ? '' : 'opacity-60'}`}
               >
@@ -204,6 +226,7 @@ export function Notifications() {
               <button
                 type="button"
                 aria-label={group.items.length > 1 ? `Delete ${group.items.length} notifications: ${item.title}` : `Delete notification ${item.title}`}
+                disabled={busy}
                 onClick={() => void deleteGroup(group)}
                 className="absolute right-3 top-3 grid h-7 w-7 place-items-center rounded text-surface-500 opacity-0 transition-opacity hover:bg-surface-700 hover:text-surface-200 focus:opacity-100 group-hover:opacity-100"
               >
@@ -219,7 +242,7 @@ export function Notifications() {
           <button
             type="button"
             aria-label="Previous page"
-            disabled={page <= 1}
+            disabled={busy || page <= 1}
             onClick={() => setPage(p => Math.max(1, p - 1))}
             className="flex items-center gap-1 rounded-md border border-surface-700 px-3 py-1.5 hover:bg-surface-800 disabled:opacity-40"
           >
@@ -230,7 +253,7 @@ export function Notifications() {
           <button
             type="button"
             aria-label="Next page"
-            disabled={page >= totalPages}
+            disabled={busy || page >= totalPages}
             onClick={() => setPage(p => Math.min(totalPages, p + 1))}
             className="flex items-center gap-1 rounded-md border border-surface-700 px-3 py-1.5 hover:bg-surface-800 disabled:opacity-40"
           >
