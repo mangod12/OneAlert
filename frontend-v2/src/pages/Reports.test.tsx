@@ -222,6 +222,39 @@ describe('Reports', () => {
     expect(await screen.findByText(/No active incidents/)).toBeTruthy();
   });
 
+  it.each([
+    ['/reports/sla', 'SLA compliance unavailable', 'SLA compliance'],
+    ['/reports/team-workload', 'Team workload unavailable', 'Team workload'],
+    ['/reports/alert-trend', 'Alert volume trend unavailable', 'Alert volume trend'],
+  ])('keeps available posture data when %s fails and recovers on retry', async (failed, message, panel) => {
+    mockApis();
+    const base = get.getMockImplementation()!;
+    get.mockImplementation((url, config) => url === failed ? Promise.reject(new Error('Offline')) : base(url, config));
+    renderPage();
+    expect(await screen.findByText(new RegExp(message))).toBeTruthy();
+    expect(screen.getByText('plant-historian')).toBeTruthy();
+    expect(screen.queryByText('Report unavailable')).toBeNull();
+    expect(screen.queryByText(panel, { exact: true })).toBeNull();
+    if (failed === '/reports/sla') expect(screen.queryByRole('button', { name: 'Export SLA CSV' })).toBeNull();
+    mockApis();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText(panel, { exact: true })).toBeTruthy();
+    expect(screen.queryByText(new RegExp(message))).toBeNull();
+  });
+
+  it('shows each unavailable section without claiming missing data is empty', async () => {
+    get.mockImplementation(async url => {
+      if (url === '/reports/posture') return { data: report };
+      throw new Error('Offline');
+    });
+    renderPage();
+    expect(await screen.findByText(/SLA compliance unavailable/)).toBeTruthy();
+    expect(screen.getByText(/Team workload unavailable/)).toBeTruthy();
+    expect(screen.getByText(/Alert volume trend unavailable/)).toBeTruthy();
+    expect(screen.queryByText('No open work')).toBeNull();
+    expect(screen.queryByText('No due dates in window')).toBeNull();
+  });
+
   it('shows the error state when loading fails and retries', async () => {
     get.mockRejectedValueOnce(new Error('boom'));
     renderPage();
