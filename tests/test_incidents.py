@@ -215,3 +215,69 @@ class TestIncidentEscalation:
         assert client.post(
             f"/api/v1/incidents/{asset_id}/escalate", headers=headers,
         ).status_code == 400
+
+
+def _seed_two_incidents(user_id: int):
+    """plc-01 with a critical incident, hmi-02 with a medium incident."""
+    with _TestingSessionLocal() as db:
+        plc = Asset(user_id=user_id, name="plc-01", asset_type="hardware",
+                    vendor="Acme", product="PLC-300", criticality="critical")
+        hmi = Asset(user_id=user_id, name="hmi-02", asset_type="hardware",
+                    vendor="Contoso", product="HMI-9", criticality="medium")
+        db.add_all([plc, hmi])
+        db.flush()
+        for title, severity in [("Modbus coil write", "critical"), ("Firmware backdoor", "high")]:
+            db.add(Alert(user_id=user_id, asset_id=plc.id, cve_id="CVE-2026-1001",
+                         title=title, severity=severity, status="pending"))
+        for title, severity in [("Weak password policy", "medium"), ("Open telnet", "medium")]:
+            db.add(Alert(user_id=user_id, asset_id=hmi.id, cve_id="CVE-2026-2001",
+                         title=title, severity=severity, status="pending"))
+        db.commit()
+
+
+class TestIncidentFilters:
+    def test_severity_filter_is_a_minimum(self, client):
+        headers = _register_and_login(client, "incf@example.com")
+        uid = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        _seed_two_incidents(uid)
+
+        all_resp = client.get("/api/v1/incidents", headers=headers).json()
+        assert all_resp["total"] == 2
+
+        high_resp = client.get("/api/v1/incidents", params={"severity": "high"}, headers=headers).json()
+        assert high_resp["total"] == 1
+        assert high_resp["incidents"][0]["asset_name"] == "plc-01"
+
+        low_resp = client.get("/api/v1/incidents", params={"severity": "low"}, headers=headers).json()
+        assert low_resp["total"] == 2
+
+    def test_asset_filter_matches_name_vendor_and_product(self, client):
+        headers = _register_and_login(client, "inca@example.com")
+        uid = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        _seed_two_incidents(uid)
+
+        by_name = client.get("/api/v1/incidents", params={"asset": "hmi"}, headers=headers).json()
+        assert by_name["total"] == 1
+        assert by_name["incidents"][0]["asset_name"] == "hmi-02"
+
+        by_vendor = client.get("/api/v1/incidents", params={"asset": "ACME"}, headers=headers).json()
+        assert by_vendor["total"] == 1
+        assert by_vendor["incidents"][0]["asset_name"] == "plc-01"
+
+        by_product = client.get("/api/v1/incidents", params={"asset": "hmi-9"}, headers=headers).json()
+        assert by_product["total"] == 1
+
+        no_match = client.get("/api/v1/incidents", params={"asset": "nonexistent"}, headers=headers).json()
+        assert no_match["total"] == 0
+
+    def test_unknown_severity_rejected(self, client):
+        headers = _register_and_login(client, "incx@example.com")
+        resp = client.get("/api/v1/incidents", params={"severity": "catastrophic"}, headers=headers)
+        assert resp.status_code == 422
+
+    def test_filters_combine(self, client):
+        headers = _register_and_login(client, "incc@example.com")
+        uid = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+        _seed_two_incidents(uid)
+        resp = client.get("/api/v1/incidents", params={"severity": "high", "asset": "hmi"}, headers=headers).json()
+        assert resp["total"] == 0  # the hmi incident is only medium

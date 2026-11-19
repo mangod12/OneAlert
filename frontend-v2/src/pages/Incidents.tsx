@@ -92,6 +92,9 @@ export function Incidents() {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [escalating, setEscalating] = useState<number | null>(null);
+  const [severityFilter, setSeverityFilter] = useState('');
+  const [assetQuery, setAssetQuery] = useState('');
+  const [appliedAssetQuery, setAppliedAssetQuery] = useState('');
 
   const escalate = async (assetId: number) => {
     if (escalating !== null) return;
@@ -108,12 +111,15 @@ export function Incidents() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const res = await apiClient.get<{ incidents: Incident[] }>('/incidents');
+      const params: Record<string, string> = {};
+      if (severityFilter) params.severity = severityFilter;
+      if (appliedAssetQuery.trim()) params.asset = appliedAssetQuery.trim();
+      const res = await apiClient.get<{ incidents: Incident[] }>('/incidents', { params });
       setIncidents(res.data.incidents);
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Incidents could not be loaded.'));
     }
-  }, []);
+  }, [severityFilter, appliedAssetQuery]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -127,6 +133,39 @@ export function Incidents() {
         title="Incidents"
         description="Correlated groups of active alerts hitting the same asset, with blast radius from observed network connections."
       />
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <select
+          aria-label="Minimum severity"
+          value={severityFilter}
+          onChange={e => setSeverityFilter(e.target.value)}
+          className="rounded-md border border-surface-700 bg-surface-950 px-2.5 py-1.5 text-xs text-surface-300 focus:border-primary-500 focus:outline-none"
+        >
+          <option value="">Any severity</option>
+          <option value="critical">Critical and above</option>
+          <option value="high">High and above</option>
+          <option value="medium">Medium and above</option>
+          <option value="low">Low and above</option>
+        </select>
+        <form
+          onSubmit={e => { e.preventDefault(); setAppliedAssetQuery(assetQuery); }}
+          className="flex gap-2"
+        >
+          <input
+            value={assetQuery}
+            onChange={e => setAssetQuery(e.target.value)}
+            placeholder="Filter by asset, vendor, or product..."
+            aria-label="Filter incidents by asset"
+            maxLength={120}
+            className="min-h-9 w-64 rounded-md border border-surface-700 bg-surface-950 px-3 text-sm text-surface-100 placeholder:text-surface-500 focus:border-primary-500 focus:outline-none"
+          />
+          <button
+            type="submit"
+            className="rounded-md bg-primary-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-500"
+          >
+            Apply
+          </button>
+        </form>
+      </div>
       {incidents === null ? (
         <LoadingSurface label="Correlating alerts" />
       ) : incidents.length === 0 ? (
