@@ -7,12 +7,14 @@ import { Dashboard } from './Dashboard';
 vi.mock('../api/client', () => ({
   default: {
     get: vi.fn(),
+    patch: vi.fn(),
   },
 }));
 
 import apiClient from '../api/client';
 
 const mockGet = vi.mocked(apiClient.get);
+const mockPatch = vi.mocked(apiClient.patch);
 
 function makeAlert(overrides: Partial<Alert> = {}): Alert {
   return {
@@ -267,5 +269,40 @@ describe('My tasks', () => {
     renderDashboard();
     await screen.findByText('Total alerts');
     await waitFor(() => expect(screen.queryByText('My tasks')).toBeNull());
+  });
+});
+
+describe('My tasks inline completion', () => {
+  const tasks = [
+    { task_id: 11, case_id: 7, case_title: 'Suspicious lateral movement', case_severity: 'critical', case_status: 'investigating', case_due_date: '2026-11-25', title: 'Contain the host', created_at: '2026-11-18T09:00:00Z' },
+    { task_id: 12, case_id: 9, case_title: 'Phishing follow-up', case_severity: 'low', case_status: 'open', case_due_date: null, title: 'Review firewall logs', created_at: '2026-11-18T09:05:00Z' },
+  ];
+
+  function mockWithTasks() {
+    mockAllFulfilled();
+    const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation((url: string, config?: unknown) => {
+      if (url === '/cases/my-tasks') return Promise.resolve({ data: tasks });
+      return base(url, config as Parameters<typeof base>[1]);
+    });
+  }
+
+  it('completes a task from the panel and removes its row', async () => {
+    mockWithTasks();
+    mockPatch.mockResolvedValue({ data: { done: true } });
+    renderDashboard();
+    fireEvent.click(await screen.findByRole('button', { name: 'Complete task Contain the host' }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/11', { done: true }));
+    await waitFor(() => expect(screen.queryByText('Contain the host')).toBeNull());
+    expect(screen.getByText('Review firewall logs')).toBeTruthy();
+  });
+
+  it('keeps the row when completion fails', async () => {
+    mockWithTasks();
+    mockPatch.mockRejectedValue(new Error('boom'));
+    renderDashboard();
+    fireEvent.click(await screen.findByRole('button', { name: 'Complete task Contain the host' }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalled());
+    expect(screen.getByText('Contain the host')).toBeTruthy();
   });
 });
