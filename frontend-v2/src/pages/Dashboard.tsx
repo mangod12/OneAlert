@@ -33,11 +33,23 @@ export function Dashboard() {
   const [watchingAlerts, setWatchingAlerts] = useState<Alert[] | null>(null);
   const [watchingCases, setWatchingCases] = useState<Array<{ id: number; title: string; severity: string; status: string; due_date: string | null }> | null>(null);
   const [todayStr, setTodayStr] = useState<string | null>(null);
+  const [weekStr, setWeekStr] = useState<string | null>(null);
   useEffect(() => {
-    setTodayStr(new Date().toISOString().slice(0, 10));
+    const now = new Date();
+    setTodayStr(now.toISOString().slice(0, 10));
+    setWeekStr(new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10));
   }, []);
   const [myTasks, setMyTasks] = useState<Array<{ task_id: number; case_id: number; case_title: string; case_severity: string; case_status: string; case_due_date: string | null; title: string; due_date: string | null; created_at: string }> | null>(null);
   const [completingTaskId, setCompletingTaskId] = useState<number | null>(null);
+
+  const setMyTaskDueDate = async (task: { task_id: number; case_id: number; title: string }, dueDate: string | null) => {
+    try {
+      await apiClient.patch(`/cases/${task.case_id}/tasks/${task.task_id}`, { due_date: dueDate });
+      setMyTasks(prev => prev?.map(t => t.task_id === task.task_id ? { ...t, due_date: dueDate } : t) ?? prev);
+    } catch {
+      // leave the row unchanged so the action can be retried
+    }
+  };
 
   const completeTask = async (task: { task_id: number; case_id: number; title: string }) => {
     if (completingTaskId !== null) return;
@@ -229,33 +241,61 @@ export function Dashboard() {
 
       {(myTasks === null || myTasks.length > 0) && (
         <section aria-label="My tasks">
-          <Panel title="My tasks" description="Open checklist tasks assigned to you across investigations.">
+          <Panel title="My tasks" description="Open checklist tasks assigned to you across investigations, grouped by how soon they are due. Set or clear a due date inline.">
             <div className="divide-y divide-surface-800">
-              {(myTasks ?? []).length > 0 ? (myTasks ?? []).map(t => (
-                <div key={t.task_id} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-800/45">
-                  <button
-                    type="button"
-                    aria-label={`Complete task ${t.title}`}
-                    disabled={completingTaskId !== null}
-                    onClick={() => void completeTask(t)}
-                    className="shrink-0 text-primary-400 transition-colors hover:text-primary-300 disabled:opacity-40"
-                  >
-                    {completingTaskId === t.task_id
-                      ? <CheckSquare className="h-4 w-4" aria-hidden="true" />
-                      : <Square className="h-4 w-4" aria-hidden="true" />}
-                  </button>
-                  <StatusBadge tone={t.case_severity === 'critical' ? 'danger' : t.case_severity === 'high' ? 'warning' : 'neutral'}>{t.case_severity}</StatusBadge>
-                  <Link to={`/cases/${t.case_id}`} className="flex min-w-0 flex-1 items-center gap-3">
-                    <div className="min-w-0"><p className="truncate text-sm font-semibold text-surface-100">{t.title}</p><p className="mt-0.5 truncate text-[11px] text-surface-500">{t.case_title} · Investigation #{t.case_id}{t.case_due_date ? ` · due ${t.case_due_date}` : ''}</p></div>
-                    {t.due_date && (
-                      t.due_date < (todayStr ?? '')
-                        ? <span className="shrink-0 rounded-full bg-danger/20 px-2 py-0.5 text-[10px] font-medium text-danger">Task overdue · due {t.due_date}</span>
-                        : <span className="shrink-0 rounded-full bg-surface-800 px-2 py-0.5 text-[10px] text-surface-300">Task due {t.due_date}</span>
-                    )}
-                    <span className="ml-auto shrink-0 text-xs text-surface-500">{t.case_status}</span>
-                  </Link>
-                </div>
-              )) : (
+              {(myTasks ?? []).length > 0 ? (() => {
+                const buckets: Array<{ key: string; label: string; items: typeof myTasks }> = [
+                  { key: 'overdue', label: 'Overdue', items: [] },
+                  { key: 'today', label: 'Due today', items: [] },
+                  { key: 'week', label: 'Due this week', items: [] },
+                  { key: 'later', label: 'Later', items: [] },
+                  { key: 'none', label: 'No due date', items: [] },
+                ];
+                for (const t of myTasks ?? []) {
+                  if (!t.due_date) buckets[4].items!.push(t);
+                  else if (t.due_date < (todayStr ?? '')) buckets[0].items!.push(t);
+                  else if (t.due_date === todayStr) buckets[1].items!.push(t);
+                  else if (t.due_date <= (weekStr ?? '')) buckets[2].items!.push(t);
+                  else buckets[3].items!.push(t);
+                }
+                return buckets.filter(b => (b.items ?? []).length > 0).map(bucket => (
+                  <div key={bucket.key}>
+                    <p className={`px-5 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide ${bucket.key === 'overdue' ? 'text-danger' : 'text-surface-500'}`}>
+                      {bucket.label} ({bucket.items!.length})
+                    </p>
+                    {(bucket.items ?? []).map(t => (
+                      <div key={t.task_id} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-800/45">
+                        <button
+                          type="button"
+                          aria-label={`Complete task ${t.title}`}
+                          disabled={completingTaskId !== null}
+                          onClick={() => void completeTask(t)}
+                          className="shrink-0 text-primary-400 transition-colors hover:text-primary-300 disabled:opacity-40"
+                        >
+                          {completingTaskId === t.task_id
+                            ? <CheckSquare className="h-4 w-4" aria-hidden="true" />
+                            : <Square className="h-4 w-4" aria-hidden="true" />}
+                        </button>
+                        <StatusBadge tone={t.case_severity === 'critical' ? 'danger' : t.case_severity === 'high' ? 'warning' : 'neutral'}>{t.case_severity}</StatusBadge>
+                        <Link to={`/cases/${t.case_id}`} className="flex min-w-0 flex-1 items-center gap-3">
+                          <div className="min-w-0"><p className="truncate text-sm font-semibold text-surface-100">{t.title}</p><p className="mt-0.5 truncate text-[11px] text-surface-500">{t.case_title} · Investigation #{t.case_id}{t.case_due_date ? ` · due ${t.case_due_date}` : ''}</p></div>
+                          {t.due_date && t.due_date < (todayStr ?? '') && (
+                            <span className="shrink-0 rounded-full bg-danger/20 px-2 py-0.5 text-[10px] font-medium text-danger">Task overdue · due {t.due_date}</span>
+                          )}
+                          <span className="ml-auto shrink-0 text-xs text-surface-500">{t.case_status}</span>
+                        </Link>
+                        <input
+                          type="date"
+                          aria-label={`Due date for task ${t.title}`}
+                          value={t.due_date ?? ''}
+                          onChange={e => void setMyTaskDueDate(t, e.target.value || null)}
+                          className="w-28 shrink-0 rounded-md border border-surface-700 bg-surface-950 px-1.5 py-1 text-xs text-surface-300 focus:border-primary-500 focus:outline-none [color-scheme:dark]"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ));
+              })() : (
                 <div className="px-5 py-6 text-center text-sm text-surface-400">{myTasks === null ? 'Loading...' : 'No checklist tasks assigned to you.'}</div>
               )}
             </div>
