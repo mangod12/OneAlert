@@ -267,7 +267,7 @@ export function Dashboard() {
 
       {(myTasks === null || myTasks.length > 0) && (
         <section aria-label="My tasks">
-          <Panel title="My tasks" description="Open checklist tasks assigned to you across investigations, grouped by how soon they are due. Set or clear a due date inline.">
+          <Panel title="My tasks" description="Open checklist tasks assigned to you across investigations, grouped by how soon they are due. Set or clear a due date inline." action={<Link to="/my-tasks" className="text-xs font-semibold text-primary-300 hover:text-primary-200">Review assigned tasks</Link>}>
             {errors.tasks && <div className="px-5 py-4"><ErrorState title="Assigned tasks unavailable" description={errors.tasks} action={<RetryButton onClick={loadDashboard} />} /></div>}
             {taskError && <p role="alert" className="px-5 py-2 text-sm text-danger">{taskError}</p>}
             {savingTaskId !== null && <p role="status" className="px-5 py-2 text-xs text-surface-400">Saving task due date...</p>}
