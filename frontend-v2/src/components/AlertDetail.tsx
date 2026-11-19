@@ -1,5 +1,6 @@
 import type { Alert, EpssScore, RemediationAction } from '../api/types';
 import apiClient from '../api/client';
+import { MentionTextarea } from './MentionTextarea';
 import { useAuthStore } from '../stores/authStore';
 import { getApiErrorMessage } from '../api/errors';
 import { X, ExternalLink, Wrench, FolderOpen, Briefcase, Eye, EyeOff } from 'lucide-react';
@@ -358,14 +359,15 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
               </ul>
             )}
             <div className="mt-2 flex items-start gap-2">
-              <textarea
+              <MentionTextarea
                 aria-label="Add a note"
-                placeholder="Add a note…"
+                placeholder="Add a note… (@ to mention a teammate)"
                 value={noteDraft}
+                members={members}
                 maxLength={4000}
                 rows={2}
-                onChange={event => setNoteDraft(event.target.value)}
-                className="min-w-0 flex-1 rounded-md border border-surface-700 bg-surface-800 px-2.5 py-1.5 text-sm text-surface-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                onChange={setNoteDraft}
+                className="min-h-9 w-full rounded-md border border-surface-700 bg-surface-800 px-2.5 py-1.5 text-sm text-surface-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
               <button
                 type="button"
