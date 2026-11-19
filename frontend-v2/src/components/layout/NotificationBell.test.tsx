@@ -137,3 +137,68 @@ describe('NotificationBell', () => {
     expect(await screen.findByText('No notifications yet')).toBeTruthy();
   });
 });
+
+describe('notification grouping', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  afterEach(() => {
+    cleanup();
+  });
+
+  const dup = (id: number, read: boolean) => ({
+    id,
+    kind: 'alert_updated',
+    title: 'Alert #7 was resolved',
+    body: 'RouterOS RCE',
+    link: '/app/alerts?alert=7',
+    read_at: read ? '2026-11-18T00:00:00Z' : null,
+    created_at: new Date().toISOString(),
+  });
+
+  const open = async (items: unknown[], unread: number) => {
+    mockGet
+      .mockResolvedValueOnce(listResponse([], unread) as never)
+      .mockResolvedValueOnce(listResponse(items, unread) as never);
+    render(<MemoryRouter><NotificationBell /></MemoryRouter>);
+    fireEvent.click(await screen.findByLabelText(/Notifications/));
+    await screen.findByText('Alert #7 was resolved');
+  };
+
+  it('collapses consecutive same-kind same-link notifications with a count', async () => {
+    await open([dup(3, false), dup(2, false), dup(1, true)], 2);
+    expect(screen.getAllByText('Alert #7 was resolved')).toHaveLength(1);
+    expect(screen.getByText('×3')).toBeTruthy();
+  });
+
+  it('does not collapse different kinds or links', async () => {
+    mockGet
+      .mockResolvedValueOnce(listResponse([], 1) as never)
+      .mockResolvedValueOnce(listResponse([dup(2, false), { ...dup(1, false), kind: 'case_updated', title: 'Case #4 updated' }], 2) as never);
+    render(<MemoryRouter><NotificationBell /></MemoryRouter>);
+    fireEvent.click(await screen.findByLabelText(/Notifications/));
+    await screen.findByText('Alert #7 was resolved');
+    expect(screen.getByText('Case #4 updated')).toBeTruthy();
+    expect(screen.queryByText(/×\d/)).toBeNull();
+  });
+
+  it('marks every unread item in the group read when opened', async () => {
+    await open([dup(2, false), dup(1, false)], 2);
+    fireEvent.click(screen.getByText('Alert #7 was resolved'));
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/notifications/2/read');
+      expect(mockPost).toHaveBeenCalledWith('/notifications/1/read');
+    });
+  });
+
+  it('deletes the whole group', async () => {
+    mockDelete.mockResolvedValue({} as never);
+    await open([dup(2, false), dup(1, true)], 1);
+    fireEvent.click(screen.getByLabelText('Delete 2 notifications: Alert #7 was resolved'));
+    await waitFor(() => {
+      expect(mockDelete).toHaveBeenCalledWith('/notifications/2');
+      expect(mockDelete).toHaveBeenCalledWith('/notifications/1');
+    });
+    await waitFor(() => expect(screen.queryByText('Alert #7 was resolved')).toBeNull());
+  });
+});
