@@ -1,5 +1,6 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { CaseHandoff } from '../components/CaseHandoff';
 import { MentionTextarea } from '../components/MentionTextarea';
 import apiClient from '../api/client';
 import { useAuthStore } from '../stores/authStore';
@@ -591,6 +592,7 @@ export function CaseDetail() {
                 </button>
               )}
             </div>
+            <div className="mt-3"><CaseHandoff key={caseData.id} caseId={caseData.id} /></div>
             {caseData.summary && <p className="text-surface-400 mt-2">{caseData.summary}</p>}
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-surface-400">
               <Eye className="w-3.5 h-3.5" aria-hidden="true" />
