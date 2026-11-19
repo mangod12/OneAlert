@@ -96,12 +96,14 @@ class TestAlertNotes:
         note = resp.json()
         assert note["body"] == "Vendor confirms patch due Friday"
         assert note["alert_id"] == alert_id
+        assert note["user_email"] == "notes@example.com"
 
         client.post(f"/api/v1/alerts/{alert_id}/notes", json={"body": "Second note"}, headers=headers)
         listing = client.get(f"/api/v1/alerts/{alert_id}/notes", headers=headers)
         assert listing.status_code == 200
         bodies = [n["body"] for n in listing.json()]
         assert bodies == ["Vendor confirms patch due Friday", "Second note"]
+        assert all(n["user_email"] == "notes@example.com" for n in listing.json())
 
     def test_blank_note_rejected(self, client):
         headers = _register_and_login(client, "blanknote@example.com")

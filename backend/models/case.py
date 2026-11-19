@@ -113,6 +113,7 @@ class CaseTimeline(Base):
     entry_type = Column(String, nullable=False)  # event, alert, action, note, ai_analysis
     content = Column(Text, nullable=False)
     source = Column(String, default="system")  # agent, human, system
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # author for human notes
     metadata_json = Column(JSON, nullable=True)
 
     case = relationship("Case", back_populates="timeline_entries")
@@ -225,6 +226,7 @@ class TimelineEntryResponse(BaseModel):
     entry_type: str
     content: str
     source: str
+    author_email: str | None = None
     metadata_json: dict | None = None
     model_config = {"from_attributes": True}
 
