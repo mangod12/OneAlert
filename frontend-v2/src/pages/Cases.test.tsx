@@ -348,6 +348,32 @@ describe('Case bulk actions', () => {
     await waitFor(() => expect(mockToast).toHaveBeenCalledWith('2 investigations assigned to priya@example.com.', 'success'));
   });
 
+  it('watches selected investigations with one POST per case', async () => {
+    mockGet.mockResolvedValue({ data: { cases: twoCases(), total: 2 } });
+    mockPost.mockResolvedValue({ data: {} });
+    renderCases();
+    await selectAll();
+    fireEvent.click(screen.getByRole('button', { name: 'Watch selected investigations' }));
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/cases/1/watch');
+      expect(mockPost).toHaveBeenCalledWith('/cases/2/watch');
+    });
+    await waitFor(() => expect(mockToast).toHaveBeenCalledWith('2 investigations watched.', 'success'));
+  });
+
+  it('unwatches selected investigations with one DELETE per case', async () => {
+    mockGet.mockResolvedValue({ data: { cases: twoCases(), total: 2 } });
+    mockDelete.mockResolvedValue({ data: {} });
+    renderCases();
+    await selectAll();
+    fireEvent.click(screen.getByRole('button', { name: 'Unwatch selected investigations' }));
+    await waitFor(() => {
+      expect(mockDelete).toHaveBeenCalledWith('/cases/1/watch');
+      expect(mockDelete).toHaveBeenCalledWith('/cases/2/watch');
+    });
+    await waitFor(() => expect(mockToast).toHaveBeenCalledWith('2 investigations unwatched.', 'success'));
+  });
+
   it('deletes selected investigations after confirmation', async () => {
     mockGet.mockResolvedValue({ data: { cases: twoCases(), total: 2 } });
     mockDelete.mockResolvedValue({ data: {} });
