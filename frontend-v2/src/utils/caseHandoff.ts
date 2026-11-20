@@ -19,12 +19,18 @@ export interface HandoffTask {
 }
 export interface HandoffAlert { id: number; title: string; severity: string; cve_id?: string | null }
 export interface HandoffEvent { id: number; event_type: string; severity: string; signature?: string | null }
+export interface HandoffPlan {
+  id: number; case_id: number; status: string; autonomy_level: string; created_at: string;
+  actions: Array<{ action_type?: string | null; target?: string | null; reason?: string | null; priority?: number | null; policy_check?: { approved?: boolean | null } | null; execution_result?: { status?: string | null; detail?: string | null; executed_at?: string | null; execution_mode?: string | null } | null }>;
+}
+export interface HandoffPlanPage { plans: HandoffPlan[]; page: number; size: number; total: number; fetchedAt: string; }
 export interface HandoffSnapshot {
   investigation: HandoffCase;
   tasks: HandoffTask[];
   alerts: HandoffAlert[];
   events: HandoffEvent[];
   capturedAt: string;
+  responsePlans?: HandoffPlanPage;
 }
 
 const literal = (text: string) => text.split(/\r?\n/).map(line => `  ${line}`).join('\n');
@@ -61,6 +67,31 @@ export function caseHandoff(snapshot: HandoffSnapshot, includeTimeline: boolean)
   if (includeTimeline) {
     for (const entry of c.timeline) lines.push(`Entry #${entry.id} | ${entry.timestamp} | ${entry.entry_type} | ${entry.source}`, literal(entry.content));
   }
-  lines.push('', 'SCOPE', 'Only the records returned by the case, task, linked-alert and linked-event endpoints are included. Response plans, attachments, full alert/event bodies and network graphs are not included.', 'No new conclusions, actions, assignments or deadlines have been created.');
+  if (snapshot.responsePlans) {
+    const page = snapshot.responsePlans;
+    const value = (field: unknown) => field == null || field === '' ? 'Not recorded' : typeof field === 'object' ? JSON.stringify(field) : String(field);
+    lines.push('', `SAVED RESPONSE PLAN EVIDENCE (${page.plans.length} records on loaded page)`,
+      `Plan page: ${page.page} of ${Math.max(1, Math.ceil(page.total / page.size))} | Page size: ${page.size} | Total visible matching plan records: ${page.total}`,
+      `Plan page fetched at: ${page.fetchedAt}`,
+      'Only this loaded plan page is included, with each returned plan\'s complete action list. Other plan pages and approval-request history are not included.',
+      'Current mutable saved records, not an immutable log or proof of external containment. Missing or unverified execution modes do not establish external action.',
+      'Plan actor identity fields are omitted. Action targets, reasons and result details can still identify people or systems. Review before sharing.');
+    for (const plan of page.plans) {
+      lines.push('', `Plan #${plan.id} | Investigation #${plan.case_id}`, `Saved status: ${value(plan.status)} | Autonomy: ${value(plan.autonomy_level)} | Created: ${value(plan.created_at)}`);
+      if (!plan.actions.length) lines.push('No saved actions returned for this plan.');
+      plan.actions.forEach((action, index) => {
+        lines.push(`Action position ${index + 1} | Recorded priority: ${value(action.priority)}`,
+          'Action type:', literal(value(action.action_type)), 'Target:', literal(value(action.target)),
+          'Recorded reason:', literal(value(action.reason)),
+          `Recorded policy approval flag: ${action.policy_check?.approved === true ? 'true' : action.policy_check?.approved === false ? 'false' : 'Not recorded'}`,
+          `Recorded execution status: ${value(action.execution_result?.status)}`,
+          `Recorded execution mode: ${action.execution_result?.execution_mode === 'simulated' ? 'Simulated, no external action performed' : 'Not verified, external action not established'}`,
+          'Recorded execution detail:', literal(value(action.execution_result?.detail)),
+          `Recorded execution time: ${value(action.execution_result?.executed_at)}`);
+      });
+    }
+    if (!page.plans.length) lines.push('No response plans were returned for this visible case filter at fetch time. This does not establish that no response plan exists elsewhere.');
+  } else lines.push('', 'RESPONSE PLAN EVIDENCE OMITTED BY REVIEWER');
+  lines.push('', 'SCOPE', `Only the records returned by the case, task, linked-alert and linked-event endpoints${snapshot.responsePlans ? ' and the explicitly selected response-plan page' : ''} are included. Attachments, full alert/event bodies and network graphs are not included.`, 'No new conclusions, actions, assignments or deadlines have been created.');
   return lines.join('\n') + '\n';
 }
