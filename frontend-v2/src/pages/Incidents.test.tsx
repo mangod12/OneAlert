@@ -154,3 +154,26 @@ describe('Incident CSV export', () => {
     expect((screen.getByRole('button', { name: 'Export filtered CSV' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+it('retries failed incident evidence without collapsing the incident or reloading its list', async () => {
+  let fail = true;
+  let resolve!: (value: unknown) => void;
+  get.mockImplementation(url => {
+    if (url === '/incidents') return Promise.resolve({ data: { incidents: [incident] } });
+    return fail ? Promise.reject(new Error('Timeline store unavailable')) : new Promise(done => { resolve = done; });
+  });
+  renderPage();
+  fireEvent.click(await screen.findByText('plc-01'));
+  fireEvent.click(await screen.findByRole('button', { name: 'Retry incident timeline' }));
+  // A repeated failure remains a failure, never a claim of empty evidence.
+  expect(await screen.findByRole('button', { name: 'Retry incident timeline' })).toBeTruthy();
+  expect(screen.queryByText('No timeline events')).toBeNull();
+  fail = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Retry incident timeline' }));
+  expect(screen.getByText('Loading timeline...')).toBeTruthy();
+  expect(screen.getByText('PLC compromise')).toBeTruthy();
+  await act(async () => resolve({ data: { events: [{ kind: 'alert_updated', alert_id: 11, title: 'Retained timeline update', detail: 'Recorded change', timestamp: null }] } }));
+  expect(screen.getByText(/Retained timeline update/)).toBeTruthy();
+  expect(get.mock.calls.filter(([url]) => url === '/incidents')).toHaveLength(1);
+  expect(post).not.toHaveBeenCalled();
+});
