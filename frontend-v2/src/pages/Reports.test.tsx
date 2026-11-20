@@ -301,3 +301,18 @@ it('loads SLA record evidence only when requested and keeps its own cohort windo
   fireEvent.click(screen.getByRole('button', { name: 'Hide investigation SLA records' }));
   expect(screen.queryByRole('region', { name: 'investigation SLA evidence' })).toBeNull();
 });
+
+describe('Report snapshot window integrity', () => {
+  it('does not offer a mixed-window snapshot', async () => {
+    mockApis(report, { ...slaReport, days: 7 }); renderPage();
+    expect(await screen.findByText(/a loaded report section does not match/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Download report snapshot JSON' })).toBeNull();
+  });
+  it('hides the previous snapshot while a new report window is loading', async () => {
+    mockApis(); renderPage(); await screen.findByRole('button', { name: 'Download report snapshot JSON' });
+    get.mockImplementation(() => new Promise(() => {}));
+    fireEvent.click(screen.getByRole('button', { name: '7 days' }));
+    expect(await screen.findByText('Building posture report')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Download report snapshot JSON' })).toBeNull();
+  });
+});

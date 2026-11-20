@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { BriefcaseMedical, Clock, Download, ShieldAlert, ShieldCheck, Siren, Timer, Users } from 'lucide-react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
+import { PostureSnapshotHandoff } from '../components/PostureSnapshotHandoff';
 import { SlaEvidenceExplorer } from '../components/SlaEvidenceExplorer';
 import { WorkloadExplorer } from '../components/WorkloadExplorer';
 import { KPICard } from '../components/KPICard';
@@ -109,12 +110,13 @@ export function Reports() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState<string[]>([]);
+  const [responsesReceivedAt, setResponsesReceivedAt] = useState<string | null>(null);
 
   const fetchReport = useCallback(async (window: number) => {
     const request = ++requestId.current;
     setLoading(true);
     setError(null);
-    setUnavailable([]);
+    setUnavailable([]); setResponsesReceivedAt(null);
     try {
       const [postureRes, slaRes, workloadRes, trendRes] = await Promise.allSettled([
         apiClient.get('/reports/posture', { params: { days: window } }),
@@ -132,7 +134,7 @@ export function Reports() {
       if (slaRes.status === 'rejected') missing.push('SLA compliance unavailable. No attainment or breach totals are inferred.');
       if (workloadRes.status === 'rejected') missing.push('Team workload unavailable. Assignment counts are unknown.');
       if (trendRes.status === 'rejected') missing.push('Alert volume trend unavailable. Daily activity is unknown.');
-      setUnavailable(missing);
+      setUnavailable(missing); setResponsesReceivedAt(new Date().toISOString());
     } catch (err) {
       if (request !== requestId.current) return;
       setError(getApiErrorMessage(err, 'Could not load the posture report.'));
@@ -197,6 +199,7 @@ export function Reports() {
 
       {!loading && !error && report && (
         <>
+          {responsesReceivedAt && (report.days === days && (!sla || sla.days === days) && (!trend || trend.days === days) ? <PostureSnapshotHandoff key={responsesReceivedAt} snapshot={{ days, receivedAt: responsesReceivedAt, posture: report, sla, workload, trend }} /> : <p role="alert" className="oa-panel p-4 text-sm text-warning">Snapshot download unavailable: a loaded report section does not match the selected day window. Reload the report before exporting.</p>)}
           {unavailable.length > 0 && <DegradedBanner messages={unavailable} onRetry={() => void fetchReport(days)} />}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <KPICard title="Alerts opened" value={report.alerts.opened} icon={ShieldAlert} color="info" detail={`${report.alerts.by_severity.critical} critical · ${report.days}d window`} />
