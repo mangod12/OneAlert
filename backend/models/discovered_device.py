@@ -67,7 +67,8 @@ class NetworkSensor(Base):
 
     # Relationships
     user = relationship("User", back_populates="network_sensors")
-    discovered_devices = relationship("DiscoveredDevice", back_populates="source_sensor", cascade="all, delete-orphan")
+    # Retiring a sensor unlinks its observations, never deletes device evidence.
+    discovered_devices = relationship("DiscoveredDevice", back_populates="source_sensor")
 
 
 class DiscoveredDevice(Base):
@@ -104,7 +105,8 @@ class DiscoveredDevice(Base):
     # Confidence & metadata
     confidence = Column(String, default=DeviceConfidence.MEDIUM.value)  # low, medium, high, critical
     discovery_method = Column(String, nullable=False)
-    last_seen = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    # Only actual observations (sensor ingestion) advance last_seen.
+    last_seen = Column(DateTime(timezone=True), server_default=func.now())
     first_seen = Column(DateTime(timezone=True), server_default=func.now())
 
     # Actor/risk scoring
