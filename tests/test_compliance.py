@@ -510,3 +510,64 @@ def test_summary_and_export_use_latest_owned_assessment_once(client, auth_header
     assert row['status'] == 'partial'
     assert row['evidence_detail'] == 'latest tie winner'
     assert 'private other user' not in exported.text
+
+
+def test_manual_review_records_evidence_without_running_automation(client, auth_headers):
+    url = '/api/v1/compliance/controls/1/assessments'
+    payload = {'status': 'partial', 'evidence_type': 'manual', 'evidence_detail': 'Policy reviewed by analyst'}
+    response = client.post(url, headers=auth_headers, json=payload)
+    assert response.status_code == 201
+    saved = response.json()
+    for field, value in payload.items():
+        assert saved[field] == value
+    assert saved['assessed_by'] == 'compliance_test@example.com'
+    assert saved['control_id'] == 1
+    records = client.get('/api/v1/compliance/assessments', headers=auth_headers).json()
+    assert len(records) == 1
+    assert records[0]['id'] == saved['id']
+    # A later explicit review is new history, not a destructive rewrite.
+    newer = client.post(url, headers=auth_headers, json={**payload, 'status': 'not_applicable'})
+    assert newer.status_code == 201
+    assert newer.json()['id'] != saved['id']
+    records = client.get('/api/v1/compliance/assessments', headers=auth_headers).json()
+    assert len(records) == 2
+    assert next(row for row in records if row['id'] == saved['id'])['status'] == 'partial'
+    summary = client.get('/api/v1/compliance/summary', headers=auth_headers).json()[0]
+    assert summary['not_applicable'] == 1
+    assert summary['partial'] == 0
+    assert summary['not_assessed'] == summary['total_controls'] - 1
+
+
+@pytest.mark.parametrize('path,payload,code', [
+    ('/controls/999999/assessments', {'status': 'partial'}, 404),
+    ('/controls/1/assessments', {'status': 'invalid'}, 422),
+    ('/controls/1/assessments', {'status': 'partial', 'evidence_type': 'invalid'}, 422),
+])
+def test_manual_review_validates_without_writing(client, auth_headers, path, payload, code):
+    assert client.post('/api/v1/compliance' + path, headers=auth_headers, json=payload).status_code == code
+    assert client.get('/api/v1/compliance/assessments', headers=auth_headers).json() == []
+
+
+def test_manual_review_requires_authentication(client):
+    assert client.post('/api/v1/compliance/controls/1/assessments', json={'status': 'partial'}).status_code == 401
+
+
+def test_automation_keeps_manual_history_and_remains_idempotent(client, auth_headers):
+    with TestingSessionLocal() as db:
+        control_id = db.query(ComplianceControl).filter_by(control_id='FR1-SR1.1').one().id
+    url = f'/api/v1/compliance/controls/{control_id}/assessments'
+    first = client.post(url, headers=auth_headers, json={'status': 'partial', 'evidence_type': 'manual', 'evidence_detail': 'First manual review'}).json()
+    second = client.post(url, headers=auth_headers, json={'status': 'compliant', 'evidence_type': 'document', 'evidence_detail': 'Second manual review'}).json()
+    assert client.post('/api/v1/compliance/assess', headers=auth_headers).status_code == 200
+    assert client.post('/api/v1/compliance/assess', headers=auth_headers).status_code == 200
+    records = [row for row in client.get('/api/v1/compliance/assessments', headers=auth_headers).json() if row['control_id'] == control_id]
+    assert len(records) == 3
+    for original in [first, second]:
+        stored = next(row for row in records if row['id'] == original['id'])
+        assert stored == original
+    automatic = next(row for row in records if row['assessed_by'] == 'system')
+    assert automatic['evidence_type'] == 'automated'
+    exported = client.get('/api/v1/compliance/export', headers=auth_headers)
+    row = next(row for row in csv.DictReader(io.StringIO(exported.text)) if row['control_id'] == 'FR1-SR1.1')
+    assert row['evidence_type'] == 'automated'
+    assert row['evidence_detail'] == automatic['evidence_detail']

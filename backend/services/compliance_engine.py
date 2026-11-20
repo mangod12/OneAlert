@@ -1,5 +1,7 @@
 """Compliance engine -- automated evidence collection and assessment."""
 
+from datetime import UTC, datetime
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -113,15 +115,18 @@ async def run_automated_assessment(user_id: int, db: AsyncSession) -> list:
             select(ComplianceAssessment).where(
                 ComplianceAssessment.user_id == user_id,
                 ComplianceAssessment.control_id == control.id
-            )
+            ).order_by(ComplianceAssessment.assessed_at.desc().nulls_last(), ComplianceAssessment.id.desc()).limit(1)
         )
         assessment = existing.scalar_one_or_none()
 
-        if assessment:
+        # Repeated automated runs update their current record, but never
+        # overwrite a manual review retained in assessment history.
+        if assessment and assessment.assessed_by == "system":
             assessment.status = mapping["status"]
             assessment.evidence_type = mapping["type"]
             assessment.evidence_detail = mapping["evidence"]
             assessment.assessed_by = "system"
+            assessment.assessed_at = datetime.now(UTC)
         else:
             assessment = ComplianceAssessment(
                 user_id=user_id,
@@ -129,7 +134,8 @@ async def run_automated_assessment(user_id: int, db: AsyncSession) -> list:
                 status=mapping["status"],
                 evidence_type=mapping["type"],
                 evidence_detail=mapping["evidence"],
-                assessed_by="system"
+                assessed_by="system",
+                assessed_at=datetime.now(UTC),
             )
             db.add(assessment)
 

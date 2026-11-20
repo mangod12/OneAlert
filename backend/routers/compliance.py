@@ -12,6 +12,7 @@ Provides endpoints for:
 
 import csv
 import io
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -177,6 +178,33 @@ async def run_assessment(
     }
 
 
+@router.post("/controls/{control_id}/assessments", response_model=AssessmentResponse, status_code=201)
+async def create_manual_assessment(
+    control_id: int,
+    payload: AssessmentUpdate,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Record a manual review without running automated checks or altering history."""
+    control = await db.get(ComplianceControl, control_id)
+    if control is None:
+        raise HTTPException(status_code=404, detail="Control not found")
+    _validate_assessment(payload)
+    assessment = ComplianceAssessment(
+        user_id=current_user.id,
+        control_id=control_id,
+        status=payload.status,
+        evidence_type=payload.evidence_type,
+        evidence_detail=payload.evidence_detail,
+        assessed_by=current_user.email,
+        assessed_at=datetime.now(UTC),
+    )
+    db.add(assessment)
+    await db.commit()
+    await db.refresh(assessment)
+    return assessment
+
+
 @router.patch("/assessments/{assessment_id}", response_model=AssessmentResponse)
 async def update_assessment(
     assessment_id: int,
@@ -191,19 +219,7 @@ async def update_assessment(
     if assessment.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    valid_statuses = {"compliant", "non_compliant", "partial", "not_applicable", "not_assessed"}
-    if update.status not in valid_statuses:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Invalid status. Must be one of: {', '.join(sorted(valid_statuses))}"
-        )
-
-    valid_evidence_types = {"automated", "manual", "document"}
-    if update.evidence_type is not None and update.evidence_type not in valid_evidence_types:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Invalid evidence_type. Must be one of: {', '.join(sorted(valid_evidence_types))}"
-        )
+    _validate_assessment(update)
 
     assessment.status = update.status
     if "evidence_type" in update.model_fields_set:
@@ -230,6 +246,22 @@ async def list_assessments(
     )
     assessments = result.scalars().all()
     return assessments
+
+
+def _validate_assessment(update: AssessmentUpdate) -> None:
+    valid_statuses = {"compliant", "non_compliant", "partial", "not_applicable", "not_assessed"}
+    if update.status not in valid_statuses:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid status. Must be one of: {', '.join(sorted(valid_statuses))}"
+        )
+
+    valid_evidence_types = {"automated", "manual", "document"}
+    if update.evidence_type is not None and update.evidence_type not in valid_evidence_types:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid evidence_type. Must be one of: {', '.join(sorted(valid_evidence_types))}"
+        )
 
 
 async def _latest_assessments(
