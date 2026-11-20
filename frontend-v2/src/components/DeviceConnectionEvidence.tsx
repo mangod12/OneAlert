@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
+import { DeviceRecordLink } from './DeviceRecordLink';
 import { getApiErrorMessage } from '../api/errors';
 import type { RecordedTopologyEdge } from './TopologyConnectionEvidence';
 interface Connection extends Omit<RecordedTopologyEdge, 'is_encrypted'> { id: number; is_encrypted: boolean | null; record_reference_match: boolean; ip_address_match: boolean; }
@@ -56,7 +57,7 @@ export function DeviceConnectionEvidence({ deviceId }: { deviceId: number }) {
           <p className="break-all font-medium text-surface-100">#{row.id}: {row.source} to {row.target}</p>
           <p className="mt-1 break-words">{row.protocol}, port {row.port ?? 'not recorded'} · {row.is_encrypted === true ? 'Recorded encrypted' : row.is_encrypted === false ? 'Recorded cleartext' : 'Encryption flag not recorded'}</p>
           <p className="mt-1">{row.record_reference_match ? 'Device record reference' : 'No device record reference'} · {row.ip_address_match ? 'Current IP match' : 'No current IP match'}</p>
-          <details className="mt-2"><summary className="cursor-pointer text-primary-300">Recorded connection fields</summary><dl className="mt-2 space-y-2">{([['Source device ID', row.source_device_id], ['Target device ID', row.target_device_id], ['Direction', row.direction], ['Bytes transferred (exact)', row.bytes_transferred_exact], ['First seen', row.first_seen], ['Last seen', row.last_seen]] as const).map(([label, value]) => <div key={label}><dt className="text-surface-400">{label}</dt><dd className="break-all">{value == null || value === '' ? 'Not recorded' : String(value)}</dd></div>)}</dl></details>
+          <details className="mt-2"><summary className="cursor-pointer text-primary-300">Recorded connection fields</summary><dl className="mt-2 space-y-2">{([['Source device ID', row.source_device_id], ['Target device ID', row.target_device_id], ['Direction', row.direction], ['Bytes transferred (exact)', row.bytes_transferred_exact], ['First seen', row.first_seen], ['Last seen', row.last_seen]] as const).map(([label, value]) => <div key={label}><dt className="text-surface-400">{label}</dt><dd className="break-all">{value == null || value === '' ? 'Not recorded' : String(value)}{(label === 'Source device ID' || label === 'Target device ID') && typeof value === 'number' && <div className="mt-2"><DeviceRecordLink deviceId={value} /></div>}</dd></div>)}</dl></details>
         </li>)}</ol>}
         <nav aria-label="Device connection pages" className="flex flex-wrap gap-2"><button type="button" className={control} disabled={page === 1} onClick={() => setPage(page - 1)}>Previous connections</button><button type="button" className={control} disabled={page * snapshot.size >= snapshot.total} onClick={() => setPage(page + 1)}>Next connections</button></nav>
       </>}
