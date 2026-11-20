@@ -230,7 +230,7 @@ it.each(['success', 'failure'])('ignores stale audit %s after the filter changed
 it('hides prior-filter records while loading and keeps filters available to recover from failure', async () => {
   let reject!: (reason: unknown) => void;
   const fallback = get.getMockImplementation()!;
-  get.mockImplementation((url, config) => url === '/auth/audit-logs' && config?.params?.action === 'offline' ? new Promise((_resolve, fail) => { reject = fail; }) : fallback(url, config));
+  get.mockImplementation((url, config) => url === '/auth/audit-logs' && (config?.params as { action?: string } | undefined)?.action === 'offline' ? new Promise((_resolve, fail) => { reject = fail; }) : fallback(url, config));
   render(<AuditLog />);
   await screen.findByText('case.status_changed');
   const input = screen.getByLabelText('Search audit actions');
