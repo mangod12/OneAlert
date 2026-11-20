@@ -348,3 +348,78 @@ it('opens the read-only snapshot comparison without expanding or changing an inv
   fireEvent.click(screen.getByRole('button', { name: 'Close comparison' }));
   expect(screen.queryByRole('region', { name: 'SBOM snapshot comparison' })).toBeNull();
 });
+
+describe('local SBOM document review', () => {
+  async function openUpload() {
+    render(<Sbom />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Upload SBOM' }));
+    fireEvent.change(screen.getByLabelText('Asset'), { target: { value: '7' } });
+    return screen.getByLabelText('Choose local SBOM JSON file');
+  }
+  it('previews a local file and uploads the exact parsed evidence only on explicit submit', async () => {
+    const input = await openUpload();
+    const document = { bomFormat: 'CycloneDX', specVersion: '1.6', components: [{ name: 'root', components: [{ name: 'child' }] }], custom: { evidence: 'preserved' } };
+    fireEvent.change(input, { target: { files: [new File([JSON.stringify(document)], 'assembly.cdx.json', { type: 'application/json' })] } });
+    await screen.findByRole('region', { name: 'Document preview' });
+    expect(screen.getByText('2 recorded components, including nested assemblies')).toBeTruthy();
+    expect(screen.getByText('Destination: Plant gateway (#7)')).toBeTruthy();
+    expect(post).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/sbom/upload', { asset_id: 7, sbom_data: document, source: 'upload' }));
+  });
+  it('clears stale valid evidence when a replacement is too large or invalid', async () => {
+    const input = await openUpload();
+    fireEvent.change(screen.getByLabelText('SBOM JSON document'), { target: { value: '{"bomFormat":"CycloneDX"}' } });
+    expect(screen.getByRole('region', { name: 'Document preview' })).toBeTruthy();
+    const tooLarge = new File(['{}'], 'oversize.json');
+    Object.defineProperty(tooLarge, 'size', { value: 5 * 1024 * 1024 + 1 });
+    fireEvent.change(input, { target: { files: [tooLarge] } });
+    expect(screen.getByRole('alert').textContent).toContain('5 MiB');
+    expect(screen.queryByRole('region', { name: 'Document preview' })).toBeNull();
+    expect((screen.getByRole('button', { name: 'Upload' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(input, { target: { files: [new File(['<html>not JSON</html>'], 'invalid.json')] } });
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('not valid JSON'));
+    expect(post).not.toHaveBeenCalled();
+  });
+  it('does not let a delayed file replace newer pasted evidence', async () => {
+    const input = await openUpload();
+    const readers: FileReader[] = [];
+    vi.spyOn(FileReader.prototype, 'readAsText').mockImplementation(function (this: FileReader) { readers.push(this); });
+    fireEvent.change(input, { target: { files: [new File(['{}'], 'slow.json')] } });
+    expect((screen.getByRole('button', { name: 'Upload' }) as HTMLButtonElement).disabled).toBe(true);
+    const pasted = '{"spdxVersion":"SPDX-2.3","packages":[{"name":"new"}]}';
+    fireEvent.change(screen.getByLabelText('SBOM JSON document'), { target: { value: pasted } });
+    const reader = readers[0];
+    Object.defineProperty(reader, 'result', { value: '{"bomFormat":"CycloneDX"}' });
+    act(() => { reader.onload?.(new ProgressEvent('load') as ProgressEvent<FileReader>); });
+    expect(screen.getByText('1 recorded package')).toBeTruthy();
+    expect(screen.queryByText('Local file: slow.json')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/sbom/upload', { asset_id: 7, sbom_data: JSON.parse(pasted), source: 'upload' }));
+  });
+  it('keeps the preview and document after a server rejection', async () => {
+    await openUpload();
+    post.mockRejectedValue(new Error('Invalid recorded license evidence'));
+    fireEvent.change(screen.getByLabelText('SBOM JSON document'), { target: { value: '{"bomFormat":"CycloneDX","components":[]}' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Upload' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.getByRole('region', { name: 'Document preview' })).toBeTruthy();
+    expect((screen.getByLabelText('SBOM JSON document') as HTMLTextAreaElement).value).toContain('CycloneDX');
+  });
+});
+
+it('reports local file read errors without sending or retaining previous evidence', async () => {
+  const readers: FileReader[] = [];
+  vi.spyOn(FileReader.prototype, 'readAsText').mockImplementation(function (this: FileReader) { readers.push(this); });
+  render(<Sbom />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Upload SBOM' }));
+  fireEvent.change(screen.getByLabelText('Asset'), { target: { value: '7' } });
+  fireEvent.change(screen.getByLabelText('SBOM JSON document'), { target: { value: '{"bomFormat":"CycloneDX"}' } });
+  fireEvent.change(screen.getByLabelText('Choose local SBOM JSON file'), { target: { files: [new File(['{}'], 'unreadable.json')] } });
+  act(() => readers[0].onerror?.(new ProgressEvent('error') as ProgressEvent<FileReader>));
+  expect(screen.getByRole('alert').textContent).toContain('could not be read');
+  expect((screen.getByRole('button', { name: 'Upload' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole('region', { name: 'Document preview' })).toBeNull();
+  expect(post).not.toHaveBeenCalled();
+});
