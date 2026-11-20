@@ -96,10 +96,10 @@ describe('Run status filter', () => {
     const get = vi.mocked(apiClient.get);
     render(<Validation />);
     const select = await screen.findByLabelText('Filter runs by status');
-    await waitFor(() => expect(get).toHaveBeenCalledWith('/validation/runs', { params: {} }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/validation/runs', { params: { page: 1, size: 20 } }));
     fireEvent.change(select, { target: { value: 'failed' } });
     await waitFor(() => {
-      expect(get).toHaveBeenCalledWith('/validation/runs', { params: { status: 'failed' } });
+      expect(get).toHaveBeenCalledWith('/validation/runs', { params: { page: 1, size: 20, status: 'failed' } });
     });
   });
 });
@@ -238,5 +238,44 @@ describe('Validation detail request identity', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'View results for Perimeter check' }));
     expect(await screen.findByText('The response did not match this validation run. Try again.')).toBeTruthy();
     expect(screen.queryByText('Missed password guessing')).toBeNull();
+  });
+});
+
+
+describe('Validation run history navigation', () => {
+  it('reaches later runs, preserves the status and resets to page one on filter changes', async () => {
+    vi.mocked(apiClient.get).mockImplementation(async (url, config) => {
+      if (url.endsWith('/coverage')) return { data: { data: [] } };
+      const page = (config?.params as { page: number }).page;
+      return { data: { data: [{ ...run, id: page, name: `Run page ${page}` }], total: 21 } };
+    });
+    render(<Validation />);
+    await screen.findByText('Run page 1');
+    fireEvent.click(screen.getByRole('button', { name: 'Next runs' }));
+    expect(await screen.findByText('Run page 2')).toBeTruthy();
+    expect(screen.getByText('Showing 21–21 of 21 matching runs · Page 2 of 2')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Next runs' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Filter runs by status'), { target: { value: 'completed' } });
+    expect(await screen.findByText('Run page 1')).toBeTruthy();
+    expect(vi.mocked(apiClient.get)).toHaveBeenCalledWith('/validation/runs', { params: { page: 1, size: 20, status: 'completed' } });
+  });
+  it.each(['success', 'failure'])('ignores an obsolete list %s after a newer filter result', async outcome => {
+    let resolveOld!: (value: unknown) => void;
+    let rejectOld!: (error: Error) => void;
+    vi.mocked(apiClient.get).mockImplementation((url, config) => {
+      if (url.endsWith('/coverage')) return Promise.resolve({ data: { data: [] } });
+      if ((config?.params as { status?: string })?.status === 'failed') return new Promise((resolve, reject) => { resolveOld = resolve; rejectOld = reject; });
+      return Promise.resolve({ data: { data: [{ ...run, name: 'Current filtered run' }], total: 1 } });
+    });
+    render(<Validation />);
+    await screen.findByText('Current filtered run');
+    const select = screen.getByLabelText('Filter runs by status');
+    fireEvent.change(select, { target: { value: 'failed' } });
+    fireEvent.change(select, { target: { value: 'completed' } });
+    await screen.findByText('Current filtered run');
+    await act(async () => { if (outcome === 'success') resolveOld({ data: { data: [run], total: 1 } }); else rejectOld(new Error('Obsolete list failure')); });
+    expect(screen.getByText('Current filtered run')).toBeTruthy();
+    expect(screen.queryByText('Perimeter check')).toBeNull();
+    expect(screen.queryByText('Obsolete list failure')).toBeNull();
   });
 });
