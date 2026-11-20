@@ -1,4 +1,6 @@
 import { DeviceAssetLinkReview } from '../components/DeviceAssetLinkReview';
+import { DevicePromotionReview } from '../components/DevicePromotionReview';
+
 import { useCallback, useEffect, useRef, useState, useLayoutEffect } from 'react';
 import apiClient from '../api/client';
 import { useSearchParams } from 'react-router-dom';
@@ -54,7 +56,8 @@ export function OTDiscovery() {
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState<string[]>([]);
   const [linkDeviceId, setLinkDeviceId] = useState<number | null>(null);
-  const [pendingDevices, setPendingDevices] = useState<Set<number>>(new Set());
+  const [promoteDeviceId, setPromoteDeviceId] = useState<number | null>(null);
+
   const [sensors, setSensors] = useState<NetworkSensor[]>([]);
   const [showSensorForm, setShowSensorForm] = useState(false);
   const [editingSensor, setEditingSensor] = useState<NetworkSensor | null>(null);
@@ -164,21 +167,6 @@ export function OTDiscovery() {
     return () => { devicesRequestId.current += 1; };
   }, [fetchDevices]);
 
-  const handlePromote = async (deviceId: number) => {
-    if (pendingDevices.has(deviceId)) return;
-    setPendingDevices(current => new Set(current).add(deviceId));
-    try {
-      await apiClient.post(`/ot/discovered-devices/${deviceId}/promote-to-asset`);
-      setDeviceRefresh(value => value + 1);
-      void apiClient.get('/ot/summary').then(response => setSummary(response.data)).catch(() => { setErrors(current => [...current, 'OT summary could not be refreshed after promotion.']); });
-      toast('Device promoted to the managed asset inventory.', 'success');
-    } catch (error: unknown) {
-      toast(getApiErrorMessage(error, 'Device could not be promoted.'), 'error');
-    } finally {
-      setPendingDevices(current => { const next = new Set(current); next.delete(deviceId); return next; });
-    }
-  };
-
   const handleSaveSensor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (savingSensor) return;
@@ -265,6 +253,12 @@ export function OTDiscovery() {
         setLinkDeviceId(null); setDeviceRefresh(value => value + 1);
         void apiClient.get('/ot/summary').then(response => setSummary(response.data)).catch(() => setErrors(current => [...current, 'OT summary could not be refreshed after linking.']));
         toast('Device linked to the reviewed existing asset.', 'success');
+      }} />}
+      {promoteDeviceId !== null && <DevicePromotionReview key={promoteDeviceId} deviceId={promoteDeviceId} onClose={() => setPromoteDeviceId(null)} onPromoted={() => {
+        setPromoteDeviceId(null); setDeviceRefresh(value => value + 1);
+        void apiClient.get('/ot/summary').then(response => setSummary(response.data)).catch(() => setErrors(current => [...current, 'OT summary could not be refreshed after promotion.']));
+        toast('Reviewed device promoted to managed inventory.', 'success');
+
       }} />}
       {inspectDeviceId !== null && <DiscoveredDeviceInspector key={inspectDeviceId} deviceId={inspectDeviceId} onUpdated={() => { void fetchDevices(); }} onClose={() => { setInspectDeviceId(null); setCopyLinkError(null); setCopiedLink(null); }} onCopyLink={copyDeviceLink} copyLinkError={copyLinkError?.id === inspectDeviceId ? copyLinkError.text : undefined} copiedLink={copiedLink === inspectDeviceId} />}
       <PageHeader eyebrow="Observe" title="OT Discovery" description="Passive network device discovery, protocol visibility, and inventory correlation." />
@@ -523,13 +517,13 @@ export function OTDiscovery() {
                   </td>
                   <td className="px-4 py-3">
                     <button type="button" onClick={() => setInspectDeviceId(device.id)} aria-label={`View recorded details for ${device.ip_address}`} className="mr-3 text-xs text-primary-400 hover:text-primary-300">View details</button>
-                    {!device.is_correlated && <button type="button" disabled={pendingDevices.has(device.id)} onClick={() => setLinkDeviceId(device.id)} aria-label={`Link ${device.ip_address} to existing asset`} className="mr-3 text-xs text-primary-400 hover:text-primary-300">Link existing asset</button>}
+                    {!device.is_correlated && <button type="button"  onClick={() => setLinkDeviceId(device.id)} aria-label={`Link ${device.ip_address} to existing asset`} className="mr-3 text-xs text-primary-400 hover:text-primary-300">Link existing asset</button>}
                     {!device.is_correlated && (
-                      <button disabled={pendingDevices.has(device.id)}
-                        onClick={() => handlePromote(device.id)}
+                      <button
+                        onClick={() => setPromoteDeviceId(device.id)}
                         className="text-xs text-primary-400 hover:text-primary-300 font-medium"
                       >
-                        {pendingDevices.has(device.id) ? 'Promoting…' : 'Promote to asset'}
+                        Promote to asset
                       </button>
                     )}
                   </td>
