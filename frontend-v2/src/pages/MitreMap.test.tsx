@@ -213,3 +213,40 @@ it('retries failed references in the expanded technique without reloading covera
   expect(get.mock.calls.filter(([url]) => url === '/mitre/coverage')).toHaveLength(1);
   expect(get.mock.calls.filter(([url]) => url === '/mitre/techniques')).toHaveLength(1);
 });
+
+it('does not retain stale detected markers when coverage fails on a partial-data retry', async () => {
+  let attempt = 0;
+  get.mockImplementation(url => {
+    if (url === '/mitre/coverage') {
+      attempt += 1;
+      return attempt === 1 ? Promise.resolve({ data: { data: coverage } }) : Promise.reject(new Error('Coverage unavailable'));
+    }
+    return attempt === 1 ? Promise.reject(new Error('Catalog unavailable')) : Promise.resolve({ data: techniques });
+  });
+  render(<MitreMap />);
+  await screen.findByText('42%');
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await screen.findByText('T1190');
+  expect(screen.queryByText('42%')).toBeNull();
+  expect(screen.queryByText('Detected')).toBeNull();
+  expect(screen.queryByText('Gap')).toBeNull();
+  expect(screen.queryByRole('checkbox', { name: 'Gaps only' })).toBeNull();
+  expect(screen.getByText('Some live data is unavailable')).toBeTruthy();
+});
+
+it('does not retain a stale technique catalog when the next retry cannot load it', async () => {
+  let attempt = 0;
+  get.mockImplementation(url => {
+    if (url === '/mitre/coverage') {
+      attempt += 1;
+      return attempt === 1 ? Promise.reject(new Error('Coverage unavailable')) : Promise.resolve({ data: { data: coverage } });
+    }
+    return attempt === 1 ? Promise.resolve({ data: techniques }) : Promise.reject(new Error('Catalog unavailable'));
+  });
+  render(<MitreMap />);
+  await screen.findByText('T1059');
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await screen.findByText('42%');
+  expect(screen.queryByText('T1059')).toBeNull();
+  expect(screen.getByText('Some live data is unavailable')).toBeTruthy();
+});
