@@ -218,9 +218,9 @@ async def update_assessment(
         )
 
     assessment.status = update.status
-    if update.evidence_type is not None:
+    if "evidence_type" in update.model_fields_set:
         assessment.evidence_type = update.evidence_type
-    if update.evidence_detail is not None:
+    if "evidence_detail" in update.model_fields_set:
         assessment.evidence_detail = update.evidence_detail
     assessment.assessed_by = current_user.email
 

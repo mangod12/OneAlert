@@ -330,6 +330,46 @@ class TestAssessmentEvidence:
             assert response.json()["evidence_type"] == evidence_type
             assert response.json()["evidence_detail"] == f"Stored via {evidence_type}."
 
+    @pytest.mark.parametrize("clear_fields", [
+        {"evidence_type": None}, {"evidence_detail": None},
+        {"evidence_type": None, "evidence_detail": None},
+    ])
+    def test_explicit_null_clears_only_selected_evidence_fields(self, client, auth_headers, clear_fields):
+        client.post("/api/v1/compliance/assess", headers=auth_headers)
+        assessment_id = client.get("/api/v1/compliance/assessments", headers=auth_headers).json()[0]["id"]
+        url = f"/api/v1/compliance/assessments/{assessment_id}"
+        original = {"evidence_type": "document", "evidence_detail": "Outdated policy link"}
+        saved = client.patch(url, headers=auth_headers, json={"status": "partial", **original})
+        assert saved.status_code == 200
+        cleared = client.patch(url, headers=auth_headers, json={"status": "partial", **clear_fields})
+        assert cleared.status_code == 200
+        for field, value in original.items():
+            assert cleared.json()[field] == (None if field in clear_fields else value)
+        stored = next(row for row in client.get("/api/v1/compliance/assessments", headers=auth_headers).json()
+                      if row["id"] == assessment_id)
+        for field in original:
+            assert stored[field] == cleared.json()[field]
+        exported = client.get("/api/v1/compliance/export", headers=auth_headers)
+        assert exported.status_code == 200
+        control_code = next(row["control_id"] for row in client.get(
+            "/api/v1/compliance/frameworks/1/controls", headers=auth_headers
+        ).json() if row["id"] == stored["control_id"])
+        csv_row = next(row for row in csv.DictReader(io.StringIO(exported.text)) if row["control_id"] == control_code)
+        for field, value in original.items():
+            assert csv_row[field] == ("" if field in clear_fields else value)
+
+    def test_status_only_update_preserves_existing_evidence(self, client, auth_headers):
+        client.post("/api/v1/compliance/assess", headers=auth_headers)
+        assessment_id = client.get("/api/v1/compliance/assessments", headers=auth_headers).json()[0]["id"]
+        url = f"/api/v1/compliance/assessments/{assessment_id}"
+        original = {"evidence_type": "document", "evidence_detail": "Retained policy link"}
+        client.patch(url, headers=auth_headers, json={"status": "partial", **original})
+        updated = client.patch(url, headers=auth_headers, json={"status": "compliant"})
+        assert updated.status_code == 200
+        assert updated.json()["status"] == "compliant"
+        for field, value in original.items():
+            assert updated.json()[field] == value
+
 
 class TestComplianceExport:
     """Test exporting the compliance posture as CSV."""
