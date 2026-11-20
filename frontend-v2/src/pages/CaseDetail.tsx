@@ -99,6 +99,9 @@ export function CaseDetail() {
   const [caseData, setCaseData] = useState<CaseData | null>(null);
   const [searchParams] = useSearchParams();
   const highlightedNoteId = Number(searchParams.get('note')) || null;
+  const taskIds = searchParams.getAll('task');
+  const linkedTaskId = taskIds.length === 1 && /^[1-9][0-9]*$/.test(taskIds[0]) && Number.isSafeInteger(Number(taskIds[0])) ? Number(taskIds[0]) : null;
+  const invalidTaskLink = taskIds.length > 0 && linkedTaskId === null;
 
   useEffect(() => {
     if (!highlightedNoteId || !caseData) return;
@@ -783,10 +786,12 @@ export function CaseDetail() {
             />
           </div>
         )}
+        {invalidTaskLink && <p role="alert" className="mb-3 text-sm text-warning">The task link has an invalid task ID. No task was selected or changed.</p>}
+        {!tasksUnavailable && tasks.length === 0 && linkedTaskId !== null && <p role="alert" className="mb-3 text-sm text-warning">Task #{linkedTaskId} is not in this loaded investigation checklist. No task was changed.</p>}
         {tasks.length > 0 && (
-          <ChecklistTriage key={caseData.id} tasks={tasks} today={todayStr ?? ''} currentUserId={currentUserId} members={members}>
+          <ChecklistTriage key={`${caseData.id}:${linkedTaskId ?? ''}`} tasks={tasks} today={todayStr ?? ''} currentUserId={currentUserId} members={members} linkedTaskId={linkedTaskId}>
             {task => (
-              <li key={task.id} className="flex min-w-0 flex-wrap items-center gap-2 rounded-md border border-surface-800 bg-surface-900/60 px-3 py-2">
+              <li key={task.id} id={`case-task-${task.id}`} tabIndex={-1} className={`flex min-w-0 flex-wrap items-center gap-2 rounded-md border border-surface-800 bg-surface-900/60 px-3 py-2 focus:outline-none ${linkedTaskId === task.id ? 'ring-2 ring-primary-400' : ''}`}>
                 <button
                   type="button"
                   aria-label={task.done ? `Reopen task ${task.title}` : `Complete task ${task.title}`}

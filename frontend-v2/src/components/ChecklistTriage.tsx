@@ -1,8 +1,16 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { defaultChecklistFilters, filterChecklist, validTaskDate, type ChecklistTask } from '../utils/checklistTriage';
 const control = 'max-w-full rounded border border-surface-700 bg-surface-950 px-2 py-2 text-xs text-surface-300';
-export function ChecklistTriage<T extends ChecklistTask>({ tasks, today, currentUserId, members, children }: { tasks: T[]; today: string; currentUserId: number | null; members: { id: number; full_name: string | null; email: string }[]; children: (task: T) => ReactNode }) {
-  const [filters, setFilters] = useState({ ...defaultChecklistFilters }), [page, setPage] = useState(1);
+export function ChecklistTriage<T extends ChecklistTask>({ tasks, today, currentUserId, members, children, linkedTaskId = null }: { linkedTaskId?: number | null; tasks: T[]; today: string; currentUserId: number | null; members: { id: number; full_name: string | null; email: string }[]; children: (task: T) => ReactNode }) {
+  const linkedIndex = filterChecklist(tasks, defaultChecklistFilters, today, currentUserId).findIndex(task => task.id === linkedTaskId);
+  const [filters, setFilters] = useState({ ...defaultChecklistFilters }), [page, setPage] = useState(() => linkedIndex < 0 ? 1 : Math.floor(linkedIndex / 20) + 1);
+  const [reveal, setReveal] = useState(0), revealed = useRef('');
+  useEffect(() => {
+    const key = `${linkedTaskId}:${reveal}`;
+    if (linkedTaskId === null || linkedIndex < 0 || revealed.current === key) return;
+    const element = document.getElementById(`case-task-${linkedTaskId}`);
+    if (element) { element.scrollIntoView?.({ block: 'center' }); element.focus({ preventScroll: true }); revealed.current = key; }
+  }, [linkedTaskId, linkedIndex, reveal, page]);
   const filtered = filterChecklist(tasks, filters, today, currentUserId);
   const totalPages = Math.max(1, Math.ceil(filtered.length / 20)), currentPage = Math.min(page, totalPages);
   const update = (key: keyof typeof filters, value: string) => { setFilters(values => ({ ...values, [key]: value })); setPage(1); };
@@ -10,6 +18,7 @@ export function ChecklistTriage<T extends ChecklistTask>({ tasks, today, current
   const assignees = new Set(tasks.map(task => task.assignee_id).filter((id): id is number => id != null));
   const active = Object.keys(defaultChecklistFilters).some(key => filters[key as keyof typeof filters] !== defaultChecklistFilters[key as keyof typeof filters]);
   return <section aria-label="Investigation checklist triage" className="mb-4 space-y-3">
+    {linkedTaskId !== null && (linkedIndex < 0 ? <p role="alert" className="text-sm text-warning">Task #{linkedTaskId} is not in this loaded investigation checklist. It may have been removed or may belong to another investigation. No task was changed.</p> : <div className="flex flex-wrap items-center gap-2 text-xs text-primary-300"><span>Linked task #{linkedTaskId} is in this checklist. Filters may hide it.</span><button type="button" className={control} onClick={() => { setFilters({ ...defaultChecklistFilters }); setPage(Math.floor(linkedIndex / 20) + 1); setReveal(value => value + 1); }}>Show linked task #{linkedTaskId}</button></div>)}
     <p className="text-xs text-surface-400">{tasks.length} total tasks · {tasks.filter(task => !task.done).length} open · {overdue} overdue open · {tasks.filter(task => task.assignee_id == null).length} unassigned. Progress above always covers the whole checklist.</p>
     <div className="flex flex-wrap items-end gap-2">
       <label className="flex min-w-0 basis-full flex-col gap-1 text-xs text-surface-400 sm:basis-56 sm:flex-1">Search task titles<input aria-label="Search investigation task titles" className={control} value={filters.query} onChange={event => update('query', event.target.value)} /></label>

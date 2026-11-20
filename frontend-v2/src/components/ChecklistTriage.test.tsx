@@ -4,7 +4,7 @@ import { ChecklistTriage } from './ChecklistTriage';
 afterEach(cleanup);
 const tasks = Array.from({ length: 23 }, (_, i) => ({ id: i + 1, title: `Task ${i + 1}`, done: i === 0, position: i, assignee_id: i % 2 ? 5 : null, due_date: i === 1 ? '2026-11-20' : null }));
 const props = { tasks, today: '2026-11-21', currentUserId: 5, members: [{ id: 5, full_name: 'Reviewer', email: 'reviewer@example.com' }] };
-const row = (task: typeof tasks[0]) => <li key={task.id}>{task.title}</li>;
+const row = (task: typeof tasks[0]) => <li key={task.id} id={`case-task-${task.id}`} tabIndex={-1}>{task.title}</li>;
 it('pages tasks independently while keeping whole-checklist counts', () => {
   render(<ChecklistTriage {...props}>{row}</ChecklistTriage>);
   expect(screen.getByText(/23 total tasks · 22 open · 1 overdue/)).toBeTruthy();
@@ -27,4 +27,18 @@ it('recovers the last page when the final matching task disappears', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Next task page' }));
   view.rerender(<ChecklistTriage {...props} tasks={tasks.slice(0, 20)}>{row}</ChecklistTriage>);
   expect(screen.getByText(/Page 1 of 1/)).toBeTruthy(); expect(screen.getByText('Task 20')).toBeTruthy();
+});
+
+it('opens the page containing an exact linked task, focuses it and can reveal it after filtering', () => {
+  render(<ChecklistTriage {...props} linkedTaskId={23}>{row}</ChecklistTriage>);
+  expect(screen.getByText('Task 23')).toBeTruthy(); expect(screen.queryByText('Task 1')).toBeNull();
+  expect(document.activeElement?.id).toBe('case-task-23');
+  fireEvent.change(screen.getByLabelText('Search investigation task titles'), { target: { value: 'Task 2' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Show linked task #23' }));
+  expect(document.activeElement?.id).toBe('case-task-23'); expect(screen.getByText(/Page 2 of 2/)).toBeTruthy();
+});
+it('does not infer an exact task match from a missing record', () => {
+  render(<ChecklistTriage {...props} linkedTaskId={99}>{row}</ChecklistTriage>);
+  expect(screen.getByRole('alert').textContent).toContain('not in this loaded investigation checklist');
+  expect(screen.queryByRole('button', { name: 'Show linked task #99' })).toBeNull();
 });

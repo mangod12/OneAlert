@@ -14,7 +14,7 @@ it('loads only on demand and reaches records beyond the editing cap with stable 
   render(<MemoryRouter><AssignedTaskExplorer /></MemoryRouter>); expect(get).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Explore all assigned tasks beyond the editing snapshot' }));
   await screen.findByText(/201 matching assigned task records/);
-  expect(screen.getByRole('link', { name: /Gateway investigation/ }).getAttribute('href')).toBe('/cases/7');
+  expect(screen.getByRole('link', { name: /Gateway investigation/ }).getAttribute('href')).toBe('/cases/7?task=209');
   fireEvent.click(screen.getByRole('button', { name: 'Next workload page' }));
   await screen.findByText(/Page 2 of 9/); expect(get).toHaveBeenLastCalledWith('/cases/assigned-task-explorer', { params: expect.objectContaining({ page: 2, size: 25 }) });
 });
