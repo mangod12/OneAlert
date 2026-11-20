@@ -1478,6 +1478,26 @@ async def auto_triage(
     }
 
 
+@router.get("/{case_id}/evidence-candidates")
+async def list_case_evidence_candidates(
+    case_id: int,
+    kind: Literal["alert", "event"],
+    page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100),
+    query: str = Query("", max_length=200),
+    severity: Literal["all", "critical", "high", "medium", "low", "info"] = "all",
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    """Only the case owner can choose from their unlinked owned evidence records."""
+    case = (await db.execute(select(Case).where(
+        Case.id == case_id, Case.user_id == current_user.id))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    from backend.services.case_evidence_candidates import evidence_candidates
+
+    return await evidence_candidates(db, current_user.id, case_id, kind=kind, page=page, size=size,
+                                     query=query, severity=severity)
+
+
 @router.get("/{case_id}/alerts")
 async def get_case_alerts(
     case_id: int,
