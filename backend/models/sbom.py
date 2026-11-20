@@ -88,6 +88,7 @@ class SBOMComponentResponse(BaseModel):
     purl: str | None = None
     cpe: str | None = None
     license: str | None = None
+    hash_sha256: str | None = None
     has_known_vulnerability: int
 
     model_config = {"from_attributes": True}

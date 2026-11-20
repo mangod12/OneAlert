@@ -32,6 +32,7 @@ interface SbomComponent {
   purl: string | null;
   cpe: string | null;
   license: string | null;
+  hash_sha256?: string | null;
   has_known_vulnerability: number;
 }
 
@@ -102,6 +103,7 @@ export function Sbom() {
         || (c.purl ?? '').toLowerCase().includes(componentQuery)
         || (c.cpe ?? '').toLowerCase().includes(componentQuery)
         || (c.license ?? '').toLowerCase().includes(componentQuery)
+        || (c.hash_sha256 ?? '').toLowerCase().includes(componentQuery)
       )
     : components;
   const visibleComponents = vulnerableOnly
@@ -538,7 +540,7 @@ function ComponentEvidenceDialog({ component, sbom, assetName, onClose }: { comp
   useDialogFocus(dialogRef, onClose);
   const fields = [
     ['Component', component.name], ['Version', component.version], ['Supplier', component.supplier],
-    ['License', component.license], ['Package URL (PURL)', component.purl], ['CPE', component.cpe],
+    ['License', component.license], ['Recorded SHA-256', component.hash_sha256], ['Package URL (PURL)', component.purl], ['CPE', component.cpe],
     ['Recorded vulnerability references', String(component.has_known_vulnerability)],
     ['Component record ID', String(component.id)], ['SBOM record ID', String(sbom.id)],
     ['Asset', `${assetName ? `${assetName} · ` : ''}#${sbom.asset_id}`],
@@ -549,7 +551,7 @@ function ComponentEvidenceDialog({ component, sbom, assetName, onClose }: { comp
     <div className="absolute inset-0 bg-surface-950/75 backdrop-blur-sm" onClick={onClose} />
     <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="sbom-component-evidence-title" className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-surface-700 bg-surface-900 p-5 shadow-[var(--oa-shadow-float)]">
       <div className="flex items-start justify-between gap-4"><h2 id="sbom-component-evidence-title" className="text-lg font-semibold text-surface-50">Recorded component evidence</h2><button type="button" onClick={onClose} className="rounded border border-surface-600 px-3 py-1.5 text-xs text-surface-200">Close</button></div>
-      <p className="my-3 text-xs text-surface-400">Values recorded in the uploaded SBOM, not a live package or vulnerability scan. Missing identifiers and vulnerability details cannot be reconstructed here.</p>
+      <p className="my-3 text-xs text-surface-400">Values recorded in the uploaded SBOM, not a live package or vulnerability scan. Hashes are supplied by the document and have not been verified against package bytes. Missing identifiers and vulnerability details cannot be reconstructed here.</p>
       <dl className="divide-y divide-surface-700">{fields.map(([label, value]) => <div key={label} className="grid gap-1 py-2.5 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-4"><dt className="text-xs text-surface-400">{label}</dt><dd className="min-w-0 whitespace-pre-wrap break-words text-sm text-surface-100 [overflow-wrap:anywhere]">{value?.trim() ? value : 'Not recorded'}</dd></div>)}</dl>
     </div>
   </div>;

@@ -39,3 +39,19 @@ describe('SBOM snapshot comparison', () => {
     expect(JSON.stringify(rows)).toBe(saved);
   });
 });
+
+
+it('shows recorded SHA-256 changes even when versions and identifiers match', () => {
+  const before = component({ hash_sha256: 'a'.repeat(64) });
+  const after = component({ hash_sha256: 'b'.repeat(64) });
+  const result = compareSnapshots([before], [after])[0];
+  expect(result.kind).toBe('changed');
+  expect(result.fields).toEqual(['hash_sha256']);
+  expect(result.baseline[0].hash_sha256).toBe('a'.repeat(64));
+});
+
+it('treats omitted and null SHA evidence as equally unrecorded, without normalizing supplied text', () => {
+  expect(compareSnapshots([component()], [component({ hash_sha256: null })])[0].kind).toBe('unchanged');
+  expect(compareSnapshots([component({ hash_sha256: 'ABCD' })], [component({ hash_sha256: 'abcd' })])[0].fields).toEqual(['hash_sha256']);
+  expect(compareSnapshots([component()], [component({ hash_sha256: 'abcd' })])[0].kind).toBe('changed');
+});

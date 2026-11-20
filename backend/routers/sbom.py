@@ -219,7 +219,7 @@ async def export_sbom_components(
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow([
-        "name", "version", "supplier", "purl", "cpe", "license", "known_vulnerabilities",
+        "name", "version", "supplier", "purl", "cpe", "license", "hash_sha256", "known_vulnerabilities",
     ])
     def spreadsheet_text(value):
         # CSV quoting alone does not prevent spreadsheet formula interpretation.
@@ -235,7 +235,7 @@ async def export_sbom_components(
             component.purl or "",
             component.cpe or "",
             component.license or "",
-            component.has_known_vulnerability,
+            component.hash_sha256 or "",            component.has_known_vulnerability,
         ]])
     buffer.seek(0)
     return StreamingResponse(
