@@ -10,6 +10,7 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import { criticalityTones } from '../components/ui/tones';
 import { useDialogFocus } from '../components/ui/useDialogFocus';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { AssetCriticalityReview } from '../components/AssetCriticalityReview';
 import { AssetInspector } from '../components/AssetInspector';
 import { toast } from '../components/Toast';
 
@@ -20,6 +21,8 @@ function assetTypeLabel(value: string): string {
 }
 
 export function Assets() {
+  const [showCriticalityReview, setShowCriticalityReview] = useState(false);
+  const [criticalityBusy, setCriticalityBusy] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [total, setTotal] = useState(0);
   const requestId = useRef(0);
@@ -149,7 +152,7 @@ export function Assets() {
     <div className="space-y-6">
       <PageHeader eyebrow="Observe" title="Asset Inventory" description={`${total} managed IT, IoT, and OT assets with operational context.`} actions={
         <button
-          onClick={() => { setEditAsset(null); setShowModal(true); }}
+          disabled={criticalityBusy || showCriticalityReview} onClick={() => { setEditAsset(null); setShowModal(true); }}
           className="flex min-h-9 items-center gap-2 rounded-md bg-primary-500 px-3.5 text-sm font-semibold text-surface-950 hover:bg-primary-400"
         >
           <Plus className="w-4 h-4" />
@@ -157,7 +160,7 @@ export function Assets() {
         </button>
       } />
 
-      <div className="flex min-w-0 flex-wrap items-center gap-3">
+      <fieldset disabled={criticalityBusy} className="flex min-w-0 flex-wrap items-center gap-3">
         <div className="relative min-w-[12rem] max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
           <input
@@ -234,7 +237,11 @@ export function Assets() {
           <Download className="w-4 h-4" aria-hidden="true" />
           {exporting ? 'Exporting...' : 'Export CSV'}
         </button>
-      </div>
+      </fieldset>
+
+      {!loading && !error && assets.length > 0 && <button type="button" disabled={criticalityBusy || saving || !!deletingIds.size || showModal || !!pendingDelete} onClick={() => setShowCriticalityReview(value => !value)} className="rounded border border-surface-600 px-3 py-2 text-sm text-surface-200 disabled:opacity-40">{showCriticalityReview ? 'Hide criticality review' : 'Review page criticality'}</button>}
+      {!loading && !error && showCriticalityReview && assets.length > 0 && <AssetCriticalityReview key={JSON.stringify([page, search, typeFilter, vendorFilter, criticalityFilter, otFilter, sort])} assets={assets} onBusy={setCriticalityBusy} onSaved={saved => setAssets(current => current.map(asset => saved.has(asset.id) ? { ...asset, criticality: saved.get(asset.id)! } : asset))} />}
+      {!loading && !error && showCriticalityReview && <button type="button" disabled={criticalityBusy} onClick={() => { setShowCriticalityReview(false); void fetchAssets(); }} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40">Refresh inventory after review</button>}
 
       {error ? <ErrorState title="Asset inventory unavailable" description={error} action={<RetryButton onClick={() => void fetchAssets()} />} /> : <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {loading ? (
@@ -259,7 +266,7 @@ export function Assets() {
                 </div>
                 <div className="flex gap-1 ml-2">
                   <button
-                    onClick={() => { setEditAsset(asset); setShowModal(true); }}
+                    disabled={criticalityBusy || showCriticalityReview} onClick={() => { setEditAsset(asset); setShowModal(true); }}
                     className="p-1.5 text-surface-500 hover:text-primary-400 transition-colors"
                     aria-label={`Edit ${asset.name}`}
                   >
@@ -267,7 +274,7 @@ export function Assets() {
                   </button>
                   <button
                     onClick={() => requestDelete(asset)}
-                    disabled={deletingIds.has(asset.id)}
+                    disabled={criticalityBusy || showCriticalityReview || deletingIds.has(asset.id)}
                     className="p-1.5 text-surface-500 hover:text-danger transition-colors"
                     aria-label={`Delete ${asset.name}`}
                   >
@@ -316,8 +323,8 @@ export function Assets() {
       {!loading && !error && total > 0 && <nav aria-label="Asset inventory pages" className="flex flex-wrap items-center justify-between gap-3 text-sm">
         <p role="status" className="text-surface-400">Showing {(page - 1) * 15 + 1}–{Math.min(page * 15, total)} of {total} matching assets · Page {page} of {Math.ceil(total / 15)}</p>
         <div className="flex gap-2">
-          <button type="button" disabled={page === 1} onClick={() => setPage(value => value - 1)} className="rounded-md border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Previous assets</button>
-          <button type="button" disabled={page * 15 >= total} onClick={() => setPage(value => value + 1)} className="rounded-md border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Next assets</button>
+          <button type="button" disabled={criticalityBusy || page === 1} onClick={() => setPage(value => value - 1)} className="rounded-md border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Previous assets</button>
+          <button type="button" disabled={criticalityBusy || page * 15 >= total} onClick={() => setPage(value => value + 1)} className="rounded-md border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Next assets</button>
         </div>
       </nav>}
 
