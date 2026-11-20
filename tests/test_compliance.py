@@ -468,3 +468,45 @@ class TestComplianceExport:
         for field in ['framework', 'framework_version', 'control_id', 'title', 'category', 'assessed_by']:
             assert row[field].startswith("'")
         assert row['evidence_detail'] == detail
+
+
+def test_summary_and_export_use_latest_owned_assessment_once(client, auth_headers):
+    from datetime import datetime
+
+    with TestingSessionLocal() as db:
+        user = db.query(User).filter_by(email='compliance_test@example.com').one()
+        other = User(email='unrelated@example.com', hashed_password='unused', is_active=True)
+        db.add(other)
+        db.flush()
+        controls = db.query(ComplianceControl).filter_by(framework_id=1).order_by(ComplianceControl.id).all()
+        old = datetime(2026, 1, 1)
+        current = datetime(2026, 11, 20)
+        for control in controls:
+            db.add(ComplianceAssessment(user_id=user.id, control_id=control.id, status='compliant', assessed_at=old))
+            db.add(ComplianceAssessment(user_id=user.id, control_id=control.id, status='compliant', assessed_at=old))
+        db.flush()
+        db.add(ComplianceAssessment(user_id=user.id, control_id=controls[0].id, status='non_compliant', assessed_at=current))
+        db.flush()
+        # Same timestamp: the higher ID is the deterministic latest row.
+        db.add(ComplianceAssessment(user_id=user.id, control_id=controls[0].id, status='partial', assessed_at=current, evidence_detail='latest tie winner'))
+        db.add(ComplianceAssessment(user_id=user.id, control_id=controls[1].id, status='not_applicable', assessed_at=current))
+        db.add(ComplianceAssessment(user_id=user.id, control_id=controls[2].id, status='not_assessed', assessed_at=current))
+        db.add(ComplianceAssessment(user_id=other.id, control_id=controls[0].id, status='non_compliant', assessed_at=datetime(2027, 1, 1), evidence_detail='private other user'))
+        db.commit()
+        total = len(controls)
+        first_code = controls[0].control_id
+    response = client.get('/api/v1/compliance/summary', headers=auth_headers)
+    assert response.status_code == 200
+    summary = next(row for row in response.json() if row['framework_id'] == 1)
+    assert summary['compliant'] == total - 3
+    assert summary['partial'] == 1
+    assert summary['not_applicable'] == 1
+    assert summary['not_assessed'] == 1
+    assert summary['non_compliant'] == 0
+    assert sum(summary[key] for key in ['compliant', 'partial', 'non_compliant', 'not_applicable', 'not_assessed']) == total
+    assert summary['compliance_percentage'] == round((total - 3) / total * 100, 1)
+    exported = client.get('/api/v1/compliance/export?framework_id=1', headers=auth_headers)
+    row = next(row for row in csv.DictReader(io.StringIO(exported.text)) if row['control_id'] == first_code)
+    assert row['status'] == 'partial'
+    assert row['evidence_detail'] == 'latest tie winner'
+    assert 'private other user' not in exported.text

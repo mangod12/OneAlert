@@ -97,5 +97,6 @@ class ComplianceSummary(BaseModel):
     non_compliant: int
     partial: int
     not_assessed: int
+    not_applicable: int = 0
     compliance_percentage: float
     model_config = {"from_attributes": True}
