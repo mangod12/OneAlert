@@ -169,6 +169,7 @@ export function Events() {
       if (statsResult.status === 'fulfilled') setStats(statsResult.value.data.data);
       else { setStats(null); nextErrors.push(getApiErrorMessage(statsResult.reason, 'Event statistics are unavailable')); }
       if (sourcesResult.status === 'fulfilled') setSources(sourcesResult.value.data);
+      else { setSources([]); nextErrors.push(getApiErrorMessage(sourcesResult.reason, 'Recorded source details are unavailable')); }
       setErrors(nextErrors);
     } catch (err: unknown) {
       if (request === eventRequestId.current) setEventError(getApiErrorMessage(err, 'Security events could not be loaded.'));
@@ -262,10 +263,10 @@ export function Events() {
                 <div className="min-w-0">
                   <p className="truncate font-medium text-surface-200">{source.name}</p>
                   <p className="text-xs text-surface-500">
-                    {source.source_type} · {source.event_count} events · {source.last_event_at ? `last accepted at ${new Date(source.last_event_at).toLocaleString()}` : 'no events yet'}
+                    {source.source_type} · {source.event_count} events · {source.last_event_at ? `last accepted at ${new Date(source.last_event_at).toLocaleString()}` : 'acceptance time not recorded'}
                   </p>
                 </div>
-                <button type="button" aria-pressed={sourceIdFilter === String(source.id)} onClick={() => { setSourceIdFilter(String(source.id)); setPage(1); }} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">View events from {source.name}</button>
+                <button type="button" aria-pressed={sourceIdFilter === String(source.id)} onClick={() => { setSourceIdFilter(String(source.id)); setPage(1); }} className="max-w-full break-words rounded border border-surface-600 px-3 py-2 text-left text-xs text-primary-300">View events from {source.name}</button>
                 <StatusBadge tone={source.status === 'active' ? 'success' : 'neutral'}>{source.status}</StatusBadge>
               </li>
             ))}

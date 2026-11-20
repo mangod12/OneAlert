@@ -283,7 +283,7 @@ describe('Telemetry sources', () => {
     await screen.findByText('dmz-suricata');
     expect(screen.getByText('zeek-default')).toBeTruthy();
     expect(screen.getByText(/suricata · 1200 events · last accepted at/)).toBeTruthy();
-    expect(screen.getByText(/zeek · 40 events · no events yet/)).toBeTruthy();
+    expect(screen.getByText(/zeek · 40 events · acceptance time not recorded/)).toBeTruthy();
     expect(screen.getByText('active')).toBeTruthy();
     expect(screen.getByText('paused')).toBeTruthy();
   });
