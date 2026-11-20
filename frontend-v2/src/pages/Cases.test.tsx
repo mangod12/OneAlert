@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Cases } from './Cases';
@@ -388,4 +388,61 @@ describe('Case bulk actions', () => {
     });
     await waitFor(() => expect(mockToast).toHaveBeenCalledWith('2 investigations deleted.', 'success'));
   });
+});
+
+it('clears previous rows while filters load and ignores a late previous-filter response', async () => {
+  let resolveOld!: (value: unknown) => void;
+  mockGet.mockImplementation((url: string, config?: unknown) => {
+    if (url !== '/cases/') return Promise.resolve({ data: [] });
+    const status = (config as { params: { status?: string } }).params.status;
+    if (status === 'open') return new Promise(resolve => { resolveOld = resolve; });
+    if (status === 'closed') return Promise.resolve({ data: { cases: [makeCase({ id: 2, title: 'Current closed case', status: 'closed' })], total: 1 } });
+    return Promise.resolve({ data: { cases: [makeCase()], total: 1 } });
+  });
+  renderCases();
+  await screen.findByText('Credential dumping on edge router');
+  fireEvent.change(screen.getByLabelText('Filter by status'), { target: { value: 'open' } });
+  expect(screen.queryByText('Credential dumping on edge router')).toBeNull();
+  expect(screen.getByText('Loading the current investigation view.')).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Filter by status'), { target: { value: 'closed' } });
+  await screen.findByText('Current closed case');
+  await act(async () => resolveOld({ data: { cases: [makeCase({ title: 'Stale open case' })], total: 99 } }));
+  expect(screen.queryByText('Stale open case')).toBeNull();
+  expect(screen.getByText('Current closed case')).toBeTruthy();
+});
+
+it('does not restore search results after a pending search is cleared', async () => {
+  let resolveSearch!: (value: unknown) => void;
+  mockGet.mockImplementation((url: string) => url === '/cases/search'
+    ? new Promise(resolve => { resolveSearch = resolve; })
+    : Promise.resolve({ data: { cases: [makeCase()], total: 1 } }));
+  renderCases();
+  await screen.findByText('Credential dumping on edge router');
+  fireEvent.change(screen.getByLabelText('Search investigations'), { target: { value: 'old search' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+  await act(async () => resolveSearch({ data: { data: [{ case_id: 8, title: 'Stale search result', score: 1, snippet: '' }] } }));
+  expect(screen.queryByText('Stale search result')).toBeNull();
+});
+
+it('replaces failed search results with a retry instead of leaving stale matches', async () => {
+  let attempts = 0;
+  mockGet.mockImplementation(async (url: string) => {
+    if (url === '/cases/search') {
+      attempts += 1;
+      if (attempts === 2) throw new Error('Search service unavailable');
+      return { data: { data: [{ case_id: 9, title: 'Search-only case', score: 1, snippet: '' }] } };
+    }
+    return { data: { cases: [makeCase()], total: 1 } };
+  });
+  renderCases();
+  await screen.findByText('Credential dumping on edge router');
+  fireEvent.change(screen.getByLabelText('Search investigations'), { target: { value: 'search query' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+  await screen.findByText('Search-only case');
+  fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+  await screen.findByRole('alert');
+  expect(screen.queryByText('Search-only case')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry investigation search' }));
+  await screen.findByText('Search-only case');
 });
