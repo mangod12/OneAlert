@@ -12,7 +12,7 @@ from backend.models.response_plan import ApprovalRequest, ResponsePlan
 from backend.services.agents.base import BaseAgent
 from backend.services.ai.provider import AIMessage
 from backend.services.ai.router import TASK_TRIAGE, get_ai_provider
-from backend.services.policy_engine import check_action_approval
+from backend.services.policy_engine import check_action_approval_for_context
 
 logger = logging.getLogger(__name__)
 
@@ -103,15 +103,9 @@ class ResponseAgent(BaseAgent):
         needs_approval = False
 
         for action in actions:
-            # Find if any affected asset is OT
-            is_ot = any(a.is_ot_asset for _, a in alert_assets)
-            zone = next((a.network_zone for _, a in alert_assets if a.network_zone), None)
-
-            policy = check_action_approval(
-                action_type=action["action_type"],
-                autonomy_level=autonomy_level,
-                asset_zone=zone,
-                asset_is_ot=is_ot,
+            policy = check_action_approval_for_context(
+                action_type=action["action_type"], autonomy_level=autonomy_level,
+                asset_contexts=[(asset.network_zone, asset.is_ot_asset) for _, asset in alert_assets],
             )
             action["policy_check"] = policy
             if policy["requires_human"]:
