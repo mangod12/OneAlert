@@ -440,3 +440,12 @@ it('does not present a mismatched approval page as reviewable evidence', async (
   await screen.findByText('The approval response did not match the requested page. Retry before making a decision.');
   expect(screen.queryByRole('button', { name: 'Review approval' })).toBeNull();
 });
+it('renders structured legacy action values without crashing or inventing priority', async () => {
+  const unusual = { toString: 'legacy-data' };
+  get.mockImplementation(url => Promise.resolve({ data: { data: url.endsWith('pending-approvals') ? [] : [{ ...plan, actions: [{ action_type: unusual, target: unusual, reason: unusual, priority: 0, execution_result: { status: unusual, detail: unusual, executed_at: unusual } }, { action_type: 'notify_soc' }] }] } }));
+  render(<ResponsePlans />);
+  fireEvent.click(await screen.findByText('Case #4'));
+  expect(screen.getByText('Position 1, recorded priority: 0')).toBeTruthy();
+  expect(screen.getByText('Position 2, recorded priority: Not recorded')).toBeTruthy();
+  expect(screen.getAllByText(JSON.stringify(unusual)).length).toBeGreaterThan(3);
+});

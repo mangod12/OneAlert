@@ -1,10 +1,10 @@
+import { recordedValueText as recorded } from '../utils/recordedValueText';
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
 interface Action { priority?: number | null; action_type?: string | null; target?: string | null; reason?: string | null; policy_check?: { approved?: boolean | null } | null; execution_result?: { execution_mode?: string | null; status?: string | null; detail?: string | null; executed_at?: string | null } | null; }
 interface Evidence { schema_version: number; scope: string; retrieved_at: string; plan: { id: number; case_id: number; status: string; autonomy_level: string; created_by: string; approved_by: number | null; approved_at: string | null; created_at: string; actions: Action[] }; approval_page: number; approval_size: number; approval_total: number; approval_records: { id: number; plan_id: number; requested_by: string | null; status: string; reason: string | null; reviewed_by: number | null; reviewed_at: string | null; created_at: string }[]; }
 const control = 'max-w-full rounded border border-surface-600 bg-surface-950 px-3 py-2 text-xs text-surface-200 disabled:opacity-40';
-const recorded = (value: unknown) => value == null || value === '' ? 'Not recorded' : String(value);
 export function ResponseDecisionEvidence({ linkedPlanId = null }: { linkedPlanId?: string | null }) {
   const [draft, setDraft] = useState(''), [planId, setPlanId] = useState<number | null>(null), [page, setPage] = useState(1), [retry, setRetry] = useState(0);
   const [snapshot, setSnapshot] = useState<Evidence | null>(null), [loading, setLoading] = useState(false), [error, setError] = useState(''), [downloadError, setDownloadError] = useState('');

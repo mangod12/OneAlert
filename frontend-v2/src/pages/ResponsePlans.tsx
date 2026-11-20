@@ -1,3 +1,4 @@
+import { recordedValueText } from '../utils/recordedValueText';
 import { useSearchParams } from 'react-router-dom';
 import { ResponseDecisionEvidence } from '../components/ResponseDecisionEvidence';
 import { isAxiosError } from 'axios';
@@ -385,27 +386,27 @@ export function ResponsePlans({ linkedPlanId = null }: { linkedPlanId?: string |
           }} className="mb-3 flex items-center gap-2 rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40"><Download className="h-4 w-4" aria-hidden="true" />Export recorded action evidence</button>
           <p className="mb-4 text-sm text-surface-400">Saved action results from this plan. Missing results do not establish whether an action ran. Review recorded details before deciding on any follow-up.</p>
           <div className="space-y-2">
-            {selectedPlan.actions?.map((action, i) => (
+            {selectedPlan.actions?.map((action, i) => action && typeof action === 'object' && !Array.isArray(action) ? (
               <div key={i} className="min-w-0 space-y-3 rounded-lg border border-surface-700 bg-surface-900/50 p-3">
                 <div className="flex flex-wrap items-center gap-3">
-                  <span className="text-xs font-mono text-surface-500">#{action.priority || i + 1}</span>
+                  <span className="text-xs font-mono text-surface-500">Position {i + 1}, recorded priority: {recordedValueText(action.priority)}</span>
                   <span className={clsx('break-all text-xs px-2 py-0.5 rounded font-medium',
-                    action.policy_check?.approved ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning')}>
-                    {action.action_type}
+                    action.policy_check?.approved === true ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning')}>
+                    {recordedValueText(action.action_type)}
                   </span>
-                  <span className="min-w-0 break-all text-sm text-surface-300">{action.target}</span>
+                  <span className="min-w-0 break-all text-sm text-surface-300">{recordedValueText(action.target)}</span>
                 </div>
-                <p className="whitespace-pre-wrap break-words text-xs text-surface-400">{action.reason || 'No action reason recorded.'}</p>
+                <p className="whitespace-pre-wrap break-words text-xs text-surface-400">{recordedValueText(action.reason, 'No action reason recorded.')}</p>
                 <dl className="space-y-2 border-t border-surface-700 pt-3 text-sm">
-                  <div><dt className="text-xs text-surface-400">Recorded execution status</dt><dd className={action.execution_result?.status === 'completed' ? 'text-success' : 'text-surface-200'}>{action.execution_result?.status || 'No execution result recorded'}</dd></div>
+                  <div><dt className="text-xs text-surface-400">Recorded execution status</dt><dd className={action.execution_result?.status === 'completed' ? 'text-success' : 'text-surface-200'}>{recordedValueText(action.execution_result?.status, 'No execution result recorded')}</dd></div>
                   {action.execution_result && <>
                     <div><dt className="text-xs text-surface-400">Recorded execution mode</dt><dd className="text-warning">{action.execution_result.execution_mode === 'simulated' ? 'Simulated, no external action performed' : 'Not verified, external action not established'}</dd></div>
-                    <div><dt className="text-xs text-surface-400">Recorded execution detail</dt><dd className="whitespace-pre-wrap break-words text-surface-300">{action.execution_result.detail || 'No execution detail recorded.'}</dd></div>
-                    <div><dt className="text-xs text-surface-400">Recorded execution time</dt><dd className="break-words text-surface-300">{action.execution_result.executed_at ? (Number.isNaN(Date.parse(action.execution_result.executed_at)) ? action.execution_result.executed_at : new Date(action.execution_result.executed_at).toLocaleString()) : 'Not recorded'}</dd></div>
+                    <div><dt className="text-xs text-surface-400">Recorded execution detail</dt><dd className="whitespace-pre-wrap break-words text-surface-300">{recordedValueText(action.execution_result.detail, 'No execution detail recorded.')}</dd></div>
+                    <div><dt className="text-xs text-surface-400">Recorded execution time</dt><dd className="break-words text-surface-300">{typeof action.execution_result.executed_at === 'string' && action.execution_result.executed_at && !Number.isNaN(Date.parse(action.execution_result.executed_at)) ? new Date(action.execution_result.executed_at).toLocaleString() : recordedValueText(action.execution_result.executed_at)}</dd></div>
                   </>}
                 </dl>
               </div>
-            ))}
+            ) : <p key={i} role="alert" className="text-sm text-warning">Action position {i + 1} has a malformed saved record. No execution result is inferred.</p>)}
           </div>
         </div>
       )}
