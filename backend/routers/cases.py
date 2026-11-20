@@ -461,6 +461,23 @@ async def explore_assigned_tasks(
                      "Not assignment history or proof of external remediation."}
 
 
+@router.get("/watched-record-explorer")
+async def explore_watched_records(
+    page: int = Query(1, ge=1), size: int = Query(25, ge=1, le=100),
+    query: str = Query("", max_length=200),
+    kind: Literal["all", "alert", "case"] = "all",
+    severity: Literal["all", "critical", "high", "medium", "low", "info"] = "all",
+    scope: Literal["all", "active", "done", "overdue"] = "all",
+    sort: Literal["severity", "newest", "oldest", "name", "due"] = "severity",
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    """Search the complete current watchlist without loading every page into the browser."""
+    from backend.services.watchlist_search import search_watched_records
+
+    return await search_watched_records(db, current_user.id, page=page, size=size, query=query,
+                                       kind=kind, severity=severity, scope=scope, sort=sort)
+
+
 @router.get("/{case_id}", response_model=CaseDetailResponse)
 async def get_case(
     case_id: int,

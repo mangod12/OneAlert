@@ -334,3 +334,19 @@ it('requires a first-page reload after removals so shifted later pages are not s
   expect(mockGet).toHaveBeenLastCalledWith('/cases/', { params: { watching: 'me', size: 50, page: 1 } });
   expect((screen.getByRole('button', { name: 'Load more watched items' }) as HTMLButtonElement).disabled).toBe(false);
 });
+
+it('opens complete read-only search without discarding loaded review selection', async () => {
+  mockGet.mockImplementation(async url => {
+    if (url === '/alerts/') return { data: { alerts: [makeAlert()], total: 1 } };
+    if (url === '/cases/') return { data: { cases: [], total: 0 } };
+    return { data: { data: [], total: 0, page: 1, size: 25, date_basis: '2026-11-21' } };
+  });
+  render(<MemoryRouter><Watchlist /></MemoryRouter>);
+  await screen.findByText('CVE-2026-0001 - RouterOS remote code execution');
+  fireEvent.click(screen.getByRole('checkbox', { name: /Select alert #1/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Search entire watchlist' }));
+  await screen.findByText(/0 followed records match across your entire watchlist/);
+  expect(mockDelete).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Back to loaded watchlist review' }));
+  expect((screen.getByRole('checkbox', { name: /Select alert #1/ }) as HTMLInputElement).checked).toBe(true);
+});
