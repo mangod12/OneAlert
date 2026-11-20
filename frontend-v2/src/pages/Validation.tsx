@@ -8,6 +8,7 @@ import { getApiErrorMessage } from '../api/errors';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { ValidationCoverageEvidence } from '../components/ValidationCoverageEvidence';
 import { ValidationComparison } from '../components/ValidationComparison';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
@@ -298,9 +299,10 @@ export function Validation() {
       {!loading && !coverageError && coverage && coverage.length > 0 && (
         <div className="oa-panel p-6">
           <h2 className="text-lg font-semibold text-surface-50 mb-4">Detection Coverage by Technique</h2>
+          <p className="mb-4 text-xs text-surface-400">Recorded control-result aggregates across runs, including simulations. This summary does not establish verified live detection coverage. Review the evidence below to separate execution flags and missing outcomes.</p>
           <ul className="space-y-2">
             {coverage.map(c => (
-              <li key={c.technique_id} className="flex items-center gap-4 rounded-lg border border-surface-800 bg-surface-900/30 p-3">
+              <li key={JSON.stringify([c.technique_id, c.technique_name])} className="flex items-center gap-4 rounded-lg border border-surface-800 bg-surface-900/30 p-3">
                 <span className="font-mono text-xs text-primary-400 w-16 shrink-0">{c.technique_id}</span>
                 <span className="min-w-0 flex-1 truncate text-sm text-surface-300">{c.technique_name}</span>
                 <span className="text-xs text-surface-500 shrink-0">{c.detections}/{c.total_tests} detected</span>
@@ -312,6 +314,8 @@ export function Validation() {
           </ul>
         </div>
       )}
+
+      {!loading && <ValidationCoverageEvidence />}
 
       {/* Runs List */}
       <div className="oa-panel p-6">
