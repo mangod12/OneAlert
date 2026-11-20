@@ -141,3 +141,36 @@ def test_plan_export_protects_recorded_actor_text_and_preserves_counts(client, v
     assert row['id'] == str(plan_id)
     with _TestingSessionLocal() as db:
         assert db.get(ResponsePlan, plan_id).created_by == value
+
+
+def test_case_plan_pages_have_owner_scoped_totals_and_stable_tied_creation_order(client):
+    from datetime import UTC, datetime
+
+    owner = _register_and_login(client, 'case-page-owner@example.com')
+    first_id = _make_plan(client, owner, 'partial', 'Paged case')
+    with _TestingSessionLocal() as db:
+        first = db.get(ResponsePlan, first_id)
+        case_id, user_id = first.case_id, first.user_id
+        first.created_at = datetime(2026, 11, 21, tzinfo=UTC)
+        ids = [first.id]
+        for index in range(24):
+            row = ResponsePlan(case_id=case_id, user_id=user_id, status='partial', autonomy_level='L1',
+                               created_at=first.created_at, actions=[{'action_type': 'notify', 'target': str(index)}])
+            db.add(row)
+            db.flush()
+            ids.append(row.id)
+        db.commit()
+    _make_plan(client, owner, 'draft', 'Other case')
+    other = _register_and_login(client, 'case-page-other@example.com')
+    other_id = _make_plan(client, other, 'partial', 'Private other case')
+    pages = [client.get('/api/v1/response-plans/', headers=owner,
+                        params={'case_id': case_id, 'page': page, 'size': 10}).json() for page in (1, 2, 3)]
+    assert [value['total'] for value in pages] == [25, 25, 25]
+    assert [len(value['data']) for value in pages] == [10, 10, 5]
+    returned = [row['id'] for value in pages for row in value['data']]
+    assert returned == sorted(ids, reverse=True)
+    assert other_id not in returned
+    assert all(row['case_id'] == case_id for value in pages for row in value['data'])
+    filtered = client.get('/api/v1/response-plans/', headers=owner,
+                          params={'case_id': case_id, 'status': 'draft', 'size': 10}).json()
+    assert filtered['total'] == 0 and filtered['data'] == []

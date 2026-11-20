@@ -48,7 +48,7 @@ async def list_response_plans(
 
     total = (await db.execute(count_q)).scalar_one()
     plans = (await db.execute(
-        query.order_by(ResponsePlan.created_at.desc()).offset(skip).limit(size)
+        query.order_by(ResponsePlan.created_at.desc(), ResponsePlan.id.desc()).offset(skip).limit(size)
     )).scalars().all()
 
     return {
