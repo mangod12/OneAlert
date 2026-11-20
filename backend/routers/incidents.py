@@ -246,7 +246,8 @@ async def incident_timeline(
     if alert_ids:
         audit_rows = (await db.execute(
             select(AuditLog)
-            .where(AuditLog.target_type == "alert", AuditLog.target_id.in_(alert_ids))
+            .where(AuditLog.user_id == current_user.id,
+                   AuditLog.target_type == "alert", AuditLog.target_id.in_(alert_ids))
             .order_by(AuditLog.timestamp.desc())
             .limit(100)
         )).scalars().all()
