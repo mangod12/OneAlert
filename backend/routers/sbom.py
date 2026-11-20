@@ -78,7 +78,13 @@ async def upload_sbom(
     elif "spdxVersion" in sbom_data:
         sbom_format = "SPDX"
         spec_version = sbom_data.get("spdxVersion", "")
-        parsed_components = parse_spdx(sbom_data)
+        try:
+            parsed_components = parse_spdx(sbom_data)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid SPDX component evidence: {exc}",
+            ) from exc
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

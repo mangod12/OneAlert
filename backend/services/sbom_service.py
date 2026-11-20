@@ -108,47 +108,45 @@ def parse_cyclonedx_vulnerabilities(data: dict) -> dict[str, set[str]]:
 
 
 def parse_spdx(data: dict) -> list[dict]:
-    """Parse SPDX JSON SBOM format into component list.
+    """Validate supported SPDX evidence before any component can be written.
 
-    Expected format: {"spdxVersion": "SPDX-2.3", "packages": [...]}
+    This is validation of stored fields, not full SPDX schema validation.
+    Unrecorded optional values stay empty; nested malformed data is rejected,
+    never stringified or silently changed into a different observation.
     """
+    version = _text(data.get("spdxVersion"), "spdxVersion")
+    if not version.startswith("SPDX-"):
+        raise ValueError("spdxVersion must start with SPDX-")
+    packages = _objects(data.get("packages", []), "packages")
     components = []
-    packages = data.get("packages", [])
-
-    for pkg in packages:
-        name = pkg.get("name", "")
-        version = pkg.get("versionInfo", "")
-        supplier = pkg.get("supplier", "")
-
-        # SPDX uses externalRefs for purl/cpe
+    for index, pkg in enumerate(packages):
+        path = f"packages[{index}]"
+        name = _text(pkg.get("name"), f"{path}.name")
+        if not name.strip():
+            raise ValueError(f"{path}.name must not be blank")
+        version = _text(pkg.get("versionInfo"), f"{path}.versionInfo")
+        supplier = _text(pkg.get("supplier"), f"{path}.supplier")
         purl = ""
         cpe = ""
-        for ref in pkg.get("externalRefs", []):
-            ref_type = ref.get("referenceType", "")
+        for ref in _objects(pkg.get("externalRefs", []), f"{path}.externalRefs"):
+            ref_type = _text(ref.get("referenceType"), f"{path}.externalRefs.referenceType")
+            locator = _text(ref.get("referenceLocator"), f"{path}.externalRefs.referenceLocator")
             if ref_type == "purl":
-                purl = ref.get("referenceLocator", "")
+                purl = locator
             elif ref_type in ("cpe23Type", "cpe22Type"):
-                cpe = ref.get("referenceLocator", "")
-
-        license_str = pkg.get("licenseConcluded", "") or pkg.get("licenseDeclared", "")
-
-        # Extract checksum
+                cpe = locator
+        concluded = _text(pkg.get("licenseConcluded"), f"{path}.licenseConcluded")
+        declared = _text(pkg.get("licenseDeclared"), f"{path}.licenseDeclared")
+        license_str = concluded or declared
         hash_sha256 = ""
-        for cs in pkg.get("checksums", []):
-            if cs.get("algorithm") == "SHA256":
-                hash_sha256 = cs.get("checksumValue", "")
-                break
-
-        components.append(
-            {
-                "name": name,
-                "version": version,
-                "supplier": supplier if supplier != "NOASSERTION" else None,
-                "purl": purl,
-                "cpe": cpe,
-                "license": license_str if license_str != "NOASSERTION" else None,
-                "hash_sha256": hash_sha256,
-            }
-        )
-
+        for checksum in _objects(pkg.get("checksums", []), f"{path}.checksums"):
+            algorithm = _text(checksum.get("algorithm"), f"{path}.checksums.algorithm")
+            value = _text(checksum.get("checksumValue"), f"{path}.checksums.checksumValue")
+            if algorithm == "SHA256" and not hash_sha256:
+                hash_sha256 = value
+        components.append({
+            "name": name, "version": version, "supplier": supplier if supplier != "NOASSERTION" else None,
+            "purl": purl, "cpe": cpe, "license": license_str if license_str != "NOASSERTION" else None,
+            "hash_sha256": hash_sha256,
+        })
     return components
