@@ -264,3 +264,22 @@ describe('Reports', () => {
     expect(await screen.findByText('plant-historian')).toBeTruthy();
   });
 });
+
+it('shows unknown completion timing without presenting a false percentage and retains it in CSV', async () => {
+  const unknownBucket = { due: 2, met: 0, breached: 0, unknown: 2, upcoming: 0, attainment_pct: null, by_severity: { ...slaReport.cases.by_severity, critical: { due: 2, met: 0, breached: 0, unknown: 2 }, high: { due: 0, met: 0, breached: 0 }, medium: { due: 0, met: 0, breached: 0 } } };
+  mockApis(report, { ...slaReport, cases: unknownBucket });
+  const create = vi.fn<(blob: Blob) => string>().mockReturnValue('blob:sla-evidence');
+  Object.defineProperty(URL, 'createObjectURL', { value: create, configurable: true });
+  Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), configurable: true });
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  renderPage();
+  expect(await screen.findByText('No timing-qualified score')).toBeTruthy();
+  expect(screen.getByText(/2 unknown timing/)).toBeTruthy();
+  expect(screen.getByText(/Unknown completion times are not counted/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Export SLA CSV' }));
+  const blob = create.mock.calls[0][0] as Blob;
+  const csv = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsText(blob); });
+  expect(csv).toContain('attainment_pct,unknown_timing,attainment_basis');
+  expect(csv).toContain('cases,all,2,0,0,,2,met/(met+breached); unknown timing excluded');
+  expect(csv).toContain('cases,critical,2,0,0,,2,met/(met+breached); unknown timing excluded');
+});

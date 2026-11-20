@@ -100,10 +100,10 @@ def _seed(session, user_id):
         resolved_at=_naive(days_ago=61),
     ))
 
-    # Met case: closed before its due date (updated_at set on the close).
+    # Met case: recorded close-out occurred before its due date.
     session.add(Case(
         user_id=user_id, title="Closed in time", severity="high", status="closed",
-        created_at=_naive(days_ago=4), updated_at=_naive(days_ago=2),
+        created_at=_naive(days_ago=4), closed_at=_naive(days_ago=2), updated_at=_naive(),
         due_date=TODAY - timedelta(days=1),
     ))
     # Breached case: still open past its due date.
@@ -172,9 +172,9 @@ class TestSlaComplianceReport:
         assert alerts["breached"] == 2
         assert alerts["upcoming"] == 1
         assert alerts["attainment_pct"] == pytest.approx(33.3, abs=0.1)
-        assert alerts["by_severity"]["critical"] == {"due": 1, "met": 1, "breached": 0}
-        assert alerts["by_severity"]["high"] == {"due": 2, "met": 0, "breached": 2}
-        assert alerts["by_severity"]["medium"] == {"due": 0, "met": 0, "breached": 0}
+        assert alerts["by_severity"]["critical"] == {"due": 1, "met": 1, "breached": 0, "unknown": 0}
+        assert alerts["by_severity"]["high"] == {"due": 2, "met": 0, "breached": 2, "unknown": 0}
+        assert alerts["by_severity"]["medium"] == {"due": 0, "met": 0, "breached": 0, "unknown": 0}
 
     def test_case_scoring(self, client, auth_headers):
         response = client.get("/api/v1/reports/sla", headers=auth_headers)
@@ -184,8 +184,8 @@ class TestSlaComplianceReport:
         assert cases["breached"] == 1
         assert cases["upcoming"] == 1
         assert cases["attainment_pct"] == pytest.approx(50.0, abs=0.1)
-        assert cases["by_severity"]["high"] == {"due": 1, "met": 1, "breached": 0}
-        assert cases["by_severity"]["medium"] == {"due": 1, "met": 0, "breached": 1}
+        assert cases["by_severity"]["high"] == {"due": 1, "met": 1, "breached": 0, "unknown": 0}
+        assert cases["by_severity"]["medium"] == {"due": 1, "met": 0, "breached": 1, "unknown": 0}
 
     def test_window_is_respected(self, client, auth_headers):
         response = client.get("/api/v1/reports/sla?days=90", headers=auth_headers)
@@ -227,3 +227,41 @@ class TestSlaComplianceReport:
         response = client.get("/api/v1/reports/sla", headers=auth_headers)
         # The other owner's overdue alert must not leak into this report.
         assert response.json()["alerts"]["due"] == 3
+
+
+def test_sla_keeps_unknown_completion_timing_separate_from_decided_outcomes(client, auth_headers):
+    with TestingSessionLocal() as db:
+        user = db.query(User).filter_by(email='sla_report_test@example.com').one()
+        db.add(Case(user_id=user.id, title='Legacy closed record', severity='critical', status='closed', due_date=TODAY - timedelta(days=1), updated_at=_naive(days_ago=2)))
+        db.add(Case(user_id=user.id, title='Reopened with obsolete close time', severity='critical', status='open', due_date=TODAY - timedelta(days=1), closed_at=_naive(days_ago=2)))
+        asset = db.query(Asset).filter_by(user_id=user.id).first()
+        db.add(Alert(user_id=user.id, asset_id=asset.id, title='Legacy resolved alert', description='missing timing', severity='critical', status='resolved', due_date=TODAY - timedelta(days=1)))
+        db.commit()
+    result = client.get('/api/v1/reports/sla', headers=auth_headers).json()
+    assert result['cases']['unknown'] == 1
+    assert result['cases']['met'] == 1
+    assert result['cases']['breached'] == 2
+    assert result['cases']['attainment_pct'] == 33.3
+    assert result['alerts']['unknown'] == 1
+    assert result['alerts']['attainment_pct'] == 33.3
+    for scope in ['cases', 'alerts']:
+        bucket = result[scope]
+        assert bucket['due'] == bucket['met'] + bucket['breached'] + bucket['unknown']
+
+
+def test_sla_reports_no_score_when_all_completion_times_are_unknown(client, auth_headers):
+    with TestingSessionLocal() as db:
+        db.query(Case).delete()
+        user = db.query(User).filter_by(email='sla_report_test@example.com').one()
+        db.add(Case(user_id=user.id, title='Closed without timing evidence', severity='high', status='closed', due_date=TODAY - timedelta(days=1), updated_at=_naive(days_ago=2)))
+        db.commit()
+    bucket = client.get('/api/v1/reports/sla', headers=auth_headers).json()['cases']
+    assert bucket['unknown'] == bucket['due'] == 1
+    assert bucket['met'] == bucket['breached'] == 0
+    assert bucket['attainment_pct'] is None
+
+
+def test_one_day_sla_window_does_not_include_yesterdays_due_dates(client, auth_headers):
+    result = client.get('/api/v1/reports/sla?days=1', headers=auth_headers).json()
+    assert result['cases']['due'] == 0
+    assert result['alerts']['due'] == 0

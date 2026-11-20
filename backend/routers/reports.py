@@ -59,20 +59,22 @@ def _sla_bucket() -> dict:
         "due": 0,
         "met": 0,
         "breached": 0,
+        "unknown": 0,
         "by_severity": {
-            sev: {"due": 0, "met": 0, "breached": 0}
+            sev: {"due": 0, "met": 0, "breached": 0, "unknown": 0}
             for sev in ("critical", "high", "medium", "low")
         },
     }
 
 
-def _sla_tally(bucket: dict, severity: str, met: bool) -> None:
+def _sla_tally(bucket: dict, severity: str, met: bool | None) -> None:
     bucket["due"] += 1
-    bucket["met" if met else "breached"] += 1
+    outcome = "unknown" if met is None else "met" if met else "breached"
+    bucket[outcome] += 1
     sev = severity if severity in bucket["by_severity"] else "low"
     entry = bucket["by_severity"][sev]
     entry["due"] += 1
-    entry["met" if met else "breached"] += 1
+    entry[outcome] += 1
 
 
 def _sla_finish(bucket: dict, upcoming: int) -> dict:
@@ -82,6 +84,7 @@ def _sla_finish(bucket: dict, upcoming: int) -> dict:
         "due": bucket["due"],
         "met": bucket["met"],
         "breached": bucket["breached"],
+        "unknown": bucket["unknown"],
         "upcoming": upcoming,
         "attainment_pct": attainment,
         "by_severity": bucket["by_severity"],
@@ -222,11 +225,12 @@ async def get_sla_compliance_report(
     inside the window: an item met its SLA when it was resolved or closed on
     or before its due date, and breached it otherwise (resolved late or
     still unresolved). Items due after today are reported separately as
-    upcoming. Investigation completion uses updated_at as a proxy, since
-    cases carry no resolved_at timestamp.
+    upcoming. Completion uses recorded resolved_at/closed_at, never the last
+    edit timestamp. Done items without a completion timestamp have unknown
+    timing and are excluded from the attainment percentage denominator.
     """
     today = datetime.now(UTC).date()
-    start = today - timedelta(days=days)
+    start = today - timedelta(days=days - 1)
 
     # Alerts with a triage due date in the window.
     alert_rows = (
@@ -244,7 +248,7 @@ async def get_sla_compliance_report(
     alerts = _sla_bucket()
     for alert in alert_rows:
         resolved_on = _as_date(alert.resolved_at)
-        met = resolved_on is not None and resolved_on <= alert.due_date
+        met = (resolved_on <= alert.due_date if resolved_on else None) if _status_value(alert) == "resolved" else False
         _sla_tally(alerts, _severity_value(alert), met)
 
     alert_upcoming = (
@@ -276,9 +280,9 @@ async def get_sla_compliance_report(
     cases = _sla_bucket()
     for case in case_rows:
         completed_on = (
-            _as_date(case.updated_at) if case.status in _DONE_CASE_STATUSES else None
+            _as_date(case.closed_at) if case.status in _DONE_CASE_STATUSES else None
         )
-        met = completed_on is not None and completed_on <= case.due_date
+        met = (completed_on <= case.due_date if completed_on else None) if case.status in _DONE_CASE_STATUSES else False
         _sla_tally(cases, case.severity or "medium", met)
 
     case_upcoming = (
