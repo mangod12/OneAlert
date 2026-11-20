@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { Network, Lock, LockOpen, Plus, Trash2 } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
-import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { toast } from '../components/Toast';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -33,6 +33,8 @@ interface TopologyStats {
 }
 
 export function Topology() {
+  const requestId = useRef(0);
+  const [statsError, setStatsError] = useState('');
   const [nodes, setNodes] = useState<TopologyNode[]>([]);
   const [edges, setEdges] = useState<TopologyEdge[]>([]);
   const [stats, setStats] = useState<TopologyStats | null>(null);
@@ -54,24 +56,32 @@ export function Topology() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   const fetchTopology = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const [graphRes, statsRes] = await Promise.all([
-        apiClient.get<{ nodes: TopologyNode[]; edges: TopologyEdge[] }>('/topology/graph'),
-        apiClient.get<TopologyStats>('/topology/stats'),
-      ]);
-      setNodes(graphRes.data.nodes);
-      setEdges(graphRes.data.edges);
-      setStats(statsRes.data);
-    } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'Network topology could not be loaded.'));
-    } finally {
-      setLoading(false);
+    const request = ++requestId.current;
+    setLoading(true); setError(''); setStatsError('');
+    const [graphResult, statsResult] = await Promise.allSettled([
+      apiClient.get<{ nodes: TopologyNode[]; edges: TopologyEdge[] }>('/topology/graph'),
+      apiClient.get<TopologyStats>('/topology/stats'),
+    ]);
+    if (request !== requestId.current) return;
+    if (graphResult.status === 'fulfilled') {
+      setNodes(graphResult.value.data.nodes);
+      setEdges(graphResult.value.data.edges);
+    } else {
+      setNodes([]); setEdges([]);
+      setError(getApiErrorMessage(graphResult.reason, 'Network topology could not be loaded.'));
     }
+    if (statsResult.status === 'fulfilled') setStats(statsResult.value.data);
+    else {
+      setStats(null);
+      setStatsError(getApiErrorMessage(statsResult.reason, 'Connection statistics are unavailable.'));
+    }
+    setLoading(false);
   }, []);
 
-  useEffect(() => { void fetchTopology(); }, [fetchTopology]);
+  useEffect(() => {
+    void fetchTopology();
+    return () => { requestId.current += 1; };
+  }, [fetchTopology]);
 
   const resetForm = () => {
     setAdding(false);
@@ -154,6 +164,7 @@ export function Topology() {
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="Observe" title="Network Topology" description="Observed devices, zones and connections, with encryption exposure." />
+      {statsError && <DegradedBanner messages={[statsError]} onRetry={() => void fetchTopology()} />}
 
       {nodes.length === 0 && edges.length === 0 ? (
         <div className="oa-panel p-12 text-center text-surface-500">
