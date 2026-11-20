@@ -2,7 +2,6 @@
 
 import csv
 import io
-import json
 import logging
 from datetime import UTC, datetime
 
@@ -92,32 +91,11 @@ async def upload_events_file(
     from backend.services.event_ingestion import ingest_events
 
     content = await _read_upload_with_limit(file)
-    text = content.decode("utf-8", errors="replace")
+    from backend.services.event_upload import parse_event_upload
 
-    # Parse as JSON array or newline-delimited JSON
-    events = []
-    try:
-        parsed = json.loads(text)
-        if isinstance(parsed, list):
-            events = parsed
-        elif isinstance(parsed, dict):
-            events = [parsed]
-    except json.JSONDecodeError:
-        # Try newline-delimited JSON
-        for line in text.strip().split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                events.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-
-    if not events:
-        raise HTTPException(status_code=400, detail="No valid JSON events found in file")
-
-    if len(events) > 50000:
-        raise HTTPException(status_code=400, detail="File size limit is 50,000 events")
+    # Validate the whole envelope before creating a source or writing any rows.
+    # Source-specific parsers still report ingested/skipped outcomes separately.
+    events = parse_event_upload(content)
 
     result = await ingest_events(
         db=db,

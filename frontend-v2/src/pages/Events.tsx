@@ -10,6 +10,7 @@ import { toast } from '../components/Toast';
 import { useDialogFocus } from '../components/ui/useDialogFocus';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { SavedViewsMenu } from '../components/SavedViewsMenu';
+import { reviewEventFile, type EventFileReview } from '../utils/eventFileReview';
 import { eventSeverityTones } from '../components/ui/tones';
 
 const utcInput = (value?: string) => value ? new Date(value).toISOString().replace(/Z$/, '').replace(/\.000$/, '').replace(/:00$/, '') : '';
@@ -136,6 +137,7 @@ export function Events() {
   const [escalateEvent, setEscalateEvent] = useState<SecurityEvent | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
+  const uploadInFlight = useRef(false);
 
   const fetchEvents = useCallback(async () => {
     const request = ++eventRequestId.current;
@@ -181,7 +183,8 @@ export function Events() {
   }, []);
 
   const handleUpload = async (file: File, sourceType: string) => {
-    if (uploading) return;
+    if (uploadInFlight.current) return;
+    uploadInFlight.current = true;
     setUploading(true);
     try {
       const form = new FormData();
@@ -199,6 +202,7 @@ export function Events() {
     } catch (err: unknown) {
       toast(getApiErrorMessage(err, 'The file could not be ingested. Use Suricata EVE JSON or Zeek JSON logs.'), 'error');
     } finally {
+      uploadInFlight.current = false;
       setUploading(false);
     }
   };
@@ -586,13 +590,28 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
   const [file, setFile] = useState<File | null>(null);
   const [sourceType, setSourceType] = useState('suricata');
   const [formError, setFormError] = useState('');
+  const [review, setReview] = useState<EventFileReview | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const readVersion = useRef(0);
+  useEffect(() => () => { readVersion.current++; }, []);
+  const chooseFile = async (selected: File | null) => {
+    const version = ++readVersion.current;
+    setFile(selected); setReview(null); setFormError(''); setReviewing(Boolean(selected));
+    if (!selected) return;
+    try {
+      const next = await reviewEventFile(selected);
+      if (version === readVersion.current) setReview(next);
+    } catch (err) {
+      if (version === readVersion.current) setFormError(err instanceof Error ? err.message : 'File could not be reviewed.');
+    } finally { if (version === readVersion.current) setReviewing(false); }
+  };
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus(dialogRef, () => { if (!uploading) onClose(); });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) {
-      setFormError('Choose a file to upload.');
+    if (!file || !review || reviewing) {
+      setFormError(file ? 'Choose a valid file and wait for its review before uploading.' : 'Choose a file to upload.');
       return;
     }
     setFormError('');
@@ -602,9 +621,9 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-surface-950/75 backdrop-blur-sm" onClick={() => { if (!uploading) onClose(); }}></div>
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="event-upload-title" className="relative w-full max-w-lg rounded-lg border border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="event-upload-title" className="relative max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-lg border border-surface-700 bg-surface-900 p-4 sm:p-6 shadow-[var(--oa-shadow-float)]">
         <h2 id="event-upload-title" className="mb-1 text-lg font-semibold text-surface-50">Upload events</h2>
-        <p className="mb-4 text-xs text-surface-500">Newline-delimited JSON or a JSON array. Up to 50,000 events per file.</p>
+        <p className="mb-4 text-xs text-surface-500">Review the file locally before upload. UTF-8 JSON object, array or newline-delimited JSON, up to 10 MiB and 50,000 records.</p>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label htmlFor="event-upload-file" className="mb-1 block text-sm font-medium text-surface-300">Log file</label>
@@ -612,7 +631,8 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
               id="event-upload-file"
               type="file"
               accept=".json,.log,.eve,.ndjson,application/json"
-              onChange={e => setFile(e.target.files?.[0] ?? null)}
+              disabled={uploading}
+              onChange={e => { void chooseFile(e.target.files?.[0] ?? null); }}
               className="w-full text-sm text-surface-300 file:mr-3 file:rounded-md file:border file:border-surface-600 file:bg-surface-800 file:px-3 file:py-1.5 file:text-xs file:text-surface-200"
             />
           </div>
@@ -620,6 +640,7 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
             <label htmlFor="event-upload-type" className="mb-1 block text-sm font-medium text-surface-300">Source type</label>
             <select
               id="event-upload-type"
+              disabled={uploading}
               value={sourceType}
               onChange={e => setSourceType(e.target.value)}
               className="w-full rounded-lg border border-surface-600 bg-surface-800 px-3 py-2 text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -628,6 +649,15 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
               <option value="zeek">Zeek (JSON logs)</option>
             </select>
           </div>
+          {reviewing && <p role="status" className="text-xs text-surface-400">Reading and validating the selected file locally...</p>}
+          {file && review && <section aria-label="Selected event file review" className="space-y-2 rounded border border-surface-700 p-3 text-xs text-surface-300">
+            <p className="break-all font-medium text-surface-100">{file.name}</p>
+            <p>{review.format} · {review.records.toLocaleString()} JSON records · {file.size.toLocaleString()} bytes</p>
+            <p>Selected parser: {sourceType === 'suricata' ? 'Suricata (EVE JSON)' : 'Zeek (JSON logs)'}</p>
+            <p>Destination: your event stream and a source named after this file.</p>
+            <p className="break-words">Sample field names (first three records, up to 20, long names shortened): {review.sampleFields.join(', ') || 'Empty objects'}</p>
+            <p className="text-surface-400">JSON validation is not source-parser acceptance. Unsupported records may still be skipped; the final import reports ingested and skipped counts. {uploading ? 'Submitting this reviewed file...' : 'No records have been sent yet.'}</p>
+          </section>}
           {formError && <p role="alert" className="text-xs text-danger">{formError}</p>}
           <div className="flex justify-end gap-2 pt-1">
             <button
@@ -640,10 +670,10 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
             </button>
             <button
               type="submit"
-              disabled={uploading}
+              disabled={uploading || reviewing || (file !== null && review === null)}
               className="rounded-md bg-primary-500 px-3.5 py-1.5 text-xs font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-40"
             >
-              {uploading ? 'Uploading...' : 'Upload'}
+              {uploading ? 'Uploading...' : review ? `Upload ${review.records.toLocaleString()} ${review.records === 1 ? 'record' : 'records'}` : 'Upload'}
             </button>
           </div>
         </form>
