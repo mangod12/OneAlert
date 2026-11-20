@@ -10,6 +10,7 @@ import { toast } from '../components/Toast';
 import type { Asset, AssetListResponse } from '../api/types';
 import { inspectSbomDocument, MAX_SBOM_BYTES } from '../utils/sbomImport';
 import { SbomComparison } from '../components/SbomComparison';
+import { componentEvidenceCsv, componentEvidenceJson, evidenceGapCounts, evidenceGapLabels, hasEvidenceGap, hasRecordedValue, type EvidenceGap, type EvidenceSnapshot } from '../utils/sbomEvidence';
 import { useDialogFocus } from '../components/ui/useDialogFocus';
 
 interface Sbom {
@@ -78,7 +79,7 @@ export function Sbom() {
     let copyleft = 0;
     for (const c of components) {
       const name = (c.license ?? '').trim();
-      if (!name) continue;
+      if (!hasRecordedValue(name)) continue;
       licensed += 1;
       counts.set(name, (counts.get(name) ?? 0) + 1);
       if (COPYLEFT_RE.test(name)) copyleft += 1;
@@ -89,6 +90,8 @@ export function Sbom() {
 
   const [componentSearch, setComponentSearch] = useState('');
   const [vulnerableOnly, setVulnerableOnly] = useState(false);
+  const [evidenceGap, setEvidenceGap] = useState<EvidenceGap>('');
+  const completeness = useMemo(() => evidenceGapCounts(components), [components]);
   const [pendingDelete, setPendingDelete] = useState<Sbom | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -106,9 +109,8 @@ export function Sbom() {
         || (c.hash_sha256 ?? '').toLowerCase().includes(componentQuery)
       )
     : components;
-  const visibleComponents = vulnerableOnly
-    ? searchedComponents.filter(c => c.has_known_vulnerability > 0)
-    : searchedComponents;
+  const vulnerabilityFiltered = vulnerableOnly ? searchedComponents.filter(c => c.has_known_vulnerability > 0) : searchedComponents;
+  const visibleComponents = vulnerabilityFiltered.filter(component => hasEvidenceGap(component, evidenceGap));
   const [uploading, setUploading] = useState(false);
 
   const fetchSboms = useCallback(async () => {
@@ -143,6 +145,7 @@ export function Sbom() {
     setExpanded(sbom.id);
     setComponentSearch('');
     setVulnerableOnly(false);
+    setEvidenceGap('');
     setComponents([]);
     setComponentsLoading(true);
     setComponentsError('');
@@ -157,6 +160,16 @@ export function Sbom() {
     } finally {
       if (request === componentRequestId.current) setComponentsLoading(false);
     }
+  };
+
+  const downloadEvidence = (sbom: Sbom, format: 'json' | 'csv') => {
+    try {
+      const snapshot: EvidenceSnapshot = { sbom: { id: sbom.id, asset_id: sbom.asset_id, format: sbom.format, version: sbom.version, source: sbom.source, created_at: sbom.created_at, component_count: sbom.component_count }, components: visibleComponents, loadedCount: components.length, filters: { search: componentSearch.trim(), recordedVulnerabilitiesOnly: vulnerableOnly, evidenceGap }, exportedAt: new Date().toISOString() };
+      const body = format === 'json' ? componentEvidenceJson(snapshot) : componentEvidenceCsv(snapshot);
+      const url = URL.createObjectURL(new Blob([body], { type: format === 'json' ? 'application/json' : 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a'); link.href = url; link.download = `sbom-${sbom.id}-matching-evidence.${format}`;
+      document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch { toast('Matching component evidence could not be downloaded. The loaded records remain available.', 'error'); }
   };
 
   const handleDelete = async (sbom: Sbom) => {
@@ -197,7 +210,7 @@ export function Sbom() {
   return (
     <div className="space-y-6">
       {assetNamesError && <DegradedBanner messages={[assetNamesError, 'SBOM records remain available by asset ID.']} onRetry={() => void fetchSboms()} />}
-      <PageHeader eyebrow="Observe" title="Software Bill of Materials" description="Component inventory and known-vulnerability exposure per asset." actions={
+      <PageHeader eyebrow="Observe" title="Software Bill of Materials" description="Recorded component inventory, evidence completeness and vulnerability references per asset." actions={
         <button
           onClick={() => setShowUpload(true)}
           className="flex min-h-9 items-center gap-2 rounded-md bg-primary-500 px-3.5 text-sm font-semibold text-surface-950 hover:bg-primary-400"
@@ -223,7 +236,7 @@ export function Sbom() {
                 <th className="px-4 py-3 text-left">Format</th>
                 <th className="px-4 py-3 text-left">Source</th>
                 <th className="px-4 py-3 text-left">Components</th>
-                <th className="px-4 py-3 text-left">Vulnerabilities</th>
+                <th className="px-4 py-3 text-left">Recorded vulnerability IDs</th>
                 <th className="px-4 py-3 text-left">Uploaded</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
@@ -243,7 +256,7 @@ export function Sbom() {
                       {sbom.vulnerability_count > 0 ? (
                         <StatusBadge tone="danger">{sbom.vulnerability_count}</StatusBadge>
                       ) : (
-                        <StatusBadge tone="success">0</StatusBadge>
+                        <StatusBadge tone="neutral">0 recorded</StatusBadge>
                       )}
                     </td>
                     <td className="px-4 py-3 text-surface-500 text-xs">{new Date(sbom.created_at).toLocaleDateString()}</td>
@@ -270,14 +283,22 @@ export function Sbom() {
                           <p className="text-sm text-surface-500">No components in this SBOM.</p>
                         ) : (
                           <div>
+                            <section aria-label="Component evidence completeness" className="mb-4 space-y-3 rounded border border-surface-700 p-3">
+                              <h3 className="text-sm font-semibold text-surface-100">Recorded evidence completeness</h3>
+                              <p className="max-w-2xl text-xs text-surface-400">Loaded {components.length} component records; SBOM summary records {sbom.component_count}. Missing evidence is not proof of risk or safety. Counts cover loaded records, not a live scan, verified package hashes or legal license review.</p>
+                              <div className="flex flex-wrap gap-2">{(Object.entries(evidenceGapLabels) as [Exclude<EvidenceGap, ''>, string][]).map(([gap, label]) => <button type="button" key={gap} aria-pressed={evidenceGap === gap} onClick={() => setEvidenceGap(current => current === gap ? '' : gap)} className={`rounded border px-3 py-2 text-left text-xs ${evidenceGap === gap ? 'border-primary-400 bg-primary-500/10 text-primary-200' : 'border-surface-600 text-surface-300'}`}>{label}: {completeness[gap]}</button>)}</div>
+                              {evidenceGap && <p className="text-xs text-surface-300">Applied evidence gap: {evidenceGapLabels[evidenceGap]}. Search and recorded vulnerability filters still apply. <button type="button" onClick={() => setEvidenceGap('')} className="text-primary-300">Clear evidence gap</button></p>}
+                              <div className="flex flex-wrap gap-2"><button type="button" onClick={() => downloadEvidence(sbom, 'csv')} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Export matching CSV</button><button type="button" onClick={() => downloadEvidence(sbom, 'json')} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Download matching evidence JSON</button></div>
+                              <p className="text-xs text-surface-400">Matching downloads include only the {visibleComponents.length} shown records from this loaded snapshot. JSON also records filters and counts. No additional server request or rescanning is performed.</p>
+                            </section>
                             {licenseSummary && licenseSummary.top.length > 0 && (
                               <div className="mb-3 flex flex-wrap items-center gap-2 text-xs" aria-label="License summary">
-                                <span className="text-surface-400">{licenseSummary.licensed} of {components.length} components licensed</span>
+                                <span className="text-surface-400">{licenseSummary.licensed} of {components.length} with recorded license text</span>
                                 {licenseSummary.top.slice(0, 5).map(([name, count]) => (
                                   <span key={name} className="rounded-full border border-surface-600 bg-surface-800 px-2 py-0.5 text-surface-300">{name} · {count}</span>
                                 ))}
                                 {licenseSummary.top.length > 5 && <span className="text-surface-500">+{licenseSummary.top.length - 5} more</span>}
-                                {licenseSummary.copyleft > 0 && <StatusBadge tone="warning">{licenseSummary.copyleft} copyleft</StatusBadge>}
+                                {licenseSummary.copyleft > 0 && <StatusBadge tone="warning">{licenseSummary.copyleft} copyleft-like labels</StatusBadge>}
                               </div>
                             )}
                             <div className="mb-3 flex flex-wrap items-center gap-3">
@@ -296,7 +317,7 @@ export function Sbom() {
                                   onChange={(e) => setVulnerableOnly(e.target.checked)}
                                   className="h-4 w-4 rounded border-surface-600 bg-surface-950 text-primary-500 focus:ring-2 focus:ring-primary-500"
                                 />
-                                Vulnerable only
+                                Recorded vulnerability references only
                               </label>
                               <span className="text-xs text-surface-500">{visibleComponents.length} of {components.length} components</span>
                               <button
@@ -306,7 +327,7 @@ export function Sbom() {
                                 className="ml-auto flex items-center gap-1.5 rounded-md border border-surface-600 px-2.5 py-1 text-xs text-surface-200 hover:border-primary-500 hover:text-primary-300 disabled:opacity-50"
                               >
                                 <Download className="w-3.5 h-3.5" aria-hidden="true" />
-                                {exportingId === sbom.id ? 'Exporting...' : 'Export CSV'}
+                                {exportingId === sbom.id ? 'Exporting...' : 'Export all CSV'}
                               </button>
                             </div>
                             {visibleComponents.length === 0 ? (
@@ -319,7 +340,7 @@ export function Sbom() {
                                 <th className="py-1.5 text-left">Version</th>
                                 <th className="py-1.5 text-left">Supplier</th>
                                 <th className="py-1.5 text-left">License</th>
-                                <th className="py-1.5 text-left">Known vulnerabilities</th>
+                                <th className="py-1.5 text-left">Recorded vulnerability references</th>
                                 <th className="py-1.5 text-right">Evidence</th>
                               </tr>
                             </thead>
@@ -332,9 +353,9 @@ export function Sbom() {
                                   <td className="py-1.5 text-surface-400 text-xs">{component.license ?? '-'}</td>
                                   <td className="py-1.5">
                                     {component.has_known_vulnerability ? (
-                                      <StatusBadge tone="danger">Yes</StatusBadge>
+                                      <StatusBadge tone="danger">{component.has_known_vulnerability} recorded</StatusBadge>
                                     ) : (
-                                      <span className="text-xs text-surface-500">None</span>
+                                      <span className="text-xs text-surface-500">0 recorded, not scanned</span>
                                     )}
                                   </td>
                                   <td className="py-1.5 text-right"><button type="button" aria-label={`View evidence for ${component.name}`} onClick={() => setComponentEvidence({ component, sbom })} className="whitespace-nowrap rounded border border-surface-600 px-2 py-1 text-xs text-primary-300 hover:border-primary-500">View evidence</button></td>
