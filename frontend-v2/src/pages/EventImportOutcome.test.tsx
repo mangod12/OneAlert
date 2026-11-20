@@ -15,6 +15,7 @@ function setup() {
   get.mockImplementation(async (url: string) => {
     if (url === '/events/') return { data: { events: [], total: 0 } };
     if (url === '/events/stats') return { data: { data: { total_events: 0, by_severity: {}, by_type: {}, source_count: 0 } } };
+    if (url === '/events/sources') return { data: [] };
     return { data: { types: [] } };
   });
   render(<Events />);
