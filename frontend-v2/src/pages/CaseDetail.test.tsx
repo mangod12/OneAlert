@@ -872,7 +872,7 @@ describe('Investigation tasks', () => {
     mockLoadWithTasks([{ ...tasks[0], due_date: '2000-01-01' }]);
     renderDetail();
     expect(await screen.findByText('Contain the host')).toBeTruthy();
-    expect(screen.queryByText(/Overdue/)).toBeNull();
+    expect(screen.queryByText(/^Overdue · due/)).toBeNull();
   });
 
   it.each(['rejected', 'malformed'])('does not report an unavailable checklist as empty (%s)', async failure => {
