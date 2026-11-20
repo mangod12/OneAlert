@@ -354,3 +354,18 @@ it('pages and searches saved control evidence and exports all matches without ex
   expect(vi.mocked(apiClient.get).mock.calls.length).toBe(reads);
   expect(vi.mocked(apiClient.post)).not.toHaveBeenCalled();
 });
+
+it('opens read-only outcome comparison from recorded results without executing a test', async () => {
+  const get = vi.mocked(apiClient.get);
+  const fallback = get.getMockImplementation()!;
+  get.mockImplementation((url, config) => url === '/validation/runs/7' ? Promise.resolve({ data: { data: { ...run, id: 7 } } }) : fallback(url, config));
+  await openResults();
+  fireEvent.click(screen.getByRole('button', { name: 'Compare recorded outcomes' }));
+  fireEvent.change(screen.getByLabelText('Baseline validation run ID'), { target: { value: '7' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Compare outcomes' }));
+  await screen.findByText('unchanged: 3');
+  expect(vi.mocked(apiClient.post)).not.toHaveBeenCalled();
+  expect(vi.mocked(apiClient.delete)).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Close comparison' }));
+  expect(screen.queryByLabelText('Validation outcome comparison')).toBeNull();
+});
