@@ -32,13 +32,13 @@ describe('Recorded event source triage', () => {
   it('saves and restores the recorded ID without inventing missing source details', async () => {
     setup(true); await screen.findByText('unavailable');
     fireEvent.click(screen.getByRole('button', { name: 'Saved views' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Saved plant', exact: true }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Saved plant' }));
     expect((screen.getByLabelText('Recorded source') as HTMLSelectElement).value).toBe('7');
     expect(screen.getByRole('option', { name: 'Source #7 (details unavailable)' })).toBeTruthy();
     post.mockResolvedValue({ data: { id: 2, name: 'Copied plant', filters: { source_id: 7 }, created_at: '' } });
     fireEvent.click(screen.getByRole('button', { name: 'Saved views' }));
     fireEvent.change(screen.getByLabelText('Name for the saved view'), { target: { value: 'Copied plant' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(post).toHaveBeenCalledWith('/events/views/', { name: 'Copied plant', filters: { source_id: 7, sort: 'timestamp_desc' } }));
   });
 });
