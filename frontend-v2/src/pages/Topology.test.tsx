@@ -192,22 +192,23 @@ describe('Remove connection', () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/topology/graph') return { data: graphWithIds };
       if (url === '/topology/stats') return { data: stats };
+      if (url === '/topology/connections/101/removal-review') return { data: { connection: { id: 101, bytes_transferred: '0' }, reviewed_fingerprint: 'a'.repeat(64), retrieved_at: 'now' } };
       throw new Error(`unexpected ${url}`);
     });
   }
 
   it('removes a connection after confirmation and refreshes the topology', async () => {
     mockWithIds();
-    del.mockResolvedValue({ data: null });
+    del.mockResolvedValue({ data: null, status: 204 });
     render(<Topology />);
     await screen.findAllByText('scada-historian');
     get.mockClear();
 
     fireEvent.click(screen.getByRole('button', { name: /Remove connection 10\.0\.1\.5/ }));
-    expect(await screen.findByText(/no longer appears in the topology or stats/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Remove connection' }));
+    fireEvent.click(await screen.findByRole('checkbox', { name: /I reviewed this exact saved record/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove reviewed saved connection' }));
 
-    await waitFor(() => expect(del).toHaveBeenCalledWith('/topology/connections/101'));
+    await waitFor(() => expect(del).toHaveBeenCalledWith('/topology/connections/101', { params: { reviewed_fingerprint: 'a'.repeat(64) } }));
     await waitFor(() => expect(get).toHaveBeenCalledWith('/topology/graph'));
     expect(get).toHaveBeenCalledWith('/topology/stats');
   });
@@ -218,7 +219,7 @@ describe('Remove connection', () => {
     await screen.findAllByText('scada-historian');
 
     fireEvent.click(screen.getByRole('button', { name: /Remove connection 10\.0\.1\.5/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel connection removal' }));
     expect(del).not.toHaveBeenCalled();
   });
 

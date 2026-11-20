@@ -5,7 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Network, Lock, LockOpen, Plus, Trash2, Download } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
-import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { TopologyRemovalReview } from '../components/TopologyRemovalReview';
 import { toast } from '../components/Toast';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
@@ -49,7 +49,6 @@ export function Topology() {
   const [saving, setSaving] = useState(false);
   const [formMessage, setFormMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [deletingEdge, setDeletingEdge] = useState<TopologyEdge | null>(null);
-  const [deletingBusy, setDeletingBusy] = useState(false);
   const [protocolFilter, setProtocolFilter] = useState('');
   const [cleartextOnly, setCleartextOnly] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -131,21 +130,6 @@ export function Topology() {
       setFormMessage({ text: getApiErrorMessage(err, 'The connection could not be recorded.'), error: true });
     } finally {
       setSaving(false);
-    }
-  };
-
-  const deleteConnection = async () => {
-    if (!deletingEdge || deletingEdge.id == null || deletingBusy) return;
-    setDeletingBusy(true);
-    try {
-      await apiClient.delete(`/topology/connections/${deletingEdge.id}`);
-      toast('Connection removed. The topology has been refreshed.', 'success');
-      setDeletingEdge(null);
-      await fetchTopology();
-    } catch (err: unknown) {
-      toast(getApiErrorMessage(err, 'The connection could not be removed.'), 'error');
-    } finally {
-      setDeletingBusy(false);
     }
   };
 
@@ -315,7 +299,7 @@ export function Topology() {
                     <th className="px-4 py-3 text-left">Protocol</th>
                     <th className="px-4 py-3 text-left">Port</th>
                     <th className="px-4 py-3 text-left">Encryption</th>
-                    <th className="px-4 py-3 text-right"><span className="sr-only">Actions</span></th>
+                    <th className="relative px-4 py-3 text-right"><span className="sr-only">Actions</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -411,17 +395,7 @@ export function Topology() {
           </form>
         )}
       </div>
-      {deletingEdge && (
-        <ConfirmDialog
-          title="Remove connection"
-          description={`Remove the ${deletingEdge.protocol} connection from ${deletingEdge.source} to ${deletingEdge.target}? It no longer appears in the topology or stats.`}
-          confirmLabel="Remove connection"
-          tone="danger"
-          busy={deletingBusy}
-          onCancel={() => setDeletingEdge(null)}
-          onConfirm={() => void deleteConnection()}
-        />
-      )}
+      {deletingEdge?.id != null && <TopologyRemovalReview connectionId={deletingEdge.id} onClose={() => setDeletingEdge(null)} onRemoved={() => { setDeletingEdge(null); toast('Saved connection removed. The topology has been refreshed.', 'success'); void fetchTopology(); }} />}
     </div>
   );
 }
