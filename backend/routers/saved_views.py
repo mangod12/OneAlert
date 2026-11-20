@@ -43,6 +43,8 @@ async def _name_conflict(
 def _scope(request: Request) -> str:
     """Which list the view belongs to, from the mounted path."""
     path = request.url.path
+    if "/inventory/" in path:
+        return "assets"
     if "/cases/" in path:
         return "cases"
     if "/events/" in path:
@@ -50,6 +52,7 @@ def _scope(request: Request) -> str:
     return "alerts"
 
 
+@router.get("/inventory/views/", response_model=list[SavedViewResponse])
 @router.get("/alerts/views/", response_model=list[SavedViewResponse])
 @router.get("/cases/views/", response_model=list[SavedViewResponse])
 @router.get("/events/views/", response_model=list[SavedViewResponse])
@@ -67,6 +70,7 @@ async def list_saved_views(
     return list(result.scalars().all())
 
 
+@router.post("/inventory/views/", response_model=SavedViewResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/alerts/views/", response_model=SavedViewResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/cases/views/", response_model=SavedViewResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/events/views/", response_model=SavedViewResponse, status_code=status.HTTP_201_CREATED)
@@ -106,6 +110,7 @@ async def create_saved_view(
     return view
 
 
+@router.delete("/inventory/views/{view_id}", status_code=status.HTTP_204_NO_CONTENT)
 @router.delete("/alerts/views/{view_id}", status_code=status.HTTP_204_NO_CONTENT)
 @router.delete("/cases/views/{view_id}", status_code=status.HTTP_204_NO_CONTENT)
 @router.delete("/events/views/{view_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -130,6 +135,7 @@ async def delete_saved_view(
     await db.commit()
 
 
+@router.patch("/inventory/views/{view_id}", response_model=SavedViewResponse)
 @router.patch("/alerts/views/{view_id}", response_model=SavedViewResponse)
 @router.patch("/cases/views/{view_id}", response_model=SavedViewResponse)
 @router.patch("/events/views/{view_id}", response_model=SavedViewResponse)
