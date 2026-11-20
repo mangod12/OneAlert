@@ -4,13 +4,13 @@ import { useDialogFocus } from './ui/useDialogFocus';
 export interface RecordedTopologyEdge {
   id: number | null; source: string; target: string; protocol: string; is_encrypted: boolean; port: number | null;
   direction?: string | null; first_seen?: string | null; last_seen?: string | null;
-  bytes_transferred?: string | number | null; source_device_id?: number | null; target_device_id?: number | null;
+  bytes_transferred?: string | number | null; bytes_transferred_exact?: string | null; source_device_id?: number | null; target_device_id?: number | null;
 }
 export function TopologyConnectionEvidence({ edge, receivedAt, sourceLabel, targetLabel, onClose }: { edge: RecordedTopologyEdge; receivedAt: string | null; sourceLabel: string; targetLabel: string; onClose: () => void }) {
   const dialog = useRef<HTMLDivElement>(null);
   const [error, setError] = useState('');
   useDialogFocus(dialog, onClose);
-  const bytes = typeof edge.bytes_transferred === 'number' && !Number.isSafeInteger(edge.bytes_transferred) ? 'Numeric precision unavailable in this response' : edge.bytes_transferred;
+  const bytes = edge.bytes_transferred_exact ?? (typeof edge.bytes_transferred === 'number' && !Number.isSafeInteger(edge.bytes_transferred) ? 'Numeric precision unavailable in this response' : edge.bytes_transferred);
   const fields = [['Connection record ID', edge.id], ['Source address', edge.source], ['Source label', sourceLabel], ['Source device record ID', edge.source_device_id], ['Target address', edge.target], ['Target label', targetLabel], ['Target device record ID', edge.target_device_id], ['Recorded protocol', edge.protocol], ['Recorded port', edge.port], ['Recorded direction', edge.direction], ['Recorded encryption flag', edge.is_encrypted ? 'Encrypted' : 'Cleartext'], ['Recorded bytes transferred', bytes], ['Recorded first seen', edge.first_seen], ['Recorded last seen', edge.last_seen], ['Graph response received at', receivedAt]] as const;
   const download = () => {
     setError('');

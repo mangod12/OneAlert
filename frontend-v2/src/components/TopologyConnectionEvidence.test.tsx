@@ -10,6 +10,10 @@ describe('Recorded topology connection evidence', () => {
     expect(screen.getByText('Not recorded')).toBeTruthy(); expect(screen.getByText(/not a live reachability test/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Close connection evidence' })); expect(close).toHaveBeenCalledOnce();
   });
+  it('uses the additive exact counter when the legacy number exceeds browser precision', () => {
+    show({ ...edge, bytes_transferred: Number.MAX_SAFE_INTEGER + 1, bytes_transferred_exact: '9223372036854775807' });
+    expect(screen.getByText('9223372036854775807')).toBeTruthy();
+  });
   it('does not invent precise bytes from an unsafe legacy number', () => {
     show({ ...edge, bytes_transferred: Number.MAX_SAFE_INTEGER + 1 });
     expect(screen.getByText('Numeric precision unavailable in this response')).toBeTruthy();

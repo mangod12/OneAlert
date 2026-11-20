@@ -72,7 +72,8 @@ def test_recorded_graph_evidence_preserves_exact_bytes_zero_port_and_owned_devic
     assert response.status_code == 201
     edge = client.get('/api/v1/topology/graph').json()['edges'][0]
     assert edge['id'] == response.json()['id'] and edge['source_device_id'] == 1
-    assert edge['bytes_transferred'] == '9223372036854775807'
+    assert edge['bytes_transferred_exact'] == '9223372036854775807'
+    assert edge['bytes_transferred'] == 9223372036854775807
     assert edge['port'] == 0 and edge['direction'] == 'outbound' and edge['is_encrypted'] is False
     assert edge['first_seen'] and edge['last_seen']
 
