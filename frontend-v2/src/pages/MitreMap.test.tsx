@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
@@ -159,4 +159,40 @@ describe('MitreMap', () => {
     await screen.findByText('ATT&CK coverage unavailable');
     expect(screen.getByRole('button', { name: /retry/i })).toBeTruthy();
   });
+});
+
+it.each(['success', 'failure'])('ignores stale technique reference %s after selection changes', async outcome => {
+  let resolveOld!: (value: unknown) => void;
+  let rejectOld!: (reason: unknown) => void;
+  get.mockImplementation(url => {
+    if (url === '/mitre/coverage') return Promise.resolve({ data: { data: { ...coverage, covered_ids: ['T1059', 'T1190'] } } });
+    if (url === '/mitre/techniques') return Promise.resolve({ data: techniques });
+    if (url === '/mitre/techniques/T1059/references') return new Promise((resolve, reject) => { resolveOld = resolve; rejectOld = reject; });
+    return Promise.resolve({ data: { technique_id: 'T1190', technique_name: 'Current', cases: [{ id: 8, title: 'Current technique evidence', status: 'open' }], detection_rules: [] } });
+  });
+  render(<MemoryRouter><MitreMap /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole('button', { name: /Show what detects T1059/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Show what detects T1190/ }));
+  await screen.findByText('#8 Current technique evidence');
+  await act(async () => {
+    if (outcome === 'success') resolveOld({ data: { technique_id: 'T1059', technique_name: 'Old', cases: [{ id: 9, title: 'Wrong technique evidence', status: 'open' }], detection_rules: [] } });
+    else rejectOld(new Error('Old technique failed'));
+  });
+  expect(screen.getByText('#8 Current technique evidence')).toBeTruthy();
+  expect(screen.queryByText('#9 Wrong technique evidence')).toBeNull();
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+it('does not restore reference evidence from a collapsed request after reopening', async () => {
+  const resolvers: Array<(value: unknown) => void> = [];
+  const fallback = get.getMockImplementation()!;
+  get.mockImplementation((url, config) => url === '/mitre/techniques/T1190/references' ? new Promise(resolve => { resolvers.push(resolve); }) : fallback(url, config));
+  render(<MemoryRouter><MitreMap /></MemoryRouter>);
+  const trigger = await screen.findByRole('button', { name: /Show what detects T1190/ });
+  fireEvent.click(trigger);fireEvent.click(trigger);fireEvent.click(trigger);
+  await act(async () => resolvers[0]({ data: { cases: [{ id: 9, title: 'Collapsed stale evidence', status: 'open' }], detection_rules: [] } }));
+  expect(screen.queryByText('#9 Collapsed stale evidence')).toBeNull();
+  expect(screen.getByText('Loading references…')).toBeTruthy();
+  await act(async () => resolvers[1]({ data: { cases: [], detection_rules: [] } }));
+  expect(screen.getByText('No cases reference this technique.')).toBeTruthy();
 });

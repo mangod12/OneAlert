@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
 import { Search } from 'lucide-react';
@@ -30,6 +30,8 @@ interface TechniqueReferences {
 }
 
 export function MitreMap() {
+  const refsRequest = useRef(0);
+  useEffect(() => () => { refsRequest.current += 1; }, []);
   const [coverage, setCoverage] = useState<{
     total_techniques: number;
     covered_techniques: number;
@@ -48,6 +50,7 @@ export function MitreMap() {
   const [refsError, setRefsError] = useState('');
 
   const toggleTechnique = async (id: string) => {
+    const request = ++refsRequest.current;
     if (selectedId === id) {
       setSelectedId(null);
       setReferences(null);
@@ -60,11 +63,12 @@ export function MitreMap() {
     setRefsLoading(true);
     try {
       const res = await apiClient.get<TechniqueReferences>(`/mitre/techniques/${id}/references`);
-      setReferences(res.data);
+      if (request === refsRequest.current) setReferences(res.data);
     } catch (err: unknown) {
+      if (request !== refsRequest.current) return;
       setRefsError(getApiErrorMessage(err, 'Technique references could not be loaded.'));
     } finally {
-      setRefsLoading(false);
+      if (request === refsRequest.current) setRefsLoading(false);
     }
   };
 
