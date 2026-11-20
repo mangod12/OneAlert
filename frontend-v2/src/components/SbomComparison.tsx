@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { sbomComparisonCsv } from '../utils/sbomComparisonCsv';
+import { toast } from './Toast';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
 import { compareSnapshots, comparisonFields, type ComparisonField, type ComparisonKind, type SnapshotComponent } from '../utils/sbomComparison';
@@ -14,7 +16,9 @@ export function SbomComparison({ current, snapshots, onClose }: { current: Snaps
   useEffect(() => { panel.current?.focus({ preventScroll: true }); panel.current?.scrollIntoView?.({ block: 'start' }); }, []);
   const choices = snapshots.filter(snapshot => snapshot.asset_id === current.asset_id && snapshot.id !== current.id);
   const [baselineId, setBaselineId] = useState('');
-  const [result, setResult] = useState<{ baseline: SnapshotComponent[]; current: SnapshotComponent[] } | null>(null);
+  const [loadedResult, setResult] = useState<{ key: string; baseline: SnapshotComponent[]; current: SnapshotComponent[] } | null>(null);
+  const resultKey = JSON.stringify([current.id, baselineId]);
+  const result = loadedResult?.key === resultKey ? loadedResult : null;
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
   const [search, setSearch] = useState('');
@@ -30,7 +34,7 @@ export function SbomComparison({ current, snapshots, onClose }: { current: Snaps
       apiClient.get<SnapshotComponent[]>(`/sbom/${baselineId}/components`),
       apiClient.get<SnapshotComponent[]>(`/sbom/${current.id}/components`),
     ]).then(([before, after]) => {
-      if (!cancelled) setResult({ baseline: before.data, current: after.data });
+      if (!cancelled) setResult({ key: JSON.stringify([current.id, baselineId]), baseline: before.data, current: after.data });
     }).catch(err => { if (!cancelled) setError(getApiErrorMessage(err, 'The two component inventories could not be compared.')); });
     return () => { cancelled = true; };
   }, [baselineId, baselineExists, current.id, retry]);
@@ -41,6 +45,17 @@ export function SbomComparison({ current, snapshots, onClose }: { current: Snaps
   const pages = Math.max(1, Math.ceil(filtered.length / 15));
   const currentPage = Math.min(page, pages);
   const visible = filtered.slice((currentPage - 1) * 15, currentPage * 15);
+
+  const exportCsv = () => {
+    if (!result || !filtered.length || !baselineExists) return;
+    let url: string | undefined;
+    try {
+      url = URL.createObjectURL(new Blob([sbomComparisonCsv(Number(baselineId), current.id, filtered)], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url; link.download = `sbom-${baselineId}-to-${current.id}-comparison.csv`; link.click();
+    } catch { toast('Comparison evidence could not be downloaded. Try again.', 'error'); }
+    finally { if (url) URL.revokeObjectURL(url); }
+  };
 
   return <section ref={panel} tabIndex={-1} aria-label="SBOM snapshot comparison" className="oa-panel scroll-mt-20 min-w-0 focus:outline-none space-y-4 rounded-md p-4 sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-semibold text-surface-100">Compare SBOM snapshots</h2><p className="text-sm text-surface-400">Current: SBOM #{current.id} · Asset #{current.asset_id} · {new Date(current.created_at).toLocaleString()}</p></div><button type="button" onClick={onClose} className={control}>Close comparison</button></div>
@@ -54,6 +69,8 @@ export function SbomComparison({ current, snapshots, onClose }: { current: Snaps
       <p className="text-xs text-surface-400">Totals count name/supplier groups, not individual component rows. Recorded vulnerability counts are snapshot evidence, not a live vulnerability scan.</p>
       <div className="flex flex-wrap gap-2"><input aria-label="Search snapshot comparison" placeholder="Component, version, license or identifier" value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} className={`${control} min-w-0 basis-full sm:basis-0 sm:flex-1`} /><select aria-label="Comparison change type" value={kind} onChange={event => { setKind(event.target.value); setPage(1); }} className={control}><option value="differences">Differences only</option><option value="all">All groups</option>{kinds.map(value => <option key={value} value={value}>{value}</option>)}</select></div>
       <p className="text-xs text-surface-400">{filtered.length} of {differences.length} groups match. Page {currentPage} of {pages}.</p>
+      <button type="button" disabled={!filtered.length} onClick={exportCsv} className={`${control} disabled:opacity-40`}>Export matching comparison CSV</button>
+      <p className="text-xs text-surface-400">CSV includes every matching group across comparison pages, with full before/after component records in JSON columns. Duplicate identities remain ambiguous. Download stays on your device; neither inventory is changed.</p>
       {!visible.length && <p className="text-sm text-surface-400">No component groups match these filters.</p>}
       <div className="space-y-3">{visible.map(row => <article key={row.key} className="min-w-0 space-y-3 rounded border border-surface-700 p-3">
         <div className="flex flex-wrap justify-between gap-2"><h3 className="break-words font-semibold text-surface-100 [overflow-wrap:anywhere]">{row.name}</h3><span className="text-xs text-primary-300">{row.kind}</span></div><p className="break-words text-xs text-surface-400 [overflow-wrap:anywhere]">Supplier: {display(row.supplier)}</p>

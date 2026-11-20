@@ -104,3 +104,23 @@ it('does not claim identical snapshots are remediated and can reveal unchanged e
   expect(within(card).getByRole('heading', { name: 'openssl' })).toBeTruthy();
   expect(within(card).getByText('Baseline: 2')).toBeTruthy();
 });
+
+it('exports every matching group across pages from loaded evidence, with no extra request', async () => {
+  get.mockImplementation(async url => ({ data: url === '/sbom/2/components' ? [] : Array.from({ length: 20 }, (_, i) => component({ id: i, sbom_id: 3, name: `package-${String(i).padStart(2, '0')}` })) }));
+  const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:comparison');
+  const revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  renderComparison(); choose();
+  await screen.findByText('added: 20');
+  expect(screen.queryByRole('heading', { name: 'package-19' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Export matching comparison CSV' }));
+  const blob = createUrl.mock.calls[0][0] as Blob;
+  const text = await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(blob); });
+  expect(text).toContain('package-00'); expect(text).toContain('package-19');
+  expect(get).toHaveBeenCalledTimes(2);
+  expect(click).toHaveBeenCalledTimes(1);
+  expect(revokeUrl).toHaveBeenCalledWith('blob:comparison');
+  fireEvent.change(screen.getByLabelText('Comparison change type'), { target: { value: 'removed' } });
+  expect((screen.getByRole('button', { name: 'Export matching comparison CSV' }) as HTMLButtonElement).disabled).toBe(true);
+  createUrl.mockRestore(); revokeUrl.mockRestore(); click.mockRestore();
+});
