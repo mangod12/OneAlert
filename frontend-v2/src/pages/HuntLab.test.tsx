@@ -151,6 +151,7 @@ describe('Detection rules', () => {
       rule_content: 'title: DNS tunneling\nlogsource:\n  category: dns',
       description: null,
       confidence: 'high',
+      enabled: false, mitre_techniques: [],
     }));
   });
 
@@ -311,4 +312,59 @@ it('allows another hunt after a failed request', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Hunt' }));
   expect(await screen.findByText('Retry completed')).toBeTruthy();
   expect(mockPost).toHaveBeenCalledTimes(2);
+});
+
+
+it('inspects and clones immutable rule content into an untested disabled draft without changing the original', async () => {
+  const original = { id: 7, name: 'Retained guard', description: 'Full retained rule description', rule_type: 'sigma', rule_content: 'title: Retained guard\ndetection:\n  condition: selection', mitre_techniques: ['T1110'], confidence: 'high', tested: true, enabled: true, created_by: 'human', created_at: '2026-11-20T08:00:00Z' };
+  mockGet.mockImplementation(async url => ({ data: url.endsWith('/detections') ? [original] : [] }));
+  mockPost.mockResolvedValue({ data: { ...original, id: 8, enabled: false, tested: false } });
+  render(<HuntLab />);
+  fireEvent.click(await screen.findByLabelText('Inspect saved rule Retained guard'));
+  expect(screen.getByText(/condition: selection/)).toBeTruthy();
+  fireEvent.click(screen.getByLabelText('Clone rule Retained guard as disabled draft'));
+  expect(mockPost).not.toHaveBeenCalled();
+  expect(mockPatch).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('Name *')).toHaveProperty('value', 'Retained guard copy');
+  expect(screen.getByLabelText('Rule content *')).toHaveProperty('value', original.rule_content);
+  expect(screen.getByLabelText('Rule MITRE techniques')).toHaveProperty('value', 'T1110');
+  expect(screen.getByLabelText('Enable rule after saving')).toHaveProperty('checked', false);
+  fireEvent.click(screen.getByRole('button', { name: 'Save rule' }));
+  await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/hunt/detections', { name: 'Retained guard copy', description: original.description, rule_type: 'sigma', rule_content: original.rule_content, confidence: 'high', enabled: false, mitre_techniques: ['T1110'] }));
+  expect(mockPatch).not.toHaveBeenCalled();
+});
+
+it('pages and searches loaded rule content locally and resets the page when scope changes', async () => {
+  const rules = Array.from({ length: 23 }, (_, index) => ({ id: index, name: `Saved rule ${index}`, description: null, rule_type: 'sigma', rule_content: index === 22 ? 'Distinct retained selector' : 'saved selector', mitre_techniques: [], confidence: 'medium', tested: false, enabled: index % 2 === 0, created_by: 'human', created_at: '2026-11-20T08:00:00Z' }));
+  mockGet.mockImplementation(async url => ({ data: url.endsWith('/detections') ? rules : [] }));
+  render(<HuntLab />);
+  await screen.findByText('Saved rule 0');
+  expect(screen.queryByText('Saved rule 10')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'More rules' }));
+  expect(screen.getByText('Saved rule 10')).toBeTruthy();
+  const reads = mockGet.mock.calls.length;
+  fireEvent.change(screen.getByLabelText('Search saved detection rules'), { target: { value: 'distinct retained' } });
+  expect(screen.getByText('Saved rule 22')).toBeTruthy();
+  expect(screen.getByText('Rule page 1 of 1')).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Detection rule scope'), { target: { value: 'disabled' } });
+  expect(screen.getByText('No loaded detection rules match.')).toBeTruthy();
+  expect(mockGet).toHaveBeenCalledTimes(reads);
+  expect(mockPost).not.toHaveBeenCalled();
+  expect(mockPatch).not.toHaveBeenCalled();
+});
+
+it('retains a failed rule draft and only enables it when explicitly selected', async () => {
+  mockGet.mockResolvedValue({ data: [] });
+  mockPost.mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce({ data: {} });
+  render(<HuntLab />);
+  fireEvent.click(await screen.findByRole('button', { name: 'New rule' }));
+  fireEvent.change(screen.getByLabelText('Name *'), { target: { value: 'Reviewed guard' } });
+  fireEvent.change(screen.getByLabelText('Rule content *'), { target: { value: 'Retained selector' } });
+  fireEvent.click(screen.getByLabelText('Enable rule after saving'));
+  fireEvent.click(screen.getByRole('button', { name: 'Save rule' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Save rule' })).toHaveProperty('disabled', false));
+  expect(screen.getByLabelText('Name *')).toHaveProperty('value', 'Reviewed guard');
+  expect(screen.getByLabelText('Enable rule after saving')).toHaveProperty('checked', true);
+  fireEvent.click(screen.getByRole('button', { name: 'Save rule' }));
+  await waitFor(() => expect(mockPost).toHaveBeenLastCalledWith('/hunt/detections', expect.objectContaining({ enabled: true })));
 });
