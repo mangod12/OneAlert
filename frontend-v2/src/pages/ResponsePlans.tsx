@@ -1,3 +1,4 @@
+import { ResponsePlanComparison } from '../components/ResponsePlanComparison';
 import { useSearchParams } from 'react-router-dom';
 import { ResponseDecisionEvidence } from '../components/ResponseDecisionEvidence';
 import { isAxiosError } from 'axios';
@@ -236,6 +237,7 @@ export function ResponsePlans({ linkedPlanId = null }: { linkedPlanId?: string |
       {loading && <LoadingSurface label="Loading response plans" />}
 
       <ResponseDecisionEvidence linkedPlanId={linkedPlanId} />
+      <ResponsePlanComparison />
 
       {/* Pending Approvals */}
       {approvalTotal > 0 && (
