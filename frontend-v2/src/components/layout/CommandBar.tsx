@@ -8,6 +8,7 @@ const routeMeta: Array<{ match: (path: string) => boolean; section: string; titl
   { match: path => path === '/my-tasks', section: 'Command', title: 'My tasks' },
   { match: path => path === '/cases', section: 'Command', title: 'Investigations' },
   { match: path => path === '/alerts', section: 'Observe', title: 'Alerts' },
+  { match: path => /^\/events\/[^/]+$/.test(path), section: 'Observe', title: 'Exact event evidence' },
   { match: path => path === '/events', section: 'Observe', title: 'Security events' },
   { match: path => path === '/assets', section: 'Observe', title: 'Asset inventory' },
   { match: path => path === '/ot', section: 'Observe', title: 'OT discovery' },

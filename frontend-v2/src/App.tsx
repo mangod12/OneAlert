@@ -15,6 +15,7 @@ const Incidents = lazy(() => import('./pages/Incidents').then(module => ({ defau
 const Reports = lazy(() => import('./pages/Reports').then(module => ({ default: module.Reports })));
 const CaseDetail = lazy(() => import('./pages/CaseDetail').then(module => ({ default: module.CaseDetail })));
 const Alerts = lazy(() => import('./pages/Alerts').then(module => ({ default: module.Alerts })));
+const EventEvidence = lazy(() => import('./pages/EventEvidence').then(module => ({ default: module.EventEvidence })));
 const Events = lazy(() => import('./pages/Events').then(module => ({ default: module.Events })));
 const Assets = lazy(() => import('./pages/Assets').then(module => ({ default: module.Assets })));
 const OTDiscovery = lazy(() => import('./pages/OTDiscovery').then(module => ({ default: module.OTDiscovery })));
@@ -60,6 +61,7 @@ function App() {
           <Route path="/reports" element={<Reports />} />
           <Route path="/cases/:caseId" element={<CaseDetail />} />
           <Route path="/alerts" element={<Alerts />} />
+          <Route path="/events/:eventId" element={<EventEvidence />} />
           <Route path="/events" element={<Events />} />
           <Route path="/assets" element={<Assets />} />
           <Route path="/ot" element={<OTDiscovery />} />
