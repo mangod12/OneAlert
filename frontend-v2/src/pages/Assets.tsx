@@ -1,3 +1,4 @@
+import { AssetComparison } from '../components/AssetComparison';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import apiClient from '../api/client';
@@ -21,6 +22,8 @@ function assetTypeLabel(value: string): string {
 }
 
 export function Assets() {
+  const [comparison, setComparison] = useState<number[]>([]);
+  const [comparisonRevision, setComparisonRevision] = useState(0);
   const [showCriticalityReview, setShowCriticalityReview] = useState(false);
   const [criticalityBusy, setCriticalityBusy] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -122,6 +125,7 @@ export function Assets() {
     try {
       await apiClient.delete(`/assets/${asset.id}`);
       setPendingDelete(null);
+      setComparisonRevision(value => value + 1);
       await fetchAssets();
       toast('Asset deleted.', 'success');
     } catch (err: unknown) {
@@ -138,6 +142,7 @@ export function Assets() {
       if (editAsset) await apiClient.put(`/assets/${editAsset.id}`, data);
       else await apiClient.post('/assets/', data);
       setShowModal(false);
+      setComparisonRevision(value => value + 1);
       setEditAsset(null);
       await fetchAssets();
       toast(editAsset ? 'Asset updated.' : 'Asset created.', 'success');
@@ -159,6 +164,9 @@ export function Assets() {
           Add Asset
         </button>
       } />
+
+      <AssetComparison ids={comparison} revision={comparisonRevision} />
+      {comparison.length > 0 && <button type="button" className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-300" onClick={() => setComparison([])}>Clear asset comparison selection</button>}
 
       <fieldset disabled={criticalityBusy} className="flex min-w-0 flex-wrap items-center gap-3">
         <div className="relative min-w-[12rem] max-w-sm flex-1">
@@ -240,7 +248,7 @@ export function Assets() {
       </fieldset>
 
       {!loading && !error && assets.length > 0 && <button type="button" disabled={criticalityBusy || saving || !!deletingIds.size || showModal || !!pendingDelete} onClick={() => setShowCriticalityReview(value => !value)} className="rounded border border-surface-600 px-3 py-2 text-sm text-surface-200 disabled:opacity-40">{showCriticalityReview ? 'Hide criticality review' : 'Review page criticality'}</button>}
-      {!loading && !error && showCriticalityReview && assets.length > 0 && <AssetCriticalityReview key={JSON.stringify([page, search, typeFilter, vendorFilter, criticalityFilter, otFilter, sort])} assets={assets} onBusy={setCriticalityBusy} onSaved={saved => setAssets(current => current.map(asset => saved.has(asset.id) ? { ...asset, criticality: saved.get(asset.id)!, risk_score: undefined, risk_level: undefined } : asset))} />}
+      {!loading && !error && showCriticalityReview && assets.length > 0 && <AssetCriticalityReview key={JSON.stringify([page, search, typeFilter, vendorFilter, criticalityFilter, otFilter, sort])} assets={assets} onBusy={setCriticalityBusy} onSaved={saved => { setComparisonRevision(value => value + 1); setAssets(current => current.map(asset => saved.has(asset.id) ? { ...asset, criticality: saved.get(asset.id)!, risk_score: undefined, risk_level: undefined } : asset)); }} />}
       {!loading && !error && showCriticalityReview && <button type="button" disabled={criticalityBusy} onClick={() => { setShowCriticalityReview(false); void fetchAssets(); }} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40">Refresh inventory after review</button>}
 
       {error ? <ErrorState title="Asset inventory unavailable" description={error} action={<RetryButton onClick={() => void fetchAssets()} />} /> : <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -259,6 +267,7 @@ export function Assets() {
               key={asset.id}
               className="oa-panel rounded-md p-4 hover:border-surface-600 transition-colors"
             >
+              <label className="mb-3 flex items-center gap-2 text-xs text-surface-300"><input type="checkbox" aria-label={`Select asset ${asset.id} for comparison`} checked={comparison.includes(asset.id)} disabled={comparison.length === 2 && !comparison.includes(asset.id)} onChange={event => setComparison(ids => event.target.checked ? [...ids, asset.id] : ids.filter(id => id !== asset.id))} />Select for comparison</label>
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
                   <h3 className="text-sm font-semibold text-surface-50"><button type="button" onClick={() => setInspectAssetId(asset.id)} aria-label={`View details for ${asset.name}`} className="max-w-full truncate text-left hover:text-primary-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500">{asset.name}</button></h3>
