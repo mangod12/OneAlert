@@ -134,3 +134,28 @@ class TestHuntSessionDelete:
         rule_id = create.json()["id"]
         res = client.delete(f"/api/v1/hunt/detections/{rule_id}", headers=headers)
         assert res.status_code == 204
+
+
+def test_new_hunt_preserves_explanation_and_query_evidence_on_reopen(client, monkeypatch):
+    from unittest.mock import AsyncMock
+    from backend.services.agents.hunt import HuntAgent
+
+    headers = _register_and_login(client, 'result-owner@example.com')
+    result = {
+        'explanation': 'Recorded explanation for this hypothesis',
+        'query_results': [{'query': {'sql': 'SELECT host', 'description': 'Host evidence'},
+                           'row_count': 1, 'rows': [{'host': 'plc-02'}]}],
+        'sigma_rule': 'title: Recorded detection',
+        'summary': 'Executed one query',
+    }
+    monkeypatch.setattr(HuntAgent, 'execute', AsyncMock(return_value=result))
+    created = client.post('/api/v1/hunt/', headers=headers, json={'hypothesis': 'Review host evidence'})
+    assert created.status_code == 200
+    session_id = created.json()['data']['session_id']
+    reopened = client.get(f'/api/v1/hunt/{session_id}', headers=headers)
+    assert reopened.status_code == 200
+    assert reopened.json()['result_data'] == result
+    assert reopened.json()['queries_run'] == 1
+    assert reopened.json()['findings_count'] == 1
+    stranger = _register_and_login(client, 'other-hunter@example.com')
+    assert client.get(f'/api/v1/hunt/{session_id}', headers=stranger).status_code == 404

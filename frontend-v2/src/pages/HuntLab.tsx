@@ -108,7 +108,8 @@ export function HuntLab() {
     try {
       const res = await apiClient.get(`/hunt/${sessionId}`);
       const detail = res.data;
-      const resultData = detail.result_data ?? {};
+      const resultData: HuntResult = Array.isArray(detail.result_data)
+        ? { query_results: detail.result_data } : detail.result_data ?? {};
       setHypothesis(detail.hypothesis ?? '');
       setActiveResult({
         explanation: resultData.explanation,

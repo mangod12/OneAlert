@@ -61,7 +61,7 @@ async def start_hunt(
     session.completed_at = datetime.now(UTC)
     session.queries_run = len(result.get("query_results", []))
     session.findings_count = sum(r.get("row_count", 0) for r in result.get("query_results", []))
-    session.result_data = result.get("query_results")
+    session.result_data = result
     session.sigma_rule = result.get("sigma_rule")
     await db.commit()
 

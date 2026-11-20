@@ -246,3 +246,16 @@ describe('Detection rule loading truth', () => {
     expect(await screen.findByText(/No detection rules saved yet/)).toBeTruthy();
   });
 });
+
+it('reopens query evidence stored in the historical list format', async () => {
+  mockGet.mockImplementation(url => Promise.resolve({
+    data: url.endsWith('/5') ? { ...sessionDetail, result_data: sessionDetail.result_data.query_results }
+      : url.endsWith('/detections') ? [] : [session],
+  }));
+  render(<HuntLab />);
+  fireEvent.click(await screen.findByRole('button', { name: /reopen hunt: dns tunneling/i }));
+  expect(await screen.findByText('plc-02')).toBeTruthy();
+  expect(screen.getByText('SELECT host, count(*) FROM dns')).toBeTruthy();
+  expect(screen.getByText(/title: DNS tunneling/)).toBeTruthy();
+  expect(screen.queryByText('Found periodic TXT lookups consistent with tunneling.')).toBeNull();
+});
