@@ -9,6 +9,7 @@ from backend.models.alert import Alert
 from backend.models.asset import Asset
 from backend.models.case import Case, CaseAlert
 from backend.models.response_plan import ApprovalRequest, ResponsePlan
+from backend.services.action_executor import ACTION_HANDLERS
 from backend.services.agents.base import BaseAgent
 from backend.services.ai.provider import AIMessage
 from backend.services.ai.router import TASK_TRIAGE, get_ai_provider
@@ -96,7 +97,22 @@ class ResponseAgent(BaseAgent):
             response = self._fallback_plan(case, alert_assets)
             await self.log_step("fallback_plan", f"LLM unavailable: {e}")
 
-        actions = response.get("actions", [])
+        actions = response.get("actions") if isinstance(response, dict) else None
+        if not isinstance(actions, list) or not 1 <= len(actions) <= 100:
+            raise ValueError("Generated response plan requires 1 to 100 saved action records")
+        for position, action in enumerate(actions, start=1):
+            if not isinstance(action, dict):
+                raise ValueError(f"Generated response action {position} must be a record")
+            if not isinstance(action.get("action_type"), str) or action["action_type"] not in ACTION_HANDLERS:
+                raise ValueError(f"Generated response action {position} has an unsupported action type")
+            if not isinstance(action.get("target"), str) or not action["target"].strip():
+                raise ValueError(f"Generated response action {position} requires a nonempty target")
+            if not isinstance(action.get("reason"), str) or not action["reason"].strip():
+                raise ValueError(f"Generated response action {position} requires a nonempty reason")
+            if "priority" in action and (type(action["priority"]) is not int or action["priority"] < 0):
+                raise ValueError(f"Generated response action {position} requires a nonnegative integer priority")
+            if "execution_result" in action:
+                raise ValueError(f"Generated response action {position} cannot include preexisting execution results")
 
         # Step 2: Policy check each action
         checked_actions = []
