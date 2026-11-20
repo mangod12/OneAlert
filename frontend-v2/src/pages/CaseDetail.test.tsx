@@ -1054,3 +1054,30 @@ it.each(['0', '-1', '07', '9007199254740992', '1&task=2'])('rejects invalid or a
   await screen.findByText('The task link has an invalid task ID. No task was selected or changed.');
   expect(mockPatch).not.toHaveBeenCalled(); expect(mockPost).not.toHaveBeenCalled();
 });
+
+it('keeps independent checklist batch locks when navigating between investigations with saves in flight', async () => {
+  const task = (caseId: number) => ({ id: caseId === 7 ? 1 : 2, case_id: caseId, title: caseId === 7 ? 'Seventh task' : 'Eighth task', done: false, position: 0, assignee_id: null, due_date: null, created_at: '2026-11-20T18:00:00Z', completed_at: null });
+  mockGet.mockImplementation(async url => {
+    if (/^\/cases\/[78]$/.test(url)) { const id = Number(url.split('/').at(-1)); return { data: { ...caseData, id, title: `Investigation ${id}` } }; }
+    if (/^\/cases\/[78]\/tasks$/.test(url)) return { data: [task(Number(url.split('/')[2]))] };
+    if (url === '/response-plans/') return { data: { data: [], total: 0 } };
+    return { data: [] };
+  });
+  const finish: Record<number, (value: unknown) => void> = {};
+  mockPatch.mockImplementation(url => new Promise(resolve => { finish[Number(url.split('/')[2])] = resolve; }));
+  render(<MemoryRouter initialEntries={['/cases/7']}><Link to="/cases/8">Open eighth investigation</Link><Routes><Route path="/cases/:caseId" element={<CaseDetail />} /></Routes></MemoryRouter>);
+  fireEvent.click(await screen.findByLabelText('Select checklist task #1: Seventh task'));
+  fireEvent.click(screen.getByRole('button', { name: 'Review selected checklist change' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply to 1 reviewed tasks' }));
+  fireEvent.click(screen.getByRole('link', { name: 'Open eighth investigation' }));
+  fireEvent.click(await screen.findByLabelText('Select checklist task #2: Eighth task'));
+  fireEvent.click(screen.getByRole('button', { name: 'Review selected checklist change' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply to 1 reviewed tasks' }));
+  await act(async () => finish[7]({ data: { ...task(7), done: true } }));
+  expect((screen.getByLabelText('Due date for task Eighth task') as HTMLInputElement).disabled).toBe(true);
+  await act(async () => finish[8]({ data: { ...task(8), done: true } }));
+  await screen.findByText(/Confirmed changes for 1 of 1 reviewed tasks/);
+  expect((screen.getByLabelText('Due date for task Eighth task') as HTMLInputElement).disabled).toBe(false);
+  expect(screen.queryByText('Seventh task')).toBeNull();
+  expect(screen.getByText('Investigation 8')).toBeTruthy();
+});

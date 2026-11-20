@@ -146,7 +146,8 @@ export function CaseDetail() {
   const [watchBusy, setWatchBusy] = useState(false);
   const [savingDueDate, setSavingDueDate] = useState(false);
   const [tasks, setTasks] = useState<CaseTask[]>([]);
-  const [batchTaskBusy, setBatchTaskBusy] = useState(false);
+  const [batchBusyCaseId, setBatchBusyCaseId] = useState<number | null>(null);
+  const batchTaskBusy = batchBusyCaseId === Number(caseId);
   const [tasksUnavailable, setTasksUnavailable] = useState(false);
   const [editingTask, setEditingTask] = useState<CaseTask | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -791,11 +792,11 @@ export function CaseDetail() {
         {invalidTaskLink && <p role="alert" className="mb-3 text-sm text-warning">The task link has an invalid task ID. No task was selected or changed.</p>}
         {!tasksUnavailable && tasks.length === 0 && linkedTaskId !== null && <p role="alert" className="mb-3 text-sm text-warning">Task #{linkedTaskId} is not in this loaded investigation checklist. No task was changed.</p>}
         {tasks.length > 0 && (
-          <ChecklistBatchTools key={caseData.id} caseId={caseData.id} tasks={tasks} members={members} externalBusy={taskBusyId !== null || addingTask || seedingPlanId !== null} onRefresh={() => void fetchAll()} onBusyChange={setBatchTaskBusy} onSaved={saved => setTasks(current => current.map(task => ({ ...task, ...saved.find(row => row.id === task.id) })))}>
+          <ChecklistBatchTools key={caseData.id} caseId={caseData.id} tasks={tasks} members={members} externalBusy={batchTaskBusy || taskBusyId !== null || addingTask || seedingPlanId !== null} onRefresh={() => void fetchAll()} onBusyChange={busy => setBatchBusyCaseId(current => busy ? caseData.id : current === caseData.id ? null : current)} onSaved={saved => setTasks(current => current.map(task => ({ ...task, ...saved.find(row => row.id === task.id) })))}>
           {selection => <ChecklistTriage onSelectMatching={selection.select} selectionBusy={selection.busy || taskBusyId !== null} key={`${caseData.id}:${linkedTaskId ?? ''}`} tasks={tasks} today={todayStr ?? ''} currentUserId={currentUserId} members={members} linkedTaskId={linkedTaskId}>
             {task => (
               <li key={task.id} id={`case-task-${task.id}`} tabIndex={-1} className={`flex min-w-0 flex-wrap items-center gap-2 rounded-md border border-surface-800 bg-surface-900/60 px-3 py-2 focus:outline-none ${linkedTaskId === task.id ? 'ring-2 ring-primary-400' : ''}`}>
-                <label className="flex shrink-0 items-center gap-1 text-[10px] text-surface-400"><input type="checkbox" aria-label={`Select checklist task #${task.id}: ${task.title}`} checked={selection.selected.has(task.id)} disabled={selection.busy || taskBusyId !== null || (!selection.selected.has(task.id) && selection.selected.size >= 100)} onChange={() => selection.toggle(task.id)} />Select</label>
+                <label className="flex shrink-0 items-center gap-1 text-[10px] text-surface-400"><input type="checkbox" aria-label={`Select checklist task #${task.id}: ${task.title}`} checked={selection.selected.has(task.id)} disabled={batchTaskBusy || selection.busy || taskBusyId !== null || (!selection.selected.has(task.id) && selection.selected.size >= 100)} onChange={() => selection.toggle(task.id)} />Select</label>
                 <button
                   type="button"
                   aria-label={task.done ? `Reopen task ${task.title}` : `Complete task ${task.title}`}

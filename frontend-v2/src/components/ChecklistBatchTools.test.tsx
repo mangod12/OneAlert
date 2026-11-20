@@ -71,3 +71,16 @@ it('caps accumulated selection at 100 exact loaded task identities', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Select all records' })); expect(screen.getByText('100 selected loaded tasks')).toBeTruthy();
   expect(screen.getByRole('list', { name: 'Selected checklist task review' }).children.length).toBe(100);
 });
+it('does not start further batches or update task records after leaving the workspace', async () => {
+  const finish: (() => void)[] = []; patch.mockImplementation((url, change) => new Promise(resolve => finish.push(() => resolve({ data: { ...tasks[Number(url.split('/').at(-1)) - 1], case_id: 7, ...(change as object) } }))));
+  const view = show(); fireEvent.click(screen.getByRole('button', { name: 'Select loaded matches' })); review();
+  fireEvent.click(screen.getByRole('button', { name: 'Apply to 4 reviewed tasks' })); expect(patch).toHaveBeenCalledTimes(3);
+  view.unmount(); await act(async () => finish.splice(0).forEach(resolve => resolve()));
+  expect(patch).toHaveBeenCalledTimes(3); expect(saved).not.toHaveBeenCalled(); expect(busy).toHaveBeenLastCalledWith(false);
+});
+it('offers an explicit reload after unconfirmed saves rather than losing failed selection', async () => {
+  patch.mockRejectedValueOnce(new Error('Unavailable')); const reload = vi.fn(); show({ onRefresh: reload }); selectOne(); review();
+  fireEvent.click(screen.getByRole('button', { name: 'Apply to 1 reviewed tasks' })); await screen.findByRole('alert');
+  expect((screen.getByLabelText('Pick 1') as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Reload investigation to verify results (clears selection)' })); expect(reload).toHaveBeenCalledTimes(1);
+});
