@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NotificationBell } from './NotificationBell';
 
@@ -20,6 +20,8 @@ const mockDelete = vi.mocked(apiClient.delete);
 function listResponse(items: unknown[], unread: number) {
   return { data: { success: true, data: items, total: items.length, unread_count: unread } };
 }
+
+function RoutePath() { return <p data-testid="route-path">{useLocation().pathname}</p>; }
 
 const sample = [
   {
@@ -64,20 +66,22 @@ describe('NotificationBell', () => {
     expect(screen.queryByLabelText(/unread/)).toBeNull();
   });
 
-  it('loads recent notifications when opened and marks all read', async () => {
+  it('loads recent notifications and routes broad cleanup to exact review without mutations', async () => {
     mockGet
       .mockResolvedValueOnce(listResponse([], 2) as never)
       .mockResolvedValueOnce(listResponse(sample, 2) as never);
     mockPost.mockResolvedValue({ data: { success: true, marked: 2 } } as never);
 
-    render(<MemoryRouter><NotificationBell /></MemoryRouter>);
+    render(<MemoryRouter><NotificationBell /><RoutePath /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: /notifications/i }));
     expect(await screen.findByText('New critical alert on PLC-01')).toBeTruthy();
     expect(screen.getByText('Case #4 assigned to you')).toBeTruthy();
 
-    fireEvent.click(screen.getByText('Mark all read'));
-    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/notifications/read-all'));
-    expect(screen.queryByText('2')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Review cleanup' }));
+    expect(screen.getByTestId('route-path').textContent).toBe('/notifications');
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockDelete).not.toHaveBeenCalled();
+    expect(screen.queryByText('New critical alert on PLC-01')).toBeNull();
   });
 
   it('marks an unread item read and navigates to its link', async () => {
@@ -112,7 +116,7 @@ describe('NotificationBell', () => {
     expect(screen.getByText('New critical alert on PLC-01')).toBeTruthy();
   });
 
-  it('clears read notifications and keeps unread ones', async () => {
+  it('routes cleanup without deleting read or unread notifications', async () => {
     mockGet
       .mockResolvedValueOnce(listResponse([], 1) as never)
       .mockResolvedValueOnce(listResponse(sample, 1) as never);
@@ -122,10 +126,10 @@ describe('NotificationBell', () => {
     fireEvent.click(await screen.findByRole('button', { name: /notifications/i }));
     expect(await screen.findByText('Case #4 assigned to you')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: /clear read/i }));
-    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/notifications/read'));
-    await waitFor(() => expect(screen.queryByText('Case #4 assigned to you')).toBeNull());
-    expect(screen.getByText('New critical alert on PLC-01')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /clear read/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Review cleanup' }));
+    expect(mockDelete).not.toHaveBeenCalled();
+    expect(mockPost).not.toHaveBeenCalled();
   });
 
   it('shows an empty state when there are no notifications', async () => {
