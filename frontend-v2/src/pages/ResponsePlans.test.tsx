@@ -136,10 +136,10 @@ describe('Status filter', () => {
     get.mockImplementation(url => Promise.resolve({ data: { data: url.endsWith('pending-approvals') ? [] : [plan] } }));
     render(<ResponsePlans />);
     const select = await screen.findByLabelText('Filter plans by status');
-    await waitFor(() => expect(get).toHaveBeenCalledWith('/response-plans/', { params: {} }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/response-plans/', { params: { page: 1, size: 20 } }));
     fireEvent.change(select, { target: { value: 'pending_approval' } });
     await waitFor(() => {
-      expect(get).toHaveBeenCalledWith('/response-plans/', { params: { status: 'pending_approval' } });
+      expect(get).toHaveBeenCalledWith('/response-plans/', { params: { page: 1, size: 20, status: 'pending_approval' } });
     });
   });
 });
@@ -212,5 +212,42 @@ describe('Response plan latest-filter results', () => {
     expect(screen.getByText('completed')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Execute' })).toBeNull();
     expect(screen.queryByText('Obsolete load failed')).toBeNull();
+  });
+});
+
+describe('Response plan pagination', () => {
+  it('reaches plans after the first twenty and keeps the approval queue independent', async () => {
+    get.mockImplementation(async (url, config) => {
+      if (url.endsWith('pending-approvals')) return { data: { data: [] } };
+      const page = (config?.params as { page: number }).page;
+      return { data: { data: [{ ...plan, id: page, case_id: page }], total: 21 } };
+    });
+    render(<ResponsePlans />);
+    await screen.findByText('Case #1');
+    expect((screen.getByRole('button', { name: 'Previous plans' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Next plans' }));
+    expect(await screen.findByText('Case #2')).toBeTruthy();
+    expect(screen.getByText('Showing 21–21 of 21 matching plans · Page 2 of 2')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Next plans' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(get).toHaveBeenCalledWith('/response-plans/', { params: { page: 2, size: 20 } });
+    expect(get).toHaveBeenCalledWith('/response-plans/pending-approvals');
+    fireEvent.change(screen.getByLabelText('Filter plans by status'), { target: { value: 'completed' } });
+    expect(await screen.findByText('Case #1')).toBeTruthy();
+    expect(get).toHaveBeenCalledWith('/response-plans/', { params: { page: 1, size: 20, status: 'completed' } });
+  });
+  it('returns to the last existing page when the current final page disappears', async () => {
+    let count = 21;
+    get.mockImplementation(async (url, config) => {
+      if (url.endsWith('pending-approvals')) return { data: { data: [] } };
+      const page = (config?.params as { page: number }).page;
+      return { data: { data: count === 20 && page === 2 ? [] : [{ ...plan, status: 'draft' }], total: count } };
+    });
+    del.mockImplementation(async () => { count = 20; return { data: {} }; });
+    render(<ResponsePlans />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Next plans' }));
+    await screen.findByText('Showing 21–21 of 21 matching plans · Page 2 of 2');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete plan 12' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete plan' }));
+    expect(await screen.findByText('Showing 1–20 of 20 matching plans · Page 1 of 1')).toBeTruthy();
   });
 });
