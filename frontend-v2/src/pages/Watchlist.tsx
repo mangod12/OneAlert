@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { WatchlistExplorer } from '../components/WatchlistExplorer';
 import { Bell, BriefcaseMedical } from 'lucide-react';
 import apiClient from '../api/client';
 import type { Alert, AlertListResponse } from '../api/types';
@@ -47,6 +48,7 @@ function severityRank(severity: string): number {
 }
 
 export function Watchlist() {
+  const [exploring, setExploring] = useState(false);
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState('all');
   const [severity, setSeverity] = useState('all');
@@ -191,6 +193,8 @@ export function Watchlist() {
     setBulkConfirm(false);
   };
 
+  if (exploring) return <div className="min-w-0 space-y-6"><PageHeader eyebrow="Command" title="Watchlist" description="Full-watchlist search across alerts and investigations you follow." /><button type="button" className="rounded border border-surface-600 px-3 py-2 text-sm text-surface-200" onClick={() => setExploring(false)}>Back to loaded watchlist review</button><WatchlistExplorer /></div>;
+
   return (
     <div className="min-w-0 space-y-6">
       <PageHeader
@@ -198,6 +202,8 @@ export function Watchlist() {
         title="Watchlist"
         description="Alerts and investigations you follow, ranked by severity within the loaded items. Load more to review larger watchlists."
       />
+
+      <div className="space-y-2 rounded border border-primary-500/30 p-4"><p className="text-sm text-surface-300">Need a record beyond the loaded review list? Search all followed alerts and investigations with server-side filtering, ranking and due-date review.</p><button type="button" disabled={bulkBusy || !!pendingKeys.size} onClick={() => setExploring(true)} className="rounded border border-surface-600 px-3 py-2 text-sm text-primary-300 disabled:opacity-40">Search entire watchlist</button></div>
 
       {pagesChanged && <div className="space-y-2 rounded border border-warning/40 p-3 text-xs text-surface-300"><p>Unwatching can move later pages. Reload from the first page before loading more so records are not skipped. Clear any remaining selection first.</p><button type="button" disabled={loading || bulkBusy || !!pendingKeys.size || !!selectedRows.length} onClick={() => { setBulkNotice(''); setFailures({}); void fetchWatchlist(); }} className="rounded border border-surface-600 px-3 py-2 disabled:opacity-40">Reload watched items from first page</button></div>}
       {loading && <LoadingSurface label="Loading your watchlist" />}
