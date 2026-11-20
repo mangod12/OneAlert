@@ -1,0 +1,24 @@
+import { useRef, useState } from 'react';
+import { useDialogFocus } from './ui/useDialogFocus';
+export interface EndpointDeviceRecord { id: number; hostname: string | null; manufacturer: string | null; model: string | null; sensor_id: number | null; asset_id: number | null; is_ot_device: boolean; risk_score: number | null; first_seen: string | null; last_seen: string | null; }
+export interface EndpointIdentity { id: string; label: string; identity_status?: string; device_records?: EndpointDeviceRecord[]; }
+export function TopologyEndpointIdentity({ node, onClose }: { node: EndpointIdentity; onClose: () => void }) {
+  const dialog = useRef<HTMLDivElement>(null); const [error, setError] = useState(''); useDialogFocus(dialog, onClose);
+  const records = node.device_records;
+  const download = () => {
+    setError('');
+    try {
+      const body = { format: 'onealert_endpoint_identity_evidence_v1', scope: 'Device records sharing this IP in the loaded graph. IP matching does not prove physical identity, current ownership, reachability or a common network segment. No records have been merged or changed.', endpoint_ip: node.id, identity_status: node.identity_status ?? 'not_recorded', exported_at: new Date().toISOString(), device_records: records?.map(record => ({ id: record.id, hostname: record.hostname, manufacturer: record.manufacturer, model: record.model, sensor_id: record.sensor_id, asset_id: record.asset_id, is_ot_device: record.is_ot_device, risk_score: record.risk_score, first_seen: record.first_seen, last_seen: record.last_seen })) ?? null };
+      const url = URL.createObjectURL(new Blob([JSON.stringify(body, null, 2) + '\n'], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = 'endpoint-identity-evidence.json'; document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch { setError('Identity evidence could not be downloaded. The loaded records remain visible.'); }
+  };
+  return <div className="fixed inset-0 z-50 flex items-center justify-center p-4"><div className="absolute inset-0 bg-surface-950/75 backdrop-blur-sm" onClick={onClose} /><div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="endpoint-identity-title" className="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg border border-surface-700 bg-surface-900 p-5 shadow-[var(--oa-shadow-float)]">
+    <div className="flex flex-wrap items-start justify-between gap-3"><h2 id="endpoint-identity-title" className="text-lg font-semibold text-surface-100">Endpoint identity evidence</h2><button type="button" onClick={onClose} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">Close endpoint identity</button></div>
+    <p className="my-3 break-all font-mono text-sm text-surface-100">{node.id}</p>
+    <p className="mb-3 text-xs text-surface-400">These are recorded devices sharing an IP, not proof of one physical device or a common network segment. IP reuse and overlapping networks can produce multiple matches. No records are merged or changed here.</p>
+    <p className="mb-3 text-sm text-surface-200">{records === undefined ? 'Device identity details were not recorded in this response.' : records.length > 1 ? `${records.length} matching device records. No single identity or risk score was chosen.` : records.length === 1 ? 'One matching device record. The IP match is not independently verified.' : 'No matching device record in this loaded graph. This is not proof that no device exists.'}</p>
+    <button type="button" onClick={download} className="mb-3 rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Download endpoint identity JSON</button>
+    {error && <p role="alert" className="mb-3 text-xs text-danger">{error}</p>}
+    <div className="space-y-3">{records?.map(record => <section key={record.id} aria-label={`Device record ${record.id}`} className="rounded border border-surface-700 p-3"><h3 className="mb-2 text-sm font-semibold text-surface-200">Device record #{record.id}</h3><dl className="grid gap-3 sm:grid-cols-2">{([['Hostname', record.hostname], ['Manufacturer', record.manufacturer], ['Model', record.model], ['Sensor record ID', record.sensor_id], ['Linked asset record ID', record.asset_id], ['Recorded OT flag', record.is_ot_device ? 'Yes' : 'No'], ['Recorded risk score', record.risk_score], ['Recorded first seen', record.first_seen], ['Recorded last seen', record.last_seen]] as const).map(([label,value]) => <div key={label}><dt className="text-xs text-surface-400">{label}</dt><dd className="mt-1 min-w-0 break-words text-sm text-surface-100 [overflow-wrap:anywhere]">{value === null || value === undefined || value === '' ? 'Not recorded' : String(value)}</dd></div>)}</dl></section>)}</div>
+  </div></div>;
+}
