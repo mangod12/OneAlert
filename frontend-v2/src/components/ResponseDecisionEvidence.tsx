@@ -39,7 +39,7 @@ export function ResponseDecisionEvidence() {
       const link = document.createElement('a'); link.href = url; link.download = `response-plan-${snapshot.plan.id}-decision-evidence-page-${snapshot.approval_page}.json`; document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch { setDownloadError('Decision evidence could not be downloaded. The loaded record remains visible.'); }
   };
-  return <section ref={panel} className="oa-panel space-y-4 p-4 sm:p-6" aria-label="Read-only response decision evidence">
+  return <section ref={panel} className="oa-panel scroll-mt-20 space-y-4 p-4 sm:p-6" aria-label="Read-only response decision evidence">
     <h2 className="text-lg font-semibold text-surface-100">Review recorded decision evidence</h2>
     <p className="text-xs text-surface-400">Open an owned plan by exact ID, including plans outside the current list or status filter. This is read-only. It does not approve, reject, execute or delete a plan. Approval-request rows are mutable records, not an immutable decision log.</p>
     <form className="flex flex-wrap items-end gap-2" onSubmit={event => { event.preventDefault(); review(); }}><label className="text-xs text-surface-300">Plan record ID<input aria-label="Decision evidence plan ID" inputMode="numeric" value={draft} onChange={event => { requestId.current += 1; setDraft(event.target.value); setPlanId(null); setSnapshot(null); setLoading(false); setError(''); }} className={`${control} mt-1 block w-full`} /></label><button type="submit" className={control}>Load decision evidence</button></form>
