@@ -670,16 +670,22 @@ async def export_audit_logs(
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(["id", "timestamp", "user_email", "action", "target_type", "target_id", "detail"])
+    def spreadsheet_text(value):
+        # Quoting alone does not prevent spreadsheet formula interpretation.
+        if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@")):
+            return "'" + value
+        return value
+
     for log, email in rows:
-        writer.writerow([
+        writer.writerow([spreadsheet_text(value) for value in [
             log.id,
             log.timestamp.isoformat() if log.timestamp else "",
             email,
             log.action,
             log.target_type or "",
-            log.target_id or "",
+            log.target_id if log.target_id is not None else "",
             log.detail or "",
-        ])
+        ]])
     buffer.seek(0)
     return StreamingResponse(
         iter([buffer.getvalue()]),
