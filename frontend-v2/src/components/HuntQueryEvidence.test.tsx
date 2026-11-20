@@ -59,3 +59,30 @@ it('distinguishes known unbounded execution from missing legacy bound evidence',
   expect(screen.queryByText('No event-time bounds were applied to this query.')).toBeNull();
   expect(screen.getByText('Applied event-time bounds were not recorded for this result.')).toBeTruthy();
 });
+
+it('shows applied fields, stable order and effective cap separately from the request', () => {
+  render(<HuntQueryEvidence index={0} result={{ execution: {
+    contract: 'scoped_select_v1', selected_columns: ['id', 'timestamp', 'severity'],
+    order_by: 'timestamp', direction: 'DESC', tie_breaker: { column: 'id', direction: 'DESC' },
+    requested_limit: 500, row_limit: 100,
+  }, rows: [] }} />);
+  expect(screen.getByLabelText('Applied query execution').textContent).toContain('Selected fields: id, timestamp, severity');
+  expect(screen.getByLabelText('Applied query execution').textContent).toContain('Order: timestamp DESC, then id DESC');
+  expect(screen.getByLabelText('Applied query execution').textContent).toContain('Row limit: 100 (requested 500)');
+  expect(screen.getByLabelText('Applied query execution').textContent).toContain('scoped_select_v1');
+});
+
+it('does not invent applied selection or row limits for legacy results', () => {
+  render(<HuntQueryEvidence index={0} result={{ query: { sql: 'SELECT * FROM security_events LIMIT 500' }, rows: [{ id: 1 }] }} />);
+  expect(screen.queryByLabelText('Applied query execution')).toBeNull();
+  expect(screen.getByText('Applied selection, order and row limit were not recorded for this result.')).toBeTruthy();
+});
+
+it('distinguishes a default row limit from an explicit request', () => {
+  render(<HuntQueryEvidence index={0} result={{ execution: {
+    contract: 'scoped_select_v1', selected_columns: ['id'], order_by: 'id', direction: 'ASC',
+    requested_limit: null, row_limit: 100,
+  }, rows: [] }} />);
+  expect(screen.getByLabelText('Applied query execution').textContent).toContain('Row limit: 100 (default)');
+  expect(screen.getByLabelText('Applied query execution').textContent).not.toContain('then id');
+});

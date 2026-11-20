@@ -6,12 +6,11 @@ import re
 import time
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import or_, select
-
 from backend.models.security_event import SecurityEvent
 from backend.services.agents.base import BaseAgent
 from backend.services.ai.provider import AIMessage
 from backend.services.ai.router import TASK_HUNT, get_ai_provider
+from backend.services.hunt_select import compile_hunt_select
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +67,6 @@ EQUALITY_FILTER_COLUMNS = {
     "protocol",
     "action",
     "source_type",
-    "processed",
 }
 
 HUNT_SYSTEM_PROMPT = """You are a threat hunting specialist for an OT/ICS cybersecurity platform.
@@ -88,6 +86,17 @@ Rules:
 - Include since/before in each query params object as timezone-aware ISO8601 timestamps
 - Use the supplied current UTC time for relative windows; do not invent a date
 - Do not use timestamp functions, literal dates, BETWEEN, or OR for time windows
+- Only SELECT unique supported simple columns, or * for the standard evidence columns; no aliases or expressions
+- FROM security_events WHERE user_id = :user_id must start every query's scope
+- Additional AND equality predicates: event_type/severity/source_ip/dest_ip/protocol/action/source_type = 'literal'
+- Text predicates: signature/category/hostname/username/domain/url/user_agent LIKE 'literal'
+- Severity predicate: severity IN ('literal', ...), at most 10 values
+- Keyword group: (signature LIKE :keyword OR category LIKE :keyword), with nonempty text in params
+- ORDER BY one supported column with optional ASC/DESC; defaults to timestamp DESC with id as a stable tie-breaker
+- Optional positive integer LIMIT, capped at 100. Do not use LIMIT 0
+- No joins, aggregates, functions, aliases, subqueries, arbitrary OR/NOT, comments or semicolons
+- No GROUP BY, HAVING or UNION
+- Unsupported syntax is rejected, never silently ignored
 - Return max 3 queries from simple to complex
 - Include a Sigma detection rule if findings confirm the hypothesis
 
@@ -139,26 +148,40 @@ class HuntAgent(BaseAgent):
             await self.log_step("fallback_queries", f"LLM unavailable: {e}")
 
         # Step 2: Execute queries (read-only)
+        if not isinstance(response, dict):
+            return {"error": "Generated hunt response must be an object", "query_results": []}
         queries = response.get("queries", [])
+        if not isinstance(queries, list):
+            return {"error": "Generated hunt queries must be a list", "query_results": []}
         results = []
 
         for q in queries[:3]:  # Max 3 queries
+            if not isinstance(q, dict):
+                results.append({"query": {}, "error": "Generated query must be an object", "rows": []})
+                continue
+            if not isinstance(q.get("sql"), str) or not isinstance(q.get("description", ""), str):
+                results.append({"query": {}, "error": "Query SQL and description must be text", "rows": []})
+                continue
             sql = q.get("sql", "")
             if not self._is_safe_query(sql):
-                results.append({"query": q, "error": "Query rejected — not a SELECT", "rows": []})
+                results.append(
+                    {"query": q, "error": "Query rejected: use a single scoped, read-only SELECT", "rows": []}
+                )
                 continue
 
             start = time.time()
             try:
-                query_results = await self._execute_query(sql, q.get("params"))
+                params = q.get("params", {})
+                compiled = self._compile_query(sql, params)
+                query_results = await self._execute_compiled_query(compiled.query)
                 results.append(
                     {
                         "query": q,
                         "rows": query_results[:100],  # Cap at 100 rows
                         "row_count": len(query_results),
+                        "execution": compiled.evidence,
                         "time_window": {
-                            key: value.isoformat()
-                            for key, value in self._timestamp_bounds(sql, q.get("params") or {}).items()
+                            key: value.isoformat() for key, value in self._timestamp_bounds(sql, params).items()
                         },
                     }
                 )
@@ -183,34 +206,33 @@ class HuntAgent(BaseAgent):
 
     async def _execute_query(self, sql: str, params: dict | None = None) -> list:
         """Execute a read-only SQL query with user_id scoping."""
-        query = self._build_safe_query(sql, params or {})
+        query = self._build_safe_query(sql, {} if params is None else params)
+        return await self._execute_compiled_query(query)
+
+    async def _execute_compiled_query(self, query) -> list:
         result = await self.db.execute(query)
         columns = result.keys()
         return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
 
     def _build_safe_query(self, sql: str, params: dict) -> object:
         """Build a constrained SQLAlchemy query from validated hunt SQL."""
-        selected = self._selected_columns(sql)
-        query = select(*[ALLOWED_HUNT_COLUMNS[name].label(name) for name in selected])
-        query = query.where(SecurityEvent.user_id == self.user_id)
+        return self._compile_query(sql, params).query
 
-        keyword = params.get("keyword")
-        if keyword:
-            query = query.where(
-                or_(
-                    SecurityEvent.signature.like(keyword),
-                    SecurityEvent.category.like(keyword),
-                )
-            )
-
-        query = self._apply_literal_filters(query, sql)
+    def _compile_query(self, sql: str, params: dict):
+        if not isinstance(sql, str) or len(sql) > 12000 or not isinstance(params, dict):
+            raise ValueError("Hunt SQL must be text and params must be an object")
         bounds = self._timestamp_bounds(sql, params)
-        if "since" in bounds:
-            query = query.where(SecurityEvent.timestamp >= bounds["since"])
-        if "before" in bounds:
-            query = query.where(SecurityEvent.timestamp < bounds["before"])
-        query = self._apply_ordering(query, sql)
-        return query.limit(self._limit(sql))
+        return compile_hunt_select(
+            sql,
+            params,
+            self.user_id,
+            SecurityEvent.user_id,
+            ALLOWED_HUNT_COLUMNS,
+            DEFAULT_HUNT_COLUMNS,
+            EQUALITY_FILTER_COLUMNS,
+            TEXT_FILTER_COLUMNS,
+            bounds,
+        )
 
     def _timestamp_bounds(self, sql: str, params: dict) -> dict[str, datetime]:
         """Apply only explicit UTC-normalized, inclusive/exclusive time bounds.
@@ -254,68 +276,10 @@ class HuntAgent(BaseAgent):
             raise ValueError("Time window start must be earlier than its end")
         return bounds
 
-    def _selected_columns(self, sql: str) -> list[str]:
-        """Extract simple selected column names, falling back to a safe default."""
-        upper_sql = sql.upper()
-        select_idx = upper_sql.find("SELECT ")
-        from_idx = upper_sql.find(" FROM SECURITY_EVENTS")
-        if select_idx != 0 or from_idx <= len("SELECT "):
-            return list(DEFAULT_HUNT_COLUMNS)
-
-        raw_columns = [part.strip() for part in sql[len("SELECT ") : from_idx].split(",")]
-        if raw_columns == ["*"]:
-            return list(DEFAULT_HUNT_COLUMNS)
-
-        selected = []
-        for raw in raw_columns:
-            upper_raw = raw.upper()
-            alias_idx = upper_raw.rfind(" AS ")
-            name = (raw[:alias_idx] if alias_idx >= 0 else raw).strip().lower()
-            if name in ALLOWED_HUNT_COLUMNS:
-                selected.append(name)
-        return selected or list(DEFAULT_HUNT_COLUMNS)
-
-    def _apply_literal_filters(self, query, sql: str):
-        """Apply supported literal filters from generated SQL."""
-        for name in EQUALITY_FILTER_COLUMNS:
-            pattern = rf"\b{name}\s*=\s*'([^']{{1,128}})'"
-            match = re.search(pattern, sql, re.IGNORECASE)
-            if match:
-                query = query.where(ALLOWED_HUNT_COLUMNS[name] == match.group(1))
-
-        severity_in = re.search(r"\bseverity\s+IN\s*\(([^)]{1,256})\)", sql, re.IGNORECASE)
-        if severity_in:
-            values = re.findall(r"'([^']{1,32})'", severity_in.group(1))
-            if values:
-                query = query.where(SecurityEvent.severity.in_(values[:10]))
-
-        for name in TEXT_FILTER_COLUMNS:
-            pattern = rf"\b{name}\s+LIKE\s+'([^']{{1,128}})'"
-            match = re.search(pattern, sql, re.IGNORECASE)
-            if match:
-                query = query.where(ALLOWED_HUNT_COLUMNS[name].like(match.group(1)))
-        return query
-
-    def _apply_ordering(self, query, sql: str):
-        """Apply supported ordering, defaulting to newest events first."""
-        match = re.search(r"\bORDER\s+BY\s+(\w+)(?:\s+(ASC|DESC))?", sql, re.IGNORECASE)
-        if not match:
-            return query.order_by(SecurityEvent.timestamp.desc())
-
-        column_name = match.group(1).lower()
-        column = ALLOWED_HUNT_COLUMNS.get(column_name, SecurityEvent.timestamp)
-        direction = (match.group(2) or "ASC").upper()
-        return query.order_by(column.desc() if direction == "DESC" else column.asc())
-
-    def _limit(self, sql: str) -> int:
-        """Read a generated LIMIT, capped to the API row limit."""
-        match = re.search(r"\bLIMIT\s+(\d{1,3})\b", sql, re.IGNORECASE)
-        if not match:
-            return 100
-        return max(1, min(int(match.group(1)), 100))
-
     def _is_safe_query(self, sql: str) -> bool:
         """Validate a generated hunt query is a single scoped read-only SELECT."""
+        if not isinstance(sql, str):
+            return False
         normalized = " ".join(sql.strip().split())
         upper = normalized.upper()
         if not upper.startswith("SELECT "):
