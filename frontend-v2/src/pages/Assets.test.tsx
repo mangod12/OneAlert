@@ -357,3 +357,56 @@ it('opens read-only current asset context from the inventory name', async () => 
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(document.activeElement).toBe(screen.getByRole('button', { name: 'View details for Plant gateway' }));
 });
+
+it('reviews only selected loaded assets and saves just criticality after confirmation', async () => {
+  get.mockImplementation(async (url: string) => url === '/assets/' ? { data: { assets: [{ ...asset, risk_score: 20, risk_level: 'high' }], total: 1 } } : { data: [] });
+  put.mockResolvedValue({ data: { ...asset, criticality: 'critical' } });
+  render(<MemoryRouter><Assets /></MemoryRouter>);
+  await screen.findByText('Plant gateway');
+  fireEvent.click(screen.getByRole('button', { name: 'Review page criticality' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Select this asset page' }));
+  fireEvent.change(screen.getByLabelText('New asset criticality'), { target: { value: 'critical' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review criticality change' }));
+  expect(put).not.toHaveBeenCalled();
+  expect(screen.getByRole('dialog').textContent).toContain('Only the criticality field is edited');
+  fireEvent.click(screen.getByRole('button', { name: 'Apply to 1 assets' }));
+  await screen.findByText(/Confirmed criticality changes for 1 of 1/);
+  expect(put).toHaveBeenCalledWith('/assets/7', { criticality: 'critical' });
+  expect(screen.getByText('critical')).toBeTruthy();
+  expect(screen.queryByText('Risk: high (20)')).toBeNull();
+});
+
+it('preserves failed or unconfirmed changes for review and retry', async () => {
+  get.mockImplementation(async (url: string) => url === '/assets/'
+    ? { data: { assets: [asset, { ...asset, id: 8, name: 'Second asset' }], total: 2 } }
+    : { data: [] });
+  put.mockImplementation(async (url: string) => ({ data: url === '/assets/7' ? { ...asset, criticality: 'low' } : { id: 8, criticality: 'high' } }));
+  render(<MemoryRouter><Assets /></MemoryRouter>);
+  await screen.findByText('Plant gateway');
+  fireEvent.click(screen.getByRole('button', { name: 'Review page criticality' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Select this asset page' }));
+  fireEvent.change(screen.getByLabelText('New asset criticality'), { target: { value: 'low' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review criticality change' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply to 2 assets' }));
+  await screen.findByText(/Confirmed criticality changes for 1 of 2/);
+  expect(screen.getByText(/1 of 2 loaded-page assets selected/)).toBeTruthy();
+  expect((screen.getByRole('checkbox', { name: 'Select criticality for Second asset' }) as HTMLInputElement).checked).toBe(true);
+  expect((screen.getByRole('checkbox', { name: 'Select criticality for Plant gateway' }) as HTMLInputElement).checked).toBe(false);
+  expect(screen.getByText(/The server did not confirm/)).toBeTruthy();
+});
+
+it('locks navigation and edits while criticality is being saved', async () => {
+  let finish!: (value: unknown) => void;
+  put.mockReturnValue(new Promise(resolve => { finish = resolve; }) as ReturnType<typeof apiClient.put>);
+  render(<MemoryRouter><Assets /></MemoryRouter>);
+  await screen.findByText('Plant gateway');
+  fireEvent.click(screen.getByRole('button', { name: 'Review page criticality' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Select this asset page' }));
+  fireEvent.change(screen.getByLabelText('New asset criticality'), { target: { value: 'low' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review criticality change' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply to 1 assets' }));
+  expect((screen.getByRole('button', { name: 'Edit Plant gateway' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: 'Hide criticality review' }) as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => finish({ data: { ...asset, criticality: 'low' } }));
+  await screen.findByText(/Confirmed criticality changes for 1 of 1/);
+});
