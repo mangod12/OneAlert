@@ -572,3 +572,33 @@ class TestCaseTaskDueDates:
         mine = client.get("/api/v1/cases/my-tasks", headers=headers).json()
         row = next(t for t in mine if t["task_id"] == task["id"])
         assert row["due_date"] == "2030-04-01"
+
+
+def test_my_tasks_prioritizes_before_applying_return_limit(client):
+    """A critical task inserted after 200 low-priority tasks must not disappear."""
+    from datetime import date
+
+    from backend.models.case import CaseTask
+
+    headers = _register_and_login(client, "cap-owner@example.com")
+    uid = _user_id(client, headers)
+    with _TestingSessionLocal() as db:
+        low = Case(user_id=uid, title="Low priority", status="open", severity="low")
+        critical = Case(user_id=uid, title="Critical later case", status="open", severity="critical")
+        db.add_all([low, critical])
+        db.flush()
+        db.add_all([CaseTask(case_id=low.id, title=f"Low task {i}", assignee_id=uid,
+                             position=i, done=False) for i in range(205)])
+        db.flush()
+        db.add(CaseTask(case_id=critical.id, title="Critical inserted last", assignee_id=uid,
+                        position=0, done=False, due_date=date(2030, 1, 1)))
+        db.commit()
+    first = client.get("/api/v1/cases/my-tasks", headers=headers)
+    assert first.status_code == 200, first.text
+    rows = first.json()
+    assert len(rows) == 200
+    assert rows[0]["title"] == "Critical inserted last"
+    assert rows[1]["title"] == "Low task 0"
+    assert rows[-1]["title"] == "Low task 198"
+    repeated = client.get("/api/v1/cases/my-tasks", headers=headers).json()
+    assert [row["task_id"] for row in repeated] == [row["task_id"] for row in rows]

@@ -345,6 +345,11 @@ async def list_my_tasks(
     """
     watched = select(CaseWatcher.case_id).where(CaseWatcher.user_id == current_user.id)
     tasked = select(CaseTask.case_id).where(CaseTask.assignee_id == current_user.id)
+    severity_order = sql_case(
+        (Case.severity == "critical", 0), (Case.severity == "high", 1),
+        (or_(Case.severity == "medium", Case.severity.is_(None), Case.severity == ""), 2),
+        (Case.severity == "low", 3), (Case.severity == "info", 4), else_=5,
+    )
     rows = (await db.execute(
         select(CaseTask, Case)
         .join(Case, Case.id == CaseTask.case_id)
@@ -359,22 +364,12 @@ async def list_my_tasks(
                 Case.id.in_(tasked),
             ),
         )
+        .order_by(
+            severity_order, Case.due_date.is_(None), Case.due_date,
+            CaseTask.due_date.is_(None), CaseTask.due_date, CaseTask.position, CaseTask.id,
+        )
         .limit(200)
     )).all()
-
-    severity_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
-
-    def _sort_key(row) -> tuple:
-        task, case = row
-        return (
-            severity_rank.get(case.severity or "medium", 5),
-            case.due_date is None,
-            case.due_date or date.max,
-            task.due_date is None,
-            task.due_date or date.max,
-            task.position,
-            task.id,
-        )
 
     return [
         MyTaskResponse(
@@ -388,7 +383,7 @@ async def list_my_tasks(
             due_date=task.due_date,
             created_at=task.created_at,
         )
-        for task, case in sorted(rows, key=_sort_key)
+        for task, case in rows
     ]
 
 
