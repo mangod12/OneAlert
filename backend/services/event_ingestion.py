@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.security_event import EventSource, SecurityEvent
+from backend.services.parsers.event_time import EventTimestampError
 from backend.services.parsers.suricata import parse_suricata_eve
 from backend.services.parsers.zeek import parse_zeek_log
 from backend.services.pii_redactor import redact_dict
@@ -41,12 +42,18 @@ async def ingest_events(
     ingested = 0
     skipped = 0
     redacted_count = 0
+    skip_reasons = {}
 
     for raw in raw_events:
         try:
+            if not isinstance(raw, dict):
+                skipped += 1
+                skip_reasons["invalid_record"] = skip_reasons.get("invalid_record", 0) + 1
+                continue
             parsed = parser(raw)
             if not parsed:
                 skipped += 1
+                skip_reasons["unsupported_record"] = skip_reasons.get("unsupported_record", 0) + 1
                 continue
 
             # Redact PII/secrets from raw_data before storage
@@ -61,19 +68,30 @@ async def ingest_events(
             )
             db.add(event)
             ingested += 1
-        except Exception as e:
-            logger.debug(f"Skip event parse error: {e}")
+        except EventTimestampError:
             skipped += 1
+            skip_reasons["invalid_timestamp"] = skip_reasons.get("invalid_timestamp", 0) + 1
+        except Exception as e:
+            logger.debug(f"Skip event parse error: {type(e).__name__}")
+            skipped += 1
+            skip_reasons["parse_error"] = skip_reasons.get("parse_error", 0) + 1
 
     # Update source stats
     source.event_count = (source.event_count or 0) + ingested
-    source.last_event_at = datetime.now(UTC)
-    source.status = "active"
+    if ingested:
+        source.last_event_at = datetime.now(UTC)
+        source.status = "active"
 
     await db.commit()
 
     logger.info(f"Ingested {ingested} events ({skipped} skipped, {redacted_count} redactions) from {source_type}")
-    return {"ingested": ingested, "skipped": skipped, "redacted": redacted_count, "source_id": source.id}
+    return {
+        "ingested": ingested,
+        "skipped": skipped,
+        "redacted": redacted_count,
+        "source_id": source.id,
+        "skip_reasons": skip_reasons,
+    }
 
 
 async def _get_or_create_source(
