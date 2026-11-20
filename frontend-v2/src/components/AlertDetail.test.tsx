@@ -34,7 +34,6 @@ describe('AlertDetail', () => {
   it('shows the EPSS score and percentile when available', async () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: 0.42, epss_percentile: 0.97 } };
       if (url === '/alerts/1/remediations') return { data: [] };
       throw new Error(`unexpected ${url}`);
@@ -47,7 +46,6 @@ describe('AlertDetail', () => {
   it('shows the fallback message when no EPSS data exists', async () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null, message: 'EPSS data not available' } };
       if (url === '/alerts/1/remediations') return { data: [] };
       throw new Error(`unexpected ${url}`);
@@ -59,7 +57,6 @@ describe('AlertDetail', () => {
   it('lists remediation actions ordered by priority with downtime details', async () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [
         { id: 2, alert_id: 1, action_type: 'network_segmentation', description: 'Isolate the router VLAN.',
@@ -132,7 +129,6 @@ describe('Escalate to investigation', () => {
   it('assigns the alert to an org member and reports the change', async () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/orgs/me/members') return { data: [
@@ -157,7 +153,6 @@ describe('Escalate to investigation', () => {
   it('shows an inline error when assignment fails', async () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/orgs/me/members') return { data: [
@@ -178,7 +173,6 @@ describe('Resolve action', () => {
   it('shows Resolve Alert for non-resolved alerts and calls onResolve', async () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null, message: 'EPSS data not available' } };
       if (url === '/alerts/1/remediations') return { data: [] };
       throw new Error(`unexpected ${url}`);
@@ -193,7 +187,6 @@ describe('Resolve action', () => {
   it('hides Resolve Alert when the alert is already resolved', async () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null, message: 'EPSS data not available' } };
       if (url === '/alerts/1/remediations') return { data: [] };
       throw new Error(`unexpected ${url}`);
@@ -208,7 +201,6 @@ describe('KEV panel', () => {
   it('shows KEV details when the CVE is catalogued', async () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null, message: 'EPSS data not available' } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/alerts/kev-batch') return { data: { entries: { 'CVE-2026-0001': { date_added: '2026-05-01', due_date: '2026-05-22', known_ransomware_campaign_use: 'Known', required_action: 'Apply updates per vendor.' } } } };
@@ -225,7 +217,6 @@ describe('KEV panel', () => {
   it('shows no KEV panel when the CVE is not catalogued', async () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null, message: 'EPSS data not available' } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/alerts/kev-batch') return { data: { entries: {} } };
@@ -241,7 +232,6 @@ describe('Reopen action', () => {
   function mockResolvedGets() {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null, message: 'EPSS data not available' } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/alerts/kev-batch') return { data: { entries: {} } };
@@ -271,7 +261,6 @@ describe('AlertDetail snooze', () => {
   it('offers 24h, 7d and 30d snooze options for a non-resolved alert', async () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/orgs/me/members') return { data: [] };
@@ -290,7 +279,6 @@ describe('AlertDetail snooze', () => {
   it('shows the snooze state and clear action when snoozed', async () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/orgs/me/members') return { data: [] };
@@ -308,7 +296,6 @@ describe('AlertDetail snooze', () => {
   it('hides snooze options for a resolved alert', async () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/orgs/me/members') return { data: [] };
@@ -352,7 +339,6 @@ describe('AlertDetail investigations', () => {
   it('hides the investigations section when the fetch fails', async () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/cases') throw new Error('upstream down');
       return baseMocks([])(url);
     });
@@ -366,7 +352,6 @@ describe('AlertDetail notes', () => {
   function mockNotesGets(notes: unknown[] = []) {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/orgs/me/members') return { data: [] };
@@ -443,7 +428,6 @@ describe('AlertDetail activity', () => {
   it('lists audit activity for the alert', async () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/orgs/me/members') return { data: [] };
@@ -461,7 +445,6 @@ describe('AlertDetail activity', () => {
   it('hides the activity section when there is no activity', async () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       if (url === '/orgs/me/members') return { data: [] };
@@ -486,7 +469,6 @@ describe('Assignee gating', () => {
   const mockDrawerGets = () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/orgs/me/members') return { data: [{ id: 42, email: 'member@example.com', full_name: 'Member', is_active: true }] };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null } };
       return { data: [] };
@@ -575,7 +557,6 @@ describe('AlertDetail triage due date', () => {
   function mockDetailEndpoints() {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
-      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/epss') return { data: { epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       return { data: [] };

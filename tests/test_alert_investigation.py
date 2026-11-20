@@ -148,3 +148,34 @@ def test_preview_caps_owned_case_details_and_anonymous_requests_cannot_read_or_c
     client.cookies.clear()
     assert client.get(f'/api/v1/alerts/{identity}/investigation-preview').status_code in (401, 403)
     assert client.post(f'/api/v1/alerts/{identity}/investigations', json=payload).status_code in (401, 403)
+
+
+def test_creation_preserves_all_saved_alert_fields_and_does_not_expose_foreign_asset_metadata(client):
+    headers, identity, preview, payload = prepare(client)
+    with _TestingSessionLocal() as db:
+        original = db.get(Alert, identity)
+        before = {column.name: getattr(original, column.name) for column in Alert.__table__.columns}
+    result = client.post(f'/api/v1/alerts/{identity}/investigations', headers=headers, json=payload)
+    assert result.status_code == 201
+    with _TestingSessionLocal() as db:
+        after = db.get(Alert, identity)
+        assert {column.name: getattr(after, column.name) for column in Alert.__table__.columns} == before
+    assert set(preview['alert']) == {
+        'id', 'created_at', 'title', 'description', 'severity', 'status', 'cve_id', 'asset_id'}
+
+
+def test_assignee_and_watcher_cannot_create_an_owned_case_from_someone_elses_alert(client):
+    from backend.models.alert import AlertWatcher
+    _headers, identity, _, payload = prepare(client)
+    collaborator = _register_and_login(client, 'assigned-alert-investigator@example.com')
+    collaborator_id = client.get('/api/v1/auth/me', headers=collaborator).json()['id']
+    with _TestingSessionLocal() as db:
+        alert = db.get(Alert, identity)
+        alert.assigned_to_id = collaborator_id
+        db.add(AlertWatcher(alert_id=identity, user_id=collaborator_id))
+        db.commit()
+    assert client.get(f'/api/v1/alerts/{identity}/investigation-preview', headers=collaborator).status_code == 404
+    response = client.post(f'/api/v1/alerts/{identity}/investigations', headers=collaborator, json=payload)
+    assert response.status_code == 404
+    with _TestingSessionLocal() as db:
+        assert db.query(Case).count() == db.query(CaseAlert).count() == 0
