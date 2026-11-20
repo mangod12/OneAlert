@@ -2,9 +2,9 @@
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -82,6 +82,39 @@ async def list_hunts(
         .limit(50)
     )
     return result.scalars().all()
+
+
+@router.get("/history")
+async def hunt_history(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    search: str | None = Query(None, max_length=200),
+    state: str | None = Query(None, pattern="^(running|completed|failed)$"),
+    with_findings: bool = Query(False),
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Search all owned hunt metadata without loading stored query-result rows."""
+    predicates = [HuntSession.user_id == current_user.id]
+    if search and search.strip():
+        term = search.strip()
+        predicates.append(or_(
+            HuntSession.hypothesis.icontains(term, autoescape=True),
+            cast(HuntSession.id, String).icontains(term, autoescape=True),
+        ))
+    if state:
+        predicates.append(HuntSession.status == state)
+    if with_findings:
+        predicates.append(HuntSession.findings_count > 0)
+    total = (await db.execute(select(func.count()).select_from(HuntSession).where(*predicates))).scalar_one()
+    rows = (await db.execute(select(
+        HuntSession.id, HuntSession.hypothesis, HuntSession.status,
+        HuntSession.queries_run, HuntSession.findings_count,
+        HuntSession.created_at, HuntSession.completed_at,
+    ).where(*predicates).order_by(
+        HuntSession.created_at.desc(), HuntSession.id.desc(),
+    ).offset((page - 1) * size).limit(size))).mappings().all()
+    return {"sessions": [dict(row) for row in rows], "total": total, "page": page, "size": size}
 
 
 @router.get("/detections", response_model=list[DetectionRuleResponse])
