@@ -8,6 +8,7 @@ import { getApiErrorMessage } from '../api/errors';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { ValidationComparison } from '../components/ValidationComparison';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
 interface RecordedControl {
@@ -87,6 +88,7 @@ export function Validation() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
   const [detailRunId, setDetailRunId] = useState<number | null>(null);
+  const [showComparison, setShowComparison] = useState(false);
   const [selectedRun, setSelectedRun] = useState<ValidationRunDetail | null>(null);
   const [newRun, setNewRun] = useState({ name: '', description: '', techniques: [] as string[] });
   const [evidenceSearch, setEvidenceSearch] = useState('');
@@ -202,6 +204,7 @@ export function Validation() {
   };
 
   const viewRun = async (runId: number) => {
+    setShowComparison(false);
     const request = ++detailRequestId.current;
     requestedRunId.current = runId;
     setDetailRunId(runId); setSelectedRun(null); setDetailError(''); setDetailLoading(true);
@@ -342,7 +345,7 @@ export function Validation() {
                   <button type="button" onClick={() => void viewRun(r.id)} aria-label={`View results for ${r.name}`}
                     className="rounded text-left text-sm font-semibold text-surface-50 hover:text-primary-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">{r.name}</button>
                   <p className="text-xs text-surface-500">
-                    {r.mitre_techniques?.length || 0} techniques · {r.mode} · {new Date(r.created_at).toLocaleDateString()}
+                    Run #{r.id} · {r.mitre_techniques?.length || 0} techniques · {r.mode} · {new Date(r.created_at).toLocaleDateString()}
                   </p>
                 </div>
                 {r.results_summary && (
@@ -393,6 +396,7 @@ export function Validation() {
               <Target className="w-5 h-5 text-primary-400" />
               {selectedRun.name} - Results
             </h2>
+            <button type="button" onClick={() => setShowComparison(value => !value)} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">Compare recorded outcomes</button>
             <button type="button" onClick={() => void exportRun(selectedRun.id)} disabled={exportingRun}
               className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-surface-600 px-2.5 text-xs text-surface-200 hover:bg-surface-800 disabled:opacity-50">
               <Download className="h-3.5 w-3.5" aria-hidden="true" />
@@ -400,6 +404,7 @@ export function Validation() {
             </button>
           </div>
 
+          {showComparison && <ValidationComparison key={selectedRun.id} current={selectedRun} onClose={() => setShowComparison(false)} />}
           {selectedRun.description && <p className="mb-4 text-sm text-surface-400">{selectedRun.description}</p>}
           {selectedRun.mode === 'dry_run' && (
             <div className="mb-5 rounded-md border border-info/30 bg-info/10 p-3 text-sm text-info" role="note">
