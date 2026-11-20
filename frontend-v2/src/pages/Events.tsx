@@ -21,6 +21,7 @@ interface EventViewFilters {
   severity?: string;
   event_type?: string;
   source_type?: string;
+  source_id?: number;
   ip?: string;
   signature?: string;
   sort?: string;
@@ -90,6 +91,7 @@ export function Events() {
   const [ipSearch, setIpSearch] = useState('');
   const [signatureSearch, setSignatureSearch] = useState('');
   const [sourceTypeFilter, setSourceTypeFilter] = useState('');
+  const [sourceIdFilter, setSourceIdFilter] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [sources, setSources] = useState<EventSource[]>([]);
   const [showUpload, setShowUpload] = useState(false);
@@ -119,6 +121,7 @@ export function Events() {
       if (severityFilter) params.severity = severityFilter;
       if (eventTypeFilter) params.event_type = eventTypeFilter;
       if (sourceTypeFilter) params.source_type = sourceTypeFilter;
+      if (sourceIdFilter) params.source_id = sourceIdFilter;
       if (ipSearch.trim()) params.ip = ipSearch.trim();
       if (signatureSearch.trim()) params.signature = signatureSearch.trim();
       const res = await apiClient.get('/events/export', { params, responseType: 'blob' });
@@ -152,6 +155,7 @@ export function Events() {
       if (ipSearch.trim()) params.ip = ipSearch.trim();
       if (signatureSearch.trim()) params.signature = signatureSearch.trim();
       if (sourceTypeFilter) params.source_type = sourceTypeFilter;
+      if (sourceIdFilter) params.source_id = sourceIdFilter;
       params.sort = sort;
       const [evtResult, statsResult, sourcesResult] = await Promise.allSettled([
         apiClient.get('/events/', { params }),
@@ -171,7 +175,7 @@ export function Events() {
     } finally {
       if (request === eventRequestId.current) setLoading(false);
     }
-  }, [page, severityFilter, eventTypeFilter, ipSearch, signatureSearch, sourceTypeFilter, sort, timeWindow]);
+  }, [page, severityFilter, eventTypeFilter, ipSearch, signatureSearch, sourceTypeFilter, sourceIdFilter, sort, timeWindow]);
 
   useEffect(() => {
     void fetchEvents();
@@ -207,7 +211,7 @@ export function Events() {
     }
   };
 
-  const hasEventFilters = !!(severityFilter || eventTypeFilter || sourceTypeFilter || ipSearch.trim() || signatureSearch.trim() || timeWindow.started_at || timeWindow.ended_before);
+  const hasEventFilters = !!(severityFilter || eventTypeFilter || sourceTypeFilter || sourceIdFilter || ipSearch.trim() || signatureSearch.trim() || timeWindow.started_at || timeWindow.ended_before);
 
   return (
     <div className="space-y-6">
@@ -254,13 +258,14 @@ export function Events() {
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-surface-100"><Radio className="h-4 w-4 text-primary-300" /> Telemetry sources</h2>
           <ul className="divide-y divide-surface-800">
             {sources.map(source => (
-              <li key={source.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+              <li key={source.id} className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm">
                 <div className="min-w-0">
                   <p className="truncate font-medium text-surface-200">{source.name}</p>
                   <p className="text-xs text-surface-500">
-                    {source.source_type} · {source.event_count} events · {source.last_event_at ? `last seen ${new Date(source.last_event_at).toLocaleString()}` : 'no events yet'}
+                    {source.source_type} · {source.event_count} events · {source.last_event_at ? `last accepted at ${new Date(source.last_event_at).toLocaleString()}` : 'no events yet'}
                   </p>
                 </div>
+                <button type="button" aria-pressed={sourceIdFilter === String(source.id)} onClick={() => { setSourceIdFilter(String(source.id)); setPage(1); }} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">View events from {source.name}</button>
                 <StatusBadge tone={source.status === 'active' ? 'success' : 'neutral'}>{source.status}</StatusBadge>
               </li>
             ))}
@@ -281,6 +286,17 @@ export function Events() {
         <p className="break-words text-xs text-surface-400 [overflow-wrap:anywhere]">Applied window: {timeWindow.started_at ?? 'No start limit'} to {timeWindow.ended_before ?? 'No end limit'} (end excluded). Filters use event timestamps, not upload times. Severity counts and sensor totals above cover all recorded events.</p>
       </section>
 
+      <section aria-label="Recorded source filter" className="oa-panel space-y-2 p-4">
+        <label htmlFor="recorded-event-source" className="block text-xs text-surface-400">Recorded source</label>
+        <select id="recorded-event-source" value={sourceIdFilter} onChange={event => { setSourceIdFilter(event.target.value); setPage(1); }} className="w-full min-w-0 rounded border border-surface-600 bg-surface-900 px-2 py-2 text-sm text-surface-200 sm:max-w-lg">
+          <option value="">All recorded sources</option>
+          {sourceIdFilter && !sources.some(source => String(source.id) === sourceIdFilter) && <option value={sourceIdFilter}>Source #{sourceIdFilter} (details unavailable)</option>}
+          {sources.map(source => <option key={source.id} value={source.id}>{source.name} (#{source.id}, {source.source_type})</option>)}
+        </select>
+        <p className="break-words text-xs text-surface-400">{sourceIdFilter ? `Filtering source #${sourceIdFilter}. Other applied filters still narrow results.` : 'All sources included.'} Source totals are lifetime recorded counts, not a live sensor health check. CSV export and saved views use this selection.</p>
+        {sourceIdFilter && <button type="button" onClick={() => { setSourceIdFilter(''); setPage(1); }} className="text-xs text-primary-300">Clear recorded source</button>}
+      </section>
+
       {/* Event filters */}
       <div className="flex items-center gap-4 flex-wrap">
       <SavedViewsMenu<EventViewFilters>
@@ -289,6 +305,7 @@ export function Events() {
           ...(severityFilter ? { severity: severityFilter } : {}),
           ...(eventTypeFilter ? { event_type: eventTypeFilter } : {}),
           ...(sourceTypeFilter ? { source_type: sourceTypeFilter } : {}),
+          ...(sourceIdFilter ? { source_id: Number(sourceIdFilter) } : {}),
           ...(ipSearch.trim() ? { ip: ipSearch.trim() } : {}),
           ...(signatureSearch.trim() ? { signature: signatureSearch.trim() } : {}),
           sort,
@@ -300,6 +317,7 @@ export function Events() {
           setSeverityFilter(filters.severity ?? '');
           setEventTypeFilter(filters.event_type ?? '');
           setSourceTypeFilter(filters.source_type ?? '');
+          setSourceIdFilter(filters.source_id ? String(filters.source_id) : '');
           setIpSearch(filters.ip ?? '');
           setSignatureSearch(filters.signature ?? '');
           setSort(filters.sort ?? 'timestamp_desc');
