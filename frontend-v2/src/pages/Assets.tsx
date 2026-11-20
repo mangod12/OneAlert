@@ -10,6 +10,7 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import { criticalityTones } from '../components/ui/tones';
 import { useDialogFocus } from '../components/ui/useDialogFocus';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { AssetInspector } from '../components/AssetInspector';
 import { toast } from '../components/Toast';
 
 const FALLBACK_ASSET_TYPES = ['hardware', 'software', 'firmware', 'operating_system', 'plc', 'hmi', 'rtu', 'ied', 'scada_server', 'historian'];
@@ -27,6 +28,7 @@ export function Assets() {
   const [search, setSearch] = useState(() => searchParams.get('search') ?? '');
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [inspectAssetId, setInspectAssetId] = useState<number | null>(null);
   const [editAsset, setEditAsset] = useState<Asset | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -252,7 +254,7 @@ export function Assets() {
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-semibold text-surface-50 truncate">{asset.name}</h3>
+                  <h3 className="text-sm font-semibold text-surface-50"><button type="button" onClick={() => setInspectAssetId(asset.id)} aria-label={`View details for ${asset.name}`} className="max-w-full truncate text-left hover:text-primary-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500">{asset.name}</button></h3>
                   <p className="text-xs text-surface-400 mt-1">{asset.vendor} {asset.product}</p>
                 </div>
                 <div className="flex gap-1 ml-2">
@@ -318,6 +320,8 @@ export function Assets() {
           <button type="button" disabled={page * 15 >= total} onClick={() => setPage(value => value + 1)} className="rounded-md border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Next assets</button>
         </div>
       </nav>}
+
+      {inspectAssetId !== null && <AssetInspector key={inspectAssetId} assetId={inspectAssetId} onClose={() => setInspectAssetId(null)} />}
 
       {pendingDelete && (
         <ConfirmDialog

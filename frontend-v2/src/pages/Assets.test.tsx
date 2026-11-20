@@ -339,3 +339,21 @@ describe('Asset inventory pagination', () => {
     expect(screen.getByText('Showing 1–1 of 1 matching assets · Page 1 of 1')).toBeTruthy();
   });
 });
+
+
+it('opens read-only current asset context from the inventory name', async () => {
+  get.mockImplementation(async url => {
+    if (url === '/assets/7') return { data: { ...asset, last_known_ip: '192.0.2.10' } };
+    if (url === '/assets/') return { data: { assets: [asset], total: 1 } };
+    return { data: [] };
+  });
+  render(<MemoryRouter><Assets /></MemoryRouter>);
+  const opener = await screen.findByRole('button', { name: 'View details for Plant gateway' });
+  opener.focus();
+  fireEvent.click(opener);
+  expect(await screen.findByText('192.0.2.10')).toBeTruthy();
+  expect(screen.getByRole('dialog').getAttribute('aria-labelledby')).toBe('asset-inspector-heading');
+  fireEvent.click(screen.getByRole('button', { name: 'Close details' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'View details for Plant gateway' }));
+});
