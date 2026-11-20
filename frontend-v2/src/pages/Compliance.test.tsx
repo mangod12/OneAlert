@@ -171,6 +171,27 @@ describe('Assessment evidence', () => {
     expect(screen.getByRole('button', { name: 'Edit evidence for PR.AC-1' }).textContent).toContain('View');
   });
 
+  it('sends explicit nulls when evidence is cleared and reopens with empty fields', async () => {
+    const fallback = get.getMockImplementation()!;
+    get.mockImplementation((url, config) => url === '/compliance/assessments'
+      ? Promise.resolve({ data: [updatedAssessment] }) : fallback(url, config));
+    patch.mockResolvedValue({ data: { ...updatedAssessment, evidence_type: null, evidence_detail: null } });
+    render(<Compliance />);
+    fireEvent.click(await screen.findByText('NIST CSF'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit evidence for PR.AC-1' }));
+    expect((screen.getByLabelText('Details') as HTMLTextAreaElement).value).toBe(updatedAssessment.evidence_detail);
+    fireEvent.change(screen.getByLabelText('Evidence type'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Details'), { target: { value: '   ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save evidence' }));
+    await waitFor(() => expect(patch).toHaveBeenCalledWith('/compliance/assessments/5', {
+      status: 'compliant', evidence_type: null, evidence_detail: null,
+    }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Edit evidence for PR.AC-1' }));
+    expect((screen.getByLabelText('Details') as HTMLTextAreaElement).value).toBe('');
+    expect((screen.getByLabelText('Evidence type') as HTMLSelectElement).value).toBe('');
+  });
+
   it('closes without saving when cancelled', async () => {
     render(<Compliance />);
     fireEvent.click(await screen.findByText('NIST CSF'));
