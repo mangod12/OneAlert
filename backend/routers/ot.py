@@ -14,12 +14,12 @@ import json
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy import update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
-from backend.models.asset import Asset
+from backend.models.asset import Asset, AssetType
 from backend.models.discovered_device import (
     DiscoveredDevice,
     DiscoveredDeviceCreate,
@@ -416,9 +416,64 @@ async def correlate_device_to_asset(
     return device
 
 
+def _promoted_asset_fields(device):
+    supported_types = {kind.value for kind in AssetType}
+    device_type = device.ot_device_type if device.ot_device_type in supported_types else "other_ot"
+    identity = " ".join(str(value).strip() for value in (device.manufacturer, device.model) if value)
+    return {
+        "name": device.hostname or identity or f"Discovered device {device.ip_address}",
+        "asset_type": device_type if device.is_ot_device else "hardware",
+        "vendor": device.manufacturer, "product": device.model, "version": device.firmware_version,
+        "description": f"Promoted from discovered device at {device.ip_address}",
+        "is_ot_asset": bool(device.is_ot_device),
+        "primary_protocol": device.protocols[0] if device.protocols else None,
+        "secondary_protocols": (json.dumps(device.protocols[1:])
+                                if device.protocols and len(device.protocols) > 1 else None),
+        "serial_number": device.serial_number, "firmware_version": device.firmware_version,
+        "last_known_ip": device.ip_address,
+        "criticality": ("high" if (device.risk_score or 0) > 70
+                        else "medium" if (device.risk_score or 0) > 40 else "low"),
+        "discovery_method": "sensor_report",
+    }
+
+
+async def _promotion_review(db, device):
+    proposed = _promoted_asset_fields(device)
+    matches = [Asset.last_known_ip == device.ip_address]
+    if device.serial_number:
+        matches.append(Asset.serial_number == device.serial_number)
+    if device.hostname:
+        matches.append(Asset.name == device.hostname)
+    candidates = (await db.execute(select(Asset).where(
+        Asset.user_id == device.user_id, or_(*matches),
+    ).order_by(Asset.id))).scalars().all()
+    candidate_rows = [{"id": asset.id, "name": asset.name, "last_known_ip": asset.last_known_ip,
+                       "serial_number": asset.serial_number} for asset in candidates]
+    source = {"device_id": device.id, "asset_id": device.asset_id, "is_correlated": device.is_correlated,
+              "proposed_asset": proposed, "existing_candidates": candidate_rows}
+    fingerprint = hashlib.sha256(json.dumps(source, sort_keys=True, default=str).encode()).hexdigest()
+    return {**source, "existing_candidates": candidate_rows[:20], "existing_candidate_total": len(candidate_rows),
+            "can_promote": device.asset_id is None and not device.is_correlated,
+            "reviewed_fingerprint": fingerprint}
+
+
+@router.get("/discovered-devices/{device_id}/promotion-review")
+async def review_device_promotion(
+    device_id: int, current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    """Preview copied inventory fields and exact identifier candidates without creating inventory."""
+    device = (await db.execute(select(DiscoveredDevice).where(
+        DiscoveredDevice.id == device_id, DiscoveredDevice.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    return await _promotion_review(db, device)
+
+
 @router.post("/discovered-devices/{device_id}/promote-to-asset")
 async def promote_device_to_asset(
     device_id: int,
+    reviewed_fingerprint: Annotated[str | None, Query(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")] = None,
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -428,11 +483,17 @@ async def promote_device_to_asset(
         select(DiscoveredDevice).where(
             DiscoveredDevice.id == device_id,
             DiscoveredDevice.user_id == current_user.id
-        ).with_for_update()
+        ).with_for_update().execution_options(populate_existing=True)
     )
     device = device_result.scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+
+    if reviewed_fingerprint is not None:
+        review = await _promotion_review(db, device)
+        if not review["can_promote"] or not hmac.compare_digest(reviewed_fingerprint, review["reviewed_fingerprint"]):
+            raise HTTPException(status_code=409,
+                                detail="Device or matching inventory changed. Reload the promotion review.")
 
     # Retry-safe promotion: re-use an existing owned correlation, never create
     # duplicate inventory after a client timeout or a second tab's request.
@@ -453,25 +514,7 @@ async def promote_device_to_asset(
         )
 
     # Create managed asset from discovered device
-    new_asset = Asset(
-        user_id=current_user.id,
-        name=device.hostname or f"{device.manufacturer} {device.model}",
-        asset_type=device.ot_device_type or "other_ot" if device.is_ot_device else "hardware",
-        vendor=device.manufacturer,
-        product=device.model,
-        version=device.firmware_version,
-        description=f"Promoted from discovered device at {device.ip_address}",
-        is_ot_asset=device.is_ot_device,
-        primary_protocol=device.protocols[0] if device.protocols else None,
-        secondary_protocols=(
-            json.dumps(device.protocols[1:]) if device.protocols and len(device.protocols) > 1 else None
-        ),
-        serial_number=device.serial_number,
-        firmware_version=device.firmware_version,
-        last_known_ip=device.ip_address,
-        criticality="high" if device.risk_score > 70 else "medium" if device.risk_score > 40 else "low",
-        discovery_method="sensor_report"
-    )
+    new_asset = Asset(user_id=current_user.id, **_promoted_asset_fields(device))
 
     db.add(new_asset)
     await db.flush()
@@ -487,7 +530,9 @@ async def promote_device_to_asset(
     return {
         "message": "Device promoted to managed asset",
         "asset_id": new_asset.id,
-        "asset_name": new_asset.name
+        "asset_name": new_asset.name,
+        **({"device_id": device.id, "reviewed_fingerprint": reviewed_fingerprint}
+           if reviewed_fingerprint is not None else {}),
     }
 
 

@@ -26,6 +26,7 @@ beforeEach(() => {
     if (url === '/ot/discovered-devices') return { data: { devices: [], total: 0, page: 1, size: 20 } };
     if (url === '/ot/devices-by-protocol') return { data: { protocols: [] } };
     if (url === '/ot/sensors') return { data: sensors };
+    if (url === '/ot/discovered-devices/1/promotion-review') return { data: { device_id: 1, can_promote: true, reviewed_fingerprint: 'a'.repeat(64), proposed_asset: { name: 'device-1', asset_type: 'hardware', criticality: 'low', last_known_ip: '10.0.0.1' }, existing_candidates: [], existing_candidate_total: 0 } };
     throw new Error(`unexpected ${url}`);
   });
   post.mockResolvedValue({ data: {} });
@@ -182,9 +183,11 @@ describe('Discovered device paging and request identity', () => {
     render(<OTDiscovery />);
     await screen.findByText('device-1');
     fireEvent.click(screen.getByRole('button', { name: 'Promote to asset' }));
+    fireEvent.click(await within(screen.getByRole('dialog')).findByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Create reviewed asset' }));
     fireEvent.click(screen.getByRole('button', { name: 'Next devices' }));
     await screen.findByText('device-21');
-    await act(async () => { promotion.resolve({ data: {} }); });
+    await act(async () => { promotion.resolve({ data: { device_id: 1, asset_id: 10, asset_name: 'device-1', reviewed_fingerprint: 'a'.repeat(64) } }); });
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     expect(screen.getByText('device-21')).toBeTruthy();
     expect(screen.queryByText('device-1')).toBeNull();
@@ -271,13 +274,16 @@ it('exports matching filters without page limits and without using an unapplied 
 
 it('refreshes the active unmatched filter after promotion instead of leaving an obsolete row', async () => {
   let promoted = false;
-  post.mockImplementation(async () => { promoted = true; return { data: { asset_id: 1 } }; });
+  post.mockImplementation(async () => { promoted = true; return { data: { device_id: 1, asset_id: 10, asset_name: 'device-1', reviewed_fingerprint: 'a'.repeat(64) } }; });
   mockDevicePages(() => pageResponse(promoted ? [] : [1], promoted ? 0 : 1));
   render(<OTDiscovery />);
   await screen.findByText('device-1');
   fireEvent.change(screen.getByLabelText('Device correlation'), { target: { value: 'false' } });
   await screen.findByText('device-1');
   fireEvent.click(screen.getByRole('button', { name: 'Promote to asset' }));
+  fireEvent.click(await within(screen.getByRole('dialog')).findByRole('checkbox'));
+  expect(post).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Create reviewed asset' }));
   expect(await screen.findByText('No devices match these filters.')).toBeTruthy();
   expect(screen.queryByText('device-1')).toBeNull();
   expect(get).toHaveBeenCalledWith('/ot/discovered-devices', { params: { page: 1, size: 20, correlated: false } });
