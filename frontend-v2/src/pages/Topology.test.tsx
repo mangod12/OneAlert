@@ -291,3 +291,18 @@ it('disables export when filters have no matching connection rows', async () => 
   fireEvent.click(screen.getByRole('checkbox', { name: 'Cleartext only' }));
   expect((screen.getByRole('button', { name: 'Export filtered connections' }) as HTMLButtonElement).disabled).toBe(true);
 });
+
+
+describe('Connection evidence handoff', () => {
+  it('opens the loaded record without fetching and closes on request', async () => {
+    render(<Topology />); await screen.findAllByText('scada-historian');
+    const before = get.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'View connection 1 evidence' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByText('Recorded connection evidence')).toBeTruthy();
+    expect(screen.getAllByText('Not recorded').length).toBeGreaterThan(0);
+    expect(get.mock.calls.length).toBe(before);
+    fireEvent.click(screen.getByRole('button', { name: 'Close connection evidence' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});

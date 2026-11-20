@@ -65,7 +65,12 @@ async def build_topology_graph(user_id: int, db: AsyncSession) -> dict:
         "protocol": conn.protocol,
         "is_encrypted": conn.is_encrypted,
         "port": conn.port,
-        "bytes_transferred": conn.bytes_transferred,
+        "bytes_transferred": str(conn.bytes_transferred) if conn.bytes_transferred is not None else None,
+        "direction": conn.direction,
+        "first_seen": conn.first_seen,
+        "last_seen": conn.last_seen,
+        "source_device_id": conn.source_device_id,
+        "target_device_id": conn.target_device_id,
     } for conn in connections]
 
     return {

@@ -9,11 +9,12 @@ Provides endpoints for:
 """
 
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
+from backend.models.discovered_device import DiscoveredDevice
 from backend.models.network_connection import (
     ConnectionCreate,
     ConnectionResponse,
@@ -27,6 +28,18 @@ from backend.services.topology_service import build_topology_graph
 router = APIRouter()
 
 
+async def _check_device_ownership(db: AsyncSession, user_id: int, connections: list[ConnectionCreate]) -> None:
+    ids = {identity for item in connections for identity in [item.source_device_id, item.target_device_id]
+           if identity is not None}
+    if not ids:
+        return
+    owned = set((await db.execute(select(DiscoveredDevice.id).where(
+        DiscoveredDevice.user_id == user_id, DiscoveredDevice.id.in_(ids),
+    ))).scalars().all())
+    if owned != ids:
+        raise HTTPException(status_code=404, detail="Linked device not found")
+
+
 @router.post("/connections", response_model=ConnectionResponse, status_code=status.HTTP_201_CREATED)
 async def create_connection(
     conn_data: ConnectionCreate,
@@ -34,6 +47,7 @@ async def create_connection(
     db: AsyncSession = Depends(get_async_db),
 ):
     """Ingest a single network connection observation."""
+    await _check_device_ownership(db, current_user.id, [conn_data])
     db_conn = NetworkConnection(
         user_id=current_user.id,
         **conn_data.model_dump(),
@@ -46,11 +60,12 @@ async def create_connection(
 
 @router.post("/connections/batch", response_model=list[ConnectionResponse], status_code=status.HTTP_201_CREATED)
 async def batch_create_connections(
-    connections: list[ConnectionCreate],
+    connections: list[ConnectionCreate] = Body(..., min_length=1, max_length=1000),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Batch ingest multiple network connections."""
+    await _check_device_ownership(db, current_user.id, connections)
     db_conns = []
     for conn_data in connections:
         db_conn = NetworkConnection(
