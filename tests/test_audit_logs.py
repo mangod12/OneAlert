@@ -1,5 +1,8 @@
 """Tests for GET /api/v1/auth/audit-logs ordering, filtering and pagination."""
 
+import csv
+import io
+
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -246,3 +249,38 @@ class TestAuditLogExport:
         headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
         res = client.get("/api/v1/auth/audit-logs/export", headers=headers)
         assert res.status_code == 403
+
+
+@pytest.mark.parametrize('value', ['=1+1', '+SUM(1)', '-cmd', '@cmd', '  =1', '\t+cmd', '\r@cmd', '\n-cmd'])
+def test_export_neutralizes_formula_text_and_preserves_zero_target(client, value):
+    headers = _register_admin_and_login(client, 'csvsafe@example.com')
+    with _TestingSessionLocal() as db:
+        user = db.execute(select(User).where(User.email == 'csvsafe@example.com')).scalar_one()
+        row = AuditLog(user_id=user.id, action=value, target_type=value, target_id=0, detail=value)
+        db.add(row)
+        db.commit()
+        record_id = row.id
+    response = client.get('/api/v1/auth/audit-logs/export', headers=headers)
+    assert response.status_code == 200
+    record = next(r for r in csv.DictReader(io.StringIO(response.text)) if r['id'] == str(record_id))
+    assert all(record[field] == "'" + value for field in ['action', 'target_type', 'detail'])
+    assert record['target_id'] == '0'
+    # Export protection does not rewrite the source evidence.
+    records = client.get('/api/v1/auth/audit-logs', headers=headers).json()['logs']
+    stored = next(r for r in records if r['id'] == record_id)
+    assert stored['detail'] == value and stored['action'] == value
+
+
+def test_export_preserves_plain_text_csv_quoting_and_null_target(client):
+    headers = _register_admin_and_login(client, 'csvplain@example.com')
+    with _TestingSessionLocal() as db:
+        user = db.execute(select(User).where(User.email == 'csvplain@example.com')).scalar_one()
+        row = AuditLog(user_id=user.id, action='case.reviewed', target_type=None, target_id=None, detail='Reviewed, "unchanged"\nsecond line')
+        db.add(row)
+        db.commit()
+        record_id = row.id
+    response = client.get('/api/v1/auth/audit-logs/export', headers=headers)
+    assert response.status_code == 200
+    record = next(r for r in csv.DictReader(io.StringIO(response.text)) if r['id'] == str(record_id))
+    assert record['detail'] == 'Reviewed, "unchanged"\nsecond line'
+    assert record['target_id'] == record['target_type'] == ''
