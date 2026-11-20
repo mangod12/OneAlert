@@ -249,8 +249,14 @@ async def export_assets(
         "criticality", "is_ot_asset", "network_zone", "primary_protocol",
         "serial_number", "last_known_ip", "created_at",
     ])
+    def spreadsheet_text(value):
+        # CSV quoting alone does not stop spreadsheet formula interpretation.
+        if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@")):
+            return "'" + value
+        return value
+
     for asset in rows:
-        writer.writerow([
+        writer.writerow([spreadsheet_text(value) for value in [
             asset.id,
             asset.name,
             asset.asset_type.value if hasattr(asset.asset_type, "value") else asset.asset_type,
@@ -264,7 +270,7 @@ async def export_assets(
             asset.serial_number or "",
             asset.last_known_ip or "",
             asset.created_at.isoformat() if asset.created_at else "",
-        ])
+        ]])
     buffer.seek(0)
     return StreamingResponse(
         iter([buffer.getvalue()]),

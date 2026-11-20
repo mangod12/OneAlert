@@ -182,3 +182,28 @@ def test_export_matches_inventory_order_and_scope(client, sort):
 def test_asset_export_rejects_unknown_order(client):
     headers = _register_and_login(client, "invalid-order@example.com")
     assert client.get("/api/v1/assets/export?sort=unsupported", headers=headers).status_code == 422
+
+
+def test_asset_csv_neutralizes_spreadsheet_formula_prefixes(client):
+    headers = _register_and_login(client, "formula-owner@example.com")
+    _make_asset(client, headers, "=1+2", vendor="+SUM(1,2)", product="-1+2",
+                version="@SUM(1,2)", network_zone="  =2+3", primary_protocol="\t=3+4",
+                serial_number="\r=4+5", last_known_ip="10.0.0.1")
+    rows = _read_csv(client.get("/api/v1/assets/export", headers=headers))
+    assert len(rows) == 1
+    for key in ["name", "vendor", "product", "version", "network_zone", "primary_protocol", "serial_number"]:
+        assert rows[0][key].startswith("'")
+    assert rows[0]["name"] == "'=1+2"
+    assert rows[0]["network_zone"] == "'  =2+3"
+    assert rows[0]["last_known_ip"] == "10.0.0.1"
+    listed = client.get("/api/v1/assets/", headers=headers).json()["assets"]
+    assert listed[0]["name"] == "=1+2"
+
+
+def test_asset_csv_preserves_ordinary_quoted_and_multiline_values(client):
+    headers = _register_and_login(client, "plain-owner@example.com")
+    _make_asset(client, headers, 'Gateway, "north"', vendor="Plant\nSystems", version="1.2.3")
+    row = _read_csv(client.get("/api/v1/assets/export", headers=headers))[0]
+    assert row["name"] == 'Gateway, "north"'
+    assert row["vendor"] == "Plant\nSystems"
+    assert row["version"] == "1.2.3"
