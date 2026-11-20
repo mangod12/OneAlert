@@ -30,6 +30,7 @@ export function MyTasks() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkDate, setBulkDate] = useState('');
   const [bulkMode, setBulkMode] = useState('set');
+  const [completeConfirm, setCompleteConfirm] = useState(false);
   const [bulkConfirm, setBulkConfirm] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [limitReached, setLimitReached] = useState(false);
@@ -77,8 +78,8 @@ export function MyTasks() {
   };
   const selectedTasks = tasks.filter(task => selectedIds.has(task.task_id));
   const selectedHaveDrafts = selectedTasks.some(task => (dueDrafts[task.task_id] ?? task.due_date ?? '') !== (task.due_date ?? ''));
-  const applyBulkDate = async () => {
-    if (bulkBusy || !selectedTasks.length || selectedHaveDrafts || (bulkMode === 'set' && !bulkDate) || pending.current.size) return;
+  const applyBulkDate = async (complete = false) => {
+    if (bulkBusy || !selectedTasks.length || selectedHaveDrafts || (!complete && bulkMode === 'set' && !bulkDate) || pending.current.size) return;
     const snapshot = [...selectedTasks];
     const dueDate = bulkMode === 'clear' ? null : bulkDate;
     setBulkBusy(true);
@@ -92,23 +93,25 @@ export function MyTasks() {
     for (let start = 0; start < snapshot.length; start += 5) {
       await Promise.all(snapshot.slice(start, start + 5).map(async task => {
         try {
-          const response = await apiClient.patch<{ due_date: string | null }>(`/cases/${task.case_id}/tasks/${task.task_id}`, { due_date: dueDate });
+          const response = await apiClient.patch<{ id?: number; done?: boolean; due_date: string | null }>(`/cases/${task.case_id}/tasks/${task.task_id}`, complete ? { done: true } : { due_date: dueDate });
+          if (complete && (response.data.id !== task.task_id || response.data.done !== true)) throw new Error('Completion was not confirmed for this task. Refresh tasks to verify before retrying.');
           saved.set(task.task_id, response.data.due_date);
         } catch (err: unknown) {
-          failed[task.task_id] = getApiErrorMessage(err, 'Task due date could not be saved. It remains selected for retry.');
+          failed[task.task_id] = getApiErrorMessage(err, complete ? 'Task completion could not be confirmed. It remains selected; refresh to verify before retrying.' : 'Task due date could not be saved. It remains selected for retry.');
         }
       }));
     }
-    setTasks(current => current.map(task => saved.has(task.task_id) ? { ...task, due_date: saved.get(task.task_id)! } : task));
+    setTasks(current => complete ? current.filter(task => !saved.has(task.task_id)) : current.map(task => saved.has(task.task_id) ? { ...task, due_date: saved.get(task.task_id)! } : task));
     setSelectedIds(current => new Set([...current].filter(id => !saved.has(id))));
     setDueDrafts(current => { const next = { ...current }; saved.forEach((_, id) => { delete next[id]; }); return next; });
     setNoticeFailed(Object.keys(failed).length > 0);
     setActionErrors(current => { const next = { ...current }; snapshot.forEach(task => { delete next[task.task_id]; }); return { ...next, ...failed }; });
-    setActionNotice(`Saved due dates for ${saved.size} of ${snapshot.length} selected tasks. ${Object.keys(failed).length ? `${Object.keys(failed).length} failed tasks remain selected for retry.` : 'No task completion or investigation due dates were changed.'}`);
+    setActionNotice(complete ? `Confirmed completion for ${saved.size} of ${snapshot.length} selected tasks. ${Object.keys(failed).length ? `${Object.keys(failed).length} failed or unconfirmed tasks remain selected. Refresh to verify before retrying.` : 'Open the investigation checklist to reopen completed tasks. Investigation status and due dates were not changed. Refresh to load more assigned work.'}` : `Saved due dates for ${saved.size} of ${snapshot.length} selected tasks. ${Object.keys(failed).length ? `${Object.keys(failed).length} failed tasks remain selected for retry.` : 'No task completion or investigation due dates were changed.'}`);
     snapshot.forEach(task => pending.current.delete(task.task_id));
     setBusyIds(new Set(pending.current));
     setBulkBusy(false);
     setBulkConfirm(false);
+    setCompleteConfirm(false);
   };
   const needle = query.trim().toLowerCase();
   const visible = tasks.filter(task => (!needle || [task.title, task.case_title, String(task.case_id), String(task.task_id)].some(value => value.toLowerCase().includes(needle)))
@@ -159,7 +162,8 @@ export function MyTasks() {
               {bulkMode === 'set' && <input type="date" aria-label="Due date for selected tasks" disabled={bulkBusy} value={bulkDate} onChange={event => setBulkDate(event.target.value)} className="min-w-0 rounded border border-surface-600 bg-surface-950 px-2 py-2 text-sm text-surface-100" />}
               <button type="button" disabled={bulkBusy || !!busyIds.size || selectedHaveDrafts || (bulkMode === 'set' && !bulkDate)} onClick={() => setBulkConfirm(true)} className="rounded bg-primary-500 px-3 py-2 text-sm font-semibold text-surface-950 disabled:opacity-40">Review date change</button>
             </div>
-            {selectedHaveDrafts && <p className="text-xs text-warning">Save or discard the selected tasks' due-date drafts before changing dates in bulk.</p>}
+            <button type="button" disabled={bulkBusy || !!busyIds.size || selectedHaveDrafts} onClick={() => setCompleteConfirm(true)} className="rounded border border-success/50 px-3 py-2 text-sm text-success disabled:opacity-40">Review selected completion</button>
+            {selectedHaveDrafts && <p className="text-xs text-warning">Save or discard the selected tasks' due-date drafts before changing selected tasks in bulk.</p>}
           </>}
         </section>
         {visible.length ? <ul aria-label="Assigned tasks" className="space-y-3">{visible.map(task => <li key={task.task_id} className="min-w-0 rounded-lg border border-surface-700 bg-surface-900 p-4">
@@ -186,6 +190,7 @@ export function MyTasks() {
         </li>)}</ul> : <EmptyState title="No returned tasks match" description="Clear filters to see the returned task set. This does not mean you have no assigned work." />}
       </>}
     </>}
+    {completeConfirm && <ConfirmDialog title="Complete selected assigned tasks" description={`Mark ${selectedTasks.length} selected loaded tasks complete, including ${selectedTasks.filter(task => !visible.some(row => row.task_id === task.task_id)).length} hidden by filters? Review the selection preview first. Investigation status and all due dates stay unchanged. Reopen tasks from their investigation checklist.`} confirmLabel={`Complete ${selectedTasks.length} selected tasks`} busy={bulkBusy} onCancel={() => { if (!bulkBusy) setCompleteConfirm(false); }} onConfirm={() => void applyBulkDate(true)} />}
     {bulkConfirm && <ConfirmDialog title="Change selected task due dates" description={`${bulkMode === 'clear' ? 'Clear task due dates' : `Set task due dates to ${bulkDate}`} for ${selectedTasks.length} selected loaded tasks, including ${selectedTasks.filter(task => !visible.some(row => row.task_id === task.task_id)).length} hidden by filters? Investigation due dates and completion status stay unchanged.`}
       confirmLabel={`Apply to ${selectedTasks.length} tasks`} busy={bulkBusy} onCancel={() => { if (!bulkBusy) setBulkConfirm(false); }} onConfirm={() => void applyBulkDate()} />}
   </div>;
