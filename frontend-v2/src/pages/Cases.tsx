@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
 import { Play, Plus, Search, Shield, ChevronRight, X } from 'lucide-react';
@@ -67,6 +67,10 @@ export function Cases() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<CaseSearchResult[] | null>(null);
+  const listRequest = useRef(0);
+  const searchRequest = useRef(0);
+  const [searchError, setSearchError] = useState('');
+  const [searchedQuery, setSearchedQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [pipelining, setPipelining] = useState(false);
   const [pipelineLookback, setPipelineLookback] = useState(24);
@@ -87,7 +91,14 @@ export function Cases() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
-  const fetchCases = async () => {
+  const viewKey = JSON.stringify([statusFilter, severityFilter, assignedFilter, overdueOnly, sort, page]);
+  const liveViewKey = useRef(viewKey);
+  useLayoutEffect(() => { liveViewKey.current = viewKey; }, [viewKey]);
+  const fetchCases = useCallback(async () => {
+    const key = viewKey;
+    if (key !== liveViewKey.current) return;
+    const request = ++listRequest.current;
+    setLoading(true);
     setError(null);
     try {
       const res = await apiClient.get('/cases/', {
@@ -101,14 +112,18 @@ export function Cases() {
           sort,
         },
       });
+      if (request !== listRequest.current || key !== liveViewKey.current) return;
       setCases(res.data.cases);
       setTotal(res.data.total);
     } catch (err: unknown) {
+      if (request !== listRequest.current || key !== liveViewKey.current) return;
+      setCases([]);
+      setTotal(0);
       setError(getApiErrorMessage(err, 'Investigations could not be loaded.'));
     } finally {
-      setLoading(false);
+      if (request === listRequest.current && key === liveViewKey.current) setLoading(false);
     }
-  };
+  }, [viewKey, page, statusFilter, severityFilter, assignedFilter, overdueOnly, sort]);
 
   const handleCreateCase = async (title: string, summary: string, severity: string) => {
     if (creatingCase) return;
@@ -151,7 +166,7 @@ export function Cases() {
     }
   };
 
-  useEffect(() => { fetchCases(); }, [statusFilter, severityFilter, assignedFilter, overdueOnly, sort, page]);
+  useEffect(() => { void fetchCases(); return () => { listRequest.current += 1; }; }, [fetchCases]);
 
   useEffect(() => {
     setToday(new Date().toISOString().slice(0, 10));
@@ -300,25 +315,33 @@ export function Cases() {
       if (q.length > 0 && q.length < 2) toast('Type at least 2 characters to search.', 'info');
       return;
     }
+    const request = ++searchRequest.current;
     setSearching(true);
+    setSearchResults(null);
+    setSearchError('');
+    setSearchedQuery(q);
     try {
       const res = await apiClient.get('/cases/search', { params: { q } });
-      setSearchResults(res.data.data ?? []);
+      if (request === searchRequest.current) setSearchResults(res.data.data ?? []);
     } catch (err: unknown) {
-      toast(getApiErrorMessage(err, 'The search could not be completed.'), 'error');
+      if (request === searchRequest.current) setSearchError(getApiErrorMessage(err, 'The search could not be completed.'));
     } finally {
-      setSearching(false);
+      if (request === searchRequest.current) setSearching(false);
     }
   };
 
   const clearSearch = () => {
+    searchRequest.current += 1;
+    setSearching(false);
+    setSearchError('');
+    setSearchedQuery('');
     setSearchQuery('');
     setSearchResults(null);
   };
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Command" title="Investigations" description={`${total} cases correlated from alerts, security events, and agent analysis.`} actions={
+      <PageHeader eyebrow="Command" title="Investigations" description={loading ? 'Loading the current investigation view.' : error ? 'Current investigation totals are unavailable.' : `${total} cases correlated from alerts, security events, and agent analysis.`} actions={
         <>
           <button
             onClick={() => setShowNewCase(true)}
@@ -372,7 +395,7 @@ export function Cases() {
         </div>
       )}
 
-      {!loading && !error && (
+      {(
         <div className="flex flex-wrap items-center gap-2">
           <SavedViewsMenu<CaseViewFilters>
             basePath="/cases/views/"
@@ -430,14 +453,14 @@ export function Cases() {
             <option value="due_date_asc">Due date (earliest)</option>
             <option value="due_date_desc">Due date (latest)</option>
           </select>
-          <button type="button" onClick={() => void exportCsv()} disabled={exporting}
+          <button type="button" onClick={() => void exportCsv()} disabled={exporting || loading || !!error}
             className="min-h-9 rounded-md border border-surface-600 bg-surface-950 px-3 text-sm text-surface-300 hover:text-surface-100 disabled:opacity-40">
             {exporting ? 'Exporting...' : 'Export CSV'}
           </button>
         </div>
       )}
 
-      {!loading && !error && cases.length > 0 && (
+      {!error && (
         <form className="flex gap-2" onSubmit={e => { e.preventDefault(); void runSearch(); }}>
           <label htmlFor="case-search" className="sr-only">Search investigations</label>
           <input
@@ -445,14 +468,14 @@ export function Cases() {
             type="text"
             autoComplete="off"
             value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+            onChange={e => { searchRequest.current += 1; setSearching(false); setSearchResults(null); setSearchError(''); setSearchQuery(e.target.value); }}
             placeholder="Search investigations in plain language…"
             className="min-w-0 flex-1 rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500"
           />
           <button type="submit" disabled={searching} className="inline-flex min-h-9 items-center gap-1.5 rounded-md bg-primary-500 px-3.5 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">
             <Search className="h-4 w-4" /> {searching ? 'Searching…' : 'Search'}
           </button>
-          {searchResults !== null && (
+          {(searchResults !== null || searchQuery || searchError || searching) && (
             <button type="button" onClick={clearSearch} className="inline-flex min-h-9 items-center gap-1 rounded-md border border-surface-600 px-3 text-sm text-surface-300 hover:bg-surface-800">
               <X className="h-4 w-4" /> Clear
             </button>
@@ -460,9 +483,11 @@ export function Cases() {
         </form>
       )}
 
+      {searching && <p role="status" className="text-sm text-surface-400">Searching recorded investigations...</p>}
+      {searchError && <div role="alert" className="space-y-2 rounded border border-danger/40 p-3 text-sm text-danger"><p>{searchError} Search results are unavailable, not empty.</p><button type="button" onClick={() => void runSearch()} className="rounded border border-surface-600 px-3 py-2 text-surface-200">Retry investigation search</button></div>}
       {searchResults !== null && (
         <div className="oa-panel p-5">
-          <h2 className="mb-3 text-sm font-semibold text-surface-100">{searchResults.length} result{searchResults.length === 1 ? '' : 's'} for this search</h2>
+          <h2 className="mb-3 text-sm font-semibold text-surface-100">{searchResults.length} result{searchResults.length === 1 ? '' : 's'} for this search</h2><p className="mb-3 break-words text-xs text-surface-400">Query: {searchedQuery}. Plain-language search is separate from the list filters below.</p>
           {searchResults.length === 0 ? (
             <p className="text-sm text-surface-500">No investigations match that search.</p>
           ) : (
