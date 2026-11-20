@@ -41,6 +41,7 @@ export function Sbom() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [expanded, setExpanded] = useState<number | null>(null);
+  const componentRequestId = useRef(0);
   const [components, setComponents] = useState<SbomComponent[]>([]);
   const [componentsLoading, setComponentsLoading] = useState(false);
   const [componentsError, setComponentsError] = useState('');
@@ -116,22 +117,27 @@ export function Sbom() {
     }
   }, []);
 
-  useEffect(() => { void fetchSboms(); }, [fetchSboms]);
+  useEffect(() => { void fetchSboms(); return () => { componentRequestId.current += 1; }; }, [fetchSboms]);
 
   const toggleExpand = async (sbom: Sbom) => {
+    const request = ++componentRequestId.current;
     if (expanded === sbom.id) { setExpanded(null); return; }
     setExpanded(sbom.id);
     setComponentSearch('');
+    setVulnerableOnly(false);
+    setComponents([]);
     setComponentsLoading(true);
     setComponentsError('');
     try {
       const res = await apiClient.get<SbomComponent[]>(`/sbom/${sbom.id}/components`);
+      if (request !== componentRequestId.current) return;
       setComponents(res.data);
     } catch (err: unknown) {
+      if (request !== componentRequestId.current) return;
       setComponents([]);
       setComponentsError(getApiErrorMessage(err, 'Components could not be loaded.'));
     } finally {
-      setComponentsLoading(false);
+      if (request === componentRequestId.current) setComponentsLoading(false);
     }
   };
 
@@ -141,7 +147,7 @@ export function Sbom() {
     try {
       await apiClient.delete(`/sbom/${sbom.id}`);
       setPendingDelete(null);
-      if (expanded === sbom.id) setExpanded(null);
+      if (expanded === sbom.id) { componentRequestId.current += 1; setExpanded(null); }
       await fetchSboms();
       toast('SBOM deleted.', 'success');
     } catch (err: unknown) {

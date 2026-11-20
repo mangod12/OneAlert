@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { Sbom } from './Sbom';
@@ -143,5 +143,45 @@ describe('SBOM upload', () => {
     fireEvent.click(dialog.getByRole('button', { name: 'Upload' }));
     expect(await dialog.findByRole('alert')).toBeTruthy();
     expect(post).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('SBOM component request identity', () => {
+  it.each(['success', 'failure'])('ignores an obsolete component %s from a different SBOM', async previous => {
+    let resolveOld!: (value: unknown) => void;
+    let rejectOld!: (error: Error) => void;
+    get.mockImplementation((url: string) => {
+      if (url === '/sbom/') return Promise.resolve({ data: [...sboms, { ...sboms[0], id: 2, asset_id: 8 }] });
+      if (url === '/assets/') return Promise.resolve({ data: { ...assets, assets: [...assets.assets, { id: 8, name: 'Other asset' }] } });
+      if (url === '/sbom/1/components') return new Promise((resolve, reject) => { resolveOld = resolve; rejectOld = reject; });
+      return Promise.resolve({ data: [{ ...components[0], id: 20, sbom_id: 2, name: 'Current component' }] });
+    });
+    render(<Sbom />);
+    fireEvent.click(await screen.findByText('Plant gateway'));
+    fireEvent.click(screen.getByText('Other asset'));
+    await screen.findByText('Current component');
+    await act(async () => {
+      if (previous === 'success') resolveOld({ data: components });
+      else rejectOld(new Error('Obsolete component failure'));
+    });
+    expect(screen.getByText('Current component')).toBeTruthy();
+    expect(screen.queryByText('openssl')).toBeNull();
+    expect(screen.queryByText('Obsolete component failure')).toBeNull();
+  });
+  it('resets the vulnerable-only filter when opening another SBOM', async () => {
+    get.mockImplementation(async url => {
+      if (url === '/sbom/') return { data: [...sboms, { ...sboms[0], id: 2, asset_id: 8 }] };
+      if (url === '/assets/') return { data: { ...assets, assets: [...assets.assets, { id: 8, name: 'Other asset' }] } };
+      return { data: components };
+    });
+    render(<Sbom />);
+    fireEvent.click(await screen.findByText('Plant gateway'));
+    await screen.findByText('openssl');
+    fireEvent.click(screen.getByLabelText('Vulnerable only'));
+    expect(screen.queryByText('busybox')).toBeNull();
+    fireEvent.click(screen.getByText('Other asset'));
+    expect(await screen.findByText('busybox')).toBeTruthy();
+    expect((screen.getByLabelText('Vulnerable only') as HTMLInputElement).checked).toBe(false);
   });
 });
