@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import apiClient from '../api/client';
 import { Download, Package, Trash2, Upload } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
-import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
@@ -36,6 +36,8 @@ interface SbomComponent {
 const COPYLEFT_RE = /gpl|sspl|cddl|epl|eupl|cc-by-sa/i;
 
 export function Sbom() {
+  const listRequestId = useRef(0);
+  const [assetNamesError, setAssetNamesError] = useState('');
   const [sboms, setSboms] = useState<Sbom[]>([]);
   const [assetNames, setAssetNames] = useState<Map<number, string>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -101,25 +103,30 @@ export function Sbom() {
   const [uploading, setUploading] = useState(false);
 
   const fetchSboms = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const [sbomRes, assetRes] = await Promise.all([
-        apiClient.get<Sbom[]>('/sbom/'),
-        apiClient.get<AssetListResponse>('/assets/', { params: { page: 1, size: 100 } }),
-      ]);
-      setSboms(sbomRes.data);
-      setAssets(assetRes.data.assets);
-      setAssetTotal(assetRes.data.total);
-      setAssetNames(new Map(assetRes.data.assets.map(a => [a.id, a.name])));
-    } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'Software bills of materials could not be loaded.'));
-    } finally {
-      setLoading(false);
+    const request = ++listRequestId.current;
+    setLoading(true); setError(''); setAssetNamesError('');
+    const [sbomResult, assetResult] = await Promise.allSettled([
+      apiClient.get<Sbom[]>('/sbom/'),
+      apiClient.get<AssetListResponse>('/assets/', { params: { page: 1, size: 100 } }),
+    ]);
+    if (request !== listRequestId.current) return;
+    if (sbomResult.status === 'fulfilled') setSboms(sbomResult.value.data);
+    else { setSboms([]); setError(getApiErrorMessage(sbomResult.reason, 'Software bills of materials could not be loaded.')); }
+    if (assetResult.status === 'fulfilled') {
+      setAssets(assetResult.value.data.assets);
+      setAssetTotal(assetResult.value.data.total);
+      setAssetNames(new Map(assetResult.value.data.assets.map(asset => [asset.id, asset.name])));
+    } else {
+      setAssets([]); setAssetTotal(0); setAssetNames(new Map());
+      setAssetNamesError(getApiErrorMessage(assetResult.reason, 'Asset names are unavailable. SBOMs are shown by asset ID.'));
     }
+    setLoading(false);
   }, []);
 
-  useEffect(() => { void fetchSboms(); return () => { componentRequestId.current += 1; }; }, [fetchSboms]);
+  useEffect(() => {
+    void fetchSboms();
+    return () => { componentRequestId.current += 1; listRequestId.current += 1; };
+  }, [fetchSboms]);
 
   const toggleExpand = async (sbom: Sbom) => {
     const request = ++componentRequestId.current;
@@ -179,6 +186,7 @@ export function Sbom() {
 
   return (
     <div className="space-y-6">
+      {assetNamesError && <DegradedBanner messages={[assetNamesError, 'SBOM records remain available by asset ID.']} onRetry={() => void fetchSboms()} />}
       <PageHeader eyebrow="Observe" title="Software Bill of Materials" description="Component inventory and known-vulnerability exposure per asset." actions={
         <button
           onClick={() => setShowUpload(true)}

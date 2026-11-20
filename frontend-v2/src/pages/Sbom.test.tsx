@@ -261,3 +261,25 @@ describe('SBOM destination asset picker', () => {
     expect(screen.queryByRole('option', { name: 'Plant gateway · #7' })).toBeNull();
   });
 });
+
+it('keeps SBOM evidence available by asset ID when optional asset names fail, and recovers on retry', async () => {
+  let fail = true;
+  const fallback = get.getMockImplementation()!;
+  get.mockImplementation((url, config) => url === '/assets/' && fail ? Promise.reject(new Error('Asset names unavailable')) : fallback(url, config));
+  render(<Sbom />);
+  fireEvent.click(await screen.findByText('Asset #7'));
+  expect(await screen.findByText('openssl')).toBeTruthy();
+  expect(screen.queryByText('SBOM unavailable')).toBeNull();
+  expect(screen.getByText(/SBOM records remain available by asset ID/)).toBeTruthy();
+  fail = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(await screen.findByText('Plant gateway')).toBeTruthy();
+  expect(screen.queryByText('Some live data is unavailable')).toBeNull();
+});
+
+it('does not present a failed SBOM read as an empty inventory when asset names load', async () => {
+  get.mockImplementation(url => url === '/sbom/' ? Promise.reject(new Error('SBOM store unavailable')) : Promise.resolve({ data: assets }));
+  render(<Sbom />);
+  expect(await screen.findByText('SBOM unavailable')).toBeTruthy();
+  expect(screen.queryByText('Plant gateway')).toBeNull();
+});
