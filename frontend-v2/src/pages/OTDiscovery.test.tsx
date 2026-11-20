@@ -187,3 +187,23 @@ describe('Discovered device paging and request identity', () => {
     expect(screen.getByText('Unmatched')).toBeTruthy();
   });
 });
+
+it('opens the selected recorded device evidence without promoting or scanning', async () => {
+  const fallback = get.getMockImplementation()!;
+  get.mockImplementation((url, config) => {
+    if (url === '/ot/discovered-devices') return Promise.resolve(pageResponse([21]));
+    if (url === '/ot/discovered-devices/21') return Promise.resolve({ data: { ...device(21), notes: 'Confirm firmware before promotion', firmware_version: '5.2' } });
+    return fallback(url, config);
+  });
+  render(<OTDiscovery />);
+  const trigger = await screen.findByRole('button', { name: 'View recorded details for 10.0.0.21' });
+  trigger.focus();
+  fireEvent.click(trigger);
+  const dialog = within(await screen.findByRole('dialog'));
+  expect(await dialog.findByText('Confirm firmware before promotion')).toBeTruthy();
+  expect(dialog.getByText('5.2')).toBeTruthy();
+  expect(post).not.toHaveBeenCalled();
+  fireEvent.click(dialog.getByRole('button', { name: 'Close details' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'View recorded details for 10.0.0.21' }));
+});

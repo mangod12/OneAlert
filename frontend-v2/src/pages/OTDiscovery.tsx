@@ -9,6 +9,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { toast } from '../components/Toast';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { DiscoveredDeviceInspector } from '../components/DiscoveredDeviceInspector';
 
 interface NetworkSensor {
   id: number;
@@ -22,6 +23,7 @@ interface NetworkSensor {
 }
 
 export function OTDiscovery() {
+  const [inspectDeviceId, setInspectDeviceId] = useState<number | null>(null);
   const [summary, setSummary] = useState<OTSummary | null>(null);
   const [devicePage, setDevicePage] = useState(1);
   const [deviceTotal, setDeviceTotal] = useState(0);
@@ -187,6 +189,7 @@ export function OTDiscovery() {
 
   return (
     <div className="space-y-8">
+      {inspectDeviceId !== null && <DiscoveredDeviceInspector key={inspectDeviceId} deviceId={inspectDeviceId} onClose={() => setInspectDeviceId(null)} />}
       <PageHeader eyebrow="Observe" title="OT Discovery" description="Passive network device discovery, protocol visibility, and inventory correlation." />
       {errors.length > 0 && <DegradedBanner messages={errors} onRetry={() => void fetchData()} />}
 
@@ -421,6 +424,7 @@ export function OTDiscovery() {
                     )}
                   </td>
                   <td className="px-4 py-3">
+                    <button type="button" onClick={() => setInspectDeviceId(device.id)} aria-label={`View recorded details for ${device.ip_address}`} className="mr-3 text-xs text-primary-400 hover:text-primary-300">View details</button>
                     {!device.is_correlated && (
                       <button disabled={pendingDevices.has(device.id)}
                         onClick={() => handlePromote(device.id)}
