@@ -45,7 +45,7 @@ describe('SBOM page', () => {
     fireEvent.click(await screen.findByText('Plant gateway'));
     await screen.findByText('openssl');
     expect(screen.getByText('3.0.1')).toBeTruthy();
-    expect(screen.getByText('Yes')).toBeTruthy();
+    expect(screen.getByText('1 recorded')).toBeTruthy();
     expect(screen.getByText('busybox')).toBeTruthy();
   });
 
@@ -53,10 +53,10 @@ describe('SBOM page', () => {
     render(<Sbom />);
     fireEvent.click(await screen.findByText('Plant gateway'));
     await screen.findByText('openssl');
-    expect(screen.getByText('2 of 2 components licensed')).toBeTruthy();
+    expect(screen.getByText('2 of 2 with recorded license text')).toBeTruthy();
     expect(screen.getByText('Apache-2.0 · 1')).toBeTruthy();
     expect(screen.getByText('GPL-2.0 · 1')).toBeTruthy();
-    expect(screen.getByText('1 copyleft')).toBeTruthy();
+    expect(screen.getByText('1 copyleft-like labels')).toBeTruthy();
   });
 
   it('filters expanded components by search', async () => {
@@ -75,11 +75,11 @@ describe('SBOM page', () => {
     render(<Sbom />);
     fireEvent.click(await screen.findByText('Plant gateway'));
     await screen.findByText('openssl');
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Vulnerable only' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Recorded vulnerability references only' }));
     expect(screen.getByText('openssl')).toBeTruthy();
     expect(screen.queryByText('busybox')).toBeNull();
     expect(screen.getByText('1 of 2 components')).toBeTruthy();
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Vulnerable only' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Recorded vulnerability references only' }));
     expect(screen.getByText('busybox')).toBeTruthy();
   });
 
@@ -93,7 +93,7 @@ describe('SBOM page', () => {
     render(<Sbom />);
     fireEvent.click(await screen.findByText('Plant gateway'));
     await screen.findByText('openssl');
-    fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
+    fireEvent.click(screen.getByRole('button', { name: /export all csv/i }));
     await waitFor(() => expect(get).toHaveBeenCalledWith('/sbom/1/export', { responseType: 'blob' }));
     await waitFor(() => expect(createUrl).toHaveBeenCalled());
     expect(click).toHaveBeenCalled();
@@ -178,11 +178,11 @@ describe('SBOM component request identity', () => {
     render(<Sbom />);
     fireEvent.click(await screen.findByText('Plant gateway'));
     await screen.findByText('openssl');
-    fireEvent.click(screen.getByLabelText('Vulnerable only'));
+    fireEvent.click(screen.getByLabelText('Recorded vulnerability references only'));
     expect(screen.queryByText('busybox')).toBeNull();
     fireEvent.click(screen.getByText('Other asset'));
     expect(await screen.findByText('busybox')).toBeTruthy();
-    expect((screen.getByLabelText('Vulnerable only') as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByLabelText('Recorded vulnerability references only') as HTMLInputElement).checked).toBe(false);
   });
 });
 
@@ -424,4 +424,41 @@ it('reports local file read errors without sending or retaining previous evidenc
   expect((screen.getByRole('button', { name: 'Upload' }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.queryByRole('region', { name: 'Document preview' })).toBeNull();
   expect(post).not.toHaveBeenCalled();
+});
+
+describe('Recorded SBOM evidence completeness', () => {
+  it('combines an evidence gap with search and recorded vulnerability filters', async () => {
+    render(<Sbom />); fireEvent.click(await screen.findByText('Plant gateway')); await screen.findByText('openssl');
+    fireEvent.click(screen.getByRole('button', { name: 'Missing supplier: 1' }));
+    expect(screen.queryByText('openssl')).toBeNull(); expect(screen.getByText('busybox')).toBeTruthy();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Recorded vulnerability references only' }));
+    expect(screen.getByText('No components match the current filters.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear evidence gap' }));
+    expect(screen.getByText('openssl')).toBeTruthy(); expect(screen.queryByText('busybox')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Search components'), { target: { value: 'absent' } });
+    expect(screen.getByText('No components match the current filters.')).toBeTruthy();
+  });
+  it('downloads only matching loaded evidence and records filters without a server request', async () => {
+    let saved: Blob | undefined;
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn((blob: Blob) => { saved = blob; return 'blob:matching'; }) });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(<Sbom />); fireEvent.click(await screen.findByText('Plant gateway')); await screen.findByText('openssl');
+    fireEvent.click(screen.getByRole('button', { name: 'Missing supplier: 1' }));
+    const before = get.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Download matching evidence JSON' }));
+    const text = await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(saved!); });
+    const receipt = JSON.parse(text);
+    expect(receipt.exported_component_count).toBe(1); expect(receipt.loaded_component_count).toBe(2);
+    expect(receipt.components.map((component: { name: string }) => component.name)).toEqual(['busybox']);
+    expect(receipt.filters.evidenceGap).toBe('supplier'); expect(receipt.sbom.id).toBe(1);
+    expect(get.mock.calls.length).toBe(before);
+  });
+  it('clears the evidence gap when expanding a different loaded snapshot', async () => {
+    render(<Sbom />); fireEvent.click(await screen.findByText('Plant gateway')); await screen.findByText('openssl');
+    fireEvent.click(screen.getByRole('button', { name: 'Missing supplier: 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Plant gateway' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Plant gateway' }));
+    expect(await screen.findByText('openssl')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Clear evidence gap' })).toBeNull();
+  });
 });
