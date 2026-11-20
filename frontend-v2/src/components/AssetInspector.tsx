@@ -18,6 +18,12 @@ export function AssetInspector({ assetId, onClose }: { assetId: number; onClose:
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
+  const [copyError, setCopyError] = useState(''), [copied, setCopied] = useState(false);
+  const copyLink = async () => {
+    setCopyError(''); setCopied(false);
+    try { const url = new URL(window.location.href); url.search = ''; url.hash = ''; url.searchParams.set('asset', String(assetId)); await navigator.clipboard.writeText(url.toString()); setCopied(true); }
+    catch { setCopyError('The link could not be copied. The address bar also contains this asset record link.'); }
+  };
 
   useEffect(() => {
     let active = true;
@@ -51,6 +57,7 @@ export function AssetInspector({ assetId, onClose }: { assetId: number; onClose:
         <button type="button" onClick={onClose} className="shrink-0 rounded-md border border-surface-600 px-3 py-1.5 text-sm text-surface-200">Close details</button>
       </div>
       <p className="mt-2 text-sm text-surface-400">Read-only inventory record. Recorded network and discovery details are not a live connectivity check.</p>
+      <div className="mt-3 space-y-2"><button type="button" onClick={() => void copyLink()} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Copy asset record link</button><p className="text-xs text-surface-400">Opens this current record by ID, not a name search or frozen snapshot. This link does not grant access. Recipients need their own permission to view the asset.</p>{copied && <p role="status" className="text-xs text-primary-300">Asset record link copied.</p>}{copyError && <p role="alert" className="text-xs text-danger">{copyError}</p>}</div>
       {loading && <p role="status" className="mt-5 text-sm text-surface-300">Loading asset details...</p>}
       {error && <div className="mt-5 space-y-3"><p role="alert" className="text-sm text-danger">{error}</p><button type="button" onClick={() => setRetry(value => value + 1)} className="rounded-md border border-surface-600 px-3 py-2 text-sm text-surface-200">Retry asset details</button></div>}
       {!loading && !error && asset && <div className="mt-5 space-y-5">

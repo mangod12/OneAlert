@@ -4,6 +4,7 @@ import { AlertTriangle, Briefcase, Search, Server, Siren } from 'lucide-react';
 import clsx from 'clsx';
 import apiClient from '../api/client';
 import { StatusBadge } from './ui/StatusBadge';
+import { getApiErrorMessage } from '../api/errors';
 
 interface AlertHit { id: number; title: string; severity: string; status: string }
 interface CaseHit { id: number; title: string; status: string; severity: string }
@@ -35,7 +36,7 @@ function flatten(results: SearchResults | null): FlatHit[] {
   return [
     ...(results.incidents ?? []).map(i => ({
       key: `incident-${i.asset_id}`, group: 'incidents' as const, label: i.asset_name,
-      sub: `Incident · ${i.max_severity} · ${i.alert_count} active alerts`, to: '/incidents',
+      sub: `Incident · ${i.max_severity} · ${i.alert_count} active alerts · Asset #${i.asset_id}`, to: `/incidents?asset_id=${i.asset_id}`,
     })),
     ...results.alerts.map(a => ({
       key: `alert-${a.id}`, group: 'alerts' as const, label: a.title,
@@ -47,8 +48,8 @@ function flatten(results: SearchResults | null): FlatHit[] {
     })),
     ...results.assets.map(a => ({
       key: `asset-${a.id}`, group: 'assets' as const, label: a.name,
-      sub: `Asset · ${a.asset_type}${a.vendor ? ` · ${a.vendor}` : ''}`,
-      to: `/assets?search=${encodeURIComponent(a.name)}`,
+      sub: `Asset · ${a.asset_type}${a.vendor ? ` · ${a.vendor}` : ''} · #${a.id}`,
+      to: `/assets?asset=${a.id}`,
     })),
   ];
 }
@@ -68,7 +69,8 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
   const [searching, setSearching] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
 
-  const hits = useMemo(() => flatten(results), [results]);
+  const [resultQuery, setResultQuery] = useState(''), [error, setError] = useState(''), [retry, setRetry] = useState(0);
+  const hits = useMemo(() => flatten(resultQuery === query.trim() && !error ? results : null), [results, resultQuery, query, error]);
 
   useEffect(() => {
     if (!open) return;
@@ -80,28 +82,24 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
 
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
     const trimmed = query.trim();
-    if (trimmed.length < 2) {
-      setResults(null);
-      setSearching(false);
-      return;
-    }
+    setResults(null); setResultQuery(''); setError(''); setActiveIndex(0);
+    if (trimmed.length < 2) { setSearching(false); return; }
     setSearching(true);
     const timer = setTimeout(() => {
       void (async () => {
         try {
           const res = await apiClient.get('/search', { params: { q: trimmed } });
-          setResults(res.data.data as SearchResults);
-          setActiveIndex(0);
-        } catch {
-          setResults({ alerts: [], cases: [], assets: [], incidents: [] });
-        } finally {
-          setSearching(false);
-        }
+          if (cancelled) return;
+          setResults(res.data.data as SearchResults); setResultQuery(trimmed); setActiveIndex(0);
+        } catch (err) {
+          if (!cancelled) setError(getApiErrorMessage(err, 'Workspace search is unavailable. No absence of matching records is inferred.'));
+        } finally { if (!cancelled) setSearching(false); }
       })();
     }, 250);
-    return () => clearTimeout(timer);
-  }, [open, query]);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [open, query, retry]);
 
   const go = useCallback((hit: FlatHit) => {
     onClose();
@@ -138,6 +136,7 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
           <input
             ref={inputRef}
             type="text"
+            maxLength={200}
             role="combobox"
             aria-expanded="true"
             aria-controls="global-search-results"
@@ -154,7 +153,9 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
         <div id="global-search-results" role="listbox" aria-label="Search results" className="max-h-80 overflow-y-auto p-2">
           {query.trim().length < 2 ? (
             <p className="px-3 py-6 text-center text-xs text-surface-500">Type at least 2 characters to search across your workspace.</p>
-          ) : searching && !results ? (
+          ) : error ? (
+            <div className="space-y-2 px-3 py-4"><p role="alert" className="text-xs text-danger">{error}</p><button type="button" className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300" onClick={() => setRetry(value => value + 1)}>Retry workspace search</button></div>
+          ) : searching || resultQuery !== query.trim() ? (
             <p className="px-3 py-6 text-center text-xs text-surface-500">Searching...</p>
           ) : hits.length === 0 ? (
             <p className="px-3 py-6 text-center text-xs text-surface-500">No incidents, alerts, investigations or assets match "{query.trim()}".</p>
@@ -187,8 +188,8 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
                         )}
                       >
                         <span className="min-w-0">
-                          <span className="block truncate text-sm text-surface-100">{hit.label}</span>
-                          <span className="block truncate text-xs text-surface-500">{hit.sub}</span>
+                          <span className="block break-words text-sm text-surface-100 [overflow-wrap:anywhere]">{hit.label}</span>
+                          <span className="block break-words text-xs text-surface-500 [overflow-wrap:anywhere]">{hit.sub}</span>
                         </span>
                         {hit.group !== 'assets' && (
                           <StatusBadge tone={severityTone(hit.sub.split(' · ')[1] ?? '')}>
@@ -203,6 +204,7 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
             })
           )}
         </div>
+        <p className="px-4 py-2 text-[10px] text-surface-400">Up to 5 matches per record type from records owned by your account. Not a complete workspace search. Incident matches use the matching assets' current active alerts.</p>
         <div className="flex items-center gap-3 border-t border-surface-700 px-4 py-2 text-[10px] text-surface-500">
           <span><kbd className="rounded border border-surface-700 px-1">↑↓</kbd> move</span>
           <span><kbd className="rounded border border-surface-700 px-1">Enter</kbd> open</span>
