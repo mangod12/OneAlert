@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { BriefcaseMedical, Clock, Download, ShieldAlert, ShieldCheck, Siren, Timer, Users } from 'lucide-react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
+import { SlaEvidenceExplorer } from '../components/SlaEvidenceExplorer';
 import { WorkloadExplorer } from '../components/WorkloadExplorer';
 import { KPICard } from '../components/KPICard';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -101,6 +102,7 @@ export function Reports() {
   const requestId = useRef(0);
   const [days, setDays] = useState(30);
   const [report, setReport] = useState<PostureReport | null>(null);
+  const [evidenceKind, setEvidenceKind] = useState<'alerts' | 'cases' | null>(null);
   const [sla, setSla] = useState<SlaReport | null>(null);
   const [workload, setWorkload] = useState<TeamWorkload | null>(null);
   const [trend, setTrend] = useState<AlertTrend | null>(null);
@@ -350,6 +352,10 @@ export function Reports() {
                   </div>
                 ))}
               </div>
+              <div className="flex flex-wrap gap-2 border-t border-surface-800 px-4 py-3">
+                {(['alerts', 'cases'] as const).map(kind => <button key={kind} type="button" aria-pressed={evidenceKind === kind} onClick={() => setEvidenceKind(current => current === kind ? null : kind)} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">{evidenceKind === kind ? 'Hide' : 'Review'} {kind === 'cases' ? 'investigation' : 'alert'} SLA records</button>)}
+              </div>
+              {evidenceKind && <SlaEvidenceExplorer key={`${evidenceKind}-${days}`} kind={evidenceKind} days={days} />}
               <div className="flex justify-end border-t border-surface-800 px-4 py-3">
                 <button
                   type="button"

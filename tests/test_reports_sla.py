@@ -265,3 +265,58 @@ def test_one_day_sla_window_does_not_include_yesterdays_due_dates(client, auth_h
     result = client.get('/api/v1/reports/sla?days=1', headers=auth_headers).json()
     assert result['cases']['due'] == 0
     assert result['alerts']['due'] == 0
+
+
+def test_sla_records_match_summary_with_stable_pages(client, auth_headers):
+    summary = client.get('/api/v1/reports/sla', headers=auth_headers).json()
+    for kind in ['alerts', 'cases']:
+        base = f'/api/v1/reports/sla/records?kind={kind}'
+        result = client.get(base, headers=auth_headers).json()
+        assert result['total'] == summary[kind]['due']
+        assert len(result['records']) == result['total']
+        assert result['window_start'] <= result['window_end']
+        ids = [row['id'] for row in result['records']]
+        pages = [
+            client.get(base + f'&offset={i}&limit=1', headers=auth_headers).json()['records'][0]['id']
+            for i in range(len(ids))
+        ]
+        assert ids == pages
+        for outcome in ['met', 'breached', 'unknown']:
+            filtered = client.get(base + f'&outcome={outcome}', headers=auth_headers).json()
+            assert filtered['total'] == summary[kind][outcome]
+            assert all(row['outcome'] == outcome for row in filtered['records'])
+
+
+def test_sla_record_query_and_validation(client, auth_headers):
+    path = '/api/v1/reports/sla/records'
+    result = client.get(path + '?query=OVERDUE', headers=auth_headers).json()
+    assert result['total'] == 1
+    assert result['records'][0]['title'] == 'Overdue triage'
+    client.cookies.clear()
+    assert client.get(path).status_code == 401
+    for params in ['kind=anything', 'outcome=anything', 'limit=101', 'limit=0', 'offset=-1', 'days=0']:
+        assert client.get(path + '?' + params, headers=auth_headers).status_code == 422
+    assert client.get(path + '?days=1', headers=auth_headers).json()['total'] == 0
+
+
+def test_sla_records_preserve_unknown_and_reopened_evidence(client, auth_headers):
+    with TestingSessionLocal() as db:
+        user = db.query(User).filter_by(email='sla_report_test@example.com').one()
+        db.add(Case(user_id=user.id, title='Unscored completed record', status='closed',
+                    severity='high', due_date=TODAY - timedelta(days=1)))
+        db.add(Case(user_id=user.id, title='Reopened after completion', status='open',
+                    severity='high', due_date=TODAY - timedelta(days=1), closed_at=_naive(days_ago=2)))
+        other = User(email='sla_records_other@example.com', hashed_password=get_password_hash('testpass123'),
+                     full_name='Other', company='Other', is_active=True, is_verified=True)
+        db.add(other)
+        db.flush()
+        db.add(Case(user_id=other.id, title='Private foreign case', status='open',
+                    severity='high', due_date=TODAY - timedelta(days=1)))
+        db.commit()
+    result = client.get('/api/v1/reports/sla/records?kind=cases', headers=auth_headers).json()
+    by_title = {row['title']: row for row in result['records']}
+    assert 'Private foreign case' not in by_title
+    assert by_title['Unscored completed record']['outcome'] == 'unknown'
+    assert by_title['Unscored completed record']['completed_on'] is None
+    assert by_title['Reopened after completion']['outcome'] == 'breached'
+    assert by_title['Reopened after completion']['completed_on'] is not None
