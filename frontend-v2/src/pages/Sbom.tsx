@@ -85,6 +85,7 @@ export function Sbom() {
   const [pendingDelete, setPendingDelete] = useState<Sbom | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [assetTotal, setAssetTotal] = useState(0);
   const [showUpload, setShowUpload] = useState(false);
   const componentQuery = componentSearch.trim().toLowerCase();
   const searchedComponents = componentQuery
@@ -109,6 +110,7 @@ export function Sbom() {
       ]);
       setSboms(sbomRes.data);
       setAssets(assetRes.data.assets);
+      setAssetTotal(assetRes.data.total);
       setAssetNames(new Map(assetRes.data.assets.map(a => [a.id, a.name])));
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Software bills of materials could not be loaded.'));
@@ -333,6 +335,7 @@ export function Sbom() {
       {showUpload && (
         <UploadDialog
           assets={assets}
+          totalAssets={assetTotal}
           uploading={uploading}
           onClose={() => { if (!uploading) setShowUpload(false); }}
           onUpload={handleUpload}
@@ -354,13 +357,37 @@ export function Sbom() {
   );
 }
 
-function UploadDialog({ assets, uploading, onClose, onUpload }: {
+function UploadDialog({ assets, totalAssets, uploading, onClose, onUpload }: {
   assets: Asset[];
+  totalAssets: number;
   uploading: boolean;
   onClose: () => void;
   onUpload: (assetId: number, sbomData: Record<string, unknown>) => void;
 }) {
   const [assetId, setAssetId] = useState('');
+  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+  const [options, setOptions] = useState(assets);
+  const [optionTotal, setOptionTotal] = useState(totalAssets);
+  const [page, setPage] = useState(1);
+  const [query, setQuery] = useState('');
+  const [search, setSearch] = useState('');
+  const [optionsLoading, setOptionsLoading] = useState(false);
+  const [optionsError, setOptionsError] = useState('');
+  const [retry, setRetry] = useState(0);
+  const initialOptions = useRef(true);
+  useEffect(() => {
+    if (initialOptions.current) { initialOptions.current = false; return; }
+    let active = true;
+    setOptionsLoading(true); setOptionsError('');
+    void apiClient.get<AssetListResponse>('/assets/', { params: { page, size: 100, ...(search ? { search } : {}) } }).then(res => {
+      if (!active) return;
+      const lastPage = Math.max(1, Math.ceil(res.data.total / 100));
+      if (page > lastPage) { setPage(lastPage); return; }
+      setOptions(res.data.assets); setOptionTotal(res.data.total);
+    }).catch(err => { if (active) setOptionsError(getApiErrorMessage(err, 'Destination assets could not be loaded.')); })
+      .finally(() => { if (active) setOptionsLoading(false); });
+    return () => { active = false; };
+  }, [page, search, retry]);
   const [document, setDocument] = useState('');
   const [parseError, setParseError] = useState('');
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -368,6 +395,7 @@ function UploadDialog({ assets, uploading, onClose, onUpload }: {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (uploading || !selectedAsset || optionsLoading || optionsError) return;
     setParseError('');
     let parsed: unknown;
     try {
@@ -389,18 +417,29 @@ function UploadDialog({ assets, uploading, onClose, onUpload }: {
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="sbom-upload-title" className="relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]">
         <h2 id="sbom-upload-title" className="text-lg font-semibold text-surface-50 mb-4">Upload SBOM</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="space-y-2 rounded-md border border-surface-700 p-3">
+            <label htmlFor="sbom-asset-search" className="text-xs text-surface-300">Find destination asset</label>
+            <div className="flex gap-2"><input id="sbom-asset-search" value={query} disabled={uploading} onChange={event => setQuery(event.target.value)} className="min-w-0 flex-1 rounded border border-surface-600 bg-surface-800 px-2 py-1.5 text-sm text-surface-100" placeholder="Name, vendor or product" /><button type="button" disabled={uploading} onClick={() => { setPage(1); setSearch(query.trim()); setRetry(value => value + 1); }} className="rounded border border-surface-600 px-3 text-xs text-surface-200">Search assets</button></div>
+            {optionsLoading ? <p role="status" className="text-xs text-surface-400">Loading destination assets...</p> : optionsError ? <div><p role="alert" className="text-xs text-danger">{optionsError}</p><button type="button" onClick={() => setRetry(value => value + 1)} className="mt-2 text-xs text-primary-400">Retry destination assets</button></div> : <>
           <select
             aria-label="Asset"
             value={assetId}
-            onChange={(e) => setAssetId(e.target.value)}
+            onChange={(e) => { setAssetId(e.target.value); setSelectedAsset(options.find(asset => String(asset.id) === e.target.value) || selectedAsset); }}
+            disabled={uploading}
             required
             className="w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
             <option value="" disabled>Select an asset</option>
-            {assets.map(asset => (
-              <option key={asset.id} value={asset.id}>{asset.name}</option>
+            {selectedAsset && !options.some(asset => asset.id === selectedAsset.id) && <option value={selectedAsset.id}>{selectedAsset.name} (selected)</option>}
+            {options.map(asset => (
+              <option key={asset.id} value={asset.id}>{asset.name} · #{asset.id}</option>
             ))}
           </select>
+            <p className="text-xs text-surface-400">{optionTotal === 0 ? 'No matching destination assets.' : `Showing ${(page - 1) * 100 + 1}–${Math.min(page * 100, optionTotal)} of ${optionTotal} matching assets · Page ${page} of ${Math.ceil(optionTotal / 100)}`}</p>
+            <div className="flex gap-2"><button type="button" disabled={uploading || page === 1} onClick={() => setPage(value => value - 1)} className="rounded border border-surface-600 px-2 py-1 text-xs text-surface-200 disabled:opacity-40">Previous assets</button><button type="button" disabled={uploading || page * 100 >= optionTotal} onClick={() => setPage(value => value + 1)} className="rounded border border-surface-600 px-2 py-1 text-xs text-surface-200 disabled:opacity-40">More assets</button></div>
+            </>}
+            <p className="break-words text-xs text-surface-300">{selectedAsset ? `Selected destination: ${selectedAsset.name} (#${selectedAsset.id}). Search and page changes keep this selection until you choose another asset.` : 'Choose a destination asset before uploading.'}</p>
+          </div>
           <textarea
             aria-label="SBOM JSON document"
             value={document}
@@ -422,7 +461,7 @@ function UploadDialog({ assets, uploading, onClose, onUpload }: {
             </button>
             <button
               type="submit"
-              disabled={uploading}
+              disabled={uploading || !selectedAsset || optionsLoading || !!optionsError}
               className="rounded-md bg-primary-500 px-3.5 py-1.5 text-xs font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-40"
             >
               {uploading ? 'Uploading...' : 'Upload'}
