@@ -111,9 +111,9 @@ export function ResponsePlans() {
       setPlans(data.data || []);
       setTotal(count);
     }
-    else nextErrors.push(getApiErrorMessage(planResult.reason, 'Response plans could not be loaded.'));
+    else { setPlans([]); setTotal(0); setSelectedPlanId(null); nextErrors.push(getApiErrorMessage(planResult.reason, 'Response plans could not be loaded.')); }
     if (approvalResult.status === 'fulfilled') setPending(approvalResult.value.data.data || []);
-    else nextErrors.push(getApiErrorMessage(approvalResult.reason, 'Pending approvals could not be loaded.'));
+    else { setPending([]); nextErrors.push(getApiErrorMessage(approvalResult.reason, 'Pending approvals could not be loaded.')); }
     setErrors(nextErrors);
     setLoading(false);
   }, [statusFilter, page]);
