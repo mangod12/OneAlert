@@ -42,6 +42,7 @@ export function Sbom() {
   const [assetNames, setAssetNames] = useState<Map<number, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [componentEvidence, setComponentEvidence] = useState<{ component: SbomComponent; sbom: Sbom } | null>(null);
   const [expanded, setExpanded] = useState<number | null>(null);
   const componentRequestId = useRef(0);
   const [components, setComponents] = useState<SbomComponent[]>([]);
@@ -95,6 +96,9 @@ export function Sbom() {
         c.name.toLowerCase().includes(componentQuery)
         || (c.version ?? '').toLowerCase().includes(componentQuery)
         || (c.supplier ?? '').toLowerCase().includes(componentQuery)
+        || (c.purl ?? '').toLowerCase().includes(componentQuery)
+        || (c.cpe ?? '').toLowerCase().includes(componentQuery)
+        || (c.license ?? '').toLowerCase().includes(componentQuery)
       )
     : components;
   const visibleComponents = vulnerableOnly
@@ -203,7 +207,7 @@ export function Sbom() {
           <p>No SBOMs uploaded yet.</p>
         </div>
       ) : (
-        <div className="oa-panel overflow-hidden rounded-md">
+        <div role="region" aria-label="SBOM inventory and component evidence" tabIndex={0} className="oa-panel overflow-x-auto rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-surface-700 text-surface-400">
@@ -223,7 +227,7 @@ export function Sbom() {
                     onClick={() => void toggleExpand(sbom)}
                     className="cursor-pointer border-b border-surface-700/50 hover:bg-surface-800 transition-colors"
                   >
-                    <td className="px-4 py-3 text-surface-200 font-medium">{assetNames.get(sbom.asset_id) ?? `Asset #${sbom.asset_id}`}</td>
+                    <td className="px-4 py-3 text-surface-200 font-medium"><button type="button" aria-expanded={expanded === sbom.id} onClick={event => { event.stopPropagation(); void toggleExpand(sbom); }} className="rounded text-left hover:text-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-500">{assetNames.get(sbom.asset_id) ?? `Asset #${sbom.asset_id}`}</button></td>
                     <td className="px-4 py-3 text-surface-400 text-xs">{sbom.format}{sbom.version ? ` ${sbom.version}` : ''}</td>
                     <td className="px-4 py-3 text-surface-400 text-xs">{sbom.source}</td>
                     <td className="px-4 py-3 text-surface-300">{sbom.component_count}</td>
@@ -267,11 +271,11 @@ export function Sbom() {
                                 {licenseSummary.copyleft > 0 && <StatusBadge tone="warning">{licenseSummary.copyleft} copyleft</StatusBadge>}
                               </div>
                             )}
-                            <div className="mb-3 flex items-center gap-3">
+                            <div className="mb-3 flex flex-wrap items-center gap-3">
                               <input
                                 type="text"
                                 aria-label="Search components"
-                                placeholder="Search components..."
+                                placeholder="Name, package URL, CPE, license..."
                                 value={componentSearch}
                                 onChange={(e) => setComponentSearch(e.target.value)}
                                 className="w-64 px-3 py-1.5 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -307,6 +311,7 @@ export function Sbom() {
                                 <th className="py-1.5 text-left">Supplier</th>
                                 <th className="py-1.5 text-left">License</th>
                                 <th className="py-1.5 text-left">Known vulnerabilities</th>
+                                <th className="py-1.5 text-right">Evidence</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -323,6 +328,7 @@ export function Sbom() {
                                       <span className="text-xs text-surface-500">None</span>
                                     )}
                                   </td>
+                                  <td className="py-1.5 text-right"><button type="button" aria-label={`View evidence for ${component.name}`} onClick={() => setComponentEvidence({ component, sbom })} className="whitespace-nowrap rounded border border-surface-600 px-2 py-1 text-xs text-primary-300 hover:border-primary-500">View evidence</button></td>
                                 </tr>
                               ))}
                             </tbody>
@@ -349,6 +355,8 @@ export function Sbom() {
           onUpload={handleUpload}
         />
       )}
+
+      {componentEvidence && <ComponentEvidenceDialog component={componentEvidence.component} sbom={componentEvidence.sbom} assetName={assetNames.get(componentEvidence.sbom.asset_id)} onClose={() => setComponentEvidence(null)} />}
 
       {pendingDelete && (
         <ConfirmDialog
@@ -479,4 +487,26 @@ function UploadDialog({ assets, totalAssets, uploading, onClose, onUpload }: {
       </div>
     </div>
   );
+}
+
+function ComponentEvidenceDialog({ component, sbom, assetName, onClose }: { component: SbomComponent; sbom: Sbom; assetName?: string; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef, onClose);
+  const fields = [
+    ['Component', component.name], ['Version', component.version], ['Supplier', component.supplier],
+    ['License', component.license], ['Package URL (PURL)', component.purl], ['CPE', component.cpe],
+    ['Recorded vulnerability references', String(component.has_known_vulnerability)],
+    ['Component record ID', String(component.id)], ['SBOM record ID', String(sbom.id)],
+    ['Asset', `${assetName ? `${assetName} · ` : ''}#${sbom.asset_id}`],
+    ['Document format', `${sbom.format}${sbom.version ? ` ${sbom.version}` : ''}`],
+    ['Source', sbom.source], ['Uploaded', new Date(sbom.created_at).toLocaleString()],
+  ];
+  return <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="absolute inset-0 bg-surface-950/75 backdrop-blur-sm" onClick={onClose} />
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="sbom-component-evidence-title" className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-surface-700 bg-surface-900 p-5 shadow-[var(--oa-shadow-float)]">
+      <div className="flex items-start justify-between gap-4"><h2 id="sbom-component-evidence-title" className="text-lg font-semibold text-surface-50">Recorded component evidence</h2><button type="button" onClick={onClose} className="rounded border border-surface-600 px-3 py-1.5 text-xs text-surface-200">Close</button></div>
+      <p className="my-3 text-xs text-surface-400">Values recorded in the uploaded SBOM, not a live package or vulnerability scan. Missing identifiers and vulnerability details cannot be reconstructed here.</p>
+      <dl className="divide-y divide-surface-700">{fields.map(([label, value]) => <div key={label} className="grid gap-1 py-2.5 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-4"><dt className="text-xs text-surface-400">{label}</dt><dd className="min-w-0 whitespace-pre-wrap break-words text-sm text-surface-100 [overflow-wrap:anywhere]">{value?.trim() ? value : 'Not recorded'}</dd></div>)}</dl>
+    </div>
+  </div>;
 }
