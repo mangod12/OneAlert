@@ -43,7 +43,7 @@ export function Assets() {
     if (exporting) return;
     setExporting(true);
     try {
-      const params: Record<string, string> = {};
+      const params: Record<string, string> = { sort };
       if (typeFilter) params.asset_type = typeFilter;
       if (vendorFilter) params.vendor = vendorFilter;
       if (criticalityFilter) params.criticality = criticalityFilter;

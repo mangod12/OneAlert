@@ -236,8 +236,9 @@ describe('Assets CSV export', () => {
     render(<MemoryRouter><Assets /></MemoryRouter>);
     await screen.findByRole('button', { name: /export csv/i });
     fireEvent.change(screen.getByRole('combobox', { name: 'Filter by criticality' }), { target: { value: 'high' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort assets' }), { target: { value: 'name_asc' } });
     fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
-    await waitFor(() => expect(get).toHaveBeenCalledWith('/assets/export', { params: { criticality: 'high' }, responseType: 'blob' }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/assets/export', { params: { criticality: 'high', sort: 'name_asc' }, responseType: 'blob' }));
     await waitFor(() => expect(clicks).toContain('assets.csv'));
   });
 });
