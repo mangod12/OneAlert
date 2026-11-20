@@ -140,6 +140,8 @@ export function Compliance() {
   const [summaries, setSummaries] = useState<ComplianceSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const controlsRequestId = useRef(0);
+  const selectedFramework = useRef<number | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [controls, setControls] = useState<Control[]>([]);
   const [assessments, setAssessments] = useState<Map<number, Assessment>>(new Map());
@@ -200,9 +202,11 @@ export function Compliance() {
     }
   }, []);
 
-  useEffect(() => { void fetchOverview(); }, [fetchOverview]);
+  useEffect(() => { void fetchOverview(); return () => { controlsRequestId.current += 1; }; }, [fetchOverview]);
 
   const loadControls = async (frameworkId: number) => {
+    const request = ++controlsRequestId.current;
+    setControls([]); setAssessments(new Map());
     setControlsLoading(true);
     setControlsError('');
     try {
@@ -210,6 +214,7 @@ export function Compliance() {
         apiClient.get<Control[]>(`/compliance/frameworks/${frameworkId}/controls`),
         apiClient.get<Assessment[]>('/compliance/assessments'),
       ]);
+      if (request !== controlsRequestId.current || selectedFramework.current !== frameworkId) return;
       setControls(controlsRes.data);
       const latest = new Map<number, Assessment>();
       for (const assessment of assessmentsRes.data) {
@@ -218,16 +223,20 @@ export function Compliance() {
       }
       setAssessments(latest);
     } catch (err: unknown) {
+      if (request !== controlsRequestId.current || selectedFramework.current !== frameworkId) return;
       setControls([]);
       setAssessments(new Map());
       setControlsError(getApiErrorMessage(err, 'Framework controls could not be loaded.'));
     } finally {
-      setControlsLoading(false);
+      if (request === controlsRequestId.current) setControlsLoading(false);
     }
   };
 
   const openFramework = async (frameworkId: number) => {
-    if (selected === frameworkId) { setSelected(null); return; }
+    controlsRequestId.current += 1;
+    setEvidenceTarget(null);
+    if (selected === frameworkId) { selectedFramework.current = null; setSelected(null); return; }
+    selectedFramework.current = frameworkId;
     setSelected(frameworkId);
     await loadControls(frameworkId);
   };
@@ -240,7 +249,7 @@ export function Compliance() {
       const total = res.data?.data?.total;
       toast(total != null ? `Automated assessment updated ${total} controls.` : 'Automated assessment completed.', 'success');
       await fetchOverview();
-      if (selected != null) await loadControls(selected);
+      if (selectedFramework.current != null) await loadControls(selectedFramework.current);
     } catch (err: unknown) {
       toast(getApiErrorMessage(err, 'The automated assessment could not be run.'), 'error');
     } finally {
@@ -250,13 +259,14 @@ export function Compliance() {
 
   const changeStatus = async (assessment: Assessment, status: string) => {
     if (savingIds.has(assessment.id) || assessment.status === status) return;
+    const frameworkId = selectedFramework.current;
     const previous = assessment.status;
     setSavingIds(current => new Set(current).add(assessment.id));
     setAssessments(current => new Map(current).set(assessment.control_id, { ...assessment, status }));
     try {
       await apiClient.patch(`/compliance/assessments/${assessment.id}`, { status });
     } catch (err: unknown) {
-      setAssessments(current => new Map(current).set(assessment.control_id, { ...assessment, status: previous }));
+      if (selectedFramework.current === frameworkId) setAssessments(current => new Map(current).set(assessment.control_id, { ...assessment, status: previous }));
       toast(getApiErrorMessage(err, 'Assessment status could not be updated.'), 'error');
     } finally {
       setSavingIds(current => { const next = new Set(current); next.delete(assessment.id); return next; });

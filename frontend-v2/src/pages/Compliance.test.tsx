@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { Compliance } from './Compliance';
@@ -215,5 +215,45 @@ describe('Compliance CSV export', () => {
     fireEvent.click(await screen.findByRole('button', { name: /export csv/i }));
     await waitFor(() => expect(get).toHaveBeenCalledWith('/compliance/export', { params: { framework_id: '1' }, responseType: 'blob' }));
     await waitFor(() => expect(clicks).toContain('compliance-1.csv'));
+  });
+});
+
+
+describe('Compliance framework request identity', () => {
+  it.each(['success', 'failure'])('ignores obsolete controls %s from another framework', async outcome => {
+    let resolveOld!: (value: unknown) => void;
+    let rejectOld!: (error: Error) => void;
+    get.mockImplementation((url: string) => {
+      if (url === '/compliance/frameworks') return Promise.resolve({ data: frameworks });
+      if (url === '/compliance/summary') return Promise.resolve({ data: summaries });
+      if (url === '/compliance/assessments') return Promise.resolve({ data: assessments });
+      if (url.endsWith('/1/controls')) return new Promise((resolve, reject) => { resolveOld = resolve; rejectOld = reject; });
+      return Promise.resolve({ data: [{ ...controls[0], id: 21, framework_id: 2, control_id: 'IEC-CURRENT', title: 'Current framework control' }] });
+    });
+    render(<Compliance />);
+    fireEvent.click(await screen.findByText('NIST CSF'));
+    fireEvent.click(screen.getByText('IEC 62443'));
+    await screen.findByText('IEC-CURRENT');
+    await act(async () => { if (outcome === 'success') resolveOld({ data: controls }); else rejectOld(new Error('Old framework failure')); });
+    expect(screen.getByText('IEC-CURRENT')).toBeTruthy();
+    expect(screen.queryByText('PR.AC-1')).toBeNull();
+    expect(screen.queryByText('Old framework failure')).toBeNull();
+  });
+  it('does not reuse a collapsed framework result when another framework opens', async () => {
+    let resolveOld!: (value: unknown) => void;
+    get.mockImplementation((url: string) => {
+      if (url === '/compliance/frameworks') return Promise.resolve({ data: frameworks });
+      if (url === '/compliance/summary') return Promise.resolve({ data: summaries });
+      if (url === '/compliance/assessments') return Promise.resolve({ data: [] });
+      if (url.endsWith('/1/controls')) return new Promise(resolve => { resolveOld = resolve; });
+      return Promise.resolve({ data: [] });
+    });
+    render(<Compliance />);
+    fireEvent.click(await screen.findByText('NIST CSF'));
+    fireEvent.click(screen.getByText('NIST CSF'));
+    await act(async () => { resolveOld({ data: controls }); });
+    fireEvent.click(screen.getByText('IEC 62443'));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/compliance/frameworks/2/controls'));
+    expect(screen.queryByText('PR.AC-1')).toBeNull();
   });
 });
