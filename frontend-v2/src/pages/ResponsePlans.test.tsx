@@ -172,7 +172,9 @@ describe('Response plan CSV export', () => {
 
 describe('Response execution outcome feedback', () => {
   it.each([
-    [{ plan_id: 12, status: 'completed', total_actions: 2, succeeded: 2, failed: 0 }, '2 of 2 actions succeeded; 0 failed or skipped', 'status'],
+    [{ plan_id: 12, execution_mode: 'simulated', status: 'completed', total_actions: 2, succeeded: 2, failed: 0 }, 'Simulation only. No external action was performed.', 'status'],
+    [{ plan_id: 12, status: 'completed', total_actions: 2, succeeded: 2, failed: 0 }, 'Execution mode not verified.', 'alert'],
+    [{ plan_id: 12, execution_mode: 'live', status: 'completed', total_actions: 2, succeeded: 2, failed: 0 }, 'Execution mode not verified.', 'alert'],
     [{ plan_id: 12, status: 'partial', total_actions: 2, succeeded: 1, failed: 1 }, '1 of 2 actions succeeded; 1 failed or skipped', 'alert'],
     [{ plan_id: 12, status: 'partial', total_actions: 2, succeeded: 0, failed: 2 }, '0 of 2 actions succeeded; 2 failed or skipped', 'alert'],
     [{ plan_id: 999, status: 'completed', total_actions: 1, succeeded: 1, failed: 0 }, 'without a verifiable outcome', 'alert'],

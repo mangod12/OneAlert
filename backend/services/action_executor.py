@@ -54,6 +54,7 @@ async def execute_response_plan(db: AsyncSession, plan: ResponsePlan) -> dict:
             failed += 1
             result = {"action": action_type, "target": target, "status": "skipped",
                       "detail": f"Unknown action type: {action_type}",
+                      "execution_mode": "simulated",
                       "executed_at": datetime.now(UTC).isoformat()}
             results.append(result)
             continue
@@ -67,13 +68,17 @@ async def execute_response_plan(db: AsyncSession, plan: ResponsePlan) -> dict:
             else:
                 failed += 1
 
-            result = {"action": action_type, "target": target, "status": status, "detail": detail}
+            result = {
+                "action": action_type, "target": target, "status": status,
+                "detail": f"Simulation only: {detail}. No external action was performed.",
+            }
             logger.info(f"Action {action_type} on {target}: {status} — {detail}")
         except Exception as e:
             failed += 1
             result = {"action": action_type, "target": target, "status": "error", "detail": "Action failed"}
             logger.error("Action %s on %s failed: %s", action_type, target, type(e).__name__)
 
+        result["execution_mode"] = "simulated"
         result["executed_at"] = datetime.now(UTC).isoformat()
         results.append(result)
 
@@ -89,6 +94,7 @@ async def execute_response_plan(db: AsyncSession, plan: ResponsePlan) -> dict:
 
     return {
         "plan_id": plan.id,
+        "execution_mode": "simulated",
         "status": plan.status,
         "total_actions": len(sorted_actions),
         "succeeded": succeeded,
