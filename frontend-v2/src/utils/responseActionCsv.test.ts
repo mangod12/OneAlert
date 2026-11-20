@@ -21,3 +21,11 @@ it('exports explicit simulation mode and never infers it for historical results'
   expect(csv.match(/"simulated"/g)).toHaveLength(1);
   expect(csv.match(/"unknown","loaded saved/g)).toHaveLength(2);
 });
+
+it('exports structured legacy values as JSON and does not label a truthy string approved', () => {
+  const legacy = { toString: 'recorded-data' };
+  const input = { ...plan, actions: [{ action_type: legacy, target: legacy, reason: legacy, policy_check: { approved: 'false' } }] };
+  const csv = responseActionCsv(input as unknown as Parameters<typeof responseActionCsv>[0]);
+  expect(csv).toContain('{""toString"":""recorded-data""}');
+  expect(csv).toContain('"unknown","not recorded"');
+});
