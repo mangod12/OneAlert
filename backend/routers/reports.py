@@ -330,6 +330,7 @@ async def get_sla_records(
     start = today - timedelta(days=days - 1)
     model = Alert if kind == "alerts" else Case
     done = model.status == "resolved" if kind == "alerts" else model.status.in_(_DONE_CASE_STATUSES)
+    done = func.coalesce(done, False)
     completion = model.resolved_at if kind == "alerts" else model.closed_at
     result_expression = sql_case(
         (~done, "breached"),
