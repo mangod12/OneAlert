@@ -12,6 +12,12 @@ describe('Endpoint identity evidence', () => {
     expect(screen.getByText('2 matching device records. No single identity or risk score was chosen.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Close endpoint identity' })); expect(close).toHaveBeenCalledOnce();
   });
+  it('keeps missing OT classification distinct from a recorded negative flag', () => {
+    show({ ...node, device_records: [{ ...record, id: 7, is_ot_device: null }, { ...record, id: 9, is_ot_device: false }] });
+    const fields = screen.getAllByText('Recorded OT flag');
+    expect(fields[0].nextElementSibling?.textContent).toBe('Not recorded');
+    expect(fields[1].nextElementSibling?.textContent).toBe('No');
+  });
   it('distinguishes absent legacy details from a current empty match set', () => {
     const { unmount } = render(<TopologyEndpointIdentity node={{ id: '192.0.2.8', label: 'Unknown' }} onClose={vi.fn()} />);
     expect(screen.getByText('Device identity details were not recorded in this response.')).toBeTruthy(); unmount();
