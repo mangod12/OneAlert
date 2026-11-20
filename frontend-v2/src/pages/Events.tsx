@@ -71,6 +71,8 @@ interface EventSource {
 }
 
 export function Events() {
+  const eventRequestId = useRef(0);
+  const [eventError, setEventError] = useState('');
   const [events, setEvents] = useState<SecurityEvent[]>([]);
   const [stats, setStats] = useState<EventStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,7 +118,9 @@ export function Events() {
   const [uploading, setUploading] = useState(false);
 
   const fetchEvents = useCallback(async () => {
-    setLoading(true);
+    const request = ++eventRequestId.current;
+    setLoading(true); setEventError('');
+    setEvents([]); setTotal(0); setExpandedId(null);
     setErrors([]);
     try {
       const params: Record<string, string | number> = { page, size: 50 };
@@ -131,21 +135,25 @@ export function Events() {
         apiClient.get('/events/stats'),
         apiClient.get('/events/sources'),
       ]);
+      if (request !== eventRequestId.current) return;
       const nextErrors: string[] = [];
       if (evtResult.status === 'fulfilled') { setEvents(evtResult.value.data.events); setTotal(evtResult.value.data.total); }
-      else nextErrors.push(getApiErrorMessage(evtResult.reason, 'Event stream is unavailable'));
+      else setEventError(getApiErrorMessage(evtResult.reason, 'Event stream is unavailable'));
       if (statsResult.status === 'fulfilled') setStats(statsResult.value.data.data);
-      else nextErrors.push(getApiErrorMessage(statsResult.reason, 'Event statistics are unavailable'));
+      else { setStats(null); nextErrors.push(getApiErrorMessage(statsResult.reason, 'Event statistics are unavailable')); }
       if (sourcesResult.status === 'fulfilled') setSources(sourcesResult.value.data);
       setErrors(nextErrors);
     } catch (err: unknown) {
-      setErrors([getApiErrorMessage(err, 'Security events could not be loaded.')]);
+      if (request === eventRequestId.current) setEventError(getApiErrorMessage(err, 'Security events could not be loaded.'));
     } finally {
-      setLoading(false);
+      if (request === eventRequestId.current) setLoading(false);
     }
   }, [page, severityFilter, eventTypeFilter, ipSearch, signatureSearch, sourceTypeFilter, sort]);
 
-  useEffect(() => { void fetchEvents(); }, [fetchEvents]);
+  useEffect(() => {
+    void fetchEvents();
+    return () => { eventRequestId.current += 1; };
+  }, [fetchEvents]);
 
   useEffect(() => {
     apiClient.get('/events/types').then(res => setEventTypes(res.data.types ?? [])).catch(() => {});
@@ -191,7 +199,7 @@ export function Events() {
         )}
       />
 
-      {errors.length > 0 && (events.length > 0 || stats) && <DegradedBanner messages={errors} onRetry={() => void fetchEvents()} />}
+      {errors.length > 0 && !eventError && <DegradedBanner messages={errors} onRetry={() => void fetchEvents()} />}
 
       {/* Stats */}
       {stats && (
@@ -336,8 +344,8 @@ export function Events() {
       {/* Event Table */}
       {loading ? (
         <LoadingSurface rows={5} label="Loading security events" />
-      ) : errors.length > 0 && events.length === 0 ? (
-        <ErrorState title="Event stream unavailable" description={errors.join(' · ')} action={<RetryButton onClick={() => void fetchEvents()} />} />
+      ) : eventError ? (
+        <ErrorState title="Event stream unavailable" description={eventError} action={<RetryButton onClick={() => void fetchEvents()} />} />
       ) : events.length === 0 ? (
         <div className="text-center py-20">
           <Activity className="w-16 h-16 text-surface-600 mx-auto mb-4" />
