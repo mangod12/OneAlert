@@ -257,3 +257,23 @@ describe('Compliance framework request identity', () => {
     expect(screen.queryByText('PR.AC-1')).toBeNull();
   });
 });
+
+
+it('retries controls without collapsing the selected framework', async () => {
+  let fail = true;
+  get.mockImplementation(async (url: string) => {
+    if (url === '/compliance/frameworks') return { data: frameworks };
+    if (url === '/compliance/summary') return { data: summaries };
+    if (url === '/compliance/assessments') return { data: assessments };
+    if (fail) throw new Error('Controls temporarily unavailable');
+    return { data: controls };
+  });
+  render(<Compliance />);
+  fireEvent.click(await screen.findByText('NIST CSF'));
+  expect(await screen.findByText('Controls unavailable')).toBeTruthy();
+  fail = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(await screen.findByText('PR.AC-1')).toBeTruthy();
+  expect(screen.getByRole('button', { name: /NIST CSF 2.0/ }).getAttribute('aria-expanded')).toBe('true');
+  expect(get.mock.calls.filter(([url]) => url === '/compliance/frameworks/1/controls').length).toBe(2);
+});

@@ -343,7 +343,7 @@ export function Compliance() {
           {controlsLoading ? (
             <LoadingSurface rows={4} label="Loading framework controls" />
           ) : controlsError ? (
-            <ErrorState title="Controls unavailable" description={controlsError} action={<RetryButton onClick={() => void openFramework(selected)} />} />
+            <ErrorState title="Controls unavailable" description={controlsError} action={<RetryButton onClick={() => void loadControls(selected)} />} />
           ) : (
             <>
             <div className="flex flex-wrap items-center gap-3 border-b border-surface-700 px-4 py-3">
@@ -461,8 +461,10 @@ export function Compliance() {
           control={evidenceTarget.control}
           onClose={() => setEvidenceTarget(null)}
           onSaved={(updated) => {
-            setAssessments(current => new Map(current).set(updated.control_id, updated));
-            setEvidenceTarget(null);
+            if (selectedFramework.current === evidenceTarget.control.framework_id) {
+              setAssessments(current => new Map(current).set(updated.control_id, updated));
+              setEvidenceTarget(null);
+            }
           }}
         />
       )}
