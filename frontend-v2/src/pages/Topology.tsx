@@ -8,14 +8,15 @@ import { toast } from '../components/Toast';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { TopologyConnectionEvidence, type RecordedTopologyEdge } from '../components/TopologyConnectionEvidence';
+import { TopologyEndpointIdentity, type EndpointIdentity } from '../components/TopologyEndpointIdentity';
 import { topologyCsv } from '../utils/topologyCsv';
 
-interface TopologyNode {
+interface TopologyNode extends EndpointIdentity {
   id: string;
   label: string;
   type: string;
   zone: string | null;
-  risk_score: number;
+  risk_score: number | null;
 }
 
 type TopologyEdge = RecordedTopologyEdge;
@@ -49,12 +50,13 @@ export function Topology() {
   const [protocolFilter, setProtocolFilter] = useState('');
   const [cleartextOnly, setCleartextOnly] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [identityNode, setIdentityNode] = useState<TopologyNode | null>(null);
   const [selectedConnection, setSelectedConnection] = useState<TopologyEdge | null>(null);
   const [graphReceivedAt, setGraphReceivedAt] = useState<string | null>(null);
 
   const fetchTopology = useCallback(async () => {
     const request = ++requestId.current;
-    setLoading(true); setError(''); setStatsError(''); setSelectedConnection(null); setGraphReceivedAt(null);
+    setLoading(true); setError(''); setStatsError(''); setSelectedConnection(null); setGraphReceivedAt(null); setIdentityNode(null);
     const [graphResult, statsResult] = await Promise.allSettled([
       apiClient.get<{ nodes: TopologyNode[]; edges: TopologyEdge[] }>('/topology/graph'),
       apiClient.get<TopologyStats>('/topology/stats'),
@@ -176,6 +178,7 @@ export function Topology() {
   return (
     <div className="space-y-6">
       {selectedConnection && <TopologyConnectionEvidence edge={selectedConnection} receivedAt={graphReceivedAt} sourceLabel={nodeLabel(selectedConnection.source)} targetLabel={nodeLabel(selectedConnection.target)} onClose={() => setSelectedConnection(null)} />}
+      {identityNode && <TopologyEndpointIdentity node={identityNode} onClose={() => setIdentityNode(null)} />}
       <PageHeader eyebrow="Observe" title="Network Topology" description="Observed devices, zones and connections, with encryption exposure." actions={
         <button type="button" onClick={exportConnections} disabled={filteredEdges.length === 0} className="flex items-center gap-2 rounded-md border border-surface-700 px-3 py-2 text-xs text-surface-200 hover:bg-surface-800 disabled:opacity-40">
           <Download className="h-4 w-4" aria-hidden="true" /> Export filtered connections
@@ -220,8 +223,8 @@ export function Topology() {
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-surface-400 mb-3">{zone}</h2>
                 <div className="space-y-2">
                   {zoneNodes.map(node => (
+                    <div key={node.id} className="rounded-md border border-surface-700 p-2">
                     <button
-                      key={node.id}
                       type="button"
                       aria-pressed={selectedNodeId === node.id}
                       title="Show this node's connections"
@@ -238,11 +241,13 @@ export function Topology() {
                       </div>
                       <div className="ml-2 flex shrink-0 items-center gap-2">
                         <StatusBadge tone={node.type === 'gateway' ? 'info' : 'neutral'}>{node.type}</StatusBadge>
-                        {node.risk_score > 0 && (
+                        {node.risk_score !== null && node.risk_score >= 0 && (
                           <span className="text-xs text-surface-400">risk {Math.round(node.risk_score)}</span>
                         )}
                       </div>
                     </button>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-surface-400">{node.device_records === undefined ? 'Identity details not recorded' : node.device_records.length > 1 ? `${node.device_records.length} device records, identity ambiguous` : node.device_records.length === 1 ? 'One IP-matched device record' : 'No IP-matched device record'}</span><button type="button" aria-label={`Review identity for ${node.id}`} onClick={() => setIdentityNode(node)} className="rounded border border-surface-600 px-2 py-1.5 text-xs text-primary-300">Review identity</button></div>
+                    </div>
                   ))}
                 </div>
               </div>

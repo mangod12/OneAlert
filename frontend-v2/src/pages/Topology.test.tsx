@@ -306,3 +306,17 @@ describe('Connection evidence handoff', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
+
+describe('Endpoint identity review', () => {
+  it('reviews legacy identity evidence separately from filtering node connections', async () => {
+    render(<Topology />); await screen.findAllByText('scada-historian');
+    const before = get.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Review identity for 10.0.1.5' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByText('Device identity details were not recorded in this response.')).toBeTruthy();
+    expect(get.mock.calls.length).toBe(before);
+    fireEvent.click(screen.getByRole('button', { name: 'Close endpoint identity' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText('1 of 2 connections')).toBeNull();
+  });
+});

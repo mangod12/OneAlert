@@ -25,23 +25,30 @@ async def build_topology_graph(user_id: int, db: AsyncSession) -> dict:
     )
     devices = device_result.scalars().all()
 
-    # Build device lookup by IP
-    device_by_ip = {}
+    # A shared IP does not establish one physical device. Keep every owned
+    # observation and never let database row order choose an endpoint identity.
+    devices_by_ip = {}
     for device in devices:
         if device.ip_address:
-            device_by_ip[device.ip_address] = device
-
-    # Build nodes
+            devices_by_ip.setdefault(device.ip_address, []).append(device)
     nodes = {}
-    for device in devices:
-        ip = device.ip_address
+    for ip, matches in devices_by_ip.items():
+        matches.sort(key=lambda item: item.id)
+        single = matches[0] if len(matches) == 1 else None
         nodes[ip] = {
             "id": ip,
-            "label": device.hostname or device.manufacturer or ip,
-            "type": "ot_device" if device.is_ot_device else "device",
-            "zone": None,  # Would come from asset correlation
-            "risk_score": device.risk_score or 0,
-            "device_id": device.id,
+            "label": (single.hostname or single.manufacturer or ip) if single else ip,
+            "type": ("ot_device" if single.is_ot_device else "device") if single else "ambiguous",
+            "zone": None,
+            "risk_score": single.risk_score if single else None,
+            "device_id": single.id if single else None,
+            "identity_status": "single_record" if single else "multiple_records",
+            "device_records": [{
+                "id": item.id, "hostname": item.hostname, "manufacturer": item.manufacturer,
+                "model": item.model, "sensor_id": item.sensor_id, "asset_id": item.asset_id,
+                "is_ot_device": item.is_ot_device, "risk_score": item.risk_score,
+                "first_seen": item.first_seen, "last_seen": item.last_seen,
+            } for item in matches],
         }
 
     # Add nodes from connections that aren't in devices
@@ -53,8 +60,10 @@ async def build_topology_graph(user_id: int, db: AsyncSession) -> dict:
                     "label": ip,
                     "type": "unknown",
                     "zone": None,
-                    "risk_score": 0,
+                    "risk_score": None,
                     "device_id": None,
+                    "identity_status": "unmatched",
+                    "device_records": [],
                 }
 
     # Build edges
