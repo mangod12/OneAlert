@@ -12,7 +12,7 @@ beforeEach(() => { vi.resetAllMocks(); eventId = '99'; get.mockResolvedValue({ d
 it('loads an exact event without consulting the list and preserves large counters and raw payload text', async () => {
   render(<EventEvidence />); await screen.findByText('Saved gateway event'); expect(get).toHaveBeenCalledExactlyOnceWith('/events/99/evidence');
   expect(screen.getByText('9007199254740993')).toBeTruthy(); expect(screen.getByText('0')).toBeTruthy(); expect(screen.getAllByText('Not recorded').length).toBeGreaterThan(0);
-  expect(screen.getByLabelText('Exact stored payload JSON').textContent).toBe(raw); expect(screen.getByText('Gateway source')).toBeTruthy();
+  expect(screen.getByLabelText('Exact stored payload JSON').textContent).toBe(raw); expect(screen.getByText('Gateway source')).toBeTruthy(); expect(screen.getByRole('link', { name: 'View saved events from this source' }).getAttribute('href')).toBe('/app/events?source_id=7');
 });
 it.each(['bad', '0', '-1', '9007199254740992'])('rejects invalid identity %s without lookup', async id => {
   eventId = id; render(<EventEvidence />); await screen.findByRole('alert'); expect(get).not.toHaveBeenCalled();
@@ -22,7 +22,7 @@ it.each([{ ...snapshot, event: { ...snapshot.event, id: 98 } }, { ...snapshot, s
 });
 it('labels unavailable source and absent payload without invented zero evidence', async () => {
   get.mockResolvedValue({ data: { ...snapshot, source_state: 'unavailable', source: null, raw_payload_json: null } }); render(<EventEvidence />);
-  await screen.findByText(/The linked source is unavailable to this account/); expect(screen.getByText('No raw payload was recorded.')).toBeTruthy();
+  await screen.findByText(/The linked source is unavailable to this account/); expect(screen.getByText('No raw payload was recorded.')).toBeTruthy(); expect(screen.queryByRole('link', { name: 'View saved events from this source' })).toBeNull();
 });
 it('clears old evidence when refresh fails and disables download until reread succeeds', async () => {
   render(<EventEvidence />); await screen.findByText('Saved gateway event'); get.mockRejectedValueOnce(new Error('offline')); fireEvent.click(screen.getByRole('button', { name: 'Refresh exact event evidence' })); await screen.findByRole('alert'); expect(screen.queryByText('Saved gateway event')).toBeNull(); expect(screen.getByRole('button', { name: 'Download loaded event evidence JSON' })).toHaveProperty('disabled', true);

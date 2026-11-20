@@ -80,7 +80,7 @@ interface EventSource {
   created_at: string;
 }
 
-export function Events() {
+export function Events({ initialSourceId = '' }: { initialSourceId?: string } = {}) {
   const eventRequestId = useRef(0);
   const [eventError, setEventError] = useState('');
   const [events, setEvents] = useState<SecurityEvent[]>([]);
@@ -95,7 +95,7 @@ export function Events() {
   const [ipSearch, setIpSearch] = useState('');
   const [signatureSearch, setSignatureSearch] = useState('');
   const [sourceTypeFilter, setSourceTypeFilter] = useState('');
-  const [sourceIdFilter, setSourceIdFilter] = useState('');
+  const [sourceIdFilter, setSourceIdFilter] = useState(initialSourceId);
   const [errors, setErrors] = useState<string[]>([]);
   const [sources, setSources] = useState<EventSource[]>([]);
   const [showUpload, setShowUpload] = useState(false);
@@ -303,6 +303,7 @@ export function Events() {
           {sources.map(source => <option key={source.id} value={source.id}>{source.name} (#{source.id}, {source.source_type})</option>)}
         </select>
         <p className="break-words text-xs text-surface-400">{sourceIdFilter ? `Filtering source #${sourceIdFilter}. Other applied filters still narrow results.` : 'All sources included.'} Source totals are lifetime recorded counts, not a live sensor health check. CSV export and saved views use this selection.</p>
+        {sourceIdFilter && <p className="text-xs text-surface-400"><a href={`/app/events?source_id=${encodeURIComponent(sourceIdFilter)}`} className="inline-block rounded border border-surface-600 px-3 py-2 text-primary-300">Open source-only event link</a> This link carries only the selected recorded source ID, not the other filters, current results or account access.</p>}
         {sourceIdFilter && <button type="button" onClick={() => { setSourceIdFilter(''); setPage(1); }} className="text-xs text-primary-300">Clear recorded source</button>}
       </section>
 

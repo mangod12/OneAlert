@@ -6,11 +6,11 @@ import apiClient from '../api/client';
 const get = vi.mocked(apiClient.get), post = vi.mocked(apiClient.post);
 const source = { id: 7, name: 'Plant A gateway', source_type: 'suricata', status: 'active', event_count: 42, last_event_at: null };
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
-function setup(unavailable = false) {
+function setup(unavailable = false, sourceId: string | number = 7) {
   get.mockImplementation(async (url: string) => {
     if (url === '/events/') return { data: { events: [], total: 0 } };
     if (url === '/events/stats') return { data: { data: { total_events: 42, by_severity: {}, by_type: {}, source_count: 1 } } };
-    if (url === '/events/sources') { if (unavailable) throw new Error('unavailable'); return { data: [source] }; }
+    if (url === '/events/sources') { if (unavailable) throw new Error('unavailable'); return { data: [{ ...source, id: sourceId }] }; }
     if (url === '/events/views/') return { data: [{ id: 1, name: 'Saved plant', filters: { source_id: 7 }, created_at: '' }] };
     if (url === '/events/export') return { data: new Blob(['id\n1']) };
     return { data: { types: [] } };
@@ -41,4 +41,10 @@ describe('Recorded event source triage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(post).toHaveBeenCalledWith('/events/views/', { name: 'Copied plant', filters: { source_id: 7, sort: 'timestamp_desc' } }));
   });
+});
+
+it('encodes a DOM-selected source identifier as a single query value', async () => {
+  setup(false, '7&unexpected=1');
+  fireEvent.click(await screen.findByRole('button', { name: 'View events from Plant A gateway' }));
+  expect(screen.getByRole('link', { name: 'Open source-only event link' }).getAttribute('href')).toBe('/app/events?source_id=7%26unexpected%3D1');
 });

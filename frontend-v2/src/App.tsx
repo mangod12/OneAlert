@@ -16,7 +16,7 @@ const Reports = lazy(() => import('./pages/Reports').then(module => ({ default: 
 const CaseDetail = lazy(() => import('./pages/CaseDetail').then(module => ({ default: module.CaseDetail })));
 const Alerts = lazy(() => import('./pages/Alerts').then(module => ({ default: module.Alerts })));
 const EventEvidence = lazy(() => import('./pages/EventEvidence').then(module => ({ default: module.EventEvidence })));
-const Events = lazy(() => import('./pages/Events').then(module => ({ default: module.Events })));
+const Events = lazy(() => import('./pages/EventSourceRoute').then(module => ({ default: module.EventSourceRoute })));
 const Assets = lazy(() => import('./pages/Assets').then(module => ({ default: module.Assets })));
 const OTDiscovery = lazy(() => import('./pages/OTDiscovery').then(module => ({ default: module.OTDiscovery })));
 const MitreMap = lazy(() => import('./pages/MitreMap').then(module => ({ default: module.MitreMap })));
