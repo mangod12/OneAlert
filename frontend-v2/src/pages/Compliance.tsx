@@ -71,14 +71,15 @@ const evidenceTypes = [
 ] as const;
 
 function EvidenceDialog({ assessment, control, onClose, onSaved }: {
-  assessment: Assessment;
+  assessment: Assessment | null;
   control: Control;
   onClose: () => void;
   onSaved: (updated: Assessment) => void;
 }) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  const [evidenceType, setEvidenceType] = useState(assessment.evidence_type ?? '');
-  const [evidenceDetail, setEvidenceDetail] = useState(assessment.evidence_detail ?? '');
+  const [reviewStatus, setReviewStatus] = useState(assessment?.status ?? 'not_assessed');
+  const [evidenceType, setEvidenceType] = useState(assessment ? assessment.evidence_type ?? '' : 'manual');
+  const [evidenceDetail, setEvidenceDetail] = useState(assessment?.evidence_detail ?? '');
   const [saving, setSaving] = useState(false);
   useDialogFocus(dialogRef, onClose);
 
@@ -86,11 +87,14 @@ function EvidenceDialog({ assessment, control, onClose, onSaved }: {
     if (saving) return;
     setSaving(true);
     try {
-      const res = await apiClient.patch<Assessment>(`/compliance/assessments/${assessment.id}`, {
-        status: assessment.status,
+      const payload = {
+        status: reviewStatus,
         evidence_type: evidenceType || null,
         evidence_detail: evidenceDetail.trim() || null,
-      });
+      };
+      const res = assessment
+        ? await apiClient.patch<Assessment>(`/compliance/assessments/${assessment.id}`, payload)
+        : await apiClient.post<Assessment>(`/compliance/controls/${control.id}/assessments`, payload);
       toast('Evidence saved.', 'success');
       onSaved(res.data);
     } catch (err: unknown) {
@@ -108,6 +112,15 @@ function EvidenceDialog({ assessment, control, onClose, onSaved }: {
         <h2 className="text-sm font-semibold text-surface-50">Evidence for {control.control_id}</h2>
         <p className="mt-0.5 text-xs text-surface-500">{control.title}</p>
         <div className="mt-4 space-y-3">
+          {!assessment && <>
+            <p className="text-xs text-surface-400">Record your review of this control. Saving does not run an automated assessment.</p>
+            <label className="block text-xs font-medium text-surface-300">Review status
+              <select aria-label="Review status" value={reviewStatus} onChange={event => setReviewStatus(event.target.value)}
+                className="mt-1 w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100">
+                {assessmentStatuses.map(status => <option key={status} value={status}>{statusLabels[status]}</option>)}
+              </select>
+            </label>
+          </>}
           <div>
             <label htmlFor="evidence-type" className="mb-1 block text-xs font-medium text-surface-300">Evidence type</label>
             <select id="evidence-type" value={evidenceType} onChange={e => setEvidenceType(e.target.value)}
@@ -125,7 +138,7 @@ function EvidenceDialog({ assessment, control, onClose, onSaved }: {
           <div className="flex items-center gap-2 pt-1">
             <button type="button" onClick={() => void save()} disabled={saving}
               className="min-h-9 rounded-md bg-primary-500 px-4 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">
-              {saving ? 'Saving...' : 'Save evidence'}
+              {saving ? 'Saving...' : assessment ? 'Save evidence' : 'Save manual assessment'}
             </button>
             <button type="button" onClick={onClose}
               className="rounded-md border border-surface-600 px-3 py-2 text-sm text-surface-300 hover:bg-surface-800">Cancel</button>
@@ -134,6 +147,34 @@ function EvidenceDialog({ assessment, control, onClose, onSaved }: {
       </div>
     </div>
   );
+}
+
+function AssessmentHistoryDialog({ control, history, onClose }: { control: Control; history: Assessment[]; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  useDialogFocus(dialogRef, onClose);
+  const [page, setPage] = useState(1);
+  const sorted = [...history].sort((a, b) => b.assessed_at.localeCompare(a.assessed_at) || b.id - a.id);
+  return <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="absolute inset-0 bg-surface-950/70" onClick={onClose} aria-hidden="true" />
+    <section ref={dialogRef} role="dialog" aria-modal="true" aria-label={`Assessment history for ${control.control_id}`}
+      className="relative max-h-[85vh] w-full max-w-xl space-y-4 overflow-y-auto rounded-lg border border-surface-700 bg-surface-900 p-5 shadow-xl">
+      <div className="flex items-start justify-between gap-3"><h2 className="text-sm font-semibold text-surface-50">Assessment history: {control.control_id}</h2>
+        <button type="button" onClick={onClose} className="rounded border border-surface-600 px-3 py-1 text-xs text-surface-300">Close history</button></div>
+      <p className="text-xs text-surface-400">{sorted.length} saved records for this control. New reviews keep earlier records. Edits to an existing record are not a separate audit history.</p>
+      <nav aria-label="Assessment history pages" className="flex flex-wrap items-center justify-between gap-2 text-xs text-surface-300">
+        <span>Page {page} of {Math.max(1, Math.ceil(sorted.length / 10))}</span><div className="flex gap-2">
+          <button type="button" disabled={page === 1} onClick={() => setPage(page - 1)} className="rounded border border-surface-600 px-2 py-1 disabled:opacity-40">Previous records</button>
+          <button type="button" disabled={page * 10 >= sorted.length} onClick={() => setPage(page + 1)} className="rounded border border-surface-600 px-2 py-1 disabled:opacity-40">More records</button>
+        </div>
+      </nav>
+      <ol className="space-y-3">{sorted.slice((page - 1) * 10, page * 10).map((record, index) => <li key={record.id} className="min-w-0 space-y-2 rounded border border-surface-700 p-3 text-xs text-surface-300">
+        <div className="flex flex-wrap items-center gap-2"><StatusBadge tone={statusTones[record.status] ?? 'neutral'}>{statusLabels[record.status] ?? record.status}</StatusBadge><span>{page === 1 && index === 0 ? 'Latest saved record' : 'Earlier saved record'} · #{record.id}</span></div>
+        <p className="break-words">{record.assessed_by} · {new Date(record.assessed_at).toLocaleString()}</p>
+        <p>Evidence type: {record.evidence_type || 'Not recorded'}</p>
+        <p className="whitespace-pre-wrap break-words">{record.evidence_detail || 'No evidence detail recorded.'}</p>
+      </li>)}</ol>
+    </section>
+  </div>;
 }
 
 export function Compliance() {
@@ -148,13 +189,15 @@ export function Compliance() {
   const selectedFramework = useRef<number | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [controls, setControls] = useState<Control[]>([]);
+  const [assessmentHistory, setAssessmentHistory] = useState<Assessment[]>([]);
+  const [historyTarget, setHistoryTarget] = useState<Control | null>(null);
   const [assessments, setAssessments] = useState<Map<number, Assessment>>(new Map());
   const [controlsLoading, setControlsLoading] = useState(false);
   const [controlsError, setControlsError] = useState('');
   const [savingIds, setSavingIds] = useState<Set<number>>(new Set());
   const [controlSearch, setControlSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [evidenceTarget, setEvidenceTarget] = useState<{ assessment: Assessment; control: Control } | null>(null);
+  const [evidenceTarget, setEvidenceTarget] = useState<{ assessment: Assessment | null; control: Control } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [assessing, setAssessing] = useState(false);
 
@@ -227,7 +270,7 @@ export function Compliance() {
 
   const loadControls = async (frameworkId: number) => {
     const request = ++controlsRequestId.current;
-    setControls([]); setAssessments(new Map());
+    setControls([]); setAssessments(new Map()); setAssessmentHistory([]);
     setControlsLoading(true);
     setControlsError('');
     try {
@@ -243,10 +286,12 @@ export function Compliance() {
         if (!existing || (existing.assessed_at < assessment.assessed_at || (existing.assessed_at === assessment.assessed_at && existing.id < assessment.id))) latest.set(assessment.control_id, assessment);
       }
       setAssessments(latest);
+      setAssessmentHistory(assessmentsRes.data);
     } catch (err: unknown) {
       if (request !== controlsRequestId.current || selectedFramework.current !== frameworkId) return;
       setControls([]);
       setAssessments(new Map());
+      setAssessmentHistory([]);
       setControlsError(getApiErrorMessage(err, 'Framework controls could not be loaded.'));
     } finally {
       if (request === controlsRequestId.current) setControlsLoading(false);
@@ -255,7 +300,7 @@ export function Compliance() {
 
   const openFramework = async (frameworkId: number) => {
     controlsRequestId.current += 1;
-    setEvidenceTarget(null);
+    setEvidenceTarget(null); setHistoryTarget(null);
     if (selected === frameworkId) { selectedFramework.current = null; setSelected(null); return; }
     selectedFramework.current = frameworkId;
     setSelected(frameworkId);
@@ -285,7 +330,10 @@ export function Compliance() {
     setSavingIds(current => new Set(current).add(assessment.id));
     setAssessments(current => new Map(current).set(assessment.control_id, { ...assessment, status }));
     try {
-      await apiClient.patch(`/compliance/assessments/${assessment.id}`, { status });
+      const response = await apiClient.patch<Assessment>(`/compliance/assessments/${assessment.id}`, { status });
+      if (selectedFramework.current === frameworkId) {
+        setAssessmentHistory(current => current.map(row => row.id === assessment.id ? { ...row, ...response.data, status } : row));
+      }
       await refreshSummary();
     } catch (err: unknown) {
       if (selectedFramework.current === frameworkId) setAssessments(current => new Map(current).set(assessment.control_id, { ...assessment, status: previous }));
@@ -315,7 +363,7 @@ export function Compliance() {
 
       {summaryRefreshing && <p role="status" className="text-sm text-surface-400">Refreshing saved compliance posture...</p>}
       {summaryError && <div role="alert" className="rounded border border-warning/40 p-3 text-sm text-warning">
-        Status was saved, but the cards may be out of date. {summaryError}
+        Assessment was saved, but the cards may be out of date. {summaryError}
         <button type="button" onClick={() => void refreshSummary()} disabled={summaryRefreshing}
           className="ml-2 rounded border border-surface-600 px-3 py-1 text-xs disabled:opacity-40">Retry posture</button>
       </div>}
@@ -406,7 +454,8 @@ export function Compliance() {
                 {exporting ? 'Exporting...' : 'Export CSV'}
               </button>
             </div>
-            <table className="w-full text-sm">
+            <div role="region" aria-label="Framework controls" tabIndex={0} className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">
+            <table className="w-full min-w-[760px] text-sm">
               <thead>
                 <tr className="border-b border-surface-700 text-surface-400">
                   <th className="px-4 py-3 text-left">Control</th>
@@ -454,6 +503,7 @@ export function Compliance() {
                         </td>
                         <td className="px-4 py-3">
                           {assessment ? (
+                            <div className="flex flex-wrap gap-2">
                             <button
                               type="button"
                               aria-label={`Edit evidence for ${control.control_id}`}
@@ -465,10 +515,17 @@ export function Compliance() {
                               }`}
                             >
                               <FileText className="h-3.5 w-3.5" aria-hidden="true" />
-                              {assessment.evidence_detail ? 'View' : 'Add'}
+                              {assessment.evidence_detail ? 'View / edit' : 'Add evidence'}
                             </button>
+                            <button type="button" aria-label={`New review for ${control.control_id}`} onClick={() => setEvidenceTarget({ assessment: null, control })}
+                              className="min-h-8 rounded border border-surface-600 px-2.5 text-xs text-surface-300">New review</button>
+                            <button type="button" aria-label={`Assessment history for ${control.control_id}`} onClick={() => setHistoryTarget(control)}
+                              className="min-h-8 rounded border border-surface-600 px-2.5 text-xs text-surface-300">History ({assessmentHistory.filter(row => row.control_id === control.id).length})</button>
+                            </div>
                           ) : (
-                            <span className="text-xs text-surface-600">-</span>
+                            <button type="button" aria-label={`Assess control ${control.control_id}`}
+                              onClick={() => setEvidenceTarget({ assessment: null, control })}
+                              className="min-h-8 rounded border border-surface-600 px-2.5 text-xs text-surface-300 hover:bg-surface-800">Assess control</button>
                           )}
                         </td>
                         <td className="px-4 py-3 text-surface-500 text-xs">
@@ -480,10 +537,12 @@ export function Compliance() {
                 )}
               </tbody>
             </table>
+            </div>
             </>
           )}
         </div>
       )}
+      {historyTarget && <AssessmentHistoryDialog control={historyTarget} history={assessmentHistory.filter(row => row.control_id === historyTarget.id)} onClose={() => setHistoryTarget(null)} />}
       {evidenceTarget && (
         <EvidenceDialog
           assessment={evidenceTarget.assessment}
@@ -492,7 +551,9 @@ export function Compliance() {
           onSaved={(updated) => {
             if (selectedFramework.current === evidenceTarget.control.framework_id) {
               setAssessments(current => new Map(current).set(updated.control_id, updated));
-              setEvidenceTarget(null);
+              setAssessmentHistory(current => [...current.filter(row => row.id !== updated.id), updated]);
+              setEvidenceTarget(current => current === evidenceTarget ? null : current);
+              if (!evidenceTarget.assessment) void refreshSummary();
             }
           }}
         />

@@ -332,3 +332,73 @@ it('keeps a saved status and offers independent posture retry if the refresh fai
   expect(patch).toHaveBeenCalledTimes(1);
   expect(post).not.toHaveBeenCalled();
 });
+
+it('records the first manual control assessment without automated execution', async () => {
+  post.mockResolvedValue({ data: { ...assessments[0], id: 20, control_id: 12, status: 'partial', evidence_type: 'manual', evidence_detail: 'Reviewed policy' } });
+  render(<Compliance />);
+  fireEvent.click(await screen.findByText('NIST CSF'));
+  fireEvent.click(await screen.findByLabelText('Assess control DE.CM-1'));
+  expect(screen.getByText(/Saving does not run an automated assessment/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Review status'), { target: { value: 'partial' } });
+  fireEvent.change(screen.getByLabelText('Details'), { target: { value: 'Reviewed policy' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save manual assessment' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(post).toHaveBeenCalledExactlyOnceWith('/compliance/controls/12/assessments', { status: 'partial', evidence_type: 'manual', evidence_detail: 'Reviewed policy' });
+  expect(screen.getByLabelText('Set status for DE.CM-1')).toHaveProperty('value', 'partial');
+  expect(get.mock.calls.filter(([url]) => url === '/compliance/summary')).toHaveLength(2);
+});
+
+it('keeps a failed manual review draft and supports retry without automation', async () => {
+  post.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ data: { ...assessments[0], id: 20, control_id: 12, status: 'partial' } });
+  render(<Compliance />);
+  fireEvent.click(await screen.findByText('NIST CSF'));
+  fireEvent.click(await screen.findByLabelText('Assess control DE.CM-1'));
+  fireEvent.change(screen.getByLabelText('Details'), { target: { value: 'Retained manual evidence' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save manual assessment' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Save manual assessment' })).toHaveProperty('disabled', false));
+  expect(screen.getByLabelText('Details')).toHaveProperty('value', 'Retained manual evidence');
+  fireEvent.click(screen.getByRole('button', { name: 'Save manual assessment' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(post.mock.calls.every(([url]) => url === '/compliance/controls/12/assessments')).toBe(true);
+});
+
+it('records a new review without removing the earlier evidence and browses it newest first', async () => {
+  const reviewed = { ...assessments[0], id: 9, status: 'partial', evidence_detail: 'New retained evidence', assessed_at: '2026-11-20T08:00:00Z' };
+  post.mockResolvedValue({ data: reviewed });
+  render(<Compliance />);
+  fireEvent.click(await screen.findByText('NIST CSF'));
+  fireEvent.click(await screen.findByLabelText('New review for PR.AC-1'));
+  fireEvent.change(screen.getByLabelText('Review status'), { target: { value: 'partial' } });
+  fireEvent.change(screen.getByLabelText('Details'), { target: { value: reviewed.evidence_detail } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save manual assessment' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  fireEvent.click(screen.getByLabelText('Assessment history for PR.AC-1'));
+  expect(screen.getByRole('dialog', { name: 'Assessment history for PR.AC-1' })).toBeTruthy();
+  expect(screen.getByText('Latest saved record · #9')).toBeTruthy();
+  expect(screen.getByText('Earlier saved record · #5')).toBeTruthy();
+  expect(screen.getByText('New retained evidence')).toBeTruthy();
+  expect(screen.getByText(/not a separate audit history/)).toBeTruthy();
+  expect(post).toHaveBeenCalledExactlyOnceWith('/compliance/controls/11/assessments', expect.objectContaining({ status: 'partial' }));
+});
+
+it('pages saved assessment history locally and keeps higher IDs first on timestamp ties', async () => {
+  const records = Array.from({ length: 23 }, (_, index) => ({ ...assessments[0], id: index + 1, evidence_detail: `Retained record ${index + 1}` }));
+  get.mockImplementation(async url => {
+    if (url === '/compliance/frameworks') return { data: frameworks };
+    if (url === '/compliance/summary') return { data: summaries };
+    if (url === '/compliance/assessments') return { data: records };
+    return { data: controls };
+  });
+  render(<Compliance />);
+  fireEvent.click(await screen.findByText('NIST CSF'));
+  fireEvent.click(await screen.findByLabelText('Assessment history for PR.AC-1'));
+  expect(screen.getByText('Latest saved record · #23')).toBeTruthy();
+  expect(screen.queryByText('Retained record 13')).toBeNull();
+  const reads = get.mock.calls.length;
+  fireEvent.click(screen.getByRole('button', { name: 'More records' }));
+  expect(screen.getByText('Retained record 13')).toBeTruthy();
+  expect(screen.getByText('Page 2 of 3')).toBeTruthy();
+  expect(get).toHaveBeenCalledTimes(reads);
+  expect(post).not.toHaveBeenCalled();
+  expect(patch).not.toHaveBeenCalled();
+});
