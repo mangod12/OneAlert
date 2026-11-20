@@ -10,7 +10,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import String, cast, delete, func, or_, select
+from sqlalchemy import String, cast, delete, func, or_, select, update
 from sqlalchemy import case as sql_case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
@@ -38,6 +38,7 @@ from backend.models.case import (
     CaseWatcherAdd,
     CaseWatcherResponse,
     MyTaskResponse,
+    ReviewedAssignedTaskChange,
     ReviewedPlanTaskImport,
     SeedTasksFromPlanResponse,
     TimelineEntryResponse,
@@ -459,6 +460,52 @@ async def explore_assigned_tasks(
             "filter_date": today, "completion": completion, "investigations": investigations,
             "scope": "Current records assigned to your account on currently visible investigations. "
                      "Not assignment history or proof of external remediation."}
+
+
+@router.patch("/assigned-task-explorer/{task_id}", response_model=CaseTaskResponse)
+async def change_reviewed_assigned_task(
+    task_id: int, payload: ReviewedAssignedTaskChange,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    """Edit exactly one currently self-assigned task using its reviewed state."""
+    if (payload.action == "set_due" and payload.due_date is None) or (
+        payload.action != "set_due" and payload.due_date is not None
+    ):
+        raise HTTPException(status_code=422, detail="Supply a date only for the set-due action")
+    case = (await db.execute(_visible_cases(payload.case_id, current_user).with_for_update())).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Assigned task not found")
+    if case.title != payload.expected_case_title or case.status != payload.expected_case_status:
+        raise HTTPException(status_code=409, detail="The investigation changed. Refresh tasks and review again.")
+    if payload.action in {"complete", "reopen"} and payload.expected_done == (payload.action == "complete"):
+        raise HTTPException(status_code=422, detail="Select a change from the reviewed completion state")
+    values = {}
+    if payload.action in {"complete", "reopen"}:
+        values = {"done": payload.action == "complete",
+                  "completed_at": datetime.now(UTC) if payload.action == "complete" else None}
+        note = f"Task {'completed' if values['done'] else 'reopened'}: {payload.expected_title}"
+    else:
+        new_date = payload.due_date if payload.action == "set_due" else None
+        if new_date == payload.expected_due_date:
+            raise HTTPException(status_code=422, detail="Select a different task due date")
+        values = {"due_date": new_date, "due_soon_notified_at": None, "overdue_notified_at": None}
+        note = (f"Task due date set to {new_date.isoformat()}: {payload.expected_title}" if new_date
+                else f"Task due date cleared: {payload.expected_title}")
+    # A single conditional update rejects changed/reassigned/deleted tasks even when
+    # another writer committed after the user loaded their review snapshot.
+    changed = await db.execute(update(CaseTask).where(
+        CaseTask.id == task_id, CaseTask.case_id == case.id, CaseTask.assignee_id == current_user.id,
+        CaseTask.title == payload.expected_title, CaseTask.done == payload.expected_done,
+        CaseTask.due_date == payload.expected_due_date,
+    ).values(**values).execution_options(synchronize_session=False))
+    if changed.rowcount != 1:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=(
+            "The assigned task changed or is no longer assigned to you. Refresh tasks and review again."))
+    db.add(CaseTimeline(case_id=case.id, entry_type="action", content=note, source="human", user_id=current_user.id))
+    await db.commit()
+    return (await db.execute(select(CaseTask).where(CaseTask.id == task_id)
+                            .execution_options(populate_existing=True))).scalar_one()
 
 
 @router.get("/watched-record-explorer")

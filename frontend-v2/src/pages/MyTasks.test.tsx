@@ -287,3 +287,18 @@ it('keeps bulk date selections and existing dates when returned values do not co
   expect(screen.getByText('Task #1 due: 2020-01-01')).toBeTruthy();
   expect(screen.getByLabelText('Select task #1: Collect host evidence')).toHaveProperty('checked', true);
 });
+
+it('pauses the old editing snapshot after a full-workload change until explicit refresh', async () => {
+  get.mockImplementation(async (url, config) => url === '/cases/my-tasks' ? { data } : { data: { data: [{ ...data[0], done: false, completed_at: null }], total: 1, page: 1, size: 25, completion: 'open', investigations: 'active', filter_date: (config?.params as { today: string }).today } });
+  vi.mocked(apiClient.patch).mockResolvedValueOnce({ data: { id: 1, case_id: 7, title: data[0].title, done: true, due_date: data[0].due_date, completed_at: '2026-11-21T00:00:00Z' } });
+  mount(); await screen.findByText('Collect host evidence'); fireEvent.click(screen.getByRole('button', { name: 'Explore all assigned tasks beyond the editing snapshot' })); await screen.findByRole('button', { name: 'Edit assigned task #1' });
+  fireEvent.click(screen.getByRole('button', { name: 'Edit assigned task #1' })); fireEvent.click(screen.getByRole('button', { name: 'Review task change' })); fireEvent.click(screen.getByRole('button', { name: 'Confirm task change' }));
+  await screen.findByText(/Snapshot controls are paused/); expect(screen.getByRole('button', { name: /Complete task #1:/ }).matches(':disabled')).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh tasks' })); await waitFor(() => expect(screen.queryByText(/Snapshot controls are paused/)).toBeNull()); expect(screen.getByRole('button', { name: /Complete task #1:/ }).matches(':disabled')).toBe(false);
+});
+it('keeps due-date drafts and blocks full-workload edits until drafts are saved or discarded', async () => {
+  get.mockImplementation(async (url, config) => url === '/cases/my-tasks' ? { data } : { data: { data: [{ ...data[0], done: false, completed_at: null }], total: 1, page: 1, size: 25, completion: 'open', investigations: 'active', filter_date: (config?.params as { today: string }).today } });
+  mount(); await screen.findByText('Collect host evidence'); fireEvent.change(screen.getByLabelText('Task due date for #1'), { target: { value: '2027-01-05' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Explore all assigned tasks beyond the editing snapshot' })); await screen.findByRole('button', { name: 'Edit assigned task #1' }); expect(screen.getByRole('button', { name: 'Edit assigned task #1' })).toHaveProperty('disabled', true);
+  expect(screen.getByLabelText('Task due date for #1')).toHaveProperty('value', '2027-01-05'); fireEvent.click(screen.getByRole('button', { name: 'Discard due date draft for task #1' })); expect(screen.getByRole('button', { name: 'Edit assigned task #1' })).toHaveProperty('disabled', false);
+});
