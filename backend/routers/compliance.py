@@ -248,6 +248,22 @@ async def list_assessments(
     return assessments
 
 
+@router.get("/assessments/{assessment_id}", response_model=AssessmentResponse)
+async def get_assessment(
+    assessment_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Read one current owned assessment; not a historical version of an edited record."""
+    assessment = (await db.execute(select(ComplianceAssessment).where(
+        ComplianceAssessment.id == assessment_id,
+        ComplianceAssessment.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if assessment is None:
+        raise HTTPException(status_code=404, detail="Assessment not found")
+    return assessment
+
+
 def _validate_assessment(update: AssessmentUpdate) -> None:
     valid_statuses = {"compliant", "non_compliant", "partial", "not_applicable", "not_assessed"}
     if update.status not in valid_statuses:

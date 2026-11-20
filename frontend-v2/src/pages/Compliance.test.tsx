@@ -402,3 +402,26 @@ it('pages saved assessment history locally and keeps higher IDs first on timesta
   expect(post).not.toHaveBeenCalled();
   expect(patch).not.toHaveBeenCalled();
 });
+
+it('selects exact assessment records across history pages and reloads them for comparison without writes', async () => {
+  const records = Array.from({ length: 23 }, (_, index) => ({ ...assessments[0], id: index + 1, evidence_detail: `Saved evidence ${index + 1}` }));
+  get.mockImplementation(async url => {
+    if (url === '/compliance/frameworks') return { data: frameworks };
+    if (url === '/compliance/summary') return { data: summaries };
+    if (url === '/compliance/assessments') return { data: records };
+    if (/\/compliance\/assessments\/\d+$/.test(url)) return { data: records.find(record => record.id === Number(url.split('/').at(-1))) };
+    return { data: controls };
+  });
+  render(<Compliance />);
+  fireEvent.click(await screen.findByText('NIST CSF'));
+  fireEvent.click(await screen.findByLabelText('Assessment history for PR.AC-1'));
+  fireEvent.click(screen.getByLabelText('Select assessment 23 for comparison'));
+  fireEvent.click(screen.getByRole('button', { name: 'More records' }));
+  fireEvent.click(screen.getByLabelText('Select assessment 13 for comparison'));
+  expect(screen.getByText('Selection: #23 → #13')).toBeTruthy();
+  const reads = get.mock.calls.length;
+  fireEvent.click(screen.getByRole('button', { name: 'Load selected assessment comparison' }));
+  await screen.findByText(/1 of 5 recorded fields differ/);
+  expect(get.mock.calls.slice(reads).map(call => call[0])).toEqual(['/compliance/assessments/23', '/compliance/assessments/13']);
+  expect(post).not.toHaveBeenCalled(); expect(patch).not.toHaveBeenCalled();
+});
