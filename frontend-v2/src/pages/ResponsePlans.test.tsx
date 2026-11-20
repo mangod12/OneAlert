@@ -305,3 +305,16 @@ it('removes stale approval requests when an approval queue refresh fails', async
   expect(screen.getByText('Case #4')).toBeTruthy();
   expect(post).not.toHaveBeenCalled();
 });
+
+it('exports selected recorded action evidence locally without executing or fetching a plan', async () => {
+  get.mockImplementation(url => Promise.resolve({ data: { data: url.endsWith('pending-approvals') ? [] : [plan], total: 1 } }));
+  Object.defineProperty(URL, 'createObjectURL', { value: vi.fn(() => 'blob:actions'), configurable: true }); Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), configurable: true });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  render(<ResponsePlans />);
+  fireEvent.click(await screen.findByText('Case #4'));
+  const reads = get.mock.calls.length;
+  fireEvent.click(screen.getByRole('button', { name: 'Export recorded action evidence' }));
+  expect(click).toHaveBeenCalledOnce();
+  expect(get.mock.calls.length).toBe(reads);
+  expect(post).not.toHaveBeenCalled(); expect(del).not.toHaveBeenCalled();
+});
