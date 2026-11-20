@@ -56,35 +56,42 @@ const kindLabels: Record<string, string> = {
 
 function IncidentTimeline({ assetId }: { assetId: number }) {
   const [events, setEvents] = useState<TimelineEvent[] | null>(null);
+  const [total, setTotal] = useState(0);
+  const [kinds, setKinds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
   const [search, setSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [kind, setKind] = useState('');
   const [page, setPage] = useState(1);
 
   useEffect(() => {
     let cancelled = false;
     setEvents(null); setError(null);
-    apiClient.get<{ events: TimelineEvent[] }>(`/incidents/${assetId}/timeline`)
-      .then(res => { if (!cancelled) setEvents(res.data.events); })
+    apiClient.get<{ events: TimelineEvent[]; total: number; kinds: string[] }>(`/incidents/${assetId}/timeline`, {
+      params: { page, page_size: 20, ...(appliedSearch ? { search: appliedSearch } : {}), ...(kind ? { kind } : {}) },
+    })
+      .then(res => { if (!cancelled) { setEvents(res.data.events); setTotal(res.data.total); setKinds(res.data.kinds); } })
       .catch(err => { if (!cancelled) setError(getApiErrorMessage(err, 'The timeline could not be loaded.')); });
     return () => { cancelled = true; };
-  }, [assetId, retry]);
+  }, [assetId, retry, page, appliedSearch, kind]);
 
-  if (error) return <div className="mt-2 space-y-2"><p role="alert" className="text-xs text-danger-400">{error}</p><button type="button" onClick={() => setRetry(value => value + 1)} className="rounded border border-surface-600 px-2.5 py-1.5 text-xs text-primary-300 hover:border-primary-500">Retry incident timeline</button></div>;
-  if (events === null) return <p role="status" className="mt-2 text-xs text-surface-500">Loading timeline...</p>;
-  if (events.length === 0) return <p className="mt-2 text-xs text-surface-500">No timeline events</p>;
-  const query = search.trim().toLowerCase();
-  const filtered = events.filter(event => (!kind || event.kind === kind) && (!query || [event.title, event.detail, event.kind, event.alert_id == null ? '' : String(event.alert_id)].some(value => value?.toLowerCase().includes(query))));
-  const pages = Math.max(1, Math.ceil(filtered.length / 20));
-  const currentPage = Math.min(page, pages);
-  const visible = filtered.slice((currentPage - 1) * 20, currentPage * 20);
+  const pages = Math.max(1, Math.ceil(total / 20));
+  const currentPage = page;
+  const visible = events ?? [];
   return (
     <div className="mt-2 space-y-3">
-      <p className="text-xs text-surface-400">{events.length} loaded timeline events. The endpoint returns at most the latest 100 events. Search and paging cover only this loaded window, not the full history.</p>
-      <div className="flex flex-wrap gap-2"><input aria-label="Search loaded incident timeline" value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} placeholder="Title, detail or alert ID" className="min-w-0 flex-1 rounded border border-surface-600 bg-surface-800 px-2.5 py-1.5 text-sm text-surface-100" /><select aria-label="Timeline event kind" value={kind} onChange={event => { setKind(event.target.value); setPage(1); }} className="max-w-full rounded border border-surface-600 bg-surface-800 px-2 py-1.5 text-xs text-surface-200"><option value="">All event kinds</option>{[...new Set(events.map(event => event.kind))].sort().map(value => <option key={value} value={value}>{kindLabels[value] ?? value}</option>)}</select></div>
-      <p className="text-xs text-surface-500">{filtered.length} of {events.length} loaded events match</p>
-      {visible.length === 0 ? <p className="text-xs text-surface-400">No loaded timeline events match these filters.</p> : <ol className="space-y-2" aria-label="Incident timeline">
+      <p className="text-xs text-surface-400">Search all recorded alert events for this asset, including resolved alerts and evidence older than the latest 100 events. Titles and severity on creation rows reflect current alert values; change details reflect the saved audit record.</p>
+      <form onSubmit={event => { event.preventDefault(); setAppliedSearch(search.trim()); setPage(1); }} className="flex flex-wrap gap-2">
+        <input aria-label="Search incident history" maxLength={200} value={search} onChange={event => setSearch(event.target.value)} placeholder="Title, detail or alert ID" className="min-w-0 basis-full sm:basis-0 sm:flex-1 rounded border border-surface-600 bg-surface-800 px-2.5 py-1.5 text-sm text-surface-100" />
+        <button type="submit" className="rounded border border-surface-600 px-2.5 py-1.5 text-xs text-primary-300">Search history</button>
+        <select aria-label="Timeline event kind" value={kind} onChange={event => { setKind(event.target.value); setPage(1); }} className="max-w-full rounded border border-surface-600 bg-surface-800 px-2 py-1.5 text-xs text-surface-200"><option value="">All event kinds</option>{kinds.map(value => <option key={value} value={value}>{kindLabels[value] ?? value}</option>)}</select>
+        {(appliedSearch || kind) && <button type="button" onClick={() => { setSearch(''); setAppliedSearch(''); setKind(''); setPage(1); }} className="rounded border border-surface-600 px-2.5 py-1.5 text-xs text-surface-200">Clear history filters</button>}
+      </form>
+      {search.trim() !== appliedSearch && <p className="text-xs text-warning-300">Search draft not applied. Results use {appliedSearch ? `"${appliedSearch}"` : 'all keywords'}.</p>}
+      {error ? <div className="space-y-2"><p role="alert" className="text-xs text-danger-400">{error}</p><button type="button" onClick={() => setRetry(value => value + 1)} className="rounded border border-surface-600 px-2.5 py-1.5 text-xs text-primary-300">Retry incident timeline</button></div> : events === null ? <p role="status" className="text-xs text-surface-500">Loading timeline...</p> : <>
+      <p className="text-xs text-surface-500">{total} recorded events match{appliedSearch ? ` "${appliedSearch}"` : ''}. Showing {visible.length ? (page - 1) * 20 + 1 : 0} to {visible.length ? Math.min(page * 20, total) : 0}.</p>
+      {visible.length === 0 ? <div className="space-y-2"><p className="text-xs text-surface-400">No timeline events match these filters.</p>{page > 1 && <button type="button" onClick={() => setPage(1)} className="text-xs text-primary-300">Return to first history page</button>}</div> : <ol className="space-y-2" aria-label="Incident timeline">
         {visible.map((event, index) => <li key={`${currentPage}-${index}`} className="space-y-1 rounded border border-surface-700 p-3 text-sm">
           <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium text-surface-200">{kindLabels[event.kind] ?? event.kind}</span><span className="text-[11px] text-surface-500">{event.timestamp ? new Date(event.timestamp).toLocaleString() : 'Time not recorded'}</span></div>
           {event.alert_id != null && <p className="text-xs text-surface-400">Alert #{event.alert_id}</p>}
@@ -92,7 +99,8 @@ function IncidentTimeline({ assetId }: { assetId: number }) {
           <p className="whitespace-pre-wrap break-words text-xs text-surface-400 [overflow-wrap:anywhere]">{event.detail?.trim() ? event.detail : 'Detail not recorded'}</p>
         </li>)}
       </ol>}
-      <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-surface-400">Timeline page {currentPage} of {pages}</span><div className="flex gap-2"><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} className="rounded border border-surface-600 px-2.5 py-1.5 text-xs text-surface-200 disabled:opacity-40">Previous events</button><button type="button" disabled={currentPage === pages} onClick={() => setPage(currentPage + 1)} className="rounded border border-surface-600 px-2.5 py-1.5 text-xs text-surface-200 disabled:opacity-40">More events</button></div></div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-surface-400">Timeline page {currentPage} of {pages}</span><div className="flex gap-2"><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} className="rounded border border-surface-600 px-2.5 py-1.5 text-xs text-surface-200 disabled:opacity-40">Previous events</button><button type="button" disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)} className="rounded border border-surface-600 px-2.5 py-1.5 text-xs text-surface-200 disabled:opacity-40">More events</button></div></div>
+      </>}
     </div>
   );
 }

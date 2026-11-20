@@ -347,3 +347,63 @@ def test_timeline_excludes_foreign_actor_audit_rows_on_owned_alerts(client):
     details = [event['detail'] for event in response.json()['events']]
     assert 'Owned recorded update' in details
     assert 'Foreign recorded update' not in details
+
+
+def test_timeline_search_pages_full_history_with_stable_ties_and_literal_terms(client):
+    from datetime import datetime
+
+    headers = _register_and_login(client, 'history@example.com')
+    uid = client.get('/api/v1/auth/me', headers=headers).json()['id']
+    asset_id = _seed(uid)
+    with _TestingSessionLocal() as db:
+        alert = db.query(Alert).filter(Alert.asset_id == asset_id).first()
+        db.add_all([AuditLog(user_id=uid, action='alert_updated', target_type='alert',
+                            target_id=alert.id, detail=f'Change {i}',
+                            timestamp=datetime(2026, 1, 1)) for i in range(125)])
+        db.add(AuditLog(user_id=uid, action='alert_updated', target_type='alert',
+                        target_id=alert.id, detail='Old 100%_literal evidence',
+                        timestamp=datetime(2020, 1, 1)))
+        db.commit()
+    endpoint = f'/api/v1/incidents/{asset_id}/timeline'
+    seen = []
+    for page in range(1, 8):
+        response = client.get(endpoint, params={'page': page, 'page_size': 20}, headers=headers)
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data['total'] == 130
+        assert data['kinds'] == ['alert_created', 'alert_updated']
+        seen.extend((row['kind'], row['detail'], row['alert_id']) for row in data['events'])
+    assert len(seen) == len(set(seen)) == 130
+    assert seen[-1][:2] == ('alert_updated', 'Old 100%_literal evidence')
+    filtered = client.get(endpoint, params={'search': '100%_LITERAL', 'kind': 'alert_updated'}, headers=headers).json()
+    assert filtered['total'] == 1
+    assert filtered['events'][0]['detail'] == 'Old 100%_literal evidence'
+    assert client.get(endpoint, params={'search': '%wildcard%'}, headers=headers).json()['total'] == 0
+    assert client.get(endpoint, params={'page': 0}, headers=headers).status_code == 422
+    assert client.get(endpoint, params={'page_size': 101}, headers=headers).status_code == 422
+    assert client.get(endpoint, params={'search': 'x' * 201}, headers=headers).status_code == 422
+
+
+def test_timeline_filtered_totals_and_kinds_never_include_other_owners(client):
+    owner = _register_and_login(client, 'history-scope@example.com')
+    uid = client.get('/api/v1/auth/me', headers=owner).json()['id']
+    other = _register_and_login(client, 'history-outsider@example.com')
+    other_uid = client.get('/api/v1/auth/me', headers=other).json()['id']
+    asset_id = _seed(uid)
+    with _TestingSessionLocal() as db:
+        alert = db.query(Alert).filter(Alert.asset_id == asset_id).first()
+        alert_id = alert.id
+        db.add(AuditLog(user_id=other_uid, action='foreign_kind', target_type='alert',
+                        target_id=alert_id, detail='Hidden foreign evidence'))
+        db.add(Alert(user_id=other_uid, asset_id=asset_id, title='Hidden foreign alert',
+                     severity='high', status='pending'))
+        db.commit()
+    endpoint = f'/api/v1/incidents/{asset_id}/timeline'
+    data = client.get(endpoint, headers=owner).json()
+    assert data['total'] == 4
+    assert data['kinds'] == ['alert_created']
+    assert client.get(endpoint, params={'search': 'hidden'}, headers=owner).json()['total'] == 0
+    assert client.get(endpoint, params={'kind': 'foreign_kind'}, headers=owner).json()['events'] == []
+    assert client.get(endpoint, params={'search': str(alert_id)}, headers=owner).json()['total'] == 1
+    assert client.get(endpoint, params={'search': 'MODBUS'}, headers=owner).json()['total'] == 1
+    assert client.get(endpoint, headers=other).status_code == 404

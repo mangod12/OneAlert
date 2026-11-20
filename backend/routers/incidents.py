@@ -1,7 +1,7 @@
 """Incident correlation: groups active alerts on shared assets into incidents."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import String, cast, func, literal, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -216,6 +216,10 @@ async def escalate_incident(
 @router.get("/{asset_id}/timeline")
 async def incident_timeline(
     asset_id: int,
+    search: str | None = Query(None, max_length=200),
+    kind: str | None = Query(None, max_length=100),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -226,38 +230,51 @@ async def incident_timeline(
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
 
-    alerts = (await db.execute(
-        select(Alert).where(Alert.asset_id == asset_id, Alert.user_id == current_user.id)
-    )).scalars().all()
-    alert_ids = [a.id for a in alerts]
-    by_id = {a.id: a for a in alerts}
-
-    events = [
-        {
-            "kind": "alert_created",
-            "alert_id": alert.id,
-            "title": alert.title,
-            "detail": f"{_severity_value(alert)} severity",
-            "timestamp": alert.created_at.isoformat() if alert.created_at else None,
-        }
-        for alert in alerts
-    ]
-
-    if alert_ids:
-        audit_rows = (await db.execute(
-            select(AuditLog)
-            .where(AuditLog.user_id == current_user.id,
-                   AuditLog.target_type == "alert", AuditLog.target_id.in_(alert_ids))
-            .order_by(AuditLog.timestamp.desc())
-            .limit(100)
-        )).scalars().all()
-        events.extend({
-            "kind": row.action,
-            "alert_id": row.target_id,
-            "title": by_id.get(row.target_id).title if row.target_id in by_id else None,
-            "detail": row.detail,
-            "timestamp": row.timestamp.isoformat() if row.timestamp else None,
-        } for row in audit_rows)
-
-    events.sort(key=lambda e: e["timestamp"] or "", reverse=True)
-    return {"asset_id": asset_id, "asset_name": asset.name, "events": events[:100]}
+    # Keep owner scope on both sides of the union. Filter and page in SQL, so
+    # older evidence is discoverable without loading every alert and audit row.
+    creations = select(
+        literal("alert_created").label("kind"), Alert.id.label("alert_id"),
+        Alert.title.label("title"), (Alert.severity + " severity").label("detail"),
+        Alert.created_at.label("timestamp"), literal(0).label("source"),
+        Alert.id.label("event_id"),
+    ).where(Alert.asset_id == asset_id, Alert.user_id == current_user.id)
+    changes = select(
+        AuditLog.action.label("kind"), Alert.id.label("alert_id"),
+        Alert.title.label("title"), AuditLog.detail.label("detail"),
+        AuditLog.timestamp.label("timestamp"), literal(1).label("source"),
+        AuditLog.id.label("event_id"),
+    ).join(Alert, AuditLog.target_id == Alert.id).where(
+        Alert.asset_id == asset_id, Alert.user_id == current_user.id,
+        AuditLog.user_id == current_user.id, AuditLog.target_type == "alert",
+    )
+    evidence = union_all(creations, changes).subquery()
+    kinds = (await db.execute(select(evidence.c.kind).distinct().order_by(evidence.c.kind))).scalars().all()
+    predicates = []
+    if kind:
+        predicates.append(evidence.c.kind == kind)
+    if search and search.strip():
+        term = search.strip()
+        predicates.append(or_(
+            evidence.c.title.icontains(term, autoescape=True),
+            evidence.c.detail.icontains(term, autoescape=True),
+            evidence.c.kind.icontains(term, autoescape=True),
+            cast(evidence.c.alert_id, String).icontains(term, autoescape=True),
+        ))
+    total = (await db.execute(
+        select(func.count()).select_from(evidence).where(*predicates)
+    )).scalar_one()
+    rows = (await db.execute(
+        select(evidence).where(*predicates).order_by(
+            evidence.c.timestamp.desc().nulls_last(), evidence.c.source.desc(),
+            evidence.c.event_id.desc(),
+        ).offset((page - 1) * page_size).limit(page_size)
+    )).mappings().all()
+    events = [{
+        "kind": row["kind"], "alert_id": row["alert_id"], "title": row["title"],
+        "detail": row["detail"],
+        "timestamp": row["timestamp"].isoformat() if row["timestamp"] else None,
+    } for row in rows]
+    return {
+        "asset_id": asset_id, "asset_name": asset.name, "events": events,
+        "total": total, "page": page, "page_size": page_size, "kinds": kinds,
+    }

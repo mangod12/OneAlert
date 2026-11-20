@@ -25,9 +25,15 @@ const incident = {
 };
 
 function mockGets(timeline: unknown[] = []) {
-  get.mockImplementation(async (url: string) => {
+  get.mockImplementation(async (url: string, config) => {
     if (url === '/incidents') return { data: { total: 1, incidents: [incident] } };
-    if (url === '/incidents/5/timeline') return { data: { asset_id: 5, asset_name: 'plc-01', events: timeline } };
+    if (url === '/incidents/5/timeline') {
+      const params = (config?.params ?? {}) as Record<string, string | number>;
+      const rows = timeline as { kind: string; detail: string | null }[];
+      const filtered = rows.filter(row => (!params.kind || row.kind === params.kind) && (!params.search || row.detail?.toLowerCase().includes(String(params.search))));
+      const page = Number(params.page ?? 1);
+      return { data: { events: filtered.slice((page - 1) * 20, page * 20), total: filtered.length, kinds: [...new Set(rows.map(row => row.kind))] } };
+    }
     throw new Error(`unexpected ${url}`);
   });
 }
@@ -172,32 +178,89 @@ it('retries failed incident evidence without collapsing the incident or reloadin
   fireEvent.click(screen.getByRole('button', { name: 'Retry incident timeline' }));
   expect(screen.getByText('Loading timeline...')).toBeTruthy();
   expect(screen.getByText('PLC compromise')).toBeTruthy();
-  await act(async () => resolve({ data: { events: [{ kind: 'alert_updated', alert_id: 11, title: 'Retained timeline update', detail: 'Recorded change', timestamp: null }] } }));
+  await act(async () => resolve({ data: { total: 1, kinds: ['alert_updated'], events: [{ kind: 'alert_updated', alert_id: 11, title: 'Retained timeline update', detail: 'Recorded change', timestamp: null }] } }));
   expect(screen.getByText(/Retained timeline update/)).toBeTruthy();
   expect(get.mock.calls.filter(([url]) => url === '/incidents')).toHaveLength(1);
   expect(post).not.toHaveBeenCalled();
 });
 
-it('pages and searches the loaded incident evidence window without another read', async () => {
-  mockGets(Array.from({ length: 45 }, (_, index) => ({ kind: index === 44 ? 'alert_updated' : 'alert_created', alert_id: index, title: `Recorded event ${index}`, detail: index === 44 ? 'Unique retained detail\nsecond line' : null, timestamp: null })));
+it('searches and pages complete server history, applying drafts explicitly', async () => {
+  mockGets(Array.from({ length: 145 }, (_, index) => ({ kind: index === 144 ? 'alert_updated' : 'alert_created', alert_id: index, title: `Recorded event ${index}`, detail: index === 144 ? 'Unique retained detail' : null, timestamp: null })));
   renderPage();
   fireEvent.click(await screen.findByText('plc-01'));
   await screen.findByText('Recorded event 0');
-  expect(screen.getByText(/not the full history/)).toBeTruthy();
-  expect(screen.queryByText('Recorded event 20')).toBeNull();
-  expect(screen.getByText('Alert #0')).toBeTruthy();
+  expect(screen.getByText(/145 recorded events match/)).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'More events' }));
+  expect(await screen.findByText('Recorded event 20')).toBeTruthy();
+  expect(screen.getByText('Timeline page 2 of 8')).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Search incident history'), { target: { value: 'unique retained' } });
+  expect(screen.getByText(/Search draft not applied/)).toBeTruthy();
   expect(screen.getByText('Recorded event 20')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'More events' }));
-  expect(screen.getByText('Recorded event 44')).toBeTruthy();
-  expect(screen.getByText('Timeline page 3 of 3')).toBeTruthy();
-  fireEvent.change(screen.getByLabelText('Search loaded incident timeline'), { target: { value: 'unique retained' } });
+  expect(get.mock.calls.filter(([url]) => url === '/incidents/5/timeline')).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Search history' }));
+  expect(await screen.findByText('Recorded event 144')).toBeTruthy();
   expect(screen.getByText('Timeline page 1 of 1')).toBeTruthy();
-  expect(screen.getByText('1 of 45 loaded events match')).toBeTruthy();
+  expect(get).toHaveBeenLastCalledWith('/incidents/5/timeline', { params: { page: 1, page_size: 20, search: 'unique retained' } });
   fireEvent.change(screen.getByLabelText('Timeline event kind'), { target: { value: 'alert_created' } });
-  expect(screen.getByText('No loaded timeline events match these filters.')).toBeTruthy();
-  fireEvent.change(screen.getByLabelText('Timeline event kind'), { target: { value: '' } });
-  expect(screen.getByText('Recorded event 44')).toBeTruthy();
-  expect(get.mock.calls.filter(([url]) => url === '/incidents/5/timeline')).toHaveLength(1);
+  expect(await screen.findByText('No timeline events match these filters.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Clear history filters' }));
+  expect(await screen.findByText('Recorded event 0')).toBeTruthy();
   expect(post).not.toHaveBeenCalled();
+});
+
+it('ignores an older page response after the history filter changes', async () => {
+  let resolveOld!: (value: unknown) => void;
+  get.mockImplementation((url, config) => {
+    if (url === '/incidents') return Promise.resolve({ data: { incidents: [incident] } });
+    const params = (config?.params ?? {}) as Record<string, string | number>;
+    if (params.page === 2) return new Promise(resolve => { resolveOld = resolve; });
+    return Promise.resolve({ data: { total: params.search ? 1 : 40, kinds: ['alert_updated'], events: [{ kind: 'alert_updated', alert_id: 11, title: params.search ? 'Filtered history result' : 'Initial history result', detail: null, timestamp: null }] } });
+  });
+  renderPage();
+  fireEvent.click(await screen.findByText('plc-01'));
+  await screen.findByText('Initial history result');
+  fireEvent.click(screen.getByRole('button', { name: 'More events' }));
+  await screen.findByText('Loading timeline...');
+  fireEvent.change(screen.getByLabelText('Search incident history'), { target: { value: 'filtered' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Search history' }));
+  expect(await screen.findByText('Filtered history result')).toBeTruthy();
+  await act(async () => resolveOld({ data: { total: 40, kinds: [], events: [{ kind: 'alert_created', title: 'Stale history', detail: null, timestamp: null, alert_id: 9 }] } }));
+  expect(screen.queryByText('Stale history')).toBeNull();
+  expect(screen.getByText('Filtered history result')).toBeTruthy();
+});
+
+it('does not show old evidence after a filter failure and retries the active query', async () => {
+  let fail = true;
+  get.mockImplementation(async (url, config) => {
+    if (url === '/incidents') return { data: { incidents: [incident] } };
+    const params = (config?.params ?? {}) as Record<string, string | number>;
+    if (params.search && fail) throw new Error('Evidence store offline');
+    return { data: { total: 1, kinds: ['alert_updated'], events: [{ kind: 'alert_updated', alert_id: 11, title: params.search ? 'Recovered matching evidence' : 'Previous evidence', detail: null, timestamp: null }] } };
+  });
+  renderPage();
+  fireEvent.click(await screen.findByText('plc-01'));
+  await screen.findByText('Previous evidence');
+  fireEvent.change(screen.getByLabelText('Search incident history'), { target: { value: 'matching' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Search history' }));
+  await screen.findByRole('button', { name: 'Retry incident timeline' });
+  expect(screen.queryByText('Previous evidence')).toBeNull();
+  expect(screen.queryByText('No timeline events match these filters.')).toBeNull();
+  fail = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Retry incident timeline' }));
+  expect(await screen.findByText('Recovered matching evidence')).toBeTruthy();
+  expect(get).toHaveBeenLastCalledWith('/incidents/5/timeline', { params: { page: 1, page_size: 20, search: 'matching' } });
+});
+
+it('offers a first-page recovery when events disappear between page reads', async () => {
+  get.mockImplementation(async (url, config) => {
+    if (url === '/incidents') return { data: { incidents: [incident] } };
+    const params = (config?.params ?? {}) as Record<string, string | number>;
+    return { data: { total: params.page === 2 ? 0 : 21, kinds: ['alert_created'], events: params.page === 2 ? [] : [{ kind: 'alert_created', alert_id: 11, title: 'Available history', detail: null, timestamp: null }] } };
+  });
+  renderPage();
+  fireEvent.click(await screen.findByText('plc-01'));
+  await screen.findByText('Available history');
+  fireEvent.click(screen.getByRole('button', { name: 'More events' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Return to first history page' }));
+  expect(await screen.findByText('Available history')).toBeTruthy();
 });
