@@ -9,12 +9,28 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
+interface RecordedControl {
+  id: number;
+  control_name: string;
+  control_type: string;
+  expected: boolean;
+  detected: boolean;
+  detection_time_ms: number | null;
+  details: string | null;
+}
+
 interface ValidationStep {
   id: number;
   technique_id: string;
   test_name: string;
   actual_result: string | null;
   duration_ms: number | null;
+  simulated?: boolean;
+  status?: string;
+  test_type?: string;
+  technique_name?: string;
+  executed_at?: string | null;
+  controls?: RecordedControl[];
 }
 interface ValidationRunDetail extends ValidationRun { steps: ValidationStep[]; }
 
@@ -401,12 +417,34 @@ export function Validation() {
                 ))}
               </div>
               {selectedRun.steps.filter(step => resultFilter === 'all' || (resultFilter === 'detected' ? step.actual_result === 'detected' : step.actual_result !== 'detected')).map(step => (
-                <div key={step.id} className="flex flex-wrap items-start gap-3 rounded-lg border border-surface-800 bg-surface-900/30 p-3 sm:items-center">
+                <div key={step.id} className="min-w-0 rounded-lg border border-surface-800 bg-surface-900/30 p-3">
+                <div className="flex flex-wrap items-start gap-3 sm:items-center">
                   {step.actual_result === 'detected' ? <CheckCircle className="h-4 w-4 shrink-0 text-success" aria-hidden="true" /> : <XCircle className="h-4 w-4 shrink-0 text-warning" aria-hidden="true" />}
                   <span className="font-mono text-xs text-primary-400">{step.technique_id}</span>
                   <span className="min-w-0 flex-1 basis-40 break-words text-sm text-surface-300">{step.test_name}</span>
                   <StatusBadge tone={step.actual_result === 'detected' ? 'success' : step.actual_result === 'missed' || step.actual_result === 'error' ? 'danger' : 'warning'}>{step.actual_result || 'Not run'}</StatusBadge>
                   <span className="text-xs tabular-nums text-surface-500">{step.duration_ms === null ? 'Not timed' : `${step.duration_ms}ms`}</span>
+                </div>
+                  <details className="mt-3 border-t border-surface-700 pt-3 text-sm">
+                    <summary aria-label={`Inspect recorded evidence for ${step.technique_id}: ${step.test_name}`} className="cursor-pointer text-primary-400">Inspect recorded evidence</summary>
+                    <p className="mt-3 text-xs text-surface-400">Saved validation records, not a fresh control check. Simulated results do not prove live detections. Missing records do not establish that no detection occurred.</p>
+                    <dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                      <div><dt className="text-xs text-surface-400">Execution kind</dt><dd className="text-surface-200">{step.simulated === true ? 'Simulated' : step.simulated === false ? 'Recorded as non-simulated' : 'Not recorded'}</dd></div>
+                      <div><dt className="text-xs text-surface-400">Recorded step status</dt><dd className="break-words text-surface-200">{step.status || 'Not recorded'}</dd></div>
+                      <div><dt className="text-xs text-surface-400">Test type</dt><dd className="break-words text-surface-200">{step.test_type || 'Not recorded'}</dd></div>
+                      <div><dt className="text-xs text-surface-400">Executed at</dt><dd className="break-words text-surface-200">{step.executed_at ? (Number.isNaN(Date.parse(step.executed_at)) ? step.executed_at : new Date(step.executed_at).toLocaleString()) : 'Not recorded'}</dd></div>
+                    </dl>
+                    <h3 className="mt-4 font-semibold text-surface-200">Recorded control results ({step.controls?.length || 0})</h3>
+                    {!step.controls?.length ? <p className="mt-2 text-surface-400">No control results recorded for this step.</p> : <ul className="mt-3 space-y-3">
+                      {step.controls.map(control => <li key={control.id} className="min-w-0 space-y-2 rounded-md border border-surface-700 p-3">
+                        <h4 className="break-words font-semibold text-surface-100">{control.control_name}</h4>
+                        <p className="break-words text-xs text-surface-400">Type: {control.control_type}</p>
+                        <p className="text-surface-300">Expected to detect: {control.expected ? 'Yes' : 'No'} · Recorded detection: {control.detected ? 'Yes' : 'No'}</p>
+                        <p className="text-xs text-surface-400">Recorded detection time: {control.detection_time_ms === null ? 'Not recorded' : `${control.detection_time_ms} ms`}</p>
+                        <p className="whitespace-pre-wrap break-words text-surface-300">{control.details || 'No control detail recorded.'}</p>
+                      </li>)}
+                    </ul>}
+                  </details>
                 </div>
               ))}
               {!selectedRun.steps.some(step => resultFilter === 'all' || (resultFilter === 'detected' ? step.actual_result === 'detected' : step.actual_result !== 'detected')) && (
