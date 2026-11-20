@@ -8,6 +8,7 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { toast } from '../components/Toast';
+import { HuntQueryEvidence, type HuntQueryResult } from '../components/HuntQueryEvidence';
 
 interface HuntSession {
   id: number;
@@ -19,13 +20,6 @@ interface HuntSession {
   created_at: string;
 }
 
-type HuntRow = Record<string, unknown>;
-interface HuntQueryResult {
-  query?: { description?: string; sql?: string };
-  row_count?: number;
-  rows?: HuntRow[];
-  error?: string;
-}
 interface HuntResult {
   explanation?: string;
   query_results?: HuntQueryResult[];
@@ -59,6 +53,7 @@ const emptyRuleForm: RuleFormState = { name: '', description: '', rule_type: 'si
 export function HuntLab() {
   const [hypothesis, setHypothesis] = useState('');
   const [sessions, setSessions] = useState<HuntSession[]>([]);
+  const [resultVersion, setResultVersion] = useState(0);
   const [activeResult, setActiveResult] = useState<HuntResult | null>(null);
   const [hunting, setHunting] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -91,6 +86,7 @@ export function HuntLab() {
     setActiveResult(null);
     try {
       const res = await apiClient.post('/hunt/', { hypothesis });
+      setResultVersion(value => value + 1);
       setActiveResult(res.data.data);
       await fetchSessions();
     } catch (err) {
@@ -111,6 +107,7 @@ export function HuntLab() {
       const resultData: HuntResult = Array.isArray(detail.result_data)
         ? { query_results: detail.result_data } : detail.result_data ?? {};
       setHypothesis(detail.hypothesis ?? '');
+      setResultVersion(value => value + 1);
       setActiveResult({
         explanation: resultData.explanation,
         query_results: resultData.query_results,
@@ -275,47 +272,15 @@ export function HuntLab() {
 
       {/* Active Result */}
       {activeResult && (
-        <div className="space-y-4">
-          <div className="oa-panel p-6">
+        <div key={resultVersion} className="min-w-0 space-y-4">
+          <div className="oa-panel min-w-0 p-6">
             <h2 className="text-lg font-semibold text-surface-50 mb-3">Hunt Results</h2>
             {activeResult.explanation && (
               <p className="text-surface-300 text-sm mb-4">{activeResult.explanation}</p>
             )}
 
-            {activeResult.query_results?.map((qr, i) => (
-              <div key={i} className="mb-4 last:mb-0">
-                <div className="flex items-center gap-2 mb-2">
-                  <FileCode className="w-4 h-4 text-primary-400" />
-                  <span className="text-sm font-medium text-surface-50">{qr.query?.description}</span>
-                  <span className="text-xs text-surface-500">{qr.row_count} results</span>
-                </div>
-                <pre className="bg-surface-900 p-3 rounded-lg text-xs text-surface-400 overflow-x-auto mb-2">
-                  {qr.query?.sql}
-                </pre>
-                {(qr.rows?.length ?? 0) > 0 && (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-surface-700">
-                          {Object.keys(qr.rows?.[0] ?? {}).map(key => (
-                            <th key={key} className="text-left p-2 text-surface-500">{key}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(qr.rows ?? []).slice(0, 20).map((row, j) => (
-                          <tr key={j} className="border-b border-surface-800">
-                            {Object.values(row).map((val, k) => (
-                              <td key={k} className="p-2 text-surface-300 truncate max-w-xs">{String(val ?? '—')}</td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-                {qr.error && <p className="text-danger text-xs mt-1">{qr.error}</p>}
-              </div>
+            {activeResult.query_results?.map((result, index) => (
+              <HuntQueryEvidence key={index} result={result} index={index} />
             ))}
           </div>
 
