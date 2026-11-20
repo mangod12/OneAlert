@@ -15,7 +15,8 @@ it('opens exact evidence links and keeps checklist seeding separate from plan de
   expect(link.closest('a')?.getAttribute('href')).toBe('/response-plans?plan=21');
   expect(get).toHaveBeenCalledWith('/response-plans/', { params: { case_id: 7, page: 1, size: 10 } });
   expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Seed checklist from plan 21' })); expect(props.onSeed).toHaveBeenCalledWith(21);
+  fireEvent.click(screen.getByRole('button', { name: 'Seed checklist from plan 21' })); expect(props.onSeed).not.toHaveBeenCalled();
+  await screen.findByRole('region', { name: 'Checklist import preview for plan 21' });
 });
 it('loads older pages and resets the page when status changes', async () => {
   get.mockImplementation(async (_url, config) => { const { page, status } = config?.params as { page: number; status?: string }; return { data: { data: [{ ...plan, id: page === 1 ? 21 : 11 }], total: status ? 1 : 11, page, size: 10 } }; });

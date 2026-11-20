@@ -1,3 +1,4 @@
+import type { ChecklistSelection } from '../components/ChecklistImportPreview';
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { TimelineExplorer } from '../components/TimelineExplorer';
@@ -346,11 +347,11 @@ export function CaseDetail() {
     finally { setTaskBusyId(null); }
   };
 
-  const seedTasksFromPlan = async (planId: number) => {
-    if (seedingPlanId !== null || tasksUnavailable) return;
+  const seedTasksFromPlan = async (planId: number, payload: ChecklistSelection) => {
+    if (seedingPlanId !== null || tasksUnavailable) return false;
     setSeedingPlanId(planId);
     try {
-      const res = await apiClient.post(`/cases/${caseId}/tasks/from-plan/${planId}`);
+      const res = await apiClient.post(`/cases/${caseId}/tasks/from-plan/${planId}`, payload);
       const created = Array.isArray(res.data?.created) ? res.data.created.length : 0;
       toast(
         created > 0
@@ -359,7 +360,8 @@ export function CaseDetail() {
         'success',
       );
       await fetchAll();
-    } catch (err) { toast(getApiErrorMessage(err, 'The checklist could not be seeded.'), 'error'); }
+      return true;
+    } catch (err) { toast(getApiErrorMessage(err, 'The checklist could not be seeded.'), 'error'); return false; }
     finally { setSeedingPlanId(null); }
   };
 
@@ -952,7 +954,7 @@ export function CaseDetail() {
         </div>
       )}
 
-      <CaseResponsePlans key={caseData.id} caseId={caseData.id} onSeed={id => void seedTasksFromPlan(id)} seedBusy={seedingPlanId !== null} tasksUnavailable={tasksUnavailable} />
+      <CaseResponsePlans key={caseData.id} caseId={caseData.id} onSeed={(id, payload) => seedTasksFromPlan(id, payload)} seedBusy={seedingPlanId !== null} tasksUnavailable={tasksUnavailable} />
 
       {/* Two-column layout: Timeline + Related Items */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

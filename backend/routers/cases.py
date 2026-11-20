@@ -4,6 +4,7 @@
 import csv
 import io
 import re
+import secrets
 from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -36,6 +37,7 @@ from backend.models.case import (
     CaseWatcherAdd,
     CaseWatcherResponse,
     MyTaskResponse,
+    ReviewedPlanTaskImport,
     SeedTasksFromPlanResponse,
     TimelineEntryResponse,
 )
@@ -44,8 +46,10 @@ from backend.models.response_plan import ApprovalRequest, ResponsePlan
 from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.services.audit import add_audit_log
+from backend.services.checklist_import import checklist_proposals
 from backend.services.csv_export import spreadsheet_safe_row
 from backend.services.investigation_notify import notify_investigation_event
+from backend.services.response_review import review_fingerprint
 from backend.services.sla import sla_due_date
 
 _SEVERITY_ORDER = ("info", "low", "medium", "high", "critical")
@@ -826,6 +830,40 @@ async def delete_case_task(
     await db.commit()
 
 
+@router.get("/{case_id}/tasks/from-plan/{plan_id}/preview")
+async def preview_case_tasks_from_plan(
+    case_id: int,
+    plan_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Preview checklist-only proposals under existing case access rules."""
+    case = await _get_visible_case(db, case_id, current_user)
+    plan = (
+        await db.execute(
+            select(ResponsePlan).where(
+                ResponsePlan.id == plan_id,
+                ResponsePlan.case_id == case.id,
+                ResponsePlan.user_id == current_user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Response plan not found")
+    if not isinstance(plan.actions, list) or len(plan.actions) > 200:
+        raise HTTPException(status_code=400, detail="This saved plan cannot be safely previewed as a checklist")
+    existing = set((await db.execute(select(CaseTask.title).where(CaseTask.case_id == case.id))).scalars().all())
+    return {
+        "case_id": case.id,
+        "plan_id": plan.id,
+        "plan_status": plan.status,
+        "review_fingerprint": review_fingerprint(plan),
+        "proposals": checklist_proposals(plan.actions, existing),
+        "scope": ("Creates unchecked checklist tasks only. No response approval, execution or external action. "
+                  "Existing titles are rechecked when adding tasks."),
+    }
+
+
 @router.post(
     "/{case_id}/tasks/from-plan/{plan_id}",
     response_model=SeedTasksFromPlanResponse,
@@ -834,6 +872,7 @@ async def delete_case_task(
 async def seed_case_tasks_from_plan(
     case_id: int,
     plan_id: int,
+    payload: ReviewedPlanTaskImport | None = None,
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -844,11 +883,28 @@ async def seed_case_tasks_from_plan(
     only adds its new steps.
     """
     case = await _get_visible_case(db, case_id, current_user)
-    plan = (await db.execute(
-        select(ResponsePlan).where(ResponsePlan.id == plan_id, ResponsePlan.case_id == case.id)
-    )).scalar_one_or_none()
-    if plan is None:
+    # Serialize all imports on the case, including legacy bodyless requests.
+    await db.execute(select(Case.id).where(Case.id == case.id).with_for_update())
+    plan = (await db.execute(select(ResponsePlan).where(
+        ResponsePlan.id == plan_id, ResponsePlan.case_id == case.id,
+    ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
+    if plan is None or (payload is not None and plan.user_id != current_user.id):
         raise HTTPException(status_code=404, detail="Response plan not found")
+
+    selected_indexes = None
+    if payload is not None:
+        if not secrets.compare_digest(payload.reviewed_fingerprint, review_fingerprint(plan)):
+            raise HTTPException(
+                status_code=409,
+                detail="The saved plan changed. Refresh the checklist preview and choose actions again.",
+            )
+        if not isinstance(plan.actions, list) or len(plan.actions) > 200:
+            raise HTTPException(status_code=400, detail="This saved plan cannot be safely imported")
+        selected_indexes = set(payload.action_indexes)
+        if len(selected_indexes) != len(payload.action_indexes) or any(
+            i < 0 or i >= len(plan.actions) for i in selected_indexes
+        ):
+            raise HTTPException(status_code=422, detail="Select unique action indexes from this saved plan")
 
     def _task_title(action: dict) -> str:
         action_type = str(action.get("action_type", "action"))
@@ -857,24 +913,37 @@ async def seed_case_tasks_from_plan(
         return title[:300]
 
     actions = [a for a in (plan.actions or []) if isinstance(a, dict)]
-    actions.sort(key=lambda a: a.get("priority", 1000))
+    actions.sort(
+        key=lambda a: (
+            a.get("priority")
+            if isinstance(a.get("priority"), (int, float)) and not isinstance(a.get("priority"), bool)
+            else 1000
+        )
+    )
 
-    existing_titles = set((await db.execute(
-        select(CaseTask.title).where(CaseTask.case_id == case.id)
-    )).scalars().all())
-    next_position = (await db.execute(
-        select(func.coalesce(func.max(CaseTask.position), -1)).where(CaseTask.case_id == case.id)
-    )).scalar_one() + 1
+    existing_titles = set((await db.execute(select(CaseTask.title).where(CaseTask.case_id == case.id))).scalars().all())
+    next_position = (
+        await db.execute(select(func.coalesce(func.max(CaseTask.position), -1)).where(CaseTask.case_id == case.id))
+    ).scalar_one() + 1
+
+    if selected_indexes is not None:
+        proposals = checklist_proposals(plan.actions, existing_titles)
+        selected = [row for row in proposals if row["action_index"] in selected_indexes]
+        if any(not row["title"] for row in selected):
+            raise HTTPException(status_code=400, detail="A selected saved action has no usable checklist title")
+        actions = [{"_reviewed_title": row["title"]} for row in selected]
 
     created: list[CaseTask] = []
     skipped = 0
     for action in actions:
-        title = _task_title(action)
+        title = action["_reviewed_title"] if selected_indexes is not None else _task_title(action)
         if title in existing_titles:
             skipped += 1
             continue
         task = CaseTask(
-            case_id=case.id, title=title, position=next_position,
+            case_id=case.id,
+            title=title,
+            position=next_position,
             created_by_id=current_user.id,
         )
         next_position += 1
@@ -884,13 +953,15 @@ async def seed_case_tasks_from_plan(
 
     if created:
         suffix = "s" if len(created) != 1 else ""
-        db.add(CaseTimeline(
-            case_id=case.id,
-            entry_type="action",
-            content=f"Checklist seeded from response plan #{plan.id}: {len(created)} task{suffix}",
-            source="human",
-            user_id=current_user.id,
-        ))
+        db.add(
+            CaseTimeline(
+                case_id=case.id,
+                entry_type="action",
+                content=f"Checklist seeded from response plan #{plan.id}: {len(created)} task{suffix}",
+                source="human",
+                user_id=current_user.id,
+            )
+        )
     await db.commit()
     for task in created:
         await db.refresh(task)

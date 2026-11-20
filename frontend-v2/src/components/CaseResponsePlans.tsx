@@ -1,3 +1,4 @@
+import { ChecklistImportPreview, type ChecklistSelection } from './ChecklistImportPreview';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Shield } from 'lucide-react';
@@ -6,15 +7,16 @@ import { getApiErrorMessage } from '../api/errors';
 import { StatusBadge } from './ui/StatusBadge';
 interface Plan { id: number; case_id: number; status: string; autonomy_level: string; created_by: string; created_at: string; actions: unknown[]; }
 const button = 'rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40';
-interface Props { caseId: number; onSeed: (id: number) => void; seedBusy: boolean; tasksUnavailable: boolean; }
+interface Props { caseId: number; onSeed: (id: number, payload: ChecklistSelection) => Promise<boolean> | void; seedBusy: boolean; tasksUnavailable: boolean; }
 export function CaseResponsePlans(props: Props) { return <PlanExplorer key={props.caseId} {...props} />; }
 function PlanExplorer({ caseId, onSeed, seedBusy, tasksUnavailable }: Props) {
   const [page, setPage] = useState(1), [retry, setRetry] = useState(0), [status, setStatus] = useState('');
   const [snapshot, setSnapshot] = useState<{ caseId: number; page: number; plans: Plan[]; total: number } | null>(null);
   const [loading, setLoading] = useState(true), [error, setError] = useState('');
   const requestId = useRef(0);
+  const [importPlanId, setImportPlanId] = useState<number | null>(null);
   useEffect(() => {
-    const request = ++requestId.current; setLoading(true); setSnapshot(null); setError('');
+    const request = ++requestId.current; setLoading(true); setSnapshot(null); setImportPlanId(null); setError('');
     void apiClient.get('/response-plans/', { params: { case_id: caseId, page, size: 10, ...(status ? { status } : {}) } }).then(response => {
       if (request !== requestId.current) return;
       const value = response.data;
@@ -36,9 +38,10 @@ function PlanExplorer({ caseId, onSeed, seedBusy, tasksUnavailable }: Props) {
       {!current.plans.length && <p className="text-sm text-surface-400">No response plans match this investigation and status filter.</p>}
       <div className="space-y-2">{current.plans.map(plan => <div key={plan.id} className="flex flex-col gap-2 rounded border border-surface-700 p-3 sm:flex-row sm:items-center">
         <Link to={`/response-plans?plan=${plan.id}`} className="min-w-0 flex-1 space-y-2 text-sm text-surface-200 hover:text-primary-300"><span className="mr-2 font-semibold">Plan #{plan.id}</span><StatusBadge tone={plan.status === 'rejected' ? 'danger' : plan.status === 'pending_approval' || plan.status === 'partial' ? 'warning' : 'neutral'}>{plan.status.replace('_', ' ')}</StatusBadge><p className="break-words text-xs text-surface-400">{plan.actions.length} actions · {plan.autonomy_level} · {plan.created_by}</p><p className="break-all text-xs text-surface-500">Recorded creation: {plan.created_at || 'Not recorded'}</p></Link>
-        {plan.actions.length > 0 && <button type="button" className={button} aria-label={`Seed checklist from plan ${plan.id}`} disabled={tasksUnavailable || seedBusy} onClick={() => onSeed(plan.id)}>Add to checklist</button>}
+        {plan.actions.length > 0 && <button type="button" className={button} aria-label={`Seed checklist from plan ${plan.id}`} disabled={tasksUnavailable || seedBusy} onClick={() => setImportPlanId(plan.id)}>Review checklist import</button>}
       </div>)}</div>
       <nav aria-label="Investigation response plan pages" className="flex flex-wrap items-center gap-2 text-xs text-surface-300"><button type="button" className={button} disabled={page === 1 || seedBusy} onClick={() => setPage(page - 1)}>Previous investigation plans</button><span>Page {page} of {Math.max(1, Math.ceil(current.total / 10))} · {current.total} matching plan records</span><button type="button" className={button} disabled={page * 10 >= current.total || seedBusy} onClick={() => setPage(page + 1)}>Next investigation plans</button><button type="button" className={button} disabled={seedBusy} onClick={() => setRetry(retry + 1)}>Refresh investigation plans</button></nav>
     </>}
+    {importPlanId !== null && <ChecklistImportPreview key={importPlanId} caseId={caseId} planId={importPlanId} busy={seedBusy} onImport={payload => onSeed(importPlanId, payload)} onClose={() => setImportPlanId(null)} />}
   </section>;
 }

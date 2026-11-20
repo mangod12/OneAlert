@@ -4,7 +4,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -278,6 +278,13 @@ class CaseTaskResponse(BaseModel):
     completed_at: datetime | None = None
     created_by_id: int | None = None
     model_config = {"from_attributes": True}
+
+
+class ReviewedPlanTaskImport(BaseModel):
+    """An explicit selection from a freshly reviewed saved plan."""
+
+    reviewed_fingerprint: str = Field(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")
+    action_indexes: list[StrictInt] = Field(min_length=1, max_length=200)
 
 
 class SeedTasksFromPlanResponse(BaseModel):
