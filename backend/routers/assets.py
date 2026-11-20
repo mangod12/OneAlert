@@ -86,6 +86,22 @@ async def create_asset(
     return db_asset
 
 
+def _asset_order_columns():
+    criticality_rank = sql_case(
+        {"critical": 4, "high": 3, "medium": 2, "low": 1},
+        value=Asset.criticality,
+        else_=2
+    )
+    return {
+        "created_at_desc": [Asset.created_at.desc()],
+        "created_at_asc": [Asset.created_at.asc()],
+        "name_asc": [Asset.name.asc()],
+        "name_desc": [Asset.name.desc()],
+        "criticality_desc": [criticality_rank.desc(), Asset.name.asc()],
+        "criticality_asc": [criticality_rank.asc(), Asset.name.asc()],
+    }
+
+
 @router.get("/", response_model=AssetListResponse)
 async def list_assets(
     page: int = Query(1, ge=1, description="Page number"),
@@ -136,28 +152,15 @@ async def list_assets(
 
     # Apply pagination and ordering
     offset = (page - 1) * size
-    criticality_rank = sql_case(
-        {"critical": 4, "high": 3, "medium": 2, "low": 1},
-        value=Asset.criticality,
-        else_=2
-    )
-    order_columns = {
-        "created_at_desc": [Asset.created_at.desc()],
-        "created_at_asc": [Asset.created_at.asc()],
-        "name_asc": [Asset.name.asc()],
-        "name_desc": [Asset.name.desc()],
-        "criticality_desc": [criticality_rank.desc(), Asset.name.asc()],
-        "criticality_asc": [criticality_rank.asc(), Asset.name.asc()],
-    }
     if sort == "risk_desc":
         # Computed score: sort across the full filtered set, then paginate in Python.
         result = await db.execute(query)
         all_assets = result.scalars().all()
         all_bases = await _risk_base_scores(db, current_user.id, [a.id for a in all_assets])
-        all_assets.sort(key=lambda a: (-_risk_score(a, all_bases.get(a.id, 0)), a.name.lower()))
+        all_assets.sort(key=lambda a: (-_risk_score(a, all_bases.get(a.id, 0)), a.name.lower(), a.id))
         assets = all_assets[offset:offset + size]
     else:
-        query = query.offset(offset).limit(size).order_by(*order_columns[sort])
+        query = query.offset(offset).limit(size).order_by(*_asset_order_columns()[sort], Asset.id.asc())
         result = await db.execute(query)
         assets = result.scalars().all()
 
@@ -203,6 +206,11 @@ async def export_assets(
     vendor: str | None = Query(None, description="Filter by vendor"),
     criticality: str | None = Query(None, description="Filter by criticality"),
     is_ot: bool | None = Query(None, description="Filter to OT assets (true) or non-OT assets (false)"),
+    sort: str = Query(
+        "created_at_desc",
+        pattern="^(created_at_desc|created_at_asc|name_asc|name_desc|criticality_desc|criticality_asc|risk_desc)$",
+        description="Sort order, matching the inventory view",
+    ),
     search: str | None = Query(None, description="Search in name, vendor, or product"),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
@@ -225,8 +233,14 @@ async def export_assets(
             | Asset.product.ilike(f"%{search}%")
         )
 
-    query = query.order_by(Asset.created_at.desc()).limit(5000)
-    rows = (await db.execute(query)).scalars().all()
+    if sort == "risk_desc":
+        rows = (await db.execute(query)).scalars().all()
+        bases = await _risk_base_scores(db, current_user.id, [asset.id for asset in rows])
+        rows.sort(key=lambda asset: (-_risk_score(asset, bases.get(asset.id, 0)), asset.name.lower(), asset.id))
+        rows = rows[:5000]
+    else:
+        query = query.order_by(*_asset_order_columns()[sort], Asset.id.asc()).limit(5000)
+        rows = (await db.execute(query)).scalars().all()
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)

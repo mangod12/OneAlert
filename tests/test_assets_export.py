@@ -146,3 +146,39 @@ class TestAssetsExport:
         lines = [line for line in resp.text.strip().splitlines() if line]
         assert len(lines) == 1
         assert lines[0].startswith("id,name,asset_type")
+
+
+@pytest.mark.parametrize("sort", [
+    "created_at_desc", "created_at_asc", "name_asc", "name_desc",
+    "criticality_desc", "criticality_asc", "risk_desc",
+])
+def test_export_matches_inventory_order_and_scope(client, sort):
+    from datetime import UTC, datetime, timedelta
+
+    from backend.models.alert import Alert
+
+    headers = _register_and_login(client, "order-owner@example.com")
+    uid = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+    with _TestingSessionLocal() as db:
+        for i, (name, criticality) in enumerate([("Zulu", "low"), ("Alpha", "critical"), ("Middle", "medium")]):
+            asset = Asset(user_id=uid, name=name, asset_type="hardware", criticality=criticality,
+                          vendor="Included", created_at=datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=i))
+            db.add(asset)
+            db.flush()
+            if name == "Zulu":
+                db.add(Alert(user_id=uid, asset_id=asset.id, title="Active critical exposure", severity="critical", status="pending"))
+        db.add(Asset(user_id=uid, name="Excluded", asset_type="hardware", vendor="Other"))
+        db.commit()
+    params = {"sort": sort, "vendor": "Included"}
+    listed = client.get("/api/v1/assets/", params=params, headers=headers)
+    assert listed.status_code == 200, listed.text
+    rows = _read_csv(client.get("/api/v1/assets/export", params=params, headers=headers))
+    assert [row["id"] for row in rows] == [str(asset["id"]) for asset in listed.json()["assets"]]
+    assert len(rows) == 3
+    if sort == "risk_desc":
+        assert rows[0]["name"] == "Zulu"
+
+
+def test_asset_export_rejects_unknown_order(client):
+    headers = _register_and_login(client, "invalid-order@example.com")
+    assert client.get("/api/v1/assets/export?sort=unsupported", headers=headers).status_code == 422
