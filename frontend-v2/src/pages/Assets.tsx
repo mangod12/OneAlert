@@ -1,3 +1,4 @@
+import { SavedViewsMenu } from '../components/SavedViewsMenu';
 import { AssetComparison } from '../components/AssetComparison';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -14,6 +15,8 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { AssetCriticalityReview } from '../components/AssetCriticalityReview';
 import { AssetInspector } from '../components/AssetInspector';
 import { toast } from '../components/Toast';
+
+interface AssetViewFilters { search?: string; asset_type?: string; vendor?: string; criticality?: string; is_ot?: boolean; sort?: string }
 
 const FALLBACK_ASSET_TYPES = ['hardware', 'software', 'firmware', 'operating_system', 'plc', 'hmi', 'rtu', 'ied', 'scada_server', 'historian'];
 const ACRONYMS = new Set(['plc', 'hmi', 'rtu', 'ied', 'scada']);
@@ -174,6 +177,7 @@ export function Assets() {
       {invalidAssetLink && <div role="alert" className="space-y-2 rounded border border-warning/40 p-3 text-sm text-surface-300"><p>This asset record link is invalid. Use one positive whole-number asset ID. No record was opened from this link.</p><button type="button" className="rounded border border-surface-600 px-3 py-2" onClick={() => setInspectAssetId(null)}>Clear invalid asset record link</button></div>}
 
       <fieldset disabled={criticalityBusy} className="flex min-w-0 flex-wrap items-center gap-3">
+        <SavedViewsMenu<AssetViewFilters> basePath="/inventory/views/" currentFilters={{ ...(search.trim() ? { search: search.trim() } : {}), ...(typeFilter ? { asset_type: typeFilter } : {}), ...(vendorFilter ? { vendor: vendorFilter } : {}), ...(criticalityFilter ? { criticality: criticalityFilter } : {}), ...(otFilter ? { is_ot: otFilter === 'true' } : {}), sort }} onApply={filters => { setSearch(filters.search ?? ''); setTypeFilter(filters.asset_type ?? ''); setVendorFilter(filters.vendor ?? ''); setCriticalityFilter(filters.criticality ?? ''); setOtFilter(filters.is_ot === undefined ? '' : String(filters.is_ot)); setSort(filters.sort ?? 'created_at_desc'); setPage(1); }} />
         <div className="relative min-w-[12rem] max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
           <input
@@ -189,19 +193,21 @@ export function Assets() {
           aria-label="Filter by asset type"
           value={typeFilter}
           onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}
-          className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          className="max-w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
         >
           <option value="">All types</option>
+          {typeFilter && !assetTypes.includes(typeFilter) && <option value={typeFilter}>{assetTypeLabel(typeFilter)} (saved)</option>}
           {assetTypes.map(t => <option key={t} value={t}>{assetTypeLabel(t)}</option>)}
         </select>
-        {vendorOptions.length > 0 && (
+        {(vendorOptions.length > 0 || !!vendorFilter) && (
           <select
             aria-label="Filter by vendor"
             value={vendorFilter}
             onChange={(e) => { setVendorFilter(e.target.value); setPage(1); }}
-            className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="max-w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
             <option value="">All vendors</option>
+            {vendorFilter && !vendorOptions.includes(vendorFilter) && <option value={vendorFilter}>{vendorFilter} (saved)</option>}
             {vendorOptions.map(v => <option key={v} value={v}>{v}</option>)}
           </select>
         )}
@@ -209,7 +215,7 @@ export function Assets() {
           aria-label="Filter by criticality"
           value={criticalityFilter}
           onChange={(e) => { setCriticalityFilter(e.target.value); setPage(1); }}
-          className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          className="max-w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
         >
           <option value="">All criticality</option>
           <option value="critical">Critical</option>
@@ -221,7 +227,7 @@ export function Assets() {
           aria-label="Filter by OT or IT"
           value={otFilter}
           onChange={(e) => { setOtFilter(e.target.value); setPage(1); }}
-          className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          className="max-w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
         >
           <option value="">OT and IT</option>
           <option value="true">OT only</option>
@@ -231,7 +237,7 @@ export function Assets() {
           aria-label="Sort assets"
           value={sort}
           onChange={(e) => { setSort(e.target.value); setPage(1); }}
-          className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          className="max-w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
         >
           <option value="created_at_desc">Newest first</option>
           <option value="created_at_asc">Oldest first</option>
@@ -251,6 +257,7 @@ export function Assets() {
           {exporting ? 'Exporting...' : 'Export CSV'}
         </button>
       </fieldset>
+      <p className="text-xs text-surface-400">Saved inventory views store filters and order, not selected asset records, comparison evidence or a frozen inventory snapshot.</p>
 
       {!loading && !error && assets.length > 0 && <button type="button" disabled={criticalityBusy || saving || !!deletingIds.size || showModal || !!pendingDelete} onClick={() => setShowCriticalityReview(value => !value)} className="rounded border border-surface-600 px-3 py-2 text-sm text-surface-200 disabled:opacity-40">{showCriticalityReview ? 'Hide criticality review' : 'Review page criticality'}</button>}
       {!loading && !error && showCriticalityReview && assets.length > 0 && <AssetCriticalityReview key={JSON.stringify([page, search, typeFilter, vendorFilter, criticalityFilter, otFilter, sort])} assets={assets} onBusy={setCriticalityBusy} onSaved={saved => { setComparisonRevision(value => value + 1); setAssets(current => current.map(asset => saved.has(asset.id) ? { ...asset, criticality: saved.get(asset.id)!, risk_score: undefined, risk_level: undefined } : asset)); }} />}
@@ -406,13 +413,13 @@ function AssetModal({ asset, assetTypes, onClose, onSave, saving }: { asset: Ass
             <input
               type="text" aria-label="Vendor" placeholder="Vendor" value={form.vendor}
               onChange={(e) => setForm({ ...form, vendor: e.target.value })}
-              className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="max-w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
               required
             />
             <input
               type="text" aria-label="Product" placeholder="Product" value={form.product}
               onChange={(e) => setForm({ ...form, product: e.target.value })}
-              className="px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="max-w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
               required
             />
           </div>

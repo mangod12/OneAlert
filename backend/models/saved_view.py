@@ -1,7 +1,7 @@
 """Saved filter views: named, per-user snapshots of list filters (alerts, cases or events)."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import AwareDatetime, BaseModel, Field, model_validator
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
@@ -70,7 +70,21 @@ class EventViewFilters(BaseModel):
         return self
 
 
-FILTERS_MODELS = {"alerts": SavedViewFilters, "cases": CaseViewFilters, "events": EventViewFilters}
+class AssetViewFilters(BaseModel):
+    """Inventory query only; never saves record selection or comparison evidence."""
+
+    search: str | None = Field(None, max_length=200)
+    asset_type: str | None = Field(None, max_length=100)
+    vendor: str | None = Field(None, max_length=200)
+    criticality: Literal["low", "medium", "high", "critical"] | None = None
+    is_ot: bool | None = None
+    sort: Literal["created_at_desc", "created_at_asc", "name_asc", "name_desc",
+                  "criticality_desc", "criticality_asc", "risk_desc"] | None = None
+    model_config = {"extra": "forbid"}
+
+
+FILTERS_MODELS = {"alerts": SavedViewFilters, "cases": CaseViewFilters,
+                 "events": EventViewFilters, "assets": AssetViewFilters}
 
 
 class SavedViewCreate(BaseModel):
