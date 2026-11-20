@@ -299,3 +299,29 @@ class TestWatchedByMeFilter:
         resp = client.get("/api/v1/cases/export?watching=me", headers=other)
         assert resp.status_code == 200, resp.text
         assert "Beaconing host" not in resp.text
+
+
+def test_watching_and_assigned_filters_intersect_for_list_count_and_export(client):
+    import csv
+    import io
+
+    from backend.models.case import CaseWatcher
+
+    owner, member, _, owner_id, member_id, _, first_id = _setup_org_with_case(client)
+    with _TestingSessionLocal() as db:
+        first = db.get(Case, first_id)
+        first.assigned_to_id = member_id
+        other = Case(user_id=owner_id, title='Watched but assigned elsewhere', status='open',
+                     severity='high', assigned_to_id=owner_id)
+        db.add(other)
+        db.flush()
+        db.add_all([CaseWatcher(case_id=first.id, user_id=member_id),
+                    CaseWatcher(case_id=other.id, user_id=member_id)])
+        db.commit()
+    params = {'watching': 'me', 'assigned': 'me'}
+    result = client.get('/api/v1/cases/', params=params, headers=member).json()
+    assert result['total'] == 1
+    assert [row['id'] for row in result['cases']] == [first_id]
+    export = client.get('/api/v1/cases/export', params=params, headers=member)
+    rows = list(csv.DictReader(io.StringIO(export.text)))
+    assert [int(row['id']) for row in rows] == [first_id]
