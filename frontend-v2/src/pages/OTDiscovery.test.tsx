@@ -282,3 +282,25 @@ it('refreshes the active unmatched filter after promotion instead of leaving an 
   expect(screen.queryByText('device-1')).toBeNull();
   expect(get).toHaveBeenCalledWith('/ot/discovered-devices', { params: { page: 1, size: 20, correlated: false } });
 });
+
+it('offers reviewed existing-inventory linking without promoting a duplicate asset', async () => {
+  const fallback = get.getMockImplementation()!;
+  get.mockImplementation(async (url, config) => {
+    if (url === '/ot/discovered-devices') return pageResponse([1], 1);
+    if (url === '/assets/') return { data: { assets: [{ id: 10, name: 'Existing gateway' }], total: 1 } };
+    if (url === '/ot/discovered-devices/1/correlation-review/10') return { data: {
+      device: { ...device(1), asset_id: null }, asset: { id: 10, name: 'Existing gateway' },
+      can_link: true, reviewed_fingerprint: 'a'.repeat(64),
+    } };
+    return fallback(url, config);
+  });
+  post.mockResolvedValue({ data: { id: 1, asset_id: 10, is_correlated: true, correlation_score: 100 } });
+  render(<OTDiscovery />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Link 10.0.0.1 to existing asset' }));
+  fireEvent.click(await screen.findByRole('button', { name: /Review asset #10/ }));
+  fireEvent.click(await within(screen.getByRole('dialog')).findByRole('checkbox'));
+  expect(post).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Link reviewed records' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(post).toHaveBeenCalledExactlyOnceWith('/ot/discovered-devices/1/correlate/10', undefined, { params: { reviewed_fingerprint: 'a'.repeat(64) } });
+});
