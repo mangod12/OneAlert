@@ -1,6 +1,9 @@
 """Alert suppression rules CRUD. Matching rules auto-snooze newly created alerts."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import UTC, datetime
+from typing import Annotated, Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -82,6 +85,50 @@ async def list_suppression_rules(
         item.matching_active_alerts = counts[rule.id]
         out.append(item)
     return out
+
+
+@router.get("/{rule_id}/matching-alerts")
+async def inspect_rule_matches(
+    rule_id: int,
+    page: Annotated[int, Query(ge=1)] = 1,
+    size: Annotated[int, Query(ge=1, le=100)] = 10,
+    search: Annotated[str, Query(max_length=200)] = "",
+    scope: Literal["active", "all"] = "active",
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Read existing matching alerts without claiming this rule caused their state."""
+    rule = (await db.execute(select(AlertSuppressionRule).where(
+        AlertSuppressionRule.id == rule_id, AlertSuppressionRule.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Suppression rule not found")
+    query = search.strip()
+    term = query.lower()
+    # Use the exact runtime matcher, including Python's Unicode case handling, rather than
+    # introducing different SQL LIKE wildcard or collation semantics for the preview.
+    alerts = await db.stream_scalars(select(Alert).where(Alert.user_id == current_user.id).order_by(Alert.id.desc()))
+    matching_total, total, rows = 0, 0, []
+    async for alert in alerts:
+        if scope == "active" and _status_value(alert) not in _ACTIVE_STATUSES:
+            continue
+        if not rule_matches(rule, cve_id=alert.cve_id, asset_id=alert.asset_id,
+                            severity=_severity_value(alert), title=alert.title):
+            continue
+        matching_total += 1
+        if term and not any(term in str(value or "").lower() for value in (alert.id, alert.title, alert.cve_id)):
+            continue
+        if (page - 1) * size <= total < page * size:
+            rows.append({"id": alert.id, "asset_id": alert.asset_id, "title": alert.title,
+                         "cve_id": alert.cve_id, "severity": _severity_value(alert), "status": _status_value(alert),
+                         "created_at": alert.created_at})
+        total += 1
+    return {"rule": SuppressionRuleResponse.model_validate(rule).model_dump(exclude={"matching_active_alerts"}),
+            "page": page, "size": size,
+            "search": query, "scope": scope, "total": total, "matching_total": matching_total,
+            "criteria_present": criteria_set({field: getattr(rule, field)
+                                              for field in ("cve_id", "asset_id", "severity", "title_contains")}),
+            "retrieved_at": datetime.now(UTC).isoformat(), "alerts": rows}
 
 
 @router.post("/", response_model=SuppressionRuleResponse, status_code=status.HTTP_201_CREATED)

@@ -168,7 +168,8 @@ export function SuppressionRulesPanel() {
                     {rule.matching_active_alerts > 0 && ` · matches ${rule.matching_active_alerts} active alert${rule.matching_active_alerts === 1 ? '' : 's'} now`}
                   </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <a href={`/app/settings/suppression-rules/${rule.id}`} className="rounded-md border border-surface-600 px-2.5 py-1.5 text-xs text-primary-300">Review matching alerts for rule #{rule.id}</a>
                   <button
                     type="button"
                     onClick={() => void toggleRule(rule)}
