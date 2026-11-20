@@ -145,19 +145,19 @@ async def get_topology_stats(
     )
     by_protocol = {row[0]: row[1] for row in protocol_result.all()}
 
-    # Encrypted vs unencrypted
-    encrypted_result = await db.execute(
-        select(func.count(NetworkConnection.id))
-        .where(
-            NetworkConnection.user_id == current_user.id,
-            NetworkConnection.is_encrypted.is_(True),
-        )
+    # A missing flag is neither an encrypted nor a cleartext observation.
+    flags_result = await db.execute(
+        select(NetworkConnection.is_encrypted, func.count(NetworkConnection.id))
+        .where(NetworkConnection.user_id == current_user.id)
+        .group_by(NetworkConnection.is_encrypted)
     )
-    encrypted_count = encrypted_result.scalar_one()
+    flags = dict(flags_result.all())
+    encrypted_count = flags.get(True, 0)
 
     return {
         "total_connections": total,
         "by_protocol": by_protocol,
         "encrypted": encrypted_count,
-        "unencrypted": total - encrypted_count,
+        "unencrypted": flags.get(False, 0),
+        "encryption_unknown": flags.get(None, 0),
     }

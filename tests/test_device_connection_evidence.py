@@ -113,3 +113,12 @@ def test_missing_and_foreign_device_are_indistinguishable(client, device):
 ])
 def test_invalid_filters_are_rejected(client, params):
     assert client.get('/api/v1/ot/discovered-devices/1/connections', params=params).status_code == 422
+
+
+def test_topology_rollups_do_not_count_missing_encryption_as_cleartext(client):
+    stats = client.get('/api/v1/topology/stats').json()
+    assert stats['total_connections'] == 6
+    assert stats['encrypted'] == 2 and stats['unencrypted'] == 3 and stats['encryption_unknown'] == 1
+    assert stats['encrypted'] + stats['unencrypted'] + stats['encryption_unknown'] == stats['total_connections']
+    graph = client.get('/api/v1/topology/graph').json()
+    assert next(row for row in graph['edges'] if row['id'] == 7)['is_encrypted'] is None

@@ -28,6 +28,7 @@ interface TopologyStats {
   by_protocol: Record<string, number>;
   encrypted: number;
   unencrypted: number;
+  encryption_unknown?: number;
 }
 
 export function Topology() {
@@ -159,12 +160,12 @@ export function Topology() {
   }
   const encryptedPct = stats && stats.total_connections > 0
     ? Math.round((stats.encrypted / stats.total_connections) * 100)
-    : 100;
+    : null;
   const protocolOptions = [...new Set(edges.map(e => e.protocol))].sort();
   const selectedNode = selectedNodeId ? nodes.find(n => n.id === selectedNodeId) ?? null : null;
   const filteredEdges = edges.filter(e =>
     (!protocolFilter || e.protocol === protocolFilter)
-    && (!cleartextOnly || !e.is_encrypted)
+    && (!cleartextOnly || e.is_encrypted === false)
     && (!selectedNodeId || e.source === selectedNodeId || e.target === selectedNodeId),
   );
 
@@ -211,13 +212,14 @@ export function Topology() {
               </div>
               <div className="oa-panel p-4">
                 <p className="text-xs text-surface-500 uppercase">Encrypted</p>
-                <p className="text-2xl font-bold text-surface-50 mt-1">{encryptedPct}%</p>
+                <p className="text-2xl font-bold text-surface-50 mt-1">{encryptedPct === null ? 'Unavailable' : `${encryptedPct}%`}</p>
               </div>
               <div className="oa-panel p-4">
-                <p className="text-xs text-surface-500 uppercase">Unencrypted</p>
+                <p className="text-xs text-surface-500 uppercase">Recorded cleartext</p>
                 <p className="text-2xl font-bold mt-1" style={{ color: stats.unencrypted > 0 ? 'var(--color-danger, #f87171)' : undefined }}>
                   {stats.unencrypted}
                 </p>
+                <p className="mt-1 text-xs text-surface-400">Encryption flag unknown: {stats.encryption_unknown ?? 'Unavailable'}</p>
               </div>
               <div className="oa-panel p-4">
                 <p className="text-xs text-surface-500 uppercase">Protocols</p>
@@ -329,11 +331,11 @@ export function Topology() {
                       <td className="px-4 py-3 text-surface-400 text-xs uppercase">{edge.protocol}</td>
                       <td className="px-4 py-3 text-surface-400 text-xs">{edge.port ?? '-'}</td>
                       <td className="px-4 py-3">
-                        {edge.is_encrypted ? (
+                        {edge.is_encrypted === true ? (
                           <span className="inline-flex items-center gap-1 text-xs text-success"><Lock className="w-3.5 h-3.5" aria-hidden="true" />Encrypted</span>
-                        ) : (
+                        ) : edge.is_encrypted === false ? (
                           <span className="inline-flex items-center gap-1 text-xs text-danger"><LockOpen className="w-3.5 h-3.5" aria-hidden="true" />Cleartext</span>
-                        )}
+                        ) : <span className="text-xs text-surface-400">Encryption not recorded</span>}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button type="button" aria-label={`View connection ${edge.id ?? i + 1} evidence`} onClick={() => setSelectedConnection(edge)} className="mr-2 mb-1 whitespace-nowrap rounded border border-surface-600 px-2.5 py-2 text-xs text-primary-300">View evidence</button>

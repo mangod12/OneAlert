@@ -1,5 +1,5 @@
 interface ExportNode { id: string; label: string; zone: string | null; }
-interface ExportEdge { id: number | null; source: string; target: string; protocol: string; port: number | null; is_encrypted: boolean; direction?: string | null; bytes_transferred?: string | number | null; bytes_transferred_exact?: string | null; first_seen?: string | null; last_seen?: string | null; source_device_id?: number | null; target_device_id?: number | null; }
+interface ExportEdge { id: number | null; source: string; target: string; protocol: string; port: number | null; is_encrypted: boolean | null; direction?: string | null; bytes_transferred?: string | number | null; bytes_transferred_exact?: string | null; first_seen?: string | null; last_seen?: string | null; source_device_id?: number | null; target_device_id?: number | null; }
 interface ExportScope { protocol: string; cleartextOnly: boolean; nodeId: string | null; receivedAt?: string | null; }
 function cell(value: unknown): string {
   const raw = value == null ? '' : String(value);
@@ -17,7 +17,7 @@ export function topologyCsv(edges: ExportEdge[], nodes: ExportNode[], scope: Exp
   for (const edge of edges) rows.push([
     edge.id, edge.source, lookup.get(edge.source)?.label ?? edge.source, lookup.get(edge.source)?.zone,
     edge.target, lookup.get(edge.target)?.label ?? edge.target, lookup.get(edge.target)?.zone,
-    edge.protocol, edge.port, edge.is_encrypted ? 'encrypted' : 'cleartext',
+    edge.protocol, edge.port, edge.is_encrypted === true ? 'encrypted' : edge.is_encrypted === false ? 'cleartext' : 'not recorded',
     scope.protocol || 'all', scope.cleartextOnly, scope.nodeId, 'loaded topology snapshot, not a live connectivity check',
     edge.direction, edge.bytes_transferred_exact ?? (typeof edge.bytes_transferred === 'number' && !Number.isSafeInteger(edge.bytes_transferred) ? 'Numeric precision unavailable in this response' : edge.bytes_transferred), edge.first_seen, edge.last_seen, edge.source_device_id, edge.target_device_id, scope.receivedAt,
   ]);
