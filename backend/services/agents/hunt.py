@@ -149,34 +149,47 @@ class HuntAgent(BaseAgent):
 
         # Step 2: Execute queries (read-only)
         if not isinstance(response, dict):
-            return {"error": "Generated hunt response must be an object", "query_results": []}
+            return self._finish_result(hypothesis, {}, [], "Generated hunt response must be an object")
         queries = response.get("queries", [])
         if not isinstance(queries, list):
-            return {"error": "Generated hunt queries must be a list", "query_results": []}
+            return self._finish_result(hypothesis, response, [], "Generated hunt queries must be a list")
         results = []
 
         for q in queries[:3]:  # Max 3 queries
             if not isinstance(q, dict):
-                results.append({"query": {}, "error": "Generated query must be an object", "rows": []})
+                results.append(
+                    {"query": {}, "outcome": "rejected", "error": "Generated query must be an object", "rows": []}
+                )
                 continue
             if not isinstance(q.get("sql"), str) or not isinstance(q.get("description", ""), str):
-                results.append({"query": {}, "error": "Query SQL and description must be text", "rows": []})
+                results.append(
+                    {"query": {}, "outcome": "rejected", "error": "Query SQL and description must be text", "rows": []}
+                )
                 continue
             sql = q.get("sql", "")
             if not self._is_safe_query(sql):
                 results.append(
-                    {"query": q, "error": "Query rejected: use a single scoped, read-only SELECT", "rows": []}
+                    {
+                        "query": q,
+                        "outcome": "rejected",
+                        "error": "Query rejected: use a single scoped, read-only SELECT",
+                        "rows": [],
+                    }
                 )
                 continue
 
             start = time.time()
+            executing = False
+            recorded = False
             try:
                 params = q.get("params", {})
                 compiled = self._compile_query(sql, params)
+                executing = True
                 query_results = await self._execute_compiled_query(compiled.query)
                 results.append(
                     {
                         "query": q,
+                        "outcome": "completed",
                         "rows": query_results[:100],  # Cap at 100 rows
                         "row_count": len(query_results),
                         "execution": compiled.evidence,
@@ -185,6 +198,7 @@ class HuntAgent(BaseAgent):
                         },
                     }
                 )
+                recorded = True
                 await self.log_step(
                     "execute_query",
                     q.get("description", ""),
@@ -193,16 +207,44 @@ class HuntAgent(BaseAgent):
                     duration_ms=int((time.time() - start) * 1000),
                 )
             except Exception as e:
-                results.append({"query": q, "error": str(e), "rows": []})
+                if recorded:
+                    raise  # Ledger failure is not a second query outcome.
+                results.append(
+                    {"query": q, "outcome": "failed" if executing else "rejected", "error": str(e), "rows": []}
+                )
                 await self.log_step("query_error", str(e))
 
-        return {
+        return self._finish_result(hypothesis, response, results)
+
+    def _finish_result(self, hypothesis, response, results, error=None):
+        completed = sum(result.get("outcome") == "completed" for result in results)
+        rejected = sum(result.get("outcome") == "rejected" for result in results)
+        failed = sum(result.get("outcome") == "failed" for result in results)
+        status = "completed" if completed and completed == len(results) else "partial" if completed else "failed"
+        queries = response.get("queries", [])
+        skipped = max(0, len(queries) - 3) if isinstance(queries, list) else 0
+        if skipped and status == "completed":
+            status = "partial"
+        output = {
             "hypothesis": hypothesis,
+            "status": status,
+            "recorded_at": datetime.now(UTC).isoformat(),
             "query_results": results,
-            "sigma_rule": response.get("sigma_rule"),
-            "explanation": response.get("explanation"),
-            "summary": f"Executed {len(results)} queries for hypothesis: {hypothesis}",
+            "execution_summary": {
+                "completed": completed,
+                "rejected": rejected,
+                "failed": failed,
+                "attempted": completed + failed,
+                "skipped": skipped,
+            },
+            "sigma_rule": response.get("sigma_rule") if isinstance(response.get("sigma_rule"), str) else None,
+            "explanation": response.get("explanation") if isinstance(response.get("explanation"), str) else None,
+            "summary": f"{completed} queries completed, {rejected} rejected before execution, "
+            f"{failed} execution errors, {skipped} skipped by the three-query cap",
         }
+        if error or not results:
+            output["error"] = error or "No hunt queries were generated"
+        return output
 
     async def _execute_query(self, sql: str, params: dict | None = None) -> list:
         """Execute a read-only SQL query with user_id scoping."""
@@ -210,9 +252,12 @@ class HuntAgent(BaseAgent):
         return await self._execute_compiled_query(query)
 
     async def _execute_compiled_query(self, query) -> list:
-        result = await self.db.execute(query)
-        columns = result.keys()
-        return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+        # A failed SELECT must not poison the outer session transaction or lose
+        # other query evidence. The outer hunt/session write commits separately.
+        async with self.db.begin_nested():
+            result = await self.db.execute(query)
+            columns = result.keys()
+            return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
 
     def _build_safe_query(self, sql: str, params: dict) -> object:
         """Build a constrained SQLAlchemy query from validated hunt SQL."""

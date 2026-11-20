@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { huntQueryCsv, saveHuntDownload } from '../utils/huntEvidence';
 import { FileCode } from 'lucide-react';
 
 type HuntRow = Record<string, unknown>;
 export interface HuntQueryResult {
+  outcome?: 'completed' | 'rejected' | 'failed';
   query?: { description?: string; sql?: string; params?: Record<string, unknown> };
   execution?: { contract: string; selected_columns: string[]; order_by: string; direction: string; requested_limit: number | null; row_limit: number; tie_breaker?: { column: string; direction: string } | null };
   time_window?: { since?: string; before?: string };
@@ -26,6 +28,10 @@ export function HuntQueryEvidence({ result, index }: { result: HuntQueryResult; 
     <div className="mb-2 flex flex-wrap items-center gap-2">
       <FileCode className="h-4 w-4 shrink-0 text-primary-400" aria-hidden="true" />
       <h3 className="min-w-0 break-words text-sm font-medium text-surface-50">{result.query?.description || `Query ${index + 1}`}</h3>
+    </div>
+    <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+      <p className={result.outcome === 'completed' ? 'text-success' : result.outcome ? 'text-warning' : 'text-surface-500'}>{result.outcome === 'completed' ? 'Query completed' : result.outcome === 'rejected' ? 'Rejected before execution' : result.outcome === 'failed' ? 'Execution failed' : 'Query outcome not recorded'}</p>
+      <button type="button" disabled={!rows.length} aria-label={`Export retained rows for query ${index + 1}`} onClick={() => saveHuntDownload(huntQueryCsv(result, index), `hunt-query-${index + 1}-retained-rows.csv`, 'text/csv;charset=utf-8')} className="rounded border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Export retained rows CSV</button>
     </div>
     <p className="mb-2 text-xs text-surface-400">{typeof result.row_count === 'number' ? `${result.row_count} results reported` : 'Result count not recorded'} · {rows.length} evidence rows retained</p>
     <p className="mb-3 text-xs text-surface-500">Recorded query output, not a new query or live check. Only retained rows can be reviewed here.</p>

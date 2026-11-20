@@ -176,7 +176,7 @@ class TestHuntTimeBounds:
 @pytest.mark.parametrize('valid', [True, False])
 def test_hunt_run_records_applied_bounds_and_rejects_unsupported_time_before_db(monkeypatch, valid):
     import asyncio
-    from unittest.mock import AsyncMock, Mock
+    from unittest.mock import AsyncMock, MagicMock, Mock
     import backend.services.agents.hunt as module
     sql = 'SELECT id FROM security_events WHERE user_id = :user_id AND timestamp ' + ('>= :since' if valid else ">= '2026-11-20'")
     provider = Mock(model='test-model')
@@ -188,7 +188,8 @@ def test_hunt_run_records_applied_bounds_and_rejects_unsupported_time_before_db(
     result = Mock()
     result.keys.return_value = ['id']
     result.fetchall.return_value = [(1,)]
-    agent.db = Mock(execute=AsyncMock(return_value=result))
+    agent.db = Mock(execute=AsyncMock(return_value=result),
+                    begin_nested=MagicMock(return_value=AsyncMock()))
     output = asyncio.run(agent.run(hypothesis='events since morning'))['query_results'][0]
     if valid:
         assert output['time_window'] == {'since': '2026-11-20T05:00:00+00:00'}

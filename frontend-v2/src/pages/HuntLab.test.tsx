@@ -436,3 +436,52 @@ it('refreshes the current history filters when a new hunt finishes after the vie
   await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/hunt/history')).toHaveLength(reads + 1));
   expect(mockGet).toHaveBeenLastCalledWith('/hunt/history', { params: { page: 1, size: 20, search: 'current keyword' } });
 });
+
+describe('Recorded hunt completion and handoff', () => {
+  it('reopens partial outcomes without relabeling errors as success, and filters partial history', async () => {
+    mockGet.mockImplementation(url => Promise.resolve({ data: url.endsWith('/5') ? {
+      ...sessionDetail, result_data: {
+        status: 'partial', recorded_at: '2026-11-20T12:00:00Z',
+        execution_summary: { completed: 1, rejected: 1, failed: 1, attempted: 2, skipped: 0 },
+        query_results: [
+          { outcome: 'completed', rows: [{ id: 1 }], row_count: 1 },
+          { outcome: 'rejected', error: 'Unsupported projection', rows: [] },
+          { outcome: 'failed', error: 'Database unavailable', rows: [] },
+        ],
+      },
+    } : url.endsWith('/detections') ? [] : { sessions: [session], total: 1 } }));
+    render(<HuntLab />);
+    fireEvent.click(await screen.findByRole('button', { name: /reopen hunt: dns tunneling/i }));
+    expect(await screen.findByText('Recorded outcome: partial')).toBeTruthy();
+    expect(screen.getByText('1 completed · 1 rejected before execution · 1 execution errors')).toBeTruthy();
+    expect(screen.getByText('2 database queries attempted · 0 skipped by the three-query cap')).toBeTruthy();
+    expect(screen.getByText('Rejected before execution')).toBeTruthy();
+    expect(screen.getByText('Execution failed')).toBeTruthy();
+    expect(screen.getByText('Unsupported projection')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Export retained rows for query 2' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Hunt history status'), { target: { value: 'partial' } });
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/hunt/history', { params: { page: 1, size: 20, state: 'partial' } }));
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it('shows top-level generation failures instead of an empty successful result', async () => {
+    mockGet.mockImplementation(url => Promise.resolve({ data: url.endsWith('/detections') ? [] : { sessions: [], total: 0 } }));
+    mockPost.mockResolvedValue({ data: { data: { status: 'failed', error: 'No hunt queries were generated', execution_summary: { completed: 0, rejected: 0, failed: 0, attempted: 0, skipped: 0 }, query_results: [] } } });
+    render(<HuntLab />);
+    fireEvent.change(screen.getByLabelText('Hunting Hypothesis'), { target: { value: 'review gateway' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Hunt' }));
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.getByText('No hunt queries were generated')).toBeTruthy();
+    expect(screen.getByText('Recorded outcome: failed')).toBeTruthy();
+  });
+
+  it('does not backfill detailed execution outcomes for legacy sessions', async () => {
+    mockGet.mockImplementation(url => Promise.resolve({ data: url.endsWith('/5') ? sessionDetail : url.endsWith('/detections') ? [] : { sessions: [session], total: 1 } }));
+    render(<HuntLab />);
+    fireEvent.click(await screen.findByRole('button', { name: /reopen hunt: dns tunneling/i }));
+    expect(await screen.findByText('Detailed execution outcome was not recorded for this result. Historical completion labels do not prove that every query succeeded.')).toBeTruthy();
+    expect(screen.queryByLabelText('Recorded hunt execution summary')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Export recorded evidence JSON' })).toBeTruthy();
+  });
+});

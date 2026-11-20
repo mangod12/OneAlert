@@ -58,9 +58,11 @@ async def start_hunt(
     result = await agent.execute(hypothesis=req.hypothesis)
 
     # Update session
-    session.status = "completed"
+    session.status = result.get("status", "completed")
     session.completed_at = datetime.now(UTC)
-    session.queries_run = len(result.get("query_results", []))
+    session.queries_run = result.get("execution_summary", {}).get(
+        "attempted", len(result.get("query_results", [])),
+    )
     session.findings_count = sum(r.get("row_count", 0) for r in result.get("query_results", []))
     session.result_data = result
     session.sigma_rule = result.get("sigma_rule")
@@ -89,7 +91,7 @@ async def hunt_history(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     search: str | None = Query(None, max_length=200),
-    state: str | None = Query(None, pattern="^(running|completed|failed)$"),
+    state: str | None = Query(None, pattern="^(running|completed|partial|failed)$"),
     with_findings: bool = Query(False),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),

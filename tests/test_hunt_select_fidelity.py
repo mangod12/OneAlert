@@ -2,7 +2,7 @@
 
 import asyncio
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 from sqlalchemy import create_engine
@@ -155,7 +155,7 @@ def run_generated(monkeypatch, response):
     result = Mock()
     result.keys.return_value = ["id"]
     result.fetchall.return_value = [(1,)]
-    instance.db = Mock(execute=AsyncMock(return_value=result))
+    instance.db = Mock(execute=AsyncMock(return_value=result), begin_nested=MagicMock(return_value=AsyncMock()))
     return asyncio.run(instance.run(hypothesis="gateway events")), instance
 
 
