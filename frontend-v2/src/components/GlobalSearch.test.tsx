@@ -75,7 +75,7 @@ describe('GlobalSearch', () => {
     fireEvent.keyDown(input, { key: 'ArrowDown' });
     fireEvent.keyDown(input, { key: 'ArrowDown' });
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(screen.getByTestId('location').textContent).toBe('/assets?search=plant-historian');
+    expect(screen.getByTestId('location').textContent).toBe('/assets?asset=11');
   });
 
   it('deep-links an alert to the alerts page drawer param', async () => {
@@ -98,7 +98,7 @@ describe('GlobalSearch', () => {
     await typeQuery('ransomware');
     fireEvent.click(screen.getByText(/3 active alerts/));
     expect(onClose).toHaveBeenCalled();
-    expect(screen.getByTestId('location').textContent).toBe('/incidents');
+    expect(screen.getByTestId('location').textContent).toBe('/incidents?asset_id=11');
   });
 
   it('Escape closes the palette', async () => {
@@ -107,4 +107,36 @@ describe('GlobalSearch', () => {
     fireEvent.keyDown(input, { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
   });
+});
+
+it('removes old selectable hits while a different query is pending, including Enter', async () => {
+  const onClose = renderPalette(); const input = await typeQuery('old-query');
+  get.mockReturnValueOnce(new Promise(() => {})); fireEvent.change(input, { target: { value: 'new-query' } });
+  expect(screen.queryByText('Ransomware behavior on historian')).toBeNull();
+  fireEvent.keyDown(input, { key: 'Enter' }); expect(onClose).not.toHaveBeenCalled();
+  expect(screen.getByText('Searching...')).toBeTruthy();
+});
+it('ignores a slow older reply after the current query completed', async () => {
+  let resolve!: (value: unknown) => void; get.mockReturnValueOnce(new Promise(r => { resolve = r; })); renderPalette();
+  const input = screen.getByRole('combobox'); fireEvent.change(input, { target: { value: 'old-query' } });
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+  get.mockResolvedValueOnce({ data: { data: { alerts: [{ id: 45, title: 'New current result', severity: 'high', status: 'pending' }], cases: [], assets: [] } } });
+  fireEvent.change(input, { target: { value: 'new-query' } }); await screen.findByText('New current result');
+  resolve({ data: { data: results } }); await waitFor(() => expect(screen.queryByText('Ransomware behavior on historian')).toBeNull());
+  fireEvent.click(screen.getByText('New current result')); expect(screen.getByTestId('location').textContent).toBe('/alerts?alert=45');
+});
+it('reports unavailability separately from no matches and retries the same search', async () => {
+  get.mockRejectedValueOnce(new Error('Unavailable')); renderPalette(); const input = screen.getByRole('combobox');
+  fireEvent.change(input, { target: { value: 'gateway' } }); await screen.findByRole('alert');
+  expect(screen.queryByText(/No incidents, alerts, investigations or assets match/)).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry workspace search' })); await screen.findByText('Ransomware behavior on historian');
+  expect(get).toHaveBeenLastCalledWith('/search', { params: { q: 'gateway' } });
+});
+it('does not reuse pending results after closing and reopening', async () => {
+  let resolve!: (value: unknown) => void; get.mockReturnValueOnce(new Promise(r => { resolve = r; }));
+  const { rerender } = render(<MemoryRouter><GlobalSearch open onClose={() => {}} /></MemoryRouter>);
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'old-query' } }); await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+  rerender(<MemoryRouter><GlobalSearch open={false} onClose={() => {}} /></MemoryRouter>);
+  resolve({ data: { data: results } }); rerender(<MemoryRouter><GlobalSearch open onClose={() => {}} /></MemoryRouter>);
+  expect((screen.getByRole('combobox') as HTMLInputElement).value).toBe(''); expect(screen.queryByText('Ransomware behavior on historian')).toBeNull();
 });

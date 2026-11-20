@@ -30,11 +30,15 @@ export function Assets() {
   const [total, setTotal] = useState(0);
   const requestId = useRef(0);
   const [page, setPage] = useState(1);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const assetValues = searchParams.getAll('asset');
+  const assetValue = assetValues.length === 1 ? assetValues[0] : '';
+  const inspectAssetId = /^[1-9][0-9]*$/.test(assetValue) && Number.isSafeInteger(Number(assetValue)) ? Number(assetValue) : null;
+  const invalidAssetLink = assetValues.length > 0 && inspectAssetId === null;
+  const setInspectAssetId = (id: number | null) => setSearchParams(current => { const next = new URLSearchParams(current); if (id === null) next.delete('asset'); else next.set('asset', String(id)); return next; }, { replace: id === null });
   const [search, setSearch] = useState(() => searchParams.get('search') ?? '');
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [inspectAssetId, setInspectAssetId] = useState<number | null>(null);
   const [editAsset, setEditAsset] = useState<Asset | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -167,6 +171,7 @@ export function Assets() {
 
       <AssetComparison ids={comparison} revision={comparisonRevision} />
       {comparison.length > 0 && <button type="button" className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-300" onClick={() => setComparison([])}>Clear asset comparison selection</button>}
+      {invalidAssetLink && <div role="alert" className="space-y-2 rounded border border-warning/40 p-3 text-sm text-surface-300"><p>This asset record link is invalid. Use one positive whole-number asset ID. No record was opened from this link.</p><button type="button" className="rounded border border-surface-600 px-3 py-2" onClick={() => setInspectAssetId(null)}>Clear invalid asset record link</button></div>}
 
       <fieldset disabled={criticalityBusy} className="flex min-w-0 flex-wrap items-center gap-3">
         <div className="relative min-w-[12rem] max-w-sm flex-1">

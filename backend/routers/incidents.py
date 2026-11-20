@@ -77,13 +77,16 @@ async def _incident_context(
 
 
 async def _active_alerts_by_asset(
-    db: AsyncSession, user_id: int
+    db: AsyncSession, user_id: int, asset_id: int | None = None
 ) -> dict[int, tuple[Asset, list[Alert]]]:
-    rows = await db.execute(
+    statement = (
         select(Alert, Asset)
         .join(Asset, Alert.asset_id == Asset.id)
         .where(Alert.user_id == user_id, Asset.user_id == user_id, Alert.status.in_(_ACTIVE_STATUSES))
     )
+    if asset_id is not None:
+        statement = statement.where(Asset.id == asset_id)
+    rows = await db.execute(statement)
     groups: dict[int, tuple[Asset, list[Alert]]] = {}
     for alert, asset in rows.all():
         groups.setdefault(asset.id, (asset, []))[1].append(alert)
@@ -94,6 +97,7 @@ async def _active_alerts_by_asset(
 async def list_incidents(
     severity: str | None = Query(None, description="Minimum max-severity to include"),
     asset: str | None = Query(None, description="Case-insensitive asset name/vendor/product match"),
+    asset_id: int | None = Query(None, ge=1, description="Exact asset record ID"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -111,7 +115,7 @@ async def list_incidents(
         min_rank = _SEVERITY_RANK[severity]
     asset_term = asset.strip().lower() if asset else None
 
-    groups = await _active_alerts_by_asset(db, current_user.id)
+    groups = await _active_alerts_by_asset(db, current_user.id, asset_id)
 
     groups = {asset_id: group for asset_id, group in groups.items() if len(group[1]) >= 2}
     counts, cases_by_asset = await _incident_context(db, current_user.id, groups)

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Download, Siren } from 'lucide-react';
 import { incidentCsv } from '../utils/incidentCsv';
 import { toast } from '../components/Toast';
@@ -107,6 +107,18 @@ function IncidentTimeline({ assetId }: { assetId: number }) {
 
 export function Incidents() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const assetValues = searchParams.getAll('asset_id');
+  const assetValue = assetValues.length === 1 ? assetValues[0] : '';
+  const exactAssetId = /^[1-9][0-9]*$/.test(assetValue) && Number.isSafeInteger(Number(assetValue)) ? Number(assetValue) : null;
+  const invalidAssetLink = assetValues.length > 0 && exactAssetId === null;
+  const clearExactLink = () => setSearchParams(current => { const next = new URLSearchParams(current); next.delete('asset_id'); return next; }, { replace: true });
+  const [copyError, setCopyError] = useState(''), [copiedId, setCopiedId] = useState<number | null>(null);
+  const copyIncidentLink = async (id: number) => {
+    setCopyError(''); setCopiedId(null);
+    try { const url = new URL(window.location.href); url.search = ''; url.hash = ''; url.searchParams.set('asset_id', String(id)); await navigator.clipboard.writeText(url.toString()); setCopiedId(id); }
+    catch { setCopyError('The incident link could not be copied. Try again.'); }
+  };
   const [incidents, setIncidents] = useState<Incident[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<number | null>(null);
@@ -117,7 +129,7 @@ export function Incidents() {
   const [loading, setLoading] = useState(true);
   const requestId = useRef(0);
   const [loadedFilterKey, setLoadedFilterKey] = useState<string | null>(null);
-  const filterKey = JSON.stringify([severityFilter, appliedAssetQuery.trim()]);
+  const filterKey = JSON.stringify([exactAssetId, ...(exactAssetId ? [] : [severityFilter, appliedAssetQuery.trim()])]);
 
   const escalate = async (assetId: number) => {
     if (escalating !== null) return;
@@ -133,25 +145,30 @@ export function Incidents() {
 
   const load = useCallback(async () => {
     const id = ++requestId.current;
+    if (invalidAssetLink) { setIncidents(null); setLoading(false); setError(null); return; }
     setLoading(true);
     setError(null);
     try {
       const params: Record<string, string> = {};
-      if (severityFilter) params.severity = severityFilter;
-      if (appliedAssetQuery.trim()) params.asset = appliedAssetQuery.trim();
+      if (exactAssetId) params.asset_id = String(exactAssetId);
+      else { if (severityFilter) params.severity = severityFilter;
+        if (appliedAssetQuery.trim()) params.asset = appliedAssetQuery.trim(); }
       const res = await apiClient.get<{ incidents: Incident[] }>('/incidents', { params });
       if (id !== requestId.current) return;
+      if (exactAssetId && res.data.incidents.some(row => row.asset_id !== exactAssetId)) throw new Error('The response did not match this exact asset incident. Retry before reviewing it.');
       setIncidents(res.data.incidents);
-      setLoadedFilterKey(JSON.stringify([severityFilter, appliedAssetQuery.trim()]));
+      setLoadedFilterKey(JSON.stringify([exactAssetId, ...(exactAssetId ? [] : [severityFilter, appliedAssetQuery.trim()])]));
+      setExpanded(exactAssetId);
     } catch (err: unknown) {
       if (id === requestId.current) setError(getApiErrorMessage(err, 'Incidents could not be loaded.'));
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [severityFilter, appliedAssetQuery]);
+  }, [severityFilter, appliedAssetQuery, exactAssetId, invalidAssetLink]);
 
   useEffect(() => {
     void load();
+    return () => { requestId.current += 1; };
   }, [load]);
 
   const exportReady = !loading && loadedFilterKey === filterKey && !!incidents?.length;
@@ -164,6 +181,8 @@ export function Incidents() {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  if (invalidAssetLink) return <ErrorState title="Invalid incident record link" description="Use one positive whole-number asset ID. No incident was loaded from this link." action={<button type="button" onClick={clearExactLink} className="rounded border border-surface-600 px-3 py-2 text-sm text-surface-200">Clear invalid incident link</button>} />;
 
   if (error) {
     return <ErrorState title="Incidents unavailable" description={error} action={<RetryButton onClick={() => void load()} />} />;
@@ -179,7 +198,8 @@ export function Incidents() {
         title="Incidents"
         description="Correlated groups of active alerts hitting the same asset, with blast radius from observed network connections."
       />
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+      {exactAssetId && <div className="mb-4 space-y-2 rounded border border-primary-500/30 p-3 text-sm text-surface-300"><p>Exact current incident for asset #{exactAssetId}. Other list filters are not applied. Incidents are computed from active alerts and may no longer qualify when reopened. This link is not an immutable incident ID and does not grant access.</p><button type="button" onClick={clearExactLink} className="rounded border border-surface-600 px-3 py-2 text-xs">Return to filtered incident list</button></div>}
+      {!exactAssetId && <div className="mb-4 flex flex-wrap items-center gap-3">
         <select
           aria-label="Minimum severity"
           value={severityFilter}
@@ -211,14 +231,15 @@ export function Incidents() {
             Apply
           </button>
         </form>
-      </div>
+      </div>}
+      {copyError && <p role="alert" className="mb-3 text-xs text-danger">{copyError}</p>}
       <p className="mb-3 text-xs text-surface-500">CSV includes only the currently loaded filtered incidents. Downloads stay on your device.</p>
       {loading || loadedFilterKey !== filterKey || incidents === null ? (
         <LoadingSurface label="Correlating alerts" />
       ) : incidents.length === 0 ? (
         <EmptyState
           title="No incidents"
-          description="When two or more active alerts hit the same asset they are grouped here as an incident."
+          description={exactAssetId ? `No qualifying current incident is visible for asset #${exactAssetId}. It may have fewer than two active alerts, be unavailable or no longer be accessible. No resolution or historical state is inferred.` : 'When two or more active alerts hit the same asset they are grouped here as an incident.'}
         />
       ) : (
         <ul className="space-y-3">
@@ -294,6 +315,7 @@ export function Incidents() {
                     )}
                     <div className="mt-3 border-t border-surface-700 pt-3">
                       <p className="text-xs uppercase tracking-wide text-surface-500">Timeline</p>
+                      <div className="space-y-2"><button type="button" className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300" onClick={() => void copyIncidentLink(incident.asset_id)}>Copy current incident link</button><p className="text-xs text-surface-400">Opens the current correlated group by asset ID, not a frozen incident snapshot. Recipients need their own access.</p>{copiedId === incident.asset_id && <p role="status" className="text-xs text-primary-300">Current incident link copied.</p>}<Link className="block text-xs text-primary-300" to={`/assets?asset=${incident.asset_id}`}>Open exact asset inventory record</Link></div>
                       <IncidentTimeline assetId={incident.asset_id} />
                     </div>
                   </div>
