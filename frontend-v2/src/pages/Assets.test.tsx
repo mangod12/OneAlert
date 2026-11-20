@@ -367,7 +367,7 @@ it('reviews only selected loaded assets and saves just criticality after confirm
   fireEvent.change(screen.getByLabelText('New asset criticality'), { target: { value: 'critical' } });
   fireEvent.click(screen.getByRole('button', { name: 'Review criticality change' }));
   expect(put).not.toHaveBeenCalled();
-  expect(screen.getByRole('dialog').textContent).toContain('Only criticality changes');
+  expect(screen.getByRole('dialog').textContent).toContain('Only the criticality field is edited');
   fireEvent.click(screen.getByRole('button', { name: 'Apply to 1 assets' }));
   await screen.findByText(/Confirmed criticality changes for 1 of 1/);
   expect(put).toHaveBeenCalledWith('/assets/7', { criticality: 'critical' });
