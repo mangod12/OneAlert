@@ -69,8 +69,9 @@ class TestSuricataParser:
         assert result["bytes_in"] == 1024
         assert result["bytes_out"] == 2048
 
-    def test_no_timestamp_returns_none(self):
-        assert parse_suricata_eve({}) is None
+    def test_no_timestamp_is_rejected(self):
+        with pytest.raises(ValueError, match="timestamp"):
+            parse_suricata_eve({})
 
     def test_tls_event(self):
         raw = {

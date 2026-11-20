@@ -1,6 +1,6 @@
 """Suricata EVE JSON parser → normalized SecurityEvent dicts."""
 
-from datetime import UTC, datetime
+from backend.services.parsers.event_time import observed_timestamp
 
 SEVERITY_MAP = {1: "critical", 2: "high", 3: "medium", 4: "low"}
 
@@ -12,15 +12,7 @@ def parse_suricata_eve(raw: dict) -> dict | None:
     Returns None if event cannot be parsed.
     """
     event_type = raw.get("event_type", "unknown")
-    timestamp_str = raw.get("timestamp")
-
-    if not timestamp_str:
-        return None
-
-    try:
-        ts = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-    except (ValueError, AttributeError):
-        ts = datetime.now(UTC)
+    ts = observed_timestamp(raw.get("timestamp"))
 
     base = {
         "timestamp": ts,

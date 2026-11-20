@@ -1,18 +1,13 @@
 """Zeek log parser → normalized SecurityEvent dicts."""
 
-from datetime import UTC, datetime
+from datetime import datetime
+
+from backend.services.parsers.event_time import observed_timestamp
 
 
 def _zeek_ts(ts_val) -> datetime:
     """Convert Zeek timestamp (epoch float or ISO string) to datetime."""
-    if isinstance(ts_val, (int, float)):
-        return datetime.fromtimestamp(ts_val, tz=UTC)
-    if isinstance(ts_val, str):
-        try:
-            return datetime.fromtimestamp(float(ts_val), tz=UTC)
-        except ValueError:
-            return datetime.fromisoformat(ts_val.replace("Z", "+00:00"))
-    return datetime.now(UTC)
+    return observed_timestamp(ts_val, epoch_allowed=True)
 
 
 def parse_zeek_log(raw: dict) -> dict | None:
