@@ -167,3 +167,24 @@ def test_real_database_failure_reverts_source_receipt_and_leaves_session_usable(
         finally:
             await engine.dispose()
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("bad", [True, False, 1.5, float("inf"), "1.5", {}, []])
+def test_zeek_integer_fields_cannot_be_silently_truncated_or_discarded(bad):
+    from backend.services.parsers.zeek import parse_zeek_log
+
+    with pytest.raises((ValueError, TypeError)):
+        parse_zeek_log({"_path": "conn", "ts": 1767225600, "id.orig_p": bad})
+
+
+def test_zeek_zero_ports_decimal_strings_and_unset_marker_are_preserved():
+    from backend.services.parsers.zeek import parse_zeek_log
+
+    result = parse_zeek_log({
+        "_path": "conn", "ts": 1767225600,
+        "id.orig_p": 0, "id_orig_p": 123,
+        "id.resp_p": "65535", "orig_bytes": "0", "resp_bytes": "-",
+    })
+    normalized = validate_normalized_event(result)
+    assert normalized["source_port"] == 0 and normalized["dest_port"] == 65535
+    assert normalized["bytes_out"] == 0 and normalized["bytes_in"] is None

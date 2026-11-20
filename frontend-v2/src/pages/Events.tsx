@@ -215,7 +215,6 @@ export function Events() {
 
   return (
     <div className="space-y-6">
-      {importReceipt && <EventImportReceipt key={importReceipt.received_at} receipt={importReceipt} onDismiss={() => setImportReceipt(null)} />}
       <PageHeader
         eyebrow="Observe"
         title="Security Events"
@@ -230,6 +229,8 @@ export function Events() {
           </button>
         )}
       />
+
+      {importReceipt && <EventImportReceipt key={importReceipt.received_at} receipt={importReceipt} onDismiss={() => setImportReceipt(null)} />}
 
       {errors.length > 0 && !eventError && <DegradedBanner messages={errors} onRetry={() => void fetchEvents()} />}
 
