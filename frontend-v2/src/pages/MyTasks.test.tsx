@@ -19,7 +19,7 @@ describe('MyTasks workspace', () => {
     await screen.findByText('Collect host evidence');
     expect(get).toHaveBeenCalledWith('/cases/my-tasks');
     expect(get).toHaveBeenCalledTimes(1);
-    expect(screen.getAllByRole('link', { name: /Edge investigation/ })[0].getAttribute('href')).toBe('/cases/7');
+    expect(screen.getAllByRole('link', { name: /Edge investigation/ })[0].getAttribute('href')).toBe('/cases/7?task=1');
     expect(screen.getByText('Task #1 due: 2020-01-01')).toBeTruthy();
     expect(screen.getAllByText('Investigation due: 2099-01-01')).toHaveLength(4);
     expect(screen.getByText(/up to 200 assigned tasks/)).toBeTruthy();

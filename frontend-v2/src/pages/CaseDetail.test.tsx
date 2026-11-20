@@ -89,9 +89,9 @@ const similarCases = [
   { case_id: 4, title: 'Prior brute force campaign', similarity: 0.73, shared_techniques: ['T1110', 'T1021'] },
 ];
 
-function renderDetail() {
+function renderDetail(path = '/cases/7') {
   return render(
-    <MemoryRouter initialEntries={['/cases/7']}>
+    <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/cases/:caseId" element={<CaseDetail />} />
       </Routes>
@@ -1037,4 +1037,20 @@ it('does not show a mismatched investigation response with plan or checklist act
   mockLoad(); mockGet.mockImplementation(async url => url === '/cases/7' ? { data: { ...caseData, id: 99 } } : { data: [] });
   renderDetail(); await screen.findByText('The investigation response did not match the requested record. Retry to load it.');
   expect(screen.queryByRole('region', { name: 'Investigation response plan explorer' })).toBeNull();
+});
+
+it('focuses an exact task from a deep link without changing it', async () => {
+  mockLoadWithPlans([]);
+  const original = mockGet.getMockImplementation()!;
+  mockGet.mockImplementation((...args) => String(args[0]).endsWith('/tasks') ? Promise.resolve({ data: Array.from({ length: 23 }, (_, index) => ({ id: index + 1, title: `Deep-linked task ${index + 1}`, done: false, position: index, assignee_id: null, due_date: null })) }) : original(...args));
+  renderDetail('/cases/7?task=23');
+  await screen.findByText('Deep-linked task 23');
+  expect(document.activeElement?.id).toBe('case-task-23');
+  expect(screen.getByText('Deep-linked task 23').closest('li')?.className).toContain('ring-primary-400');
+  expect(mockPatch).not.toHaveBeenCalled(); expect(mockPost).not.toHaveBeenCalled();
+});
+it.each(['0', '-1', '07', '9007199254740992', '1&task=2'])('rejects invalid or ambiguous task deep link %s', async id => {
+  mockLoadWithPlans([]); renderDetail(`/cases/7?task=${id}`);
+  await screen.findByText('The task link has an invalid task ID. No task was selected or changed.');
+  expect(mockPatch).not.toHaveBeenCalled(); expect(mockPost).not.toHaveBeenCalled();
 });

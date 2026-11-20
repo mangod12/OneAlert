@@ -5,8 +5,8 @@ import apiClient from '../api/client';
 import { AssignedTaskExplorer } from './AssignedTaskExplorer';
 vi.mock('../api/client', () => ({ default: { get: vi.fn() } }));
 const get = vi.mocked(apiClient.get);
-const task = { task_id: 209, case_id: 7, title: 'Collect late-page evidence', case_title: 'Gateway investigation', case_severity: 'high', case_status: 'open', due_date: '2026-11-20', case_due_date: null };
-const result = (page = 1, total = 201) => ({ data: [task], total, page, size: 25, filter_date: new Date().toLocaleDateString('en-CA') });
+const task = { done: false, completed_at: null, task_id: 209, case_id: 7, title: 'Collect late-page evidence', case_title: 'Gateway investigation', case_severity: 'high', case_status: 'open', due_date: '2026-11-20', case_due_date: null };
+const result = (page = 1, total = 201) => ({ data: [task], total, page, size: 25, completion: 'open', investigations: 'active', filter_date: new Date().toLocaleDateString('en-CA') });
 beforeEach(() => { vi.resetAllMocks(); get.mockImplementation(async (_url, config) => ({ data: { ...result((config?.params as { page: number }).page), filter_date: (config?.params as { today: string }).today } })); });
 afterEach(cleanup);
 function show() { render(<MemoryRouter><AssignedTaskExplorer /></MemoryRouter>); fireEvent.click(screen.getByRole('button', { name: 'Explore all assigned tasks beyond the editing snapshot' })); }
@@ -14,7 +14,7 @@ it('loads only on demand and reaches records beyond the editing cap with stable 
   render(<MemoryRouter><AssignedTaskExplorer /></MemoryRouter>); expect(get).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Explore all assigned tasks beyond the editing snapshot' }));
   await screen.findByText(/201 matching assigned task records/);
-  expect(screen.getByRole('link', { name: /Gateway investigation/ }).getAttribute('href')).toBe('/cases/7');
+  expect(screen.getByRole('link', { name: /Gateway investigation/ }).getAttribute('href')).toBe('/cases/7?task=209');
   fireEvent.click(screen.getByRole('button', { name: 'Next workload page' }));
   await screen.findByText(/Page 2 of 9/); expect(get).toHaveBeenLastCalledWith('/cases/assigned-task-explorer', { params: expect.objectContaining({ page: 2, size: 25 }) });
 });
@@ -25,7 +25,7 @@ it('keeps edits separate until apply and sends global filter criteria with expli
   fireEvent.change(screen.getByLabelText('Full workload calendar date'), { target: { value: '2026-11-21' } });
   expect(get).toHaveBeenCalledTimes(1); expect(screen.getByText(/Filter edits are not applied/)).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Apply full workload filters' }));
-  await waitFor(() => expect(get).toHaveBeenLastCalledWith('/cases/assigned-task-explorer', { params: { query: 'Late-page', due: 'overdue', severity: 'all', today: '2026-11-21', page: 1, size: 25 } }));
+  await waitFor(() => expect(get).toHaveBeenLastCalledWith('/cases/assigned-task-explorer', { params: { query: 'Late-page', due: 'overdue', severity: 'all', today: '2026-11-21', completion: 'open', investigations: 'active', page: 1, size: 25 } }));
 });
 it('does not turn a failed response into an empty-workload claim and retries', async () => {
   get.mockRejectedValueOnce(new Error('Unavailable')); show(); await screen.findByRole('alert');
@@ -53,4 +53,23 @@ it('recovers the last server page when remaining tasks disappear', async () => {
 it('rejects invalid task identities without showing links', async () => {
   get.mockImplementationOnce(async (_url, config) => ({ data: { ...result(), data: [{ ...task, task_id: 0 }], filter_date: (config?.params as { today: string }).today } }));
   show(); await screen.findByRole('alert'); expect(screen.queryByRole('link')).toBeNull();
+});
+
+it('requires explicit apply for completed work and inactive investigations, preserving recorded timestamps', async () => {
+  show(); await screen.findByText(/201 matching/);
+  fireEvent.change(screen.getByLabelText('Full workload completion'), { target: { value: 'completed' } });
+  fireEvent.change(screen.getByLabelText('Full workload investigation scope'), { target: { value: 'inactive' } });
+  expect(get).toHaveBeenCalledTimes(1);
+  get.mockImplementationOnce(async (_url, config) => ({ data: { ...result(), completion: 'completed', investigations: 'inactive', data: [{ ...task, done: true, completed_at: '2026-11-20T18:00:00Z', case_status: 'resolved' }], filter_date: (config?.params as { today: string }).today } }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply full workload filters' }));
+  await screen.findByText('Completed checklist task · Recorded completion: 2026-11-20T18:00:00Z');
+  expect(get).toHaveBeenLastCalledWith('/cases/assigned-task-explorer', { params: expect.objectContaining({ completion: 'completed', investigations: 'inactive', page: 1 }) });
+  expect(screen.getByText(/A past due date alone/)).toBeTruthy();
+});
+it('rejects a response with the wrong completion scope or untrustworthy completion type', async () => {
+  get.mockImplementationOnce(async (_url, config) => ({ data: { ...result(), completion: 'all', filter_date: (config?.params as { today: string }).today } }));
+  show(); await screen.findByRole('alert'); expect(screen.queryByRole('link')).toBeNull();
+  get.mockImplementationOnce(async (_url, config) => ({ data: { ...result(), data: [{ ...task, done: 'yes' }], filter_date: (config?.params as { today: string }).today } }));
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh full workload page' }));
+  await screen.findByRole('alert'); expect(screen.queryByRole('link')).toBeNull();
 });
