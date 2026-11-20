@@ -70,10 +70,10 @@ const STATUS_STYLES: Record<string, string> = {
 export function ResponsePlansRoute() {
   const [params] = useSearchParams();
   const ids = params.getAll('plan');
-  return <ResponsePlans linkedPlanId={ids.length > 1 ? 'invalid' : ids[0] ?? null} />;
+  return <ResponsePlans linkedPlanId={ids.length > 1 ? 'invalid' : ids[0] ?? null} compareFrom={params.getAll('compare_from').length > 1 ? 'invalid' : params.get('compare_from')} compareTo={params.getAll('compare_to').length > 1 ? 'invalid' : params.get('compare_to')} />;
 }
 
-export function ResponsePlans({ linkedPlanId = null }: { linkedPlanId?: string | null }) {
+export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compareTo = null }: { linkedPlanId?: string | null; compareFrom?: string | null; compareTo?: string | null }) {
   const requestId = useRef(0);
   const approving = useRef(false);
   const [reviewApprovalId, setReviewApprovalId] = useState<number | null>(null);
@@ -238,7 +238,7 @@ export function ResponsePlans({ linkedPlanId = null }: { linkedPlanId?: string |
       {loading && <LoadingSurface label="Loading response plans" />}
 
       <ResponseDecisionEvidence linkedPlanId={linkedPlanId} />
-      <ResponsePlanComparison />
+      <ResponsePlanComparison baseline={compareFrom} comparison={compareTo} />
 
       {/* Pending Approvals */}
       {approvalTotal > 0 && (

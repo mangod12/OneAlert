@@ -47,3 +47,15 @@ it('clears loaded comparison on input edits and ignores late results after closi
   fireEvent.click(screen.getByRole('button', { name: 'Compare two saved response plans' })); fireEvent.click(screen.getByRole('button', { name: 'Load saved plan comparison' }));
   await screen.findByText('Stored action position 1: changed'); fireEvent.change(screen.getByLabelText('Comparison plan ID'), { target: { value: '9' } }); expect(screen.queryByRole('link')).toBeNull();
 });
+
+it('prefills linked IDs without fetching, then reloads both exact records on request', async () => {
+  const view = render(<MemoryRouter><ResponsePlanComparison baseline="7" comparison="8" /></MemoryRouter>);
+  expect((screen.getByLabelText('Baseline plan ID') as HTMLInputElement).value).toBe('7');
+  expect(get).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Load saved plan comparison' }));
+  await screen.findByText('Stored action position 1: changed');
+  view.rerender(<MemoryRouter><ResponsePlanComparison baseline="8" comparison="7" /></MemoryRouter>);
+  expect(screen.queryByRole('link')).toBeNull();
+  expect((screen.getByLabelText('Baseline plan ID') as HTMLInputElement).value).toBe('8');
+  expect(get).toHaveBeenCalledTimes(2);
+});
