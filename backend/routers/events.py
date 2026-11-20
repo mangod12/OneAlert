@@ -4,9 +4,11 @@ import csv
 import io
 import json
 import logging
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
+from pydantic import AwareDatetime
 from sqlalchemy import case as sql_case
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -128,6 +130,17 @@ async def upload_events_file(
     return {"success": True, "data": result}
 
 
+def _event_time_predicates(started_at: datetime | None, ended_before: datetime | None):
+    if started_at and ended_before and started_at >= ended_before:
+        raise HTTPException(status_code=422, detail="Start must be before the exclusive end time")
+    predicates = []
+    if started_at:
+        predicates.append(SecurityEvent.timestamp >= started_at.astimezone(UTC))
+    if ended_before:
+        predicates.append(SecurityEvent.timestamp < ended_before.astimezone(UTC))
+    return predicates
+
+
 @router.get("/", response_model=EventListResponse)
 async def list_events(
     page: int = Query(1, ge=1),
@@ -139,6 +152,8 @@ async def list_events(
     source_type: str | None = Query(None),
     ip: str | None = Query(None, description="Substring match against source or destination IP"),
     signature: str | None = Query(None, description="Substring match against the event signature"),
+    started_at: AwareDatetime | None = Query(None, description="Inclusive event timestamp, timezone required"),
+    ended_before: AwareDatetime | None = Query(None, description="Exclusive event timestamp, timezone required"),
     sort: str = Query(
         "timestamp_desc",
         pattern="^(timestamp_desc|timestamp_asc|severity_desc|severity_asc)$",
@@ -180,6 +195,9 @@ async def list_events(
         query = query.filter(sig_match)
         count_q = count_q.filter(sig_match)
 
+    predicates = _event_time_predicates(started_at, ended_before)
+    query = query.where(*predicates)
+    count_q = count_q.where(*predicates)
     total = (await db.execute(count_q)).scalar_one()
     severity_rank = sql_case(
         {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0},
@@ -192,7 +210,7 @@ async def list_events(
         "severity_desc": [severity_rank.desc(), SecurityEvent.timestamp.desc()],
         "severity_asc": [severity_rank.asc(), SecurityEvent.timestamp.desc()],
     }
-    query = query.order_by(*order_columns[sort]).offset(skip).limit(size)
+    query = query.order_by(*order_columns[sort], SecurityEvent.id.desc()).offset(skip).limit(size)
     result = await db.execute(query)
     events = result.scalars().all()
 
@@ -208,6 +226,8 @@ async def export_events(
     source_type: str | None = Query(None),
     ip: str | None = Query(None, description="Substring match against source or destination IP"),
     signature: str | None = Query(None, description="Substring match against the event signature"),
+    started_at: AwareDatetime | None = Query(None, description="Inclusive event timestamp, timezone required"),
+    ended_before: AwareDatetime | None = Query(None, description="Exclusive event timestamp, timezone required"),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -232,7 +252,8 @@ async def export_events(
     if signature:
         query = query.filter(SecurityEvent.signature.ilike(f"%{signature}%"))
 
-    query = query.order_by(SecurityEvent.timestamp.desc()).limit(10000)
+    query = query.where(*_event_time_predicates(started_at, ended_before))
+    query = query.order_by(SecurityEvent.timestamp.desc(), SecurityEvent.id.desc()).limit(10000)
     rows = (await db.execute(query)).scalars().all()
 
     buffer = io.StringIO()

@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field, model_validator
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.types import JSON
 
@@ -51,6 +51,8 @@ class CaseViewFilters(BaseModel):
 class EventViewFilters(BaseModel):
     """Subset of the events-list query parameters captured in a saved view."""
 
+    started_at: AwareDatetime | None = None
+    ended_before: AwareDatetime | None = None
     severity: str | None = None
     event_type: str | None = None
     source_type: str | None = None
@@ -58,6 +60,13 @@ class EventViewFilters(BaseModel):
     signature: str | None = None
     sort: str | None = None
     model_config = {"extra": "forbid"}
+
+
+    @model_validator(mode="after")
+    def validate_time_window(self):
+        if self.started_at and self.ended_before and self.started_at >= self.ended_before:
+            raise ValueError("Start must be before the exclusive end time")
+        return self
 
 
 FILTERS_MODELS = {"alerts": SavedViewFilters, "cases": CaseViewFilters, "events": EventViewFilters}

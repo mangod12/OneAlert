@@ -318,3 +318,14 @@ class TestRenameView:
         assert resp.status_code == 404
         listing = client.get("/api/v1/alerts/views/", headers=owner).json()
         assert listing[0]["name"] == "Critical pending"
+
+
+def test_event_time_window_saved_view_validates_and_round_trips(client):
+    headers = _register_and_login(client, 'windowview@example.com')
+    filters = {'started_at': '2026-11-20T10:00:00Z', 'ended_before': '2026-11-20T11:00:00Z'}
+    response = client.post('/api/v1/events/views/', headers=headers, json={'name': 'Incident window', 'filters': filters})
+    assert response.status_code == 201, response.text
+    assert response.json()['filters'] == filters
+    assert client.get('/api/v1/events/views/', headers=headers).json()[0]['filters'] == filters
+    for invalid in ({'started_at': '2026-11-20T10:00:00'}, {'started_at': filters['ended_before'], 'ended_before': filters['started_at']}):
+        assert client.post('/api/v1/events/views/', headers=headers, json={'name': 'Invalid window', 'filters': invalid}).status_code == 422

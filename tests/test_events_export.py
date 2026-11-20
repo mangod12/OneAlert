@@ -155,3 +155,36 @@ class TestEventsExport:
         lines = [line for line in resp.text.strip().splitlines() if line]
         assert len(lines) == 1
         assert lines[0].startswith("id,timestamp,event_type")
+
+
+def test_event_utc_window_matches_list_count_and_export_with_exact_boundaries(client):
+    headers = _register_and_login(client, 'eventwindow@example.com')
+    other = _register_and_login(client, 'eventwindow-other@example.com')
+    before = _make_event(client, headers, timestamp=datetime(2026, 11, 20, 9, 59, 59, tzinfo=UTC))
+    first = _make_event(client, headers, timestamp=datetime(2026, 11, 20, 10, tzinfo=UTC))
+    second = _make_event(client, headers, timestamp=datetime(2026, 11, 20, 10, 59, 59, 999999, tzinfo=UTC))
+    end = _make_event(client, headers, timestamp=datetime(2026, 11, 20, 11, tzinfo=UTC))
+    _make_event(client, other, timestamp=datetime(2026, 11, 20, 10, 30, tzinfo=UTC))
+    params = {'started_at': '2026-11-20T15:30:00+05:30', 'ended_before': '2026-11-20T16:30:00+05:30', 'severity': 'high'}
+    response = client.get('/api/v1/events/', params=params, headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()['total'] == 2
+    assert [row['id'] for row in response.json()['events']] == [second, first]
+    rows = _read_csv(client.get('/api/v1/events/export', params=params, headers=headers))
+    assert [int(row['id']) for row in rows] == [second, first]
+    assert before not in [int(row['id']) for row in rows]
+    assert end not in [int(row['id']) for row in rows]
+    assert client.get('/api/v1/events/', params={'ended_before': '2026-11-20T10:00:00Z'}, headers=headers).json()['total'] == 1
+    assert client.get('/api/v1/events/', params={'started_at': '2026-11-20T11:00:00Z'}, headers=headers).json()['total'] == 1
+
+
+@pytest.mark.parametrize('params', [
+    {'started_at': '2026-11-20T10:00:00'},
+    {'ended_before': 'invalid'},
+    {'started_at': '2026-11-20T11:00:00Z', 'ended_before': '2026-11-20T10:00:00Z'},
+    {'started_at': '2026-11-20T10:00:00Z', 'ended_before': '2026-11-20T10:00:00Z'},
+])
+def test_event_window_rejects_missing_timezone_invalid_or_reversed_bounds(client, params):
+    headers = _register_and_login(client, 'badwindow@example.com')
+    for endpoint in ('/api/v1/events/', '/api/v1/events/export'):
+        assert client.get(endpoint, params=params, headers=headers).status_code == 422

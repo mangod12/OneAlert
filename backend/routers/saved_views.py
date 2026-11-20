@@ -84,7 +84,7 @@ async def create_saved_view(
     try:
         filters = FILTERS_MODELS[scope].model_validate(payload.filters)
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+        raise HTTPException(status_code=422, detail=exc.errors(include_context=False)) from exc
     existing = await db.execute(
         select(func.count(SavedView.id)).where(
             SavedView.user_id == current_user.id, SavedView.scope == scope
@@ -98,7 +98,7 @@ async def create_saved_view(
         user_id=current_user.id,
         scope=scope,
         name=name,
-        filters=filters.model_dump(exclude_none=True),
+        filters=filters.model_dump(exclude_none=True, mode="json"),
     )
     db.add(view)
     await db.commit()
