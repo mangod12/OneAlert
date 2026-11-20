@@ -41,6 +41,7 @@ const caseData = {
 
 function mockLoad(status = 'open') {
   mockGet.mockImplementation(url => {
+    if (url.endsWith('/closeout-review')) return Promise.resolve({ data: { case_id: 7, title: caseData.title, status: 'open', target_status: 'resolved', resolution: null, can_edit_resolution: true, open_tasks: [], task_total: 0, remaining_alerts: [], alert_total: 0, unavailable_alert_links: 0, reviewed_fingerprint: 'a'.repeat(64) } });
     if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
     if (url.endsWith('/alerts')) return Promise.resolve({ data: [] });
     if (url.endsWith('/events')) return Promise.resolve({ data: [] });
@@ -131,6 +132,7 @@ describe('Case status transitions', () => {
     renderDetail();
     fireEvent.click(await screen.findByRole('button', { name: 'Resolve' }));
     const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByLabelText(/Resolution summary/);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Resolve' }));
     await waitFor(() => expect(mockPatch).toHaveBeenCalled());
     // Still showing the open-case actions; no crash, badge unchanged.
@@ -986,12 +988,12 @@ describe('Case close-out', () => {
     renderDetail();
     fireEvent.click(await screen.findByRole('button', { name: 'Resolve' }));
     const dialog = await screen.findByRole('dialog');
-    fireEvent.change(within(dialog).getByLabelText(/Resolution summary/), {
+    fireEvent.change(await within(dialog).findByLabelText(/Resolution summary/), {
       target: { value: 'False positive, tuning rule added.' },
     });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Resolve' }));
     await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7', null, {
-      params: { status_update: 'resolved', resolution: 'False positive, tuning rule added.' },
+      params: { status_update: 'resolved', resolution: 'False positive, tuning rule added.', reviewed_fingerprint: 'a'.repeat(64) },
     }));
   });
 
