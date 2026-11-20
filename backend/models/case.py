@@ -4,7 +4,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field, StrictInt
+from pydantic import BaseModel, Field, StrictBool, StrictInt
 from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -263,6 +263,19 @@ class CaseTaskUpdate(BaseModel):
     done: bool | None = None
     assignee_id: int | None = None  # send explicit null to unassign
     due_date: date | None = None  # send explicit null to clear the target date
+    model_config = {"extra": "forbid"}
+
+
+class ReviewedAssignedTaskChange(BaseModel):
+    """Exact loaded task state plus one deliberately reviewed checklist edit."""
+    case_id: StrictInt = Field(gt=0)
+    expected_title: str = Field(min_length=1, max_length=300)
+    expected_done: StrictBool
+    expected_due_date: date | None
+    expected_case_title: str
+    expected_case_status: str
+    action: Literal["complete", "reopen", "set_due", "clear_due"]
+    due_date: date | None = None
     model_config = {"extra": "forbid"}
 
 

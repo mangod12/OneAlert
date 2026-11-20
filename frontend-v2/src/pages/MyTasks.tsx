@@ -23,6 +23,7 @@ export interface AssignedTask {
 }
 
 export function MyTasks() {
+  const [snapshotStale, setSnapshotStale] = useState(false);
   const pending = useRef(new Set<number>());
   const [busyIds, setBusyIds] = useState<Set<number>>(new Set());
   const [actionErrors, setActionErrors] = useState<Record<number, string>>({});
@@ -51,13 +52,13 @@ export function MyTasks() {
     setLoading(true);
     setError('');
     void apiClient.get<AssignedTask[]>('/cases/my-tasks').then(response => {
-      if (active) { setTasks(response.data); setLimitReached(response.data.length >= 200); setDueDrafts({}); setActionErrors({}); setSelectedIds(new Set()); setLoadedAt(new Date().toLocaleString()); }
+      if (active) { setSnapshotStale(false); setTasks(response.data); setLimitReached(response.data.length >= 200); setDueDrafts({}); setActionErrors({}); setSelectedIds(new Set()); setLoadedAt(new Date().toLocaleString()); }
     }).catch(err => { if (active) setError(getApiErrorMessage(err, 'Assigned tasks could not be loaded.')); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [refresh]);
   const saveTask = async (task: AssignedTask, payload: { done: true } | { due_date: string | null }) => {
-    if (pending.current.has(task.task_id)) return;
+    if (snapshotStale || pending.current.has(task.task_id)) return;
     pending.current.add(task.task_id);
     setBusyIds(new Set(pending.current));
     setActionErrors(current => ({ ...current, [task.task_id]: '' }));
@@ -82,7 +83,7 @@ export function MyTasks() {
   const selectedTasks = tasks.filter(task => selectedIds.has(task.task_id));
   const selectedHaveDrafts = selectedTasks.some(task => (dueDrafts[task.task_id] ?? task.due_date ?? '') !== (task.due_date ?? ''));
   const applyBulkDate = async (complete = false) => {
-    if (bulkBusy || !selectedTasks.length || selectedHaveDrafts || (!complete && bulkMode === 'set' && !bulkDate) || pending.current.size) return;
+    if (snapshotStale || bulkBusy || !selectedTasks.length || selectedHaveDrafts || (!complete && bulkMode === 'set' && !bulkDate) || pending.current.size) return;
     const snapshot = [...selectedTasks];
     const dueDate = bulkMode === 'clear' ? null : bulkDate;
     setBulkBusy(true);
@@ -129,10 +130,11 @@ export function MyTasks() {
   return <div className="min-w-0 space-y-5">
     <PageHeader eyebrow="Command" title="My tasks" description="Review open checklist tasks assigned to you across active investigations. Complete assigned work and edit task due dates here, or open the investigation for its full checklist."
       actions={<button type="button" disabled={loading || busyIds.size > 0} onClick={() => setRefresh(value => value + 1)} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-200 disabled:opacity-40">Refresh tasks</button>} />
-    <AssignedTaskExplorer />
-    <p className="text-sm text-surface-400">The editing snapshot below returns up to 200 assigned tasks, not a complete workload count. Use the read-only explorer above to page through the full matching workload. Completed tasks and resolved, closed or false-positive investigations are excluded. Filters and order apply only to returned records.</p>
+    <AssignedTaskExplorer editingBlocked={loading || !!busyIds.size || bulkBusy || Object.keys(dueDrafts).some(id => dueDrafts[Number(id)] !== (tasks.find(row => row.task_id === Number(id))?.due_date ?? ''))} onEdited={() => { setSnapshotStale(true); setCompleteConfirm(false); setBulkConfirm(false); }} />
+    {snapshotStale && <p role="alert" className="rounded border border-warning/40 p-3 text-sm text-warning">A full-workload task edit may have changed this editing snapshot. Snapshot controls are paused. Review any kept drafts, then use Refresh tasks to discard drafts and reload current work.</p>}
+    <p className="text-sm text-surface-400">The editing snapshot below returns up to 200 assigned tasks, not a complete workload count. Use the explorer above to page through the full matching workload. Completed tasks and resolved, closed or false-positive investigations are excluded. Filters and order apply only to returned records.</p>
     {actionNotice && <p role={noticeFailed ? 'alert' : 'status'} className={`rounded border p-3 text-sm ${noticeFailed ? 'border-warning/40 text-warning' : 'border-success/40 text-success'}`}>{actionNotice}</p>}
-    {loading ? <LoadingSurface label="Loading assigned tasks" /> : error ? <ErrorState title="Assigned tasks unavailable" description={error} action={<RetryButton onClick={() => setRefresh(value => value + 1)} />} /> : <>
+    <fieldset disabled={snapshotStale} className="min-w-0 space-y-5">{loading ? <LoadingSurface label="Loading assigned tasks" /> : error ? <ErrorState title="Assigned tasks unavailable" description={error} action={<RetryButton onClick={() => setRefresh(value => value + 1)} />} /> : <>
       <div className="rounded-lg border border-surface-700 bg-surface-900 p-4">
         <p className="text-xs text-surface-400">Snapshot loaded {loadedAt}; successful task edits are reflected below. Task due dates use UTC today: {today}. Investigation due dates are shown separately.</p>
         {limitReached && <p role="status" className="mt-2 text-sm text-warning">The 200-task return limit was reached. Other assigned tasks may be missing, including after completing a task here. Refresh to load more, or open investigations to review work outside this returned set.</p>}
@@ -194,6 +196,7 @@ export function MyTasks() {
         </li>)}</ul> : <EmptyState title="No returned tasks match" description="Clear filters to see the returned task set. This does not mean you have no assigned work." />}
       </>}
     </>}
+    </fieldset>
     {completeConfirm && <ConfirmDialog title="Complete selected assigned tasks" description={`Mark ${selectedTasks.length} selected loaded tasks complete, including ${selectedTasks.filter(task => !visible.some(row => row.task_id === task.task_id)).length} hidden by filters? Review the selection preview first. Investigation status and all due dates stay unchanged. Reopen tasks from their investigation checklist.`} confirmLabel={`Complete ${selectedTasks.length} selected tasks`} busy={bulkBusy} onCancel={() => { if (!bulkBusy) setCompleteConfirm(false); }} onConfirm={() => void applyBulkDate(true)} />}
     {bulkConfirm && <ConfirmDialog title="Change selected task due dates" description={`${bulkMode === 'clear' ? 'Clear task due dates' : `Set task due dates to ${bulkDate}`} for ${selectedTasks.length} selected loaded tasks, including ${selectedTasks.filter(task => !visible.some(row => row.task_id === task.task_id)).length} hidden by filters? Investigation due dates and completion status stay unchanged.`}
       confirmLabel={`Apply to ${selectedTasks.length} tasks`} busy={bulkBusy} onCancel={() => { if (!bulkBusy) setBulkConfirm(false); }} onConfirm={() => void applyBulkDate()} />}

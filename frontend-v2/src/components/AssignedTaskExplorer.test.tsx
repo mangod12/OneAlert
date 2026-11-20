@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { AssignedTaskExplorer } from './AssignedTaskExplorer';
-vi.mock('../api/client', () => ({ default: { get: vi.fn() } }));
+vi.mock('../api/client', () => ({ default: { get: vi.fn(), patch: vi.fn() } }));
 const get = vi.mocked(apiClient.get);
 const task = { done: false, completed_at: null, task_id: 209, case_id: 7, title: 'Collect late-page evidence', case_title: 'Gateway investigation', case_severity: 'high', case_status: 'open', due_date: '2026-11-20', case_due_date: null };
 const result = (page = 1, total = 201) => ({ data: [task], total, page, size: 25, completion: 'open', investigations: 'active', filter_date: new Date().toLocaleDateString('en-CA') });
@@ -72,4 +72,24 @@ it('rejects a response with the wrong completion scope or untrustworthy completi
   get.mockImplementationOnce(async (_url, config) => ({ data: { ...result(), data: [{ ...task, done: 'yes' }], filter_date: (config?.params as { today: string }).today } }));
   fireEvent.click(screen.getByRole('button', { name: 'Refresh full workload page' }));
   await screen.findByRole('alert'); expect(screen.queryByRole('link')).toBeNull();
+});
+
+it('refreshes the exact paged workload and notifies the snapshot after a confirmed task edit', async () => {
+  const edited = vi.fn(); vi.mocked(apiClient.patch).mockResolvedValueOnce({ data: { id: 209, case_id: 7, title: task.title, done: true, due_date: task.due_date, completed_at: '2026-11-21T00:00:00Z' } });
+  render(<MemoryRouter><AssignedTaskExplorer onEdited={edited} /></MemoryRouter>); fireEvent.click(screen.getByRole('button', { name: 'Explore all assigned tasks beyond the editing snapshot' })); await screen.findByText(/201 matching/);
+  fireEvent.click(screen.getByRole('button', { name: 'Next workload page' })); await screen.findByText(/Page 2 of 9/);
+  fireEvent.click(screen.getByRole('button', { name: 'Edit assigned task #209' })); fireEvent.click(screen.getByRole('button', { name: 'Review task change' })); fireEvent.click(screen.getByRole('button', { name: 'Confirm task change' }));
+  await waitFor(() => expect(edited).toHaveBeenCalledTimes(1)); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(get).toHaveBeenLastCalledWith('/cases/assigned-task-explorer', { params: expect.objectContaining({ page: 2 }) }); expect(screen.getByText(/Confirmed the reviewed change/)).toBeTruthy();
+});
+it('marks an ambiguous write as stale and refreshes only after closing its blocked review', async () => {
+  const edited = vi.fn(); vi.mocked(apiClient.patch).mockResolvedValueOnce({ data: {} }); render(<MemoryRouter><AssignedTaskExplorer onEdited={edited} /></MemoryRouter>);
+  fireEvent.click(screen.getByRole('button', { name: 'Explore all assigned tasks beyond the editing snapshot' })); await screen.findByText(/201 matching/);
+  fireEvent.click(screen.getByRole('button', { name: 'Edit assigned task #209' })); fireEvent.click(screen.getByRole('button', { name: 'Review task change' })); fireEvent.click(screen.getByRole('button', { name: 'Confirm task change' }));
+  await screen.findByRole('alert'); expect(get).toHaveBeenCalledTimes(1); expect(edited).toHaveBeenCalledTimes(1); expect(screen.getByRole('button', { name: 'Edit assigned task #209' })).toHaveProperty('disabled', true);
+  fireEvent.click(screen.getByRole('button', { name: 'Close and refresh workload' })); await waitFor(() => expect(get).toHaveBeenCalledTimes(2)); await waitFor(() => expect(screen.getByRole('button', { name: 'Edit assigned task #209' })).toHaveProperty('disabled', false));
+});
+it('does not open an editor while the separate snapshot is saving or has drafts', async () => {
+  render(<MemoryRouter><AssignedTaskExplorer editingBlocked /></MemoryRouter>); fireEvent.click(screen.getByRole('button', { name: 'Explore all assigned tasks beyond the editing snapshot' })); await screen.findByText(/201 matching/);
+  expect(screen.getByRole('button', { name: 'Edit assigned task #209' })).toHaveProperty('disabled', true); expect(screen.queryByRole('dialog')).toBeNull();
 });
