@@ -99,10 +99,20 @@ export function Validation() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [coverageError, setCoverageError] = useState('');
+  const coverageRequest = useRef(0);
+  const [coverageRetrying, setCoverageRetrying] = useState(false);
+  const retryCoverage = async () => {
+    const request = ++coverageRequest.current; setCoverageRetrying(true); setCoverageError('');
+    try { const response = await apiClient.get('/validation/coverage'); if (request === coverageRequest.current) setCoverage(response.data.data || []); }
+    catch (err) { if (request === coverageRequest.current) { setCoverage(null); setCoverageError(getApiErrorMessage(err, 'Coverage data could not be loaded.')); } }
+    finally { if (request === coverageRequest.current) setCoverageRetrying(false); }
+  };
+  useEffect(() => () => { coverageRequest.current += 1; }, []);
 
   const fetchRuns = useCallback(async () => {
     const request = ++listRequestId.current;
-    setLoading(true);
+    const coverageRead = ++coverageRequest.current;
+    setCoverageRetrying(false); setLoading(true);
     const [runsResult, coverageResult] = await Promise.allSettled([
       apiClient.get('/validation/runs', { params: { page, size: 20, ...(runStatusFilter ? { status: runStatusFilter } : {}) } }),
       apiClient.get('/validation/coverage'),
@@ -116,8 +126,10 @@ export function Validation() {
       setRuns(data.data || []); setTotal(count); setError('');
     }
     else setError(getApiErrorMessage(runsResult.reason, 'Validation runs could not be loaded.'));
+    if (coverageRead === coverageRequest.current) {
     if (coverageResult.status === 'fulfilled') { setCoverage(coverageResult.value.data.data || []); setCoverageError(''); }
     else { setCoverage(null); setCoverageError(getApiErrorMessage(coverageResult.reason, 'Coverage data could not be loaded.')); }
+    }
     setLoading(false);
   }, [runStatusFilter, page]);
 
@@ -260,8 +272,9 @@ export function Validation() {
       )}
 
       {/* Coverage by technique */}
+      {!loading && coverageRetrying && <p role="status" className="text-sm text-surface-400">Retrying validation coverage...</p>}
       {!loading && coverageError && (
-        <p role="alert" className="rounded-md border border-warning/30 bg-warning/5 p-3 text-sm text-warning">{coverageError}</p>
+        <div className="space-y-2 rounded-md border border-warning/30 bg-warning/5 p-3"><p role="alert" className="text-sm text-warning">{coverageError}</p><button type="button" onClick={() => void retryCoverage()} className="rounded border border-surface-600 px-3 py-1.5 text-xs text-primary-300">Retry validation coverage</button></div>
       )}
       {!loading && !coverageError && coverage && coverage.length > 0 && (
         <div className="oa-panel p-6">

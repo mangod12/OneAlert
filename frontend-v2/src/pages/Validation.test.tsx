@@ -317,3 +317,16 @@ describe('Recorded validation control evidence', () => {
     expect(screen.getByText('unverified-clock')).toBeTruthy();
   });
 });
+
+it('retries optional validation coverage without reloading or executing runs', async () => {
+  let fail = true;
+  vi.mocked(apiClient.get).mockImplementation(url => url === '/validation/coverage' ? fail ? Promise.reject(new Error('Coverage offline')) : Promise.resolve({ data: { data: [{ technique_id: 'T1110', technique_name: 'Brute Force', total_tests: 2, detections: 1, detection_rate: 50 }] } }) : Promise.resolve({ data: { data: [run], total: 1 } }));
+  render(<Validation />);
+  await screen.findByRole('button', { name: 'Retry validation coverage' });
+  expect(screen.getByRole('button', { name: 'View results for Perimeter check' })).toBeTruthy();
+  fail = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Retry validation coverage' }));
+  expect(await screen.findByText('1/2 detected')).toBeTruthy();
+  expect(vi.mocked(apiClient.get).mock.calls.filter(([url]) => url === '/validation/runs')).toHaveLength(1);
+  expect(vi.mocked(apiClient.post)).not.toHaveBeenCalled();
+});
