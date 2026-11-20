@@ -1,5 +1,6 @@
 """Zeek log parser → normalized SecurityEvent dicts."""
 
+import re
 from datetime import datetime
 
 from backend.services.parsers.event_time import observed_timestamp
@@ -24,9 +25,9 @@ def parse_zeek_log(raw: dict) -> dict | None:
         "timestamp": ts,
         "event_type": log_type,
         "source_ip": raw.get("id.orig_h") or raw.get("id_orig_h"),
-        "source_port": _safe_int(raw.get("id.orig_p") or raw.get("id_orig_p")),
+        "source_port": _safe_int(raw.get("id.orig_p", raw.get("id_orig_p"))),
         "dest_ip": raw.get("id.resp_h") or raw.get("id_resp_h"),
-        "dest_port": _safe_int(raw.get("id.resp_p") or raw.get("id_resp_p")),
+        "dest_port": _safe_int(raw.get("id.resp_p", raw.get("id_resp_p"))),
         "protocol": (raw.get("proto") or "").lower(),
         "source_type": "zeek",
         "severity": "info",
@@ -82,12 +83,13 @@ def parse_zeek_log(raw: dict) -> dict | None:
 
 
 def _safe_int(val) -> int | None:
-    if val is None:
+    if val is None or val == "-":
         return None
-    try:
+    if type(val) is int:
+        return val
+    if isinstance(val, str) and re.fullmatch(r"[+-]?[0-9]+", val.strip()):
         return int(val)
-    except (ValueError, TypeError):
-        return None
+    raise ValueError("Zeek integer field must be an integer or decimal integer string")
 
 
 def _notice_severity(note: str) -> str:
