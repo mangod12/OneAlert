@@ -13,6 +13,7 @@ const MyTasks = lazy(() => import('./pages/MyTasks').then(module => ({ default: 
 const Watchlist = lazy(() => import('./pages/Watchlist').then(module => ({ default: module.Watchlist })));
 const Incidents = lazy(() => import('./pages/Incidents').then(module => ({ default: module.Incidents })));
 const Reports = lazy(() => import('./pages/Reports').then(module => ({ default: module.Reports })));
+const CaseLinkedEvidence = lazy(() => import('./pages/CaseLinkedEvidence').then(module => ({ default: module.CaseLinkedEvidence })));
 const CaseDetail = lazy(() => import('./pages/CaseDetail').then(module => ({ default: module.CaseDetail })));
 const Alerts = lazy(() => import('./pages/Alerts').then(module => ({ default: module.Alerts })));
 const EventEvidence = lazy(() => import('./pages/EventEvidence').then(module => ({ default: module.EventEvidence })));
@@ -61,6 +62,7 @@ function App() {
           <Route path="/watchlist" element={<Watchlist />} />
           <Route path="/incidents" element={<Incidents />} />
           <Route path="/reports" element={<Reports />} />
+          <Route path="/cases/:caseId/evidence" element={<CaseLinkedEvidence />} />
           <Route path="/cases/:caseId" element={<CaseDetail />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/events/:eventId" element={<EventEvidence />} />

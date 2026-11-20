@@ -1053,7 +1053,7 @@ export function CaseDetail() {
         <div className="space-y-6">
           <div className="oa-panel p-6">
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold text-surface-50">Related Alerts</h2>
+              <h2 className="text-lg font-semibold text-surface-50">Related Alerts</h2><a className="text-xs text-primary-300" href={`/app/cases/${Number(caseId)}/evidence?kind=alert`}>Browse linked alert evidence</a>
               {isOwner && (
                 <button type="button" onClick={() => setShowLinkAlert(true)} className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-surface-600 px-2.5 text-xs font-semibold text-surface-200 hover:bg-surface-800">
                   <Link2 className="w-3.5 h-3.5" /> Link alert
@@ -1090,7 +1090,7 @@ export function CaseDetail() {
 
           <div className="oa-panel p-6">
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold text-surface-50">Related Events</h2>
+              <h2 className="text-lg font-semibold text-surface-50">Related Events</h2><a className="text-xs text-primary-300" href={`/app/cases/${Number(caseId)}/evidence?kind=event`}>Browse linked event evidence</a>
               {isOwner && (
                 <button type="button" onClick={() => setShowLinkEvent(true)} className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-surface-600 px-2.5 text-xs font-semibold text-surface-200 hover:bg-surface-800">
                   <Link2 className="w-3.5 h-3.5" /> Link event

@@ -1133,3 +1133,8 @@ describe('Checklist permissions', () => {
     expect(screen.queryByRole('region', { name: 'Review selected checklist changes' })).toBeNull();
   });
 });
+it('links the visible investigation to explicit alert and event evidence explorers', async () => {
+  mockLoad(); renderDetail();
+  expect((await screen.findByRole('link', { name: 'Browse linked alert evidence' })).getAttribute('href')).toBe('/app/cases/7/evidence?kind=alert');
+  expect(screen.getByRole('link', { name: 'Browse linked event evidence' }).getAttribute('href')).toBe('/app/cases/7/evidence?kind=event');
+});
