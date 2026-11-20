@@ -4,7 +4,8 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import String, and_, cast, func, or_, select
+from sqlalchemy import case as sql_case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -328,23 +329,33 @@ async def get_sla_records(
     today = datetime.now(UTC).date()
     start = today - timedelta(days=days - 1)
     model = Alert if kind == "alerts" else Case
+    done = model.status == "resolved" if kind == "alerts" else model.status.in_(_DONE_CASE_STATUSES)
+    completion = model.resolved_at if kind == "alerts" else model.closed_at
+    result_expression = sql_case(
+        (~done, "breached"),
+        (completion.is_(None), "unknown"),
+        (func.date(completion) <= model.due_date, "met"),
+        else_="breached",
+    )
+    conditions = [model.user_id == current_user.id, model.due_date >= start, model.due_date <= today]
+    if outcome != "all":
+        conditions.append(result_expression == outcome)
+    needle = query.strip().lower()
+    if needle:
+        conditions.append(or_(
+            func.lower(model.title).contains(needle, autoescape=True),
+            func.lower(cast(model.status, String)).contains(needle, autoescape=True),
+            cast(model.id, String).contains(needle, autoescape=True),
+        ))
+    total = (await db.execute(select(func.count()).select_from(model).where(*conditions))).scalar_one()
     records = (await db.execute(
-        select(model).where(
-            model.user_id == current_user.id,
-            model.due_date >= start,
-            model.due_date <= today,
-        ).order_by(model.due_date, model.id)
+        select(model).where(*conditions).order_by(model.due_date, model.id).offset(offset).limit(limit)
     )).scalars().all()
-    needle = query.strip().casefold()
     matched = []
     for record in records:
         met, completed_on = _sla_completion(record, kind)
         result = "unknown" if met is None else "met" if met else "breached"
         status = _status_value(record)
-        if outcome != "all" and outcome != result:
-            continue
-        if needle and not any(needle in str(value).casefold() for value in (record.id, record.title, status)):
-            continue
         done = status == "resolved" if kind == "alerts" else status in _DONE_CASE_STATUSES
         reason = (
             "Record is not currently resolved or closed. Any older completion time does not establish completion."
@@ -360,8 +371,8 @@ async def get_sla_records(
     return {
         "kind": kind, "days": days, "window_start": start, "window_end": today,
         "generated_at": datetime.now(UTC).isoformat(), "outcome": outcome,
-        "query": query, "total": len(matched), "offset": offset, "limit": limit,
-        "records": matched[offset:offset + limit],
+        "query": query, "total": total, "offset": offset, "limit": limit,
+        "records": matched,
     }
 
 

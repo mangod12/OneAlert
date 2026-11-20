@@ -320,3 +320,35 @@ def test_sla_records_preserve_unknown_and_reopened_evidence(client, auth_headers
     assert by_title['Unscored completed record']['completed_on'] is None
     assert by_title['Reopened after completion']['outcome'] == 'breached'
     assert by_title['Reopened after completion']['completed_on'] is not None
+
+
+def test_sla_record_outcome_filters_use_recorded_timing(client, auth_headers):
+    with TestingSessionLocal() as db:
+        user = db.query(User).filter_by(email='sla_report_test@example.com').one()
+        db.add(Case(user_id=user.id, title='Unknown timing', status='closed', severity='high',
+                    due_date=TODAY - timedelta(days=1)))
+        db.add(Case(user_id=user.id, title='Reopened record', status='open', severity='high',
+                    due_date=TODAY - timedelta(days=1), closed_at=_naive(days_ago=2)))
+        db.commit()
+    for outcome, total in [('met', 1), ('breached', 2), ('unknown', 1)]:
+        result = client.get(f'/api/v1/reports/sla/records?kind=cases&outcome={outcome}', headers=auth_headers).json()
+        assert result['total'] == total
+        assert all(row['outcome'] == outcome for row in result['records'])
+
+
+def test_sla_record_search_treats_sql_wildcards_as_literal(client, auth_headers):
+    response = client.get('/api/v1/reports/sla/records?query=%25', headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()['total'] == 0
+
+
+def test_sla_record_window_includes_both_boundary_dates(client, auth_headers):
+    with TestingSessionLocal() as db:
+        user = db.query(User).filter_by(email='sla_report_test@example.com').one()
+        for days_ago in [0, 6, 7]:
+            db.add(Case(user_id=user.id, title=f'Boundary record {days_ago}', status='open',
+                        severity='high', due_date=TODAY - timedelta(days=days_ago)))
+        db.commit()
+    result = client.get('/api/v1/reports/sla/records?kind=cases&days=7&query=Boundary', headers=auth_headers).json()
+    assert [row['title'] for row in result['records']] == ['Boundary record 6', 'Boundary record 0']
+    assert result['total'] == 2
