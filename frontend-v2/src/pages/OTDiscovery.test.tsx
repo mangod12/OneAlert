@@ -184,7 +184,7 @@ describe('Discovered device paging and request identity', () => {
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     expect(screen.getByText('device-21')).toBeTruthy();
     expect(screen.queryByText('device-1')).toBeNull();
-    expect(screen.getByText('Unmatched')).toBeTruthy();
+    expect(screen.getByRole('cell', { name: 'Unmatched' })).toBeTruthy();
   });
 });
 
@@ -206,4 +206,75 @@ it('opens the selected recorded device evidence without promoting or scanning', 
   fireEvent.click(dialog.getByRole('button', { name: 'Close details' }));
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(document.activeElement).toBe(screen.getByRole('button', { name: 'View recorded details for 10.0.0.21' }));
+});
+
+it('combines triage filters, preserves them across pages and clears them together', async () => {
+  mockDevicePages(config => pageResponse((config as { params: { page: number } }).params.page === 2 ? [21] : [1]));
+  render(<OTDiscovery />);
+  await screen.findByText('device-1');
+  fireEvent.change(screen.getByLabelText('Search recorded devices'), { target: { value: 'MX-100' } });
+  expect(screen.getByText('Search draft is not applied. Results and CSV still use the applied search.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Search devices' }));
+  fireEvent.change(screen.getByLabelText('Device correlation'), { target: { value: 'false' } });
+  fireEvent.change(screen.getByLabelText('Device source sensor'), { target: { value: '1' } });
+  fireEvent.change(screen.getByLabelText('Device confidence'), { target: { value: 'high' } });
+  fireEvent.change(screen.getByLabelText('Minimum device risk'), { target: { value: '70' } });
+  fireEvent.change(screen.getByLabelText('Maximum device risk'), { target: { value: '90' } });
+  fireEvent.change(screen.getByLabelText('Device order'), { target: { value: 'oldest' } });
+  await screen.findByText('device-1');
+  fireEvent.click(screen.getByRole('button', { name: 'Next devices' }));
+  await screen.findByText('device-21');
+  expect(get).toHaveBeenCalledWith('/ot/discovered-devices', { params: { page: 2, size: 20, search: 'MX-100', correlated: false, sensor_id: 1, confidence: 'high', risk_min: 70, risk_max: 90, sort: 'oldest' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Clear device filters' }));
+  await screen.findByText('device-1');
+  expect(get).toHaveBeenLastCalledWith('/ot/discovered-devices', { params: { page: 1, size: 20 } });
+});
+
+it('rejects reversed risk ranges locally rather than querying or exporting a broader inventory', async () => {
+  mockDevicePages(() => pageResponse([1]));
+  render(<OTDiscovery />);
+  await screen.findByText('device-1');
+  fireEvent.change(screen.getByLabelText('Minimum device risk'), { target: { value: '80' } });
+  await screen.findByText('device-1');
+  const count = get.mock.calls.length;
+  fireEvent.change(screen.getByLabelText('Maximum device risk'), { target: { value: '20' } });
+  expect(await screen.findByText('Use risk scores from 0 to 100, with minimum no greater than maximum.')).toBeTruthy();
+  expect(get.mock.calls.length).toBe(count);
+  expect((screen.getByRole('button', { name: 'Export matching devices CSV' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByText('device-1')).toBeNull();
+});
+
+it('exports matching filters without page limits and without using an unapplied search draft', async () => {
+  mockDevicePages(() => pageResponse([1]));
+  const fallback = get.getMockImplementation()!;
+  get.mockImplementation((url, config) => url.endsWith('/export') ? Promise.resolve({ data: new Blob(['csv']) }) : fallback(url, config));
+  const create = vi.fn(() => 'blob:device-export');
+  Object.defineProperty(URL, 'createObjectURL', { value: create, configurable: true });
+  Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), configurable: true });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  render(<OTDiscovery />);
+  await screen.findByText('device-1');
+  fireEvent.change(screen.getByLabelText('Device source sensor'), { target: { value: '0' } });
+  fireEvent.change(screen.getByLabelText('Device correlation'), { target: { value: 'false' } });
+  await screen.findByText('device-1');
+  fireEvent.change(screen.getByLabelText('Search recorded devices'), { target: { value: 'not applied' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Export matching devices CSV' }));
+  await waitFor(() => expect(get).toHaveBeenCalledWith('/ot/discovered-devices/export', { params: { sensor_id: 0, correlated: false }, responseType: 'blob' }));
+  await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(post).not.toHaveBeenCalled();
+});
+
+it('refreshes the active unmatched filter after promotion instead of leaving an obsolete row', async () => {
+  let promoted = false;
+  post.mockImplementation(async () => { promoted = true; return { data: { asset_id: 1 } }; });
+  mockDevicePages(() => pageResponse(promoted ? [] : [1], promoted ? 0 : 1));
+  render(<OTDiscovery />);
+  await screen.findByText('device-1');
+  fireEvent.change(screen.getByLabelText('Device correlation'), { target: { value: 'false' } });
+  await screen.findByText('device-1');
+  fireEvent.click(screen.getByRole('button', { name: 'Promote to asset' }));
+  expect(await screen.findByText('No devices match these filters.')).toBeTruthy();
+  expect(screen.queryByText('device-1')).toBeNull();
+  expect(get).toHaveBeenCalledWith('/ot/discovered-devices', { params: { page: 1, size: 20, correlated: false } });
 });

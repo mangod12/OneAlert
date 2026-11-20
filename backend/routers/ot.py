@@ -9,8 +9,9 @@ Provides endpoints for:
 """
 
 import json
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +30,12 @@ from backend.models.discovered_device import (
 )
 from backend.models.user import User
 from backend.routers.auth import get_active_user
+from backend.services.ot_discovery_query import (
+    EXPORT_LIMIT,
+    discovery_csv,
+    discovery_order,
+    discovery_predicates,
+)
 
 router = APIRouter()
 
@@ -171,50 +178,25 @@ async def create_discovered_device(
 async def list_discovered_devices(
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(20, ge=1, le=100, description="Page size"),
-    ip_address: str | None = Query(None, description="Filter by IP address"),
+    ip_address: str | None = Query(None, max_length=200, description="Filter by literal IP substring"),
     ot_only: bool | None = Query(False, description="Only show OT devices"),
     risk_min: float | None = Query(None, ge=0, le=100, description="Minimum risk score"),
     risk_max: float | None = Query(None, ge=0, le=100, description="Maximum risk score"),
     correlated: bool | None = Query(None, description="Filter by correlation status"),
+    search: Annotated[str | None, Query(max_length=200)] = None,
+    sensor_id: Annotated[int | None, Query(ge=0, description="Source sensor ID; 0 means no source sensor")] = None,
+    confidence: Literal["low", "medium", "high", "critical"] | None = None,
+    sort: Literal["risk", "newest", "oldest", "ip"] = "risk",
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
 ):
     """List discovered devices with filtering and pagination."""
-    skip = (page - 1) * size
-
-    # Build query
-    query = select(DiscoveredDevice).where(DiscoveredDevice.user_id == current_user.id)
-    count_query = select(func.count()).select_from(DiscoveredDevice).where(DiscoveredDevice.user_id == current_user.id)
-
-    # Apply filters
-    if ip_address:
-        query = query.filter(DiscoveredDevice.ip_address.ilike(f"%{ip_address}%"))
-        count_query = count_query.filter(DiscoveredDevice.ip_address.ilike(f"%{ip_address}%"))
-
-    if ot_only:
-        query = query.filter(DiscoveredDevice.is_ot_device.is_(True))
-        count_query = count_query.filter(DiscoveredDevice.is_ot_device.is_(True))
-
-    if risk_min is not None:
-        query = query.filter(DiscoveredDevice.risk_score >= risk_min)
-        count_query = count_query.filter(DiscoveredDevice.risk_score >= risk_min)
-
-    if risk_max is not None:
-        query = query.filter(DiscoveredDevice.risk_score <= risk_max)
-        count_query = count_query.filter(DiscoveredDevice.risk_score <= risk_max)
-
-    if correlated is not None:
-        query = query.filter(DiscoveredDevice.is_correlated == correlated)
-        count_query = count_query.filter(DiscoveredDevice.is_correlated == correlated)
-
-    # Get total
-    total = (await db.execute(count_query)).scalar_one()
-
-    # Apply pagination and ordering
-    query = query.order_by(
-        DiscoveredDevice.risk_score.desc(), DiscoveredDevice.last_seen.desc(), DiscoveredDevice.id.desc()
+    predicates = discovery_predicates(
+        current_user.id, ip_address, ot_only, risk_min, risk_max, correlated, search, sensor_id, confidence,
     )
-    query = query.offset(skip).limit(size)
+    total = (await db.execute(select(func.count()).select_from(DiscoveredDevice).where(*predicates))).scalar_one()
+    query = (select(DiscoveredDevice).where(*predicates).order_by(*discovery_order(sort))
+             .offset((page - 1) * size).limit(size))
 
     result = await db.execute(query)
     devices = result.scalars().all()
@@ -224,6 +206,42 @@ async def list_discovered_devices(
         total=total,
         page=page,
         size=size
+    )
+
+
+@router.get("/discovered-devices/export")
+async def export_discovered_devices(
+    ip_address: Annotated[str | None, Query(max_length=200)] = None,
+    ot_only: bool = False,
+    risk_min: Annotated[float | None, Query(ge=0, le=100)] = None,
+    risk_max: Annotated[float | None, Query(ge=0, le=100)] = None,
+    correlated: bool | None = None,
+    search: Annotated[str | None, Query(max_length=200)] = None,
+    sensor_id: Annotated[int | None, Query(ge=0)] = None,
+    confidence: Literal["low", "medium", "high", "critical"] | None = None,
+    sort: Literal["risk", "newest", "oldest", "ip"] = "risk",
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Export matching owned recorded inventory, capped with explicit scope metadata."""
+    predicates = discovery_predicates(
+        current_user.id, ip_address, ot_only, risk_min, risk_max, correlated, search, sensor_id, confidence,
+    )
+    # Window count and selected rows describe the same SELECT snapshot.
+    records = (await db.execute(select(DiscoveredDevice, func.count().over()).where(
+        *predicates,
+    ).order_by(*discovery_order(sort)).limit(EXPORT_LIMIT))).all()
+    devices = [record[0] for record in records]
+    total = records[0][1] if records else 0
+    applied = {"search": search.strip() or None if search else None,
+               "ip_address": ip_address.strip() or None if ip_address else None, "ot_only": ot_only,
+               "risk_min": risk_min, "risk_max": risk_max, "correlated": correlated,
+               "sensor_id": sensor_id, "confidence": confidence, "sort": sort}
+    return Response(
+        discovery_csv(devices, total, applied), media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="discovered-devices.csv"',
+                 "X-Matching-Total": str(total), "X-Exported-Count": str(len(devices)),
+                 "X-Export-Truncated": str(total > len(devices)).lower()},
     )
 
 
