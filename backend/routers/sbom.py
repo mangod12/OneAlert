@@ -67,8 +67,14 @@ async def upload_sbom(
     if "bomFormat" in sbom_data:
         sbom_format = "CycloneDX"
         spec_version = sbom_data.get("specVersion", "")
-        parsed_components = parse_cyclonedx(sbom_data)
-        vuln_map = parse_cyclonedx_vulnerabilities(sbom_data)
+        try:
+            parsed_components = parse_cyclonedx(sbom_data)
+            vuln_map = parse_cyclonedx_vulnerabilities(sbom_data)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid CycloneDX component evidence: {exc}",
+            ) from exc
     elif "spdxVersion" in sbom_data:
         sbom_format = "SPDX"
         spec_version = sbom_data.get("spdxVersion", "")
