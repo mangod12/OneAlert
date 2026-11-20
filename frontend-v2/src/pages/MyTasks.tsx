@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
+import { AssignedTaskExplorer } from '../components/AssignedTaskExplorer';
 import { getApiErrorMessage } from '../api/errors';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -126,7 +127,8 @@ export function MyTasks() {
   return <div className="min-w-0 space-y-5">
     <PageHeader eyebrow="Command" title="My tasks" description="Review open checklist tasks assigned to you across active investigations. Complete assigned work and edit task due dates here, or open the investigation for its full checklist."
       actions={<button type="button" disabled={loading || busyIds.size > 0} onClick={() => setRefresh(value => value + 1)} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-200 disabled:opacity-40">Refresh tasks</button>} />
-    <p className="text-sm text-surface-400">This view returns up to 200 assigned tasks, not a complete workload count. Completed tasks and resolved, closed or false-positive investigations are excluded. Filters and order apply only to returned records.</p>
+    <AssignedTaskExplorer />
+    <p className="text-sm text-surface-400">The editing snapshot below returns up to 200 assigned tasks, not a complete workload count. Use the read-only explorer above to page through the full matching workload. Completed tasks and resolved, closed or false-positive investigations are excluded. Filters and order apply only to returned records.</p>
     {actionNotice && <p role={noticeFailed ? 'alert' : 'status'} className={`rounded border p-3 text-sm ${noticeFailed ? 'border-warning/40 text-warning' : 'border-success/40 text-success'}`}>{actionNotice}</p>}
     {loading ? <LoadingSurface label="Loading assigned tasks" /> : error ? <ErrorState title="Assigned tasks unavailable" description={error} action={<RetryButton onClick={() => setRefresh(value => value + 1)} />} /> : <>
       <div className="rounded-lg border border-surface-700 bg-surface-900 p-4">

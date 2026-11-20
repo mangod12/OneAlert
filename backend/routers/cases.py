@@ -6,6 +6,7 @@ import io
 import re
 import secrets
 from datetime import UTC, date, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -358,18 +359,7 @@ async def search_cases_endpoint(
     return {"success": True, "data": results, "query": q}
 
 
-@router.get("/my-tasks", response_model=list[MyTaskResponse])
-async def list_my_tasks(
-    current_user: User = Depends(get_active_user),
-    db: AsyncSession = Depends(get_async_db),
-):
-    """Open checklist tasks assigned to the caller across visible investigations.
-
-    Only tasks on cases the caller may open (own, assigned, or watched) are
-    returned, and cases already resolved, closed, or marked false positive
-    drop out. Ordered by case severity, then the case due date, then
-    checklist position.
-    """
+def _assigned_task_query(current_user: User):
     watched = select(CaseWatcher.case_id).where(CaseWatcher.user_id == current_user.id)
     tasked = select(CaseTask.case_id).where(CaseTask.assignee_id == current_user.id)
     severity_order = sql_case(
@@ -377,7 +367,7 @@ async def list_my_tasks(
         (or_(Case.severity == "medium", Case.severity.is_(None), Case.severity == ""), 2),
         (Case.severity == "low", 3), (Case.severity == "info", 4), else_=5,
     )
-    rows = (await db.execute(
+    return (
         select(CaseTask, Case)
         .join(Case, Case.id == CaseTask.case_id)
         .where(
@@ -395,9 +385,10 @@ async def list_my_tasks(
             severity_order, Case.due_date.is_(None), Case.due_date,
             CaseTask.due_date.is_(None), CaseTask.due_date, CaseTask.position, CaseTask.id,
         )
-        .limit(200)
-    )).all()
+    )
 
+
+def _assigned_task_rows(rows):
     return [
         MyTaskResponse(
             task_id=task.id,
@@ -412,6 +403,52 @@ async def list_my_tasks(
         )
         for task, case in rows
     ]
+
+
+
+@router.get("/my-tasks", response_model=list[MyTaskResponse])
+async def list_my_tasks(
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Legacy assigned-task snapshot, limited to 200 records for compatibility."""
+    rows = (await db.execute(_assigned_task_query(current_user).limit(200))).all()
+    return _assigned_task_rows(rows)
+
+
+@router.get("/assigned-task-explorer")
+async def explore_assigned_tasks(
+    page: int = Query(1, ge=1), size: int = Query(25, ge=1, le=100),
+    query: str = Query("", max_length=200),
+    severity: Literal["all", "critical", "high", "medium", "low", "info"] = "all",
+    due: Literal["all", "overdue", "today", "future", "none"] = "all",
+    today: date | None = None,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    """Read every visible open assigned task with filters applied before paging."""
+    statement = _assigned_task_query(current_user)
+    if query.strip():
+        needle = query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{needle}%"
+        statement = statement.where(or_(CaseTask.title.ilike(pattern, escape="\\"),
+                                         Case.title.ilike(pattern, escape="\\"),
+                                         cast(CaseTask.id, String).ilike(pattern, escape="\\"),
+                                         cast(Case.id, String).ilike(pattern, escape="\\")))
+    if severity != "all":
+        statement = statement.where(or_(Case.severity == "medium", Case.severity.is_(None), Case.severity == "")
+                                    if severity == "medium" else Case.severity == severity)
+    if due == "none":
+        statement = statement.where(CaseTask.due_date.is_(None))
+    elif due != "all":
+        if today is None:
+            raise HTTPException(status_code=422, detail="Supply the calendar date used for due filtering")
+        statement = statement.where(CaseTask.due_date < today if due == "overdue" else
+                                    CaseTask.due_date == today if due == "today" else CaseTask.due_date > today)
+    total = (await db.execute(select(func.count()).select_from(statement.order_by(None).subquery()))).scalar_one()
+    rows = (await db.execute(statement.offset((page - 1) * size).limit(size))).all()
+    return {"data": _assigned_task_rows(rows), "total": total, "page": page, "size": size,
+            "filter_date": today,
+            "scope": "Open tasks assigned to your account on currently visible active investigations."}
 
 
 @router.get("/{case_id}", response_model=CaseDetailResponse)
