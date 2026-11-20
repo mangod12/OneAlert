@@ -177,7 +177,7 @@ def test_task_from_another_case_not_found(client):
 
 
 def test_tasks_hidden_from_users_without_case_access(client):
-    headers, case_id = _setup(client)
+    _headers, case_id = _setup(client)
     outsider = _register_and_login(client, "outsider@example.com")
     for method in ("get", "post"):
         resp = getattr(client, method)(
@@ -602,3 +602,90 @@ def test_my_tasks_prioritizes_before_applying_return_limit(client):
     assert rows[-1]["title"] == "Low task 198"
     repeated = client.get("/api/v1/cases/my-tasks", headers=headers).json()
     assert [row["task_id"] for row in repeated] == [row["task_id"] for row in rows]
+
+
+def test_preview_selected_checklist_import_is_read_only_and_version_bound(client):
+    headers, case_id = _setup(client)
+    plan_id = _seed_plan(case_id, _user_id(client, headers))
+    path = f"/api/v1/cases/{case_id}/tasks/from-plan/{plan_id}"
+    preview = client.get(path + "/preview", headers=headers)
+    assert preview.status_code == 200, preview.text
+    data = preview.json()
+    assert [row["action_index"] for row in data["proposals"]] == [1, 0, 2]
+    assert client.get(f"/api/v1/cases/{case_id}/tasks", headers=headers).json() == []
+    payload = {"reviewed_fingerprint": data["review_fingerprint"], "action_indexes": [0, 2]}
+    added = client.post(path, json=payload, headers=headers)
+    assert added.status_code == 201, added.text
+    assert [row["title"] for row in added.json()["created"]] == ["block_ip: 10.0.4.9", "notify: soc-oncall"]
+    assert all(not row["done"] for row in added.json()["created"])
+    again = client.post(path, json=payload, headers=headers)
+    assert again.json()["created"] == [] and again.json()["skipped"] == 2
+    from backend.models.response_plan import ResponsePlan
+    with _TestingSessionLocal() as db:
+        saved = db.get(ResponsePlan, plan_id)
+        assert saved.status == "approved"
+        saved.actions = [*PLAN_ACTIONS, {"action_type": "notify", "target": "new"}]
+        db.commit()
+    stale = client.post(path, json=payload, headers=headers)
+    assert stale.status_code == 409
+    assert len(client.get(f"/api/v1/cases/{case_id}/tasks", headers=headers).json()) == 2
+
+
+def test_checklist_preview_labels_existing_duplicate_and_malformed_actions(client):
+    headers, case_id = _setup(client)
+    actions = [{"action_type": "notify", "target": "soc", "priority": 0},
+               {"action_type": "notify", "target": "soc", "priority": "high"},
+               None, {"action_type": {"legacy": "object"}},
+               {"action_type": "inspect", "reason": {"toString": "data"}}]
+    plan_id = _seed_plan(case_id, _user_id(client, headers), actions)
+    path = f"/api/v1/cases/{case_id}/tasks/from-plan/{plan_id}"
+    rows = client.get(path + "/preview", headers=headers).json()["proposals"]
+    assert rows[0]["priority"] == 0 and rows[0]["available"]
+    assert rows[1]["already_present"] and not rows[1]["available"]
+    assert not rows[2]["available"] and not rows[3]["available"]
+    assert rows[4]["reason"] == '{"toString": "data"}'
+    client.post(f"/api/v1/cases/{case_id}/tasks", json={"title": "notify: soc"}, headers=headers)
+    fresh = client.get(path + "/preview", headers=headers).json()
+    assert not fresh["proposals"][0]["available"]
+    invalid = client.post(path, json={"reviewed_fingerprint": fresh["review_fingerprint"],
+                                      "action_indexes": [2]}, headers=headers)
+    assert invalid.status_code == 400
+
+
+@pytest.mark.parametrize("indexes", [[], [0, 0], [-1], [99], [True], ["0"]])
+def test_selected_checklist_import_rejects_invalid_indexes(client, indexes):
+    headers, case_id = _setup(client)
+    plan_id = _seed_plan(case_id, _user_id(client, headers))
+    path = f"/api/v1/cases/{case_id}/tasks/from-plan/{plan_id}"
+    fingerprint = client.get(path + "/preview", headers=headers).json()["review_fingerprint"]
+    response = client.post(path, json={"reviewed_fingerprint": fingerprint, "action_indexes": indexes}, headers=headers)
+    assert response.status_code == 422
+    assert client.get(f"/api/v1/cases/{case_id}/tasks", headers=headers).json() == []
+
+
+def test_checklist_preview_preserves_case_visibility_and_plan_case_binding(client):
+    headers, case_id = _setup(client)
+    plan_id = _seed_plan(case_id, _user_id(client, headers))
+    outsider = _register_and_login(client, "preview-outsider@example.com")
+    assert client.get(f"/api/v1/cases/{case_id}/tasks/from-plan/{plan_id}/preview", headers=outsider).status_code == 404
+    other_case = _make_case(_user_id(client, headers))
+    response = client.get(f"/api/v1/cases/{other_case}/tasks/from-plan/{plan_id}/preview", headers=headers)
+    assert response.status_code == 404
+
+
+def test_checklist_preview_does_not_disclose_another_plan_owners_evidence(client):
+    headers, case_id = _setup(client)
+    other = _register_and_login(client, "plan-owner@example.com")
+    plan_id = _seed_plan(case_id, _user_id(client, other))
+    path = f"/api/v1/cases/{case_id}/tasks/from-plan/{plan_id}"
+    assert client.get(path + "/preview", headers=headers).status_code == 404
+    selected = client.post(path, json={"reviewed_fingerprint": "a" * 64, "action_indexes": [0]}, headers=headers)
+    assert selected.status_code == 404
+
+
+def test_checklist_preview_rejects_oversized_plan_without_creating_tasks(client):
+    headers, case_id = _setup(client)
+    plan_id = _seed_plan(case_id, _user_id(client, headers), [PLAN_ACTIONS[0]] * 201)
+    path = f"/api/v1/cases/{case_id}/tasks/from-plan/{plan_id}"
+    assert client.get(path + "/preview", headers=headers).status_code == 400
+    assert client.get(f"/api/v1/cases/{case_id}/tasks", headers=headers).json() == []

@@ -917,10 +917,15 @@ describe('Investigation tasks', () => {
 describe('Seed checklist from a response plan', () => {
   it('posts to the seed endpoint and refreshes', async () => {
     mockLoadWithPlans([{ id: 42, status: 'approved', autonomy_level: 'L1', created_by: 'agent', created_at: '2026-11-18T08:00:00Z', actions: [{ action_type: 'block_ip', target: '10.0.4.9' }] }]);
+    const originalGet = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation((...args) => String(args[0]).endsWith('/preview') ? Promise.resolve({ data: { case_id: 7, plan_id: 42, plan_status: 'approved', review_fingerprint: 'a'.repeat(64), proposals: [{ action_index: 0, title: 'block_ip: 10.0.4.9', reason: null, priority: null, available: true, already_present: false }] } }) : originalGet(...args));
     mockPost.mockResolvedValue({ data: { created: [{ id: 9, title: 'block_ip: 10.0.4.9', done: false, position: 0 }], skipped: 0 } });
     renderDetail();
     fireEvent.click(await screen.findByRole('button', { name: 'Seed checklist from plan 42' }));
-    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/tasks/from-plan/42'));
+    expect(mockPost).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByLabelText('Select action 1 for checklist'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add 1 selected task' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/tasks/from-plan/42', { reviewed_fingerprint: 'a'.repeat(64), action_indexes: [0] }));
   });
 
   it('hides the seed button for plans without actions', async () => {
