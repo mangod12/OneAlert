@@ -410,3 +410,24 @@ it('locks navigation and edits while criticality is being saved', async () => {
   await act(async () => finish({ data: { ...asset, criticality: 'low' } }));
   await screen.findByText(/Confirmed criticality changes for 1 of 1/);
 });
+
+it('keeps comparison choices across inventory pages and filters, then reads exact assets without writes', async () => {
+  const other = { ...asset, id: 29, name: 'Second gateway', firmware_version: '2.0' };
+  get.mockImplementation(async (url, config) => {
+    if (url === '/assets/vendors/' || url === '/assets/types/') return { data: [] };
+    if (url === '/assets/7') return { data: asset };
+    if (url === '/assets/29') return { data: other };
+    return { data: { assets: [(config?.params as { page: number; search?: string }).page === 2 || (config?.params as { search?: string }).search ? other : asset], total: 30 } };
+  });
+  render(<MemoryRouter><Assets /></MemoryRouter>);
+  fireEvent.click(await screen.findByLabelText('Select asset 7 for comparison'));
+  fireEvent.click(screen.getByRole('button', { name: 'Next assets' }));
+  fireEvent.click(await screen.findByLabelText('Select asset 29 for comparison'));
+  fireEvent.change(screen.getByLabelText('Search assets'), { target: { value: 'Second' } });
+  await waitFor(() => expect(screen.getByText('Asset selection: #7 → #29')).toBeTruthy());
+  const before = get.mock.calls.length;
+  fireEvent.click(screen.getByRole('button', { name: 'Load selected asset comparison' }));
+  await screen.findByText(/2 of 23 shown inventory fields differ/);
+  expect(get.mock.calls.slice(before).map(call => call[0])).toEqual(['/assets/7', '/assets/29']);
+  expect(put).not.toHaveBeenCalled(); expect(remove).not.toHaveBeenCalled(); expect(apiClient.post).not.toHaveBeenCalled();
+});
