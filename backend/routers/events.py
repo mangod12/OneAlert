@@ -262,8 +262,9 @@ async def export_events(
         "id", "timestamp", "event_type", "severity", "signature", "category",
         "source_ip", "source_port", "dest_ip", "dest_port", "protocol", "action",
     ])
+    # CSV quoting does not stop spreadsheet formula evaluation of telemetry.
     for event in rows:
-        writer.writerow([
+        values = [
             event.id,
             event.timestamp.isoformat() if event.timestamp else "",
             event.event_type,
@@ -276,6 +277,10 @@ async def export_events(
             event.dest_port if event.dest_port is not None else "",
             event.protocol or "",
             event.action or "",
+        ]
+        writer.writerow([
+            "'" + value if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@")) else value
+            for value in values
         ])
     buffer.seek(0)
     return StreamingResponse(

@@ -90,6 +90,25 @@ def _read_csv(resp) -> list[dict]:
     return list(csv.DictReader(io.StringIO(resp.text)))
 
 
+@pytest.mark.parametrize('prefix', ['=', '+', '-', '@', ' \t='])
+def test_event_export_neutralizes_formula_like_telemetry_cells(client, prefix):
+    headers = _register_and_login(client, 'csv-safety@example.com')
+    payload = prefix + 'UNTRUSTED(1)'
+    _make_event(client, headers, signature=payload, category=payload, protocol=payload,
+                action=payload, source_ip=payload, dest_ip=payload)
+    row = _read_csv(client.get('/api/v1/events/export', headers=headers))[0]
+    for field in ('signature', 'category', 'protocol', 'action', 'source_ip', 'dest_ip'):
+        assert row[field] == "'" + payload
+    assert row['severity'] == 'high'
+
+
+def test_event_export_preserves_quotes_newlines_and_nonformula_text(client):
+    headers = _register_and_login(client, 'csv-text@example.com')
+    text = 'Recorded, "quoted" evidence\nsecond line'
+    _make_event(client, headers, signature=text)
+    assert _read_csv(client.get('/api/v1/events/export', headers=headers))[0]['signature'] == text
+
+
 class TestEventsExport:
     def test_export_returns_csv_with_events(self, client):
         headers = _register_and_login(client, "analyst@example.com")
