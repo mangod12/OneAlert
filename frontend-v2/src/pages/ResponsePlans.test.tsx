@@ -318,3 +318,54 @@ it('exports selected recorded action evidence locally without executing or fetch
   expect(get.mock.calls.length).toBe(reads);
   expect(post).not.toHaveBeenCalled(); expect(del).not.toHaveBeenCalled();
 });
+
+const approval = { id: 7, plan_id: 12, case_id: 4, status: 'pending', reason: 'Contain the incident', autonomy_level: 'L2', created_at: '2026-11-20T10:00:00Z', actions: plan.actions };
+function loadApproval(actions = approval.actions) {
+  get.mockImplementation(async url => ({ data: { data: url.endsWith('pending-approvals') ? [{ ...approval, actions }] : [{ ...plan, status: 'pending_approval' }] } }));
+}
+
+it('requires action review and acknowledgement before approving without executing', async () => {
+  loadApproval();
+  post.mockResolvedValue({ data: { success: true, plan_status: 'approved' } });
+  render(<ResponsePlans />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Review approval' }));
+  expect(screen.getByText('Target: plant-gateway')).toBeTruthy();
+  expect(screen.getByText('Recorded policy check: not recorded')).toBeTruthy();
+  expect(post).not.toHaveBeenCalled();
+  const approve = screen.getByRole('button', { name: 'Approve reviewed plan #12' }) as HTMLButtonElement;
+  expect(approve.disabled).toBe(true);
+  fireEvent.click(screen.getByLabelText('I reviewed the saved actions and targets for plan #12.'));
+  fireEvent.click(approve);
+  await waitFor(() => expect(post).toHaveBeenCalledWith('/response-plans/12/approve'));
+  expect(post).toHaveBeenCalledTimes(1);
+});
+
+it('blocks approval when action evidence is empty', async () => {
+  loadApproval([]);
+  render(<ResponsePlans />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Review approval' }));
+  expect(screen.getByText(/No saved actions were returned/)).toBeTruthy();
+  expect((screen.getByRole('button', { name: 'Approve reviewed plan #12' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it('does not report approval success without a verified server state', async () => {
+  loadApproval();
+  post.mockResolvedValue({ data: {} });
+  render(<ResponsePlans />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Review approval' }));
+  fireEvent.click(screen.getByLabelText('I reviewed the saved actions and targets for plan #12.'));
+  fireEvent.click(screen.getByRole('button', { name: 'Approve reviewed plan #12' }));
+  await screen.findByText(/Approval returned without a confirmed approved state/);
+  expect(screen.queryByRole('button', { name: 'Approve reviewed plan #12' })).toBeNull();
+});
+
+it('keeps review open with an explicit error when approval fails', async () => {
+  loadApproval();
+  post.mockRejectedValue(new Error('Approval unavailable'));
+  render(<ResponsePlans />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Review approval' }));
+  fireEvent.click(screen.getByLabelText('I reviewed the saved actions and targets for plan #12.'));
+  fireEvent.click(screen.getByRole('button', { name: 'Approve reviewed plan #12' }));
+  await screen.findByText('Approval unavailable');
+  expect(screen.getByRole('region', { name: 'Approval review for plan 12' })).toBeTruthy();
+});

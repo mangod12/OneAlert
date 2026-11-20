@@ -7,6 +7,7 @@ import { toast } from '../components/Toast';
 import { getApiErrorMessage } from '../api/errors';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton, DegradedBanner } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
+import { ResponseApprovalReview } from '../components/ResponseApprovalReview';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
 interface ResponseAction {
@@ -61,6 +62,9 @@ const STATUS_STYLES: Record<string, string> = {
 
 export function ResponsePlans() {
   const requestId = useRef(0);
+  const approving = useRef(false);
+  const [reviewApprovalId, setReviewApprovalId] = useState<number | null>(null);
+  const [approvalError, setApprovalError] = useState('');
   const [plans, setPlans] = useState<ResponsePlan[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -120,14 +124,23 @@ export function ResponsePlans() {
   }, [statusFilter, page]);
 
   const approvePlan = async (planId: number) => {
-    if (workingPlan !== null) return;
+    if (approving.current || workingPlan !== null || loading || errors.length || !pending.some(item => item.plan_id === planId && item.id === reviewApprovalId)) return;
+    approving.current = true;
+    setApprovalError('');
     setWorkingPlan(planId);
     try {
-      await apiClient.post(`/response-plans/${planId}/approve`);
+      const response = await apiClient.post(`/response-plans/${planId}/approve`);
+      if (response.data?.success !== true || response.data?.plan_status !== 'approved') {
+        setApprovalError('Approval returned without a confirmed approved state. Refresh and review the current plan before trying again.');
+        setReviewApprovalId(null);
+        await fetchPlans();
+        return;
+      }
+      setReviewApprovalId(null);
       toast('Plan approved', 'success');
       await fetchPlans();
-    } catch (err) { toast(getApiErrorMessage(err, 'Failed to approve plan.'), 'error'); }
-    finally { setWorkingPlan(null); }
+    } catch (err) { setApprovalError(getApiErrorMessage(err, 'Approval could not be confirmed. Review the current plan before retrying.')); }
+    finally { approving.current = false; setWorkingPlan(null); }
   };
 
   const rejectPlan = async (planId: number, reason: string) => {
@@ -187,6 +200,7 @@ export function ResponsePlans() {
     <div className="space-y-6">
       <PageHeader eyebrow="Act" title="Response Plans" description="Review, approve, and execute guarded response actions with a durable human decision trail." />
 
+      {approvalError && <p role="alert" className="rounded border border-warning/40 p-3 text-sm text-warning">{approvalError}</p>}
       {executionNotice && <p role={executionNotice.success ? 'status' : 'alert'} className={`rounded-md border p-4 text-sm ${executionNotice.success ? 'border-success/30 text-success' : 'border-warning/30 text-warning'}`}>{executionNotice.text}</p>}
       {errors.length > 0 && (plans.length > 0 || pending.length > 0)
         ? <DegradedBanner messages={errors} onRetry={() => void fetchPlans()} />
@@ -202,24 +216,25 @@ export function ResponsePlans() {
           </h2>
           <div className="space-y-3">
             {pending.map(a => (
-              <div key={a.id} className="bg-surface-900/50 rounded-lg p-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                <div className="flex-1">
+              <div key={a.id} className="min-w-0 rounded-lg bg-surface-900/50 p-4">
+                <div className="flex-1 min-w-0">
                   <p className="text-sm text-surface-50 font-medium">Plan #{a.plan_id} — Case #{a.case_id}</p>
                   <p className="text-xs text-surface-400 mt-1">{a.reason}</p>
                   <p className="text-xs text-surface-500 mt-1">
                     {a.actions?.length || 0} actions · Level {a.autonomy_level}
                   </p>
                 </div>
-                <div className="flex gap-2">
-                  <button disabled={workingPlan !== null || loading || errors.length > 0} onClick={() => approvePlan(a.plan_id)}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button disabled={workingPlan !== null || loading || errors.length > 0} onClick={() => { setReviewApprovalId(a.id); setApprovalError(''); }}
                     className="flex items-center gap-1 px-3 py-1.5 bg-success hover:bg-success/80 text-surface-950 rounded text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40">
-                    <CheckCircle className="w-3.5 h-3.5" /> Approve
+                    <CheckCircle className="w-3.5 h-3.5" /> Review approval
                   </button>
                   <button disabled={workingPlan !== null || loading || errors.length > 0} onClick={() => setConfirmAction({ type: 'reject', planId: a.plan_id })}
                     className="flex items-center gap-1 px-3 py-1.5 bg-danger hover:bg-danger/80 text-surface-950 rounded text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40">
                     <XCircle className="w-3.5 h-3.5" /> Reject
                   </button>
                 </div>
+                {!loading && !errors.length && reviewApprovalId === a.id && <ResponseApprovalReview key={JSON.stringify(a)} planId={a.plan_id} caseId={a.case_id} actions={a.actions || []} busy={workingPlan !== null} onApprove={() => void approvePlan(a.plan_id)} onCancel={() => { if (workingPlan === null) setReviewApprovalId(null); }} />}
               </div>
             ))}
           </div>
