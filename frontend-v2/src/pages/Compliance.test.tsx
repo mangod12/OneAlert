@@ -31,6 +31,7 @@ function mockOverview() {
     if (url === '/compliance/summary') return { data: summaries };
     if (url === '/compliance/frameworks/1/controls') return { data: controls };
     if (url === '/compliance/assessments') return { data: assessments };
+    if (url === '/compliance/assessments/5/review') return { data: { assessment: assessments[0], reviewed_fingerprint: 'a'.repeat(64) } };
     throw new Error(`unexpected ${url}`);
   });
 }
@@ -119,92 +120,40 @@ describe('Control search and status filter', () => {
   });
 });
 
-describe('Assessment status updates', () => {
-  it('updates an assessment status and saves it to the API', async () => {
+describe('Reviewed assessment changes', () => {
+  it('opens a current saved assessment review instead of immediately changing status', async () => {
+    patch.mockResolvedValue({ data: { ...assessments[0], status: 'partial' } });
     render(<Compliance />);
     fireEvent.click(await screen.findByText('NIST CSF'));
     const select = await screen.findByRole('combobox', { name: 'Set status for PR.AC-1' });
     fireEvent.change(select, { target: { value: 'partial' } });
-    await waitFor(() => expect(patch).toHaveBeenCalledWith('/compliance/assessments/5', { status: 'partial' }));
-    expect((select as HTMLSelectElement).value).toBe('partial');
+    await screen.findByText('Saved status: compliant');
+    expect(patch).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Review status')).toHaveProperty('value', 'partial');
+    fireEvent.click(screen.getByRole('button', { name: 'Save reviewed assessment' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(patch).toHaveBeenCalledWith('/compliance/assessments/5', { status: 'partial', evidence_type: null, evidence_detail: null }, { params: { reviewed_fingerprint: 'a'.repeat(64) } });
+    expect(select).toHaveProperty('value', 'partial');
   });
-
-  it('reverts the status and shows an error when the update fails', async () => {
-    patch.mockRejectedValue(new Error('offline'));
-    render(<Compliance />);
-    fireEvent.click(await screen.findByText('NIST CSF'));
+  it('cancels a proposed status change without changing the table or sending a write', async () => {
+    render(<Compliance />); fireEvent.click(await screen.findByText('NIST CSF'));
     const select = await screen.findByRole('combobox', { name: 'Set status for PR.AC-1' });
     fireEvent.change(select, { target: { value: 'non_compliant' } });
-    await waitFor(() => expect(patch).toHaveBeenCalled());
-    await waitFor(() => expect((select as HTMLSelectElement).value).toBe('compliant'));
+    await screen.findByText('Saved status: compliant');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(select).toHaveProperty('value', 'compliant'); expect(patch).not.toHaveBeenCalled();
   });
-
-  it('offers no editor for controls that have never been assessed', async () => {
-    render(<Compliance />);
-    fireEvent.click(await screen.findByText('NIST CSF'));
-    await screen.findByText('DE.CM-1');
-    expect(screen.queryByRole('combobox', { name: 'Set status for DE.CM-1' })).toBeNull();
-  });
-});
-
-describe('Assessment evidence', () => {
-  const updatedAssessment = {
-    id: 5, control_id: 11, status: 'compliant', evidence_type: 'manual',
-    evidence_detail: 'Policy reviewed 2026-11.', assessed_at: '2026-11-10T08:00:00Z', assessed_by: 'analyst',
-  };
-
-  it('saves evidence type and details for an assessed control', async () => {
-    patch.mockResolvedValue({ data: updatedAssessment });
-    render(<Compliance />);
-    fireEvent.click(await screen.findByText('NIST CSF'));
+  it('opens exact current evidence from the control row', async () => {
+    render(<Compliance />); fireEvent.click(await screen.findByText('NIST CSF'));
     fireEvent.click(await screen.findByRole('button', { name: 'Edit evidence for PR.AC-1' }));
-
-    expect(await screen.findByRole('dialog', { name: 'Evidence for PR.AC-1' })).toBeTruthy();
-    fireEvent.change(screen.getByLabelText('Evidence type'), { target: { value: 'manual' } });
-    fireEvent.change(screen.getByLabelText('Details'), { target: { value: 'Policy reviewed 2026-11.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save evidence' }));
-
-    await waitFor(() => expect(patch).toHaveBeenCalledWith('/compliance/assessments/5', {
-      status: 'compliant', evidence_type: 'manual', evidence_detail: 'Policy reviewed 2026-11.',
-    }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(screen.getByRole('button', { name: 'Edit evidence for PR.AC-1' }).textContent).toContain('View');
-  });
-
-  it('sends explicit nulls when evidence is cleared and reopens with empty fields', async () => {
-    const fallback = get.getMockImplementation()!;
-    get.mockImplementation((url, config) => url === '/compliance/assessments'
-      ? Promise.resolve({ data: [updatedAssessment] }) : fallback(url, config));
-    patch.mockResolvedValue({ data: { ...updatedAssessment, evidence_type: null, evidence_detail: null } });
-    render(<Compliance />);
-    fireEvent.click(await screen.findByText('NIST CSF'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit evidence for PR.AC-1' }));
-    expect((screen.getByLabelText('Details') as HTMLTextAreaElement).value).toBe(updatedAssessment.evidence_detail);
-    fireEvent.change(screen.getByLabelText('Evidence type'), { target: { value: '' } });
-    fireEvent.change(screen.getByLabelText('Details'), { target: { value: '   ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save evidence' }));
-    await waitFor(() => expect(patch).toHaveBeenCalledWith('/compliance/assessments/5', {
-      status: 'compliant', evidence_type: null, evidence_detail: null,
-    }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    fireEvent.click(screen.getByRole('button', { name: 'Edit evidence for PR.AC-1' }));
-    expect((screen.getByLabelText('Details') as HTMLTextAreaElement).value).toBe('');
-    expect((screen.getByLabelText('Evidence type') as HTMLSelectElement).value).toBe('');
-  });
-
-  it('closes without saving when cancelled', async () => {
-    render(<Compliance />);
-    fireEvent.click(await screen.findByText('NIST CSF'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit evidence for PR.AC-1' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await screen.findByText('Saved status: compliant');
+    expect(get).toHaveBeenCalledWith('/compliance/assessments/5/review');
+    expect(screen.getByLabelText('Details')).toHaveProperty('value', '');
     expect(patch).not.toHaveBeenCalled();
   });
-
-  it('offers no evidence action for controls that have never been assessed', async () => {
-    render(<Compliance />);
-    fireEvent.click(await screen.findByText('NIST CSF'));
-    await screen.findByText('DE.CM-1');
+  it('offers a new manual assessment, not a saved-record edit, for unassessed controls', async () => {
+    render(<Compliance />); fireEvent.click(await screen.findByText('NIST CSF')); await screen.findByText('DE.CM-1');
+    expect(screen.queryByRole('combobox', { name: 'Set status for DE.CM-1' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Edit evidence for DE.CM-1' })).toBeNull();
   });
 });
@@ -305,15 +254,18 @@ it('shows not-applicable controls separately and refreshes posture after a saved
     if (url === '/compliance/frameworks') return { data: frameworks };
     if (url === '/compliance/summary') return { data: [{ ...summaries[0], not_assessed: 0, not_applicable: 1, compliance_percentage: changed ? 50 : 60 }] };
     if (url === '/compliance/assessments') return { data: [...assessments, { ...assessments[0], id: 6, status: 'partial' }] };
+    if (url === '/compliance/assessments/6/review') return { data: { assessment: { ...assessments[0], id: 6, status: 'partial' }, reviewed_fingerprint: 'a'.repeat(64) } };
     return { data: controls };
   });
-  patch.mockImplementation(async () => { changed = true; return { data: {} }; });
+  patch.mockImplementation(async () => { changed = true; return { data: { ...assessments[0], id: 6, status: 'non_compliant' } }; });
   render(<Compliance />);
   fireEvent.click(await screen.findByText('NIST CSF'));
   const select = await screen.findByLabelText('Set status for PR.AC-1');
   expect(select).toHaveProperty('value', 'partial');
   expect(screen.getByText(/0 not assessed · 1 not applicable/)).toBeTruthy();
   fireEvent.change(select, { target: { value: 'non_compliant' } });
+  await screen.findByText('Saved status: partial');
+  fireEvent.click(screen.getByRole('button', { name: 'Save reviewed assessment' }));
   await waitFor(() => expect(screen.getByRole('progressbar', { name: 'NIST CSF compliance' }).getAttribute('aria-valuenow')).toBe('50'));
 });
 
@@ -321,8 +273,11 @@ it('keeps a saved status and offers independent posture retry if the refresh fai
   render(<Compliance />);
   fireEvent.click(await screen.findByText('NIST CSF'));
   const select = await screen.findByLabelText('Set status for PR.AC-1');
-  get.mockRejectedValueOnce(new Error('posture offline'));
+  patch.mockResolvedValue({ data: { ...assessments[0], status: 'partial' } });
   fireEvent.change(select, { target: { value: 'partial' } });
+  await screen.findByText('Saved status: compliant');
+  get.mockRejectedValueOnce(new Error('posture offline'));
+  fireEvent.click(screen.getByRole('button', { name: 'Save reviewed assessment' }));
   await screen.findByText(/cards may be out of date/);
   expect(select).toHaveProperty('value', 'partial');
   const reads = get.mock.calls.length;

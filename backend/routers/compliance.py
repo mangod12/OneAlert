@@ -11,12 +11,16 @@ Provides endpoints for:
 
 
 import csv
+import hashlib
+import hmac
 import io
+import json
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
+from sqlalchemy import update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -209,17 +213,39 @@ async def create_manual_assessment(
 async def update_assessment(
     assessment_id: int,
     update: AssessmentUpdate,
+    reviewed_fingerprint: str | None = Query(None, min_length=64, max_length=64, pattern="^[a-f0-9]{64}$"),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Manually update an assessment status."""
-    assessment = await db.get(ComplianceAssessment, assessment_id)
+    assessment = (await db.execute(select(ComplianceAssessment).where(
+        ComplianceAssessment.id == assessment_id,
+    ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
     if not assessment:
         raise HTTPException(status_code=404, detail="Assessment not found")
     if assessment.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     _validate_assessment(update)
+
+    if reviewed_fingerprint is not None:
+        if not hmac.compare_digest(reviewed_fingerprint, _assessment_fingerprint(assessment)):
+            raise HTTPException(status_code=409, detail="Assessment changed. Reload the review before saving.")
+        predicates = [getattr(ComplianceAssessment, key).is_(None) if value is None
+                      else getattr(ComplianceAssessment, key) == value
+                      for key, value in _assessment_values(assessment).items()]
+        values = {"status": update.status, "assessed_by": current_user.email}
+        for key in ("evidence_type", "evidence_detail"):
+            if key in update.model_fields_set:
+                values[key] = getattr(update, key)
+        result = await db.execute(sql_update(ComplianceAssessment).where(*predicates).values(**values)
+                                  .execution_options(synchronize_session=False))
+        if result.rowcount != 1:
+            await db.rollback()
+            raise HTTPException(status_code=409, detail="Assessment changed. Reload the review before saving.")
+        await db.commit()
+        await db.refresh(assessment)
+        return assessment
 
     assessment.status = update.status
     if "evidence_type" in update.model_fields_set:
@@ -263,6 +289,33 @@ async def get_assessment(
         raise HTTPException(status_code=404, detail="Assessment not found")
     return assessment
 
+
+
+def _assessment_values(assessment: ComplianceAssessment) -> dict:
+    return {key: getattr(assessment, key) for key in (
+        "id", "user_id", "control_id", "status", "evidence_type", "evidence_detail", "assessed_at", "assessed_by"
+    )}
+
+
+def _assessment_fingerprint(assessment: ComplianceAssessment) -> str:
+    return hashlib.sha256(json.dumps(_assessment_values(assessment), sort_keys=True, default=str).encode()).hexdigest()
+
+
+@router.get("/assessments/{assessment_id}/review")
+async def review_assessment(
+    assessment_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Read one owned saved record for a guarded edit, without creating an assessment."""
+    assessment = (await db.execute(select(ComplianceAssessment).where(
+        ComplianceAssessment.id == assessment_id,
+        ComplianceAssessment.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if assessment is None:
+        raise HTTPException(status_code=404, detail="Assessment not found")
+    return {"assessment": AssessmentResponse.model_validate(assessment),
+            "reviewed_fingerprint": _assessment_fingerprint(assessment)}
 
 def _validate_assessment(update: AssessmentUpdate) -> None:
     valid_statuses = {"compliant", "non_compliant", "partial", "not_applicable", "not_assessed"}

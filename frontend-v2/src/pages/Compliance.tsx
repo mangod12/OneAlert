@@ -1,3 +1,4 @@
+import { ComplianceAssessmentReview } from '../components/ComplianceAssessmentReview';
 import { AssessmentComparison } from '../components/AssessmentComparison';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
@@ -199,10 +200,9 @@ export function Compliance() {
   const [assessments, setAssessments] = useState<Map<number, Assessment>>(new Map());
   const [controlsLoading, setControlsLoading] = useState(false);
   const [controlsError, setControlsError] = useState('');
-  const [savingIds, setSavingIds] = useState<Set<number>>(new Set());
   const [controlSearch, setControlSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [evidenceTarget, setEvidenceTarget] = useState<{ assessment: Assessment | null; control: Control } | null>(null);
+  const [evidenceTarget, setEvidenceTarget] = useState<{ assessment: Assessment | null; control: Control; initialStatus?: string } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [assessing, setAssessing] = useState(false);
 
@@ -328,24 +328,9 @@ export function Compliance() {
     }
   };
 
-  const changeStatus = async (assessment: Assessment, status: string) => {
-    if (savingIds.has(assessment.id) || assessment.status === status) return;
-    const frameworkId = selectedFramework.current;
-    const previous = assessment.status;
-    setSavingIds(current => new Set(current).add(assessment.id));
-    setAssessments(current => new Map(current).set(assessment.control_id, { ...assessment, status }));
-    try {
-      const response = await apiClient.patch<Assessment>(`/compliance/assessments/${assessment.id}`, { status });
-      if (selectedFramework.current === frameworkId) {
-        setAssessmentHistory(current => current.map(row => row.id === assessment.id ? { ...row, ...response.data, status } : row));
-      }
-      await refreshSummary();
-    } catch (err: unknown) {
-      if (selectedFramework.current === frameworkId) setAssessments(current => new Map(current).set(assessment.control_id, { ...assessment, status: previous }));
-      toast(getApiErrorMessage(err, 'Assessment status could not be updated.'), 'error');
-    } finally {
-      setSavingIds(current => { const next = new Set(current); next.delete(assessment.id); return next; });
-    }
+  const changeStatus = (assessment: Assessment, status: string) => {
+    const control = controls.find(row => row.id === assessment.control_id);
+    if (control && assessment.status !== status) setEvidenceTarget({ assessment, control, initialStatus: status });
   };
 
   if (loading) return <LoadingSurface rows={4} label="Loading compliance posture" />;
@@ -493,7 +478,7 @@ export function Compliance() {
                               <select
                                 aria-label={`Set status for ${control.control_id}`}
                                 value={assessment.status}
-                                disabled={savingIds.has(assessment.id)}
+                                disabled={!!evidenceTarget}
                                 onChange={(e) => void changeStatus(assessment, e.target.value)}
                                 className="rounded border border-surface-700 bg-surface-950 px-1.5 py-1 text-xs text-surface-300 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-40"
                               >
@@ -548,7 +533,16 @@ export function Compliance() {
         </div>
       )}
       {historyTarget && <AssessmentHistoryDialog key={historyTarget.id} control={historyTarget} history={assessmentHistory.filter(row => row.control_id === historyTarget.id)} onClose={() => setHistoryTarget(null)} />}
-      {evidenceTarget && (
+      {evidenceTarget?.assessment && <ComplianceAssessmentReview key={evidenceTarget.assessment.id}
+        id={evidenceTarget.assessment.id} control={evidenceTarget.control} initialStatus={evidenceTarget.initialStatus}
+        onClose={() => setEvidenceTarget(null)} onSaved={updated => {
+          if (selectedFramework.current !== evidenceTarget.control.framework_id) return;
+          setEvidenceTarget(null);
+          setAssessmentHistory(current => current.map(row => row.id === updated.id ? updated : row));
+          setAssessments(current => current.get(updated.control_id)?.id === updated.id ? new Map(current).set(updated.control_id, updated) : current);
+          void refreshSummary();
+        }} />}
+      {evidenceTarget && !evidenceTarget.assessment && (
         <EvidenceDialog
           assessment={evidenceTarget.assessment}
           control={evidenceTarget.control}
