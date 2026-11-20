@@ -7,10 +7,11 @@ export interface SnapshotComponent {
   purl: string | null;
   cpe: string | null;
   license: string | null;
+  hash_sha256?: string | null;
   has_known_vulnerability: number;
 }
 
-export const comparisonFields = ['version', 'purl', 'cpe', 'license', 'has_known_vulnerability'] as const;
+export const comparisonFields = ['version', 'purl', 'cpe', 'license', 'hash_sha256', 'has_known_vulnerability'] as const;
 export type ComparisonField = typeof comparisonFields[number];
 export type ComparisonKind = 'added' | 'removed' | 'changed' | 'unchanged' | 'ambiguous';
 export interface ComponentDifference {
@@ -45,7 +46,7 @@ export function compareSnapshots(baseline: SnapshotComponent[], current: Snapsho
     else if (!before.length) group.kind = 'added';
     else if (!after.length) group.kind = 'removed';
     else {
-      group.fields = comparisonFields.filter(field => before[0][field] !== after[0][field]);
+      group.fields = comparisonFields.filter(field => (before[0][field] ?? null) !== (after[0][field] ?? null));
       group.kind = group.fields.length ? 'changed' : 'unchanged';
     }
   }

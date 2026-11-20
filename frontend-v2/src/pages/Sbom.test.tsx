@@ -289,7 +289,7 @@ describe('Recorded component evidence', () => {
     get.mockImplementation(async url => {
       if (url === '/sbom/') return { data: sboms };
       if (url === '/assets/') return { data: assets };
-      return { data: [{ ...components[0], purl: 'pkg:deb/debian/openssl@3.0.1?arch=arm64', cpe: 'cpe:2.3:a:openssl:openssl:3.0.1:*:*:*:*:*:*:*', has_known_vulnerability: 2 }] };
+      return { data: [{ ...components[0], hash_sha256: 'a'.repeat(64), purl: 'pkg:deb/debian/openssl@3.0.1?arch=arm64', cpe: 'cpe:2.3:a:openssl:openssl:3.0.1:*:*:*:*:*:*:*', has_known_vulnerability: 2 }] };
     });
     render(<Sbom />);
     fireEvent.click(await screen.findByRole('button', { name: 'Plant gateway' }));
@@ -302,6 +302,8 @@ describe('Recorded component evidence', () => {
     expect(dialog.getByText('cpe:2.3:a:openssl:openssl:3.0.1:*:*:*:*:*:*:*')).toBeTruthy();
     expect(dialog.getByText('Plant gateway · #7')).toBeTruthy();
     expect(dialog.getByText('2')).toBeTruthy();
+    expect(dialog.getByText('a'.repeat(64))).toBeTruthy();
+    expect(dialog.getByText(/not been verified against package bytes/)).toBeTruthy();
     expect(dialog.getByText(/not a live package or vulnerability scan/)).toBeTruthy();
     expect(get.mock.calls.length).toBe(reads);
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -316,7 +318,7 @@ describe('Recorded component evidence', () => {
     fireEvent.click(await screen.findByText('Plant gateway'));
     fireEvent.click(await screen.findByRole('button', { name: 'View evidence for busybox' }));
     const dialog = within(screen.getByRole('dialog'));
-    expect(dialog.getAllByText('Not recorded')).toHaveLength(3);
+    expect(dialog.getAllByText('Not recorded')).toHaveLength(4);
     expect(dialog.getByText('0')).toBeTruthy();
     fireEvent.click(dialog.getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -324,12 +326,12 @@ describe('Recorded component evidence', () => {
 
   it('searches retained package identifiers and licenses', async () => {
     const fallback = get.getMockImplementation()!;
-    get.mockImplementation((url, config) => url === '/sbom/1/components' ? Promise.resolve({ data: [{ ...components[0], purl: 'pkg:deb/debian/libssl@3', cpe: 'cpe:2.3:a:openssl' }, components[1]] }) : fallback(url, config));
+    get.mockImplementation((url, config) => url === '/sbom/1/components' ? Promise.resolve({ data: [{ ...components[0], hash_sha256: 'recorded-digest-evidence', purl: 'pkg:deb/debian/libssl@3', cpe: 'cpe:2.3:a:openssl' }, components[1]] }) : fallback(url, config));
     render(<Sbom />);
     fireEvent.click(await screen.findByText('Plant gateway'));
     await screen.findByText('openssl');
     const input = screen.getByLabelText('Search components');
-    for (const query of ['libssl', 'cpe:2.3:a:openssl', 'Apache-2.0']) {
+    for (const query of ['libssl', 'cpe:2.3:a:openssl', 'Apache-2.0', 'recorded-digest-evidence']) {
       fireEvent.change(input, { target: { value: query } });
       expect(screen.getByText('openssl')).toBeTruthy();
       expect(screen.queryByText('busybox')).toBeNull();

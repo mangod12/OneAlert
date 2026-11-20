@@ -124,3 +124,17 @@ it('exports every matching group across pages from loaded evidence, with no extr
   expect((screen.getByRole('button', { name: 'Export matching comparison CSV' }) as HTMLButtonElement).disabled).toBe(true);
   createUrl.mockRestore(); revokeUrl.mockRestore(); click.mockRestore();
 });
+
+it('shows and searches recorded SHA-256 differences with a verification caveat', async () => {
+  const beforeHash = 'a'.repeat(64);
+  const afterHash = 'b'.repeat(64);
+  get.mockImplementation(async url => ({ data: [component({ hash_sha256: url === '/sbom/2/components' ? beforeHash : afterHash })] }));
+  renderComparison(); choose();
+  expect(await screen.findByText('changed: 1')).toBeTruthy();
+  expect(screen.getByText('Recorded SHA-256')).toBeTruthy();
+  expect(screen.getByText(`Baseline: ${beforeHash}`)).toBeTruthy();
+  expect(screen.getByText(`Current: ${afterHash}`)).toBeTruthy();
+  expect(screen.getByText(/not proof of tampering/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Search snapshot comparison'), { target: { value: afterHash } });
+  expect(screen.getByRole('heading', { name: 'openssl' })).toBeTruthy();
+});

@@ -232,6 +232,24 @@ class TestSBOMUpload:
         assert response.status_code == 404
 
 
+@pytest.mark.parametrize('document,name,recorded_hash', [
+    (CYCLONEDX_SAMPLE, 'libcurl', 'abc123def456'),
+    (SPDX_SAMPLE, 'zlib', 'deadbeef1234'),
+])
+def test_recorded_sha256_survives_upload_component_api_and_csv(client, auth_headers, asset_id, document, name, recorded_hash):
+    import csv
+    import io
+    response = client.post('/api/v1/sbom/upload', headers=auth_headers, json={'asset_id': asset_id, 'sbom_data': document})
+    assert response.status_code == 201, response.text
+    sbom_id = response.json()['id']
+    rows = client.get(f'/api/v1/sbom/{sbom_id}/components', headers=auth_headers).json()
+    assert next(row for row in rows if row['name'] == name)['hash_sha256'] == recorded_hash
+    assert all('hash_sha256' in row for row in rows)
+    exported = client.get(f'/api/v1/sbom/{sbom_id}/export', headers=auth_headers)
+    evidence = list(csv.DictReader(io.StringIO(exported.text)))
+    assert next(row for row in evidence if row['name'] == name)['hash_sha256'] == recorded_hash
+
+
 class TestSBOMList:
     """Test listing SBOMs."""
 

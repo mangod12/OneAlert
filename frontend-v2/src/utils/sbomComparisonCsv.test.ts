@@ -28,3 +28,12 @@ it('includes only the supplied filtered groups, never hidden or extra groups', (
   expect(csv).not.toContain('Recorded');
   expect(sbomComparisonCsv(1, 2, []).split('\r\n')).toHaveLength(1);
 });
+
+
+it('exports recorded hash changes and their original evidence', () => {
+  const rows = compareSnapshots([{ ...record, hash_sha256: 'recorded-before' }], [{ ...record, sbom_id: 2, hash_sha256: 'recorded-after' }]);
+  const csv = sbomComparisonCsv(1, 2, rows);
+  expect(csv).toContain('"hash_sha256"');
+  expect(csv).toContain('""hash_sha256"":""recorded-before""');
+  expect(csv).toContain('""hash_sha256"":""recorded-after""');
+});

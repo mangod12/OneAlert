@@ -132,7 +132,7 @@ class TestSbomExport:
 @pytest.mark.parametrize('value', ['=1+1', '+cmd', '-1+2', '@SUM(1)', '  =1', '\t+cmd', '\r@cmd', '\n-cmd'])
 def test_export_neutralizes_formula_like_component_text(client, value):
     headers = _register_and_login(client, "csv-text@example.com")
-    fields = ["name", "version", "supplier", "purl", "cpe", "license"]
+    fields = ["name", "version", "supplier", "purl", "cpe", "license", "hash_sha256"]
     sbom_id = _make_sbom(client, headers, [{**{field: value for field in fields}, "has_known_vulnerability": 0}])
     rows = _read_csv(client.get(f"/api/v1/sbom/{sbom_id}/export", headers=headers))
     assert len(rows) == 1
@@ -147,4 +147,4 @@ def test_export_preserves_normal_text_commas_quotes_and_null_fields(client):
     headers = _register_and_login(client, "csv-normal@example.com")
     sbom_id = _make_sbom(client, headers, [{"name": 'lib, "special"', "license": "Apache-2.0", "has_known_vulnerability": 2}])
     rows = _read_csv(client.get(f"/api/v1/sbom/{sbom_id}/export", headers=headers))
-    assert rows == [{"name": 'lib, "special"', "version": "", "supplier": "", "purl": "", "cpe": "", "license": "Apache-2.0", "known_vulnerabilities": "2"}]
+    assert rows == [{"name": 'lib, "special"', "version": "", "supplier": "", "purl": "", "cpe": "", "license": "Apache-2.0", "hash_sha256": "", "known_vulnerabilities": "2"}]
