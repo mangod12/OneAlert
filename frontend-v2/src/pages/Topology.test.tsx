@@ -262,3 +262,32 @@ it('keeps wide connection tables in a keyboard-focusable horizontal scroll regio
   region.focus();
   expect(document.activeElement).toBe(region);
 });
+
+it('exports exactly the currently filtered loaded connections without fetching more data', async () => {
+  const blobs: Blob[] = [];
+  URL.createObjectURL = vi.fn(blob => { blobs.push(blob as Blob); return 'blob:topology'; });
+  URL.revokeObjectURL = vi.fn();
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  render(<Topology />);
+  await screen.findAllByText('scada-historian');
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Cleartext only' }));
+  fireEvent.click(screen.getByRole('button', { name: /scada-historian/ }));
+  const calls = get.mock.calls.length;
+  fireEvent.click(screen.getByRole('button', { name: 'Export filtered connections' }));
+  expect(click).toHaveBeenCalledOnce();
+  expect(blobs).toHaveLength(1);
+  const text = await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(blobs[0]); });
+  expect(text).toContain('"10.0.1.5","scada-historian","plant","10.0.0.1","plant-gateway"');
+  expect(text).toContain('"modbus","502","cleartext","all","true","10.0.1.5"');
+  expect(text).not.toContain('https');
+  expect(get.mock.calls).toHaveLength(calls);
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:topology');
+});
+
+it('disables export when filters have no matching connection rows', async () => {
+  render(<Topology />);
+  await screen.findAllByText('scada-historian');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Filter connections by protocol' }), { target: { value: 'https' } });
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Cleartext only' }));
+  expect((screen.getByRole('button', { name: 'Export filtered connections' }) as HTMLButtonElement).disabled).toBe(true);
+});
