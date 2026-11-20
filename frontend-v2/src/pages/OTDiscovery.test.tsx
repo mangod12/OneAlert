@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { OTDiscovery } from './OTDiscovery';
@@ -33,14 +33,14 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 describe('Discovered device filters', () => {
   it('sends the IP substring and OT-only flag to the API', async () => {
     render(<OTDiscovery />);
-    await waitFor(() => expect(get).toHaveBeenCalledWith('/ot/discovered-devices', { params: { size: 20 } }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/ot/discovered-devices', { params: { page: 1, size: 20 } }));
     fireEvent.change(await screen.findByLabelText('Filter devices by IP'), { target: { value: '10.10' } });
     await waitFor(() => {
-      expect(get).toHaveBeenCalledWith('/ot/discovered-devices', { params: { size: 20, ip_address: '10.10' } });
+      expect(get).toHaveBeenCalledWith('/ot/discovered-devices', { params: { page: 1, size: 20, ip_address: '10.10' } });
     });
     fireEvent.click(screen.getByRole('checkbox', { name: 'OT devices only' }));
     await waitFor(() => {
-      expect(get).toHaveBeenCalledWith('/ot/discovered-devices', { params: { size: 20, ot_only: true, ip_address: '10.10' } });
+      expect(get).toHaveBeenCalledWith('/ot/discovered-devices', { params: { page: 1, size: 20, ot_only: true, ip_address: '10.10' } });
     });
   });
 });
@@ -96,5 +96,94 @@ describe('OT sensors', () => {
     const dialog = within(await screen.findByRole('dialog'));
     fireEvent.click(dialog.getByRole('button', { name: 'Delete sensor' }));
     await waitFor(() => expect(del).toHaveBeenCalledWith('/ot/sensors/2'));
+  });
+});
+
+const device = (id: number) => ({ id, ip_address: `10.0.0.${id}`, hostname: `device-${id}`, manufacturer: 'Test controls', risk_score: 60, is_correlated: false });
+const pageResponse = (ids: number[], total = 21) => ({ data: { devices: ids.map(device), total, size: 20 } });
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+function mockDevicePages(handler: (config: unknown) => unknown) {
+  const fallback = get.getMockImplementation()!;
+  get.mockImplementation((url, config) => url === '/ot/discovered-devices' ? Promise.resolve(handler(config)) : fallback(url, config));
+}
+
+describe('Discovered device paging and request identity', () => {
+  it('reviews devices beyond the first twenty, keeps filters, and resets filters to page one', async () => {
+    mockDevicePages(config => pageResponse((config as { params: { page: number } }).params.page === 2 ? [21] : [1]));
+    render(<OTDiscovery />);
+    await screen.findByText('device-1');
+    fireEvent.click(screen.getByLabelText('OT devices only'));
+    await screen.findByText('device-1');
+    fireEvent.click(screen.getByRole('button', { name: 'Next devices' }));
+    expect(await screen.findByText('device-21')).toBeTruthy();
+    expect(screen.queryByText('device-1')).toBeNull();
+    expect(screen.getByText(/Showing 21–21 of 21 matching devices/)).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Next devices' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(get).toHaveBeenCalledWith('/ot/discovered-devices', { params: { page: 2, size: 20, ot_only: true } });
+    fireEvent.change(screen.getByLabelText('Filter devices by IP'), { target: { value: '10.0' } });
+    await screen.findByText('device-1');
+    expect(get).toHaveBeenLastCalledWith('/ot/discovered-devices', { params: { page: 1, size: 20, ot_only: true, ip_address: '10.0' } });
+  });
+
+  it('clears obsolete rows while loading, ignores old initial results, and preserves a newer failure', async () => {
+    const initial = deferred<ReturnType<typeof pageResponse>>();
+    const filtered = deferred<ReturnType<typeof pageResponse>>();
+    mockDevicePages(config => (config as { params: { ip_address?: string } }).params.ip_address ? filtered.promise : initial.promise);
+    render(<OTDiscovery />);
+    fireEvent.change(await screen.findByLabelText('Filter devices by IP'), { target: { value: '192' } });
+    expect(screen.getByLabelText('Loading discovered devices')).toBeTruthy();
+    filtered.reject(new Error('Filter failed'));
+    await screen.findByText('Discovered devices unavailable');
+    await act(async () => { initial.resolve(pageResponse([1])); });
+    await waitFor(() => expect(screen.queryByText('device-1')).toBeNull());
+    expect(screen.getByText('Discovered devices unavailable')).toBeTruthy();
+    expect(screen.queryByText(/No devices discovered yet/)).toBeNull();
+  });
+
+  it('retries the failed device page without replacing the rest of the discovery dashboard', async () => {
+    let fail = true;
+    mockDevicePages(config => {
+      if ((config as { params: { page: number } }).params.page === 2 && fail) throw new Error('Page unavailable');
+      return pageResponse((config as { params: { page: number } }).params.page === 2 ? [21] : [1]);
+    });
+    render(<OTDiscovery />);
+    await screen.findByText('device-1');
+    fireEvent.click(screen.getByRole('button', { name: 'Next devices' }));
+    await screen.findByText('Discovered devices unavailable');
+    expect(screen.queryByText('device-1')).toBeNull();
+    expect(screen.getByText('plant-floor-1')).toBeTruthy();
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('device-21')).toBeTruthy();
+  });
+
+  it('recovers a page that disappeared after the result set shrank', async () => {
+    mockDevicePages(config => (config as { params: { page: number } }).params.page === 2 ? pageResponse([], 1) : pageResponse([1]));
+    render(<OTDiscovery />);
+    await screen.findByText('device-1');
+    fireEvent.click(screen.getByRole('button', { name: 'Next devices' }));
+    expect(await screen.findByText('device-1')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Previous devices' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('does not replace a new page when a promotion from the previous page completes', async () => {
+    const promotion = deferred<{ data: object }>();
+    post.mockReturnValue(promotion.promise);
+    mockDevicePages(config => pageResponse((config as { params: { page: number } }).params.page === 2 ? [21] : [1]));
+    render(<OTDiscovery />);
+    await screen.findByText('device-1');
+    fireEvent.click(screen.getByRole('button', { name: 'Promote to asset' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next devices' }));
+    await screen.findByText('device-21');
+    await act(async () => { promotion.resolve({ data: {} }); });
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('device-21')).toBeTruthy();
+    expect(screen.queryByText('device-1')).toBeNull();
+    expect(screen.getByText('Unmatched')).toBeTruthy();
   });
 });
