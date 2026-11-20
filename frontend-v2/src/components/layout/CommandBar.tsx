@@ -43,7 +43,7 @@ export function CommandBar({ onOpenNavigation, onOpenSearch, menuButtonRef }: { 
       <div className="flex items-center gap-2 sm:gap-3">
         <button
           type="button"
-          aria-label="Search alerts, investigations and assets (Ctrl+K)"
+          aria-label="Search alerts, investigations, assets and saved events (Ctrl+K)"
           onClick={onOpenSearch}
           className="flex items-center gap-2 rounded-md border border-surface-800 bg-surface-900 px-2.5 py-1.5 text-[11px] text-surface-400 hover:bg-surface-800"
         >

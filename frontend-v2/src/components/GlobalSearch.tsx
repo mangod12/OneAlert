@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Briefcase, Search, Server, Siren } from 'lucide-react';
+import { Activity, AlertTriangle, Briefcase, Search, Server, Siren } from 'lucide-react';
 import clsx from 'clsx';
 import apiClient from '../api/client';
 import { StatusBadge } from './ui/StatusBadge';
@@ -16,9 +16,11 @@ interface SearchResults {
   cases: CaseHit[];
   assets: AssetHit[];
   incidents?: IncidentHit[];
+  events?: { id: number; signature: string | null; event_type: string; severity: string; timestamp: string; source_ip: string | null; dest_ip: string | null }[];
 }
 
 type FlatHit =
+  | { key: string; group: 'events'; label: string; sub: string; to: string }
   | { key: string; group: 'incidents'; label: string; sub: string; to: string }
   | { key: string; group: 'alerts'; label: string; sub: string; to: string }
   | { key: string; group: 'cases'; label: string; sub: string; to: string }
@@ -46,6 +48,10 @@ function flatten(results: SearchResults | null): FlatHit[] {
       key: `case-${c.id}`, group: 'cases' as const, label: c.title,
       sub: `Case · ${c.severity} · ${c.status}`, to: `/cases/${c.id}`,
     })),
+    ...(results.events ?? []).map(event => ({
+      key: `event-${event.id}`, group: 'events' as const, label: event.signature || `${event.event_type} event #${event.id}`,
+      sub: `Saved event · ${event.severity} · #${event.id} · ${event.timestamp} · ${event.source_ip || 'Source not recorded'} → ${event.dest_ip || 'Destination not recorded'}`, to: `/events/${event.id}`,
+    })),
     ...results.assets.map(a => ({
       key: `asset-${a.id}`, group: 'assets' as const, label: a.name,
       sub: `Asset · ${a.asset_type}${a.vendor ? ` · ${a.vendor}` : ''} · #${a.id}`,
@@ -55,6 +61,7 @@ function flatten(results: SearchResults | null): FlatHit[] {
 }
 
 const groupMeta = {
+  events: { heading: 'Saved security events', icon: Activity },
   incidents: { heading: 'Incidents', icon: Siren },
   alerts: { heading: 'Alerts', icon: AlertTriangle },
   cases: { heading: 'Investigations', icon: Briefcase },
@@ -92,6 +99,7 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
         try {
           const res = await apiClient.get('/search', { params: { q: trimmed } });
           if (cancelled) return;
+          if (res.data.data.query !== undefined && res.data.data.query !== trimmed) throw new Error('Search response did not match this query. Retry workspace search.');
           setResults(res.data.data as SearchResults); setResultQuery(trimmed); setActiveIndex(0);
         } catch (err) {
           if (!cancelled) setError(getApiErrorMessage(err, 'Workspace search is unavailable. No absence of matching records is inferred.'));
@@ -141,8 +149,8 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
             aria-expanded="true"
             aria-controls="global-search-results"
             aria-activedescendant={hits[activeIndex] ? `global-search-hit-${hits[activeIndex].key}` : undefined}
-            aria-label="Search incidents, alerts, investigations and assets"
-            placeholder="Search alerts, investigations, assets..."
+            aria-label="Search incidents, alerts, investigations and assets, plus events"
+            placeholder="Search alerts, assets, saved event signatures or IPs..."
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
@@ -158,9 +166,9 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
           ) : searching || resultQuery !== query.trim() ? (
             <p className="px-3 py-6 text-center text-xs text-surface-500">Searching...</p>
           ) : hits.length === 0 ? (
-            <p className="px-3 py-6 text-center text-xs text-surface-500">No incidents, alerts, investigations or assets match "{query.trim()}".</p>
+            <p className="px-3 py-6 text-center text-xs text-surface-500">No incidents, alerts, investigations, assets or saved events match "{query.trim()}".</p>
           ) : (
-            (['incidents', 'alerts', 'cases', 'assets'] as const).map(group => {
+            (['incidents', 'alerts', 'cases', 'events', 'assets'] as const).map(group => {
               const groupHits = hits.filter(h => h.group === group);
               if (groupHits.length === 0) return null;
               const Meta = groupMeta[group];
@@ -204,7 +212,7 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
             })
           )}
         </div>
-        <p className="px-4 py-2 text-[10px] text-surface-400">Up to 5 matches per record type from records owned by your account. Not a complete workspace search. Incident matches use the matching assets' current active alerts.</p>
+        <p className="px-4 py-2 text-[10px] text-surface-400">Up to 5 matches per record type from records owned by your account. Not a complete workspace search. Incident matches use the matching assets' current active alerts. Saved event matches use normalized signatures, IDs, hostnames, addresses, categories and types, not raw payload text or live activity.</p>
         <div className="flex items-center gap-3 border-t border-surface-700 px-4 py-2 text-[10px] text-surface-500">
           <span><kbd className="rounded border border-surface-700 px-1">↑↓</kbd> move</span>
           <span><kbd className="rounded border border-surface-700 px-1">Enter</kbd> open</span>

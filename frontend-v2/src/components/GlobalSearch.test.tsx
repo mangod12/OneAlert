@@ -90,7 +90,7 @@ describe('GlobalSearch', () => {
     renderPalette();
     const input = await screen.findByRole('combobox', { name: /Search incidents, alerts, investigations and assets/ });
     fireEvent.change(input, { target: { value: 'nothing-here' } });
-    expect(await screen.findByText(/No incidents, alerts, investigations or assets match/)).toBeTruthy();
+    expect(await screen.findByText(/No incidents, alerts, investigations, assets or saved events match/)).toBeTruthy();
   });
 
   it('navigates to the incidents page from an incident hit', async () => {
@@ -128,7 +128,7 @@ it('ignores a slow older reply after the current query completed', async () => {
 it('reports unavailability separately from no matches and retries the same search', async () => {
   get.mockRejectedValueOnce(new Error('Unavailable')); renderPalette(); const input = screen.getByRole('combobox');
   fireEvent.change(input, { target: { value: 'gateway' } }); await screen.findByRole('alert');
-  expect(screen.queryByText(/No incidents, alerts, investigations or assets match/)).toBeNull();
+  expect(screen.queryByText(/No incidents, alerts, investigations, assets or saved events match/)).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Retry workspace search' })); await screen.findByText('Ransomware behavior on historian');
   expect(get).toHaveBeenLastCalledWith('/search', { params: { q: 'gateway' } });
 });
@@ -139,4 +139,17 @@ it('does not reuse pending results after closing and reopening', async () => {
   rerender(<MemoryRouter><GlobalSearch open={false} onClose={() => {}} /></MemoryRouter>);
   resolve({ data: { data: results } }); rerender(<MemoryRouter><GlobalSearch open onClose={() => {}} /></MemoryRouter>);
   expect((screen.getByRole('combobox') as HTMLInputElement).value).toBe(''); expect(screen.queryByText('Ransomware behavior on historian')).toBeNull();
+});
+it('groups saved events and opens exact event evidence by mouse and keyboard', async () => {
+  const event = { id: 90909, signature: 'Gateway protocol finding', severity: 'high', event_type: 'alert', timestamp: '2026-11-20T08:00:00Z', source_ip: null, dest_ip: '10.0.0.7' };
+  get.mockResolvedValue({ data: { data: { alerts: [], cases: [], assets: [], events: [event] } } }); const onClose = renderPalette(); fireEvent.change(screen.getByRole('combobox'), { target: { value: 'gateway' } });
+  await screen.findByText('Gateway protocol finding'); expect(screen.getByText('Saved security events')).toBeTruthy(); expect(screen.getByText(/Source not recorded/)).toBeTruthy(); fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' }); expect(screen.getByTestId('location').textContent).toBe('/events/90909'); expect(onClose).toHaveBeenCalledOnce();
+});
+it('uses an explicit event fallback and mouse navigation when signature is absent', async () => {
+  get.mockResolvedValue({ data: { data: { alerts: [], cases: [], assets: [], events: [{ id: 99, signature: null, severity: 'info', event_type: 'dns', timestamp: 'now', source_ip: null, dest_ip: null }] } } }); renderPalette(); fireEvent.change(screen.getByRole('combobox'), { target: { value: 'dns' } });
+  fireEvent.click(await screen.findByRole('option', { name: /dns event #99/ })); expect(screen.getByTestId('location').textContent).toBe('/events/99');
+});
+it('does not display or navigate results echoed for another query', async () => {
+  get.mockResolvedValue({ data: { data: { ...results, query: 'other query' } } }); renderPalette(); fireEvent.change(screen.getByRole('combobox'), { target: { value: 'ransomware' } });
+  await screen.findByRole('alert'); expect(screen.queryByRole('option')).toBeNull(); fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' }); expect(screen.getByTestId('location').textContent).toBe('/');
 });

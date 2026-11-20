@@ -1,6 +1,6 @@
-"""Global search across alerts, cases and assets for the command palette."""
+"""Global search across alerts, cases, assets and saved events for the command palette."""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,6 +8,7 @@ from backend.database.db import get_async_db
 from backend.models.alert import Alert
 from backend.models.asset import Asset
 from backend.models.case import Case
+from backend.models.security_event import SecurityEvent
 from backend.models.user import User
 from backend.routers.auth import get_active_user
 
@@ -22,17 +23,20 @@ async def global_search(
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Search the current user's alerts, cases and assets by text."""
-    like = f"%{q}%"
+    """Search owned records by literal normalized text, never raw event payload contents."""
+    query = q.strip()
+    if len(query) < 2:
+        raise HTTPException(status_code=422, detail="Search needs at least two non-padding characters")
+    like = '%' + query.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
 
     alerts = (await db.execute(
         select(Alert)
         .where(
             Alert.user_id == current_user.id,
-            or_(Alert.title.ilike(like), Alert.description.ilike(like),
-                Alert.cve_id.ilike(like)),
+            or_(Alert.title.ilike(like, escape='\\'), Alert.description.ilike(like, escape='\\'),
+                Alert.cve_id.ilike(like, escape='\\')),
         )
-        .order_by(Alert.created_at.desc())
+        .order_by(Alert.created_at.desc(), Alert.id.desc())
         .limit(PER_GROUP_LIMIT)
     )).scalars().all()
 
@@ -40,9 +44,9 @@ async def global_search(
         select(Case)
         .where(
             Case.user_id == current_user.id,
-            or_(Case.title.ilike(like), Case.summary.ilike(like)),
+            or_(Case.title.ilike(like, escape='\\'), Case.summary.ilike(like, escape='\\')),
         )
-        .order_by(Case.created_at.desc())
+        .order_by(Case.created_at.desc(), Case.id.desc())
         .limit(PER_GROUP_LIMIT)
     )).scalars().all()
 
@@ -50,12 +54,21 @@ async def global_search(
         select(Asset)
         .where(
             Asset.user_id == current_user.id,
-            or_(Asset.name.ilike(like), Asset.vendor.ilike(like),
-                Asset.product.ilike(like)),
+            or_(Asset.name.ilike(like, escape='\\'), Asset.vendor.ilike(like, escape='\\'),
+                Asset.product.ilike(like, escape='\\')),
         )
-        .order_by(Asset.name)
+        .order_by(Asset.name, Asset.id)
         .limit(PER_GROUP_LIMIT)
     )).scalars().all()
+
+    event_terms = [getattr(SecurityEvent, field).ilike(like, escape='\\') for field in (
+        'signature', 'signature_id', 'hostname', 'source_ip', 'dest_ip', 'category', 'event_type',
+    )]
+    if query.isascii() and query.isdigit() and 0 < int(query) <= 2147483647:
+        event_terms.append(SecurityEvent.id == int(query))
+    events = (await db.execute(select(SecurityEvent).where(
+        SecurityEvent.user_id == current_user.id, or_(*event_terms),
+    ).order_by(SecurityEvent.timestamp.desc(), SecurityEvent.id.desc()).limit(PER_GROUP_LIMIT))).scalars().all()
 
     def severity_value(alert: Alert) -> str:
         severity = alert.severity
@@ -92,7 +105,10 @@ async def global_search(
     return {
         "success": True,
         "data": {
-            "query": q,
+            "query": query,
+            "events": [{"id": event.id, "signature": event.signature, "event_type": event.event_type,
+                        "severity": event.severity, "timestamp": event.timestamp,
+                        "source_ip": event.source_ip, "dest_ip": event.dest_ip} for event in events],
             "alerts": [
                 {"id": a.id, "title": a.title, "severity": severity_value(a),
                  "status": a.status}
