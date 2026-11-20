@@ -99,6 +99,7 @@ async def ingest_events(
 
     logger.info(f"Ingested {ingested} events ({skipped} skipped, {redacted_count} redactions) from {source_type}")
     return {
+        "received": len(raw_events),
         "ingested": ingested,
         "skipped": skipped,
         "redacted": redacted_count,
