@@ -388,3 +388,55 @@ it('does not label a successful empty event stream as failed when only statistic
   await screen.findByText('No events ingested yet');
   expect(screen.queryByText('Event stream unavailable')).toBeNull();
 });
+
+it('applies a UTC time draft explicitly to list rows and export, then clears it', async () => {
+  mockAllFulfilled();
+  render(<Events />);
+  await screen.findByText('ET SCAN SSH brute force');
+  fireEvent.change(screen.getByLabelText('Event start time UTC'), { target: { value: '2026-11-20T10:00' } });
+  fireEvent.change(screen.getByLabelText('Event end time UTC'), { target: { value: '2026-11-20T11:00' } });
+  expect(screen.getByText(/Time draft not applied/)).toBeTruthy();
+  expect(mockGet.mock.calls.filter(([url]) => url === '/events/')).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Apply time window' }));
+  const window = { started_at: '2026-11-20T10:00:00.000Z', ended_before: '2026-11-20T11:00:00.000Z' };
+  await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/events/', { params: { page: 1, size: 50, sort: 'timestamp_desc', ...window } }));
+  expect(screen.queryByText(/Time draft not applied/)).toBeNull();
+  const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:events');
+  const revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  fireEvent.change(screen.getByLabelText('Event end time UTC'), { target: { value: '2026-11-20T12:00' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+  await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/events/export', { params: window, responseType: 'blob' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Clear time window' }));
+  await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/events/', { params: { page: 1, size: 50, sort: 'timestamp_desc' } }));
+  expect((screen.getByLabelText('Event start time UTC') as HTMLInputElement).value).toBe('');
+  createUrl.mockRestore(); revokeUrl.mockRestore(); click.mockRestore();
+});
+
+it('holds an invalid reversed time draft without changing applied results', async () => {
+  mockAllFulfilled(); render(<Events />);
+  await screen.findByText('ET SCAN SSH brute force');
+  fireEvent.change(screen.getByLabelText('Event start time UTC'), { target: { value: '2026-11-20T11:00' } });
+  fireEvent.change(screen.getByLabelText('Event end time UTC'), { target: { value: '2026-11-20T10:00' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Apply time window' }));
+  expect(screen.getByText('Start must be before the exclusive end time.')).toBeTruthy();
+  expect(mockGet.mock.calls.filter(([url]) => url === '/events/')).toHaveLength(1);
+  expect(screen.getByText('ET SCAN SSH brute force')).toBeTruthy();
+});
+
+it('restores absolute saved-view offsets into UTC controls and keeps their exact request bounds', async () => {
+  mockGet.mockImplementation(async url => {
+    if (url === '/events/views/') return { data: [{ id: 8, name: 'Recorded incident window', filters: { started_at: '2026-11-20T15:30:00+05:30', ended_before: '2026-11-20T16:30:00+05:30' } }] };
+    if (url === '/events/') return { data: { events: [], total: 0 } };
+    if (url === '/events/stats') return { data: { data: STATS } };
+    if (url === '/events/sources') return { data: [] };
+    return { data: { types: [] } };
+  });
+  render(<Events />);
+  fireEvent.click(await screen.findByRole('button', { name: /views/i }));
+  fireEvent.click(await screen.findByText('Recorded incident window'));
+  await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/events/', { params: expect.objectContaining({ started_at: '2026-11-20T15:30:00+05:30', ended_before: '2026-11-20T16:30:00+05:30' }) }));
+  expect((screen.getByLabelText('Event start time UTC') as HTMLInputElement).value).toBe('2026-11-20T10:00');
+  expect(screen.queryByText(/Time draft not applied/)).toBeNull();
+  expect(await screen.findByText('No events match these filters')).toBeTruthy();
+});

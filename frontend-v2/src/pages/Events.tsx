@@ -12,7 +12,11 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import { SavedViewsMenu } from '../components/SavedViewsMenu';
 import { eventSeverityTones } from '../components/ui/tones';
 
+const utcInput = (value?: string) => value ? new Date(value).toISOString().replace(/Z$/, '').replace(/\.000$/, '').replace(/:00$/, '') : '';
+
 interface EventViewFilters {
+  started_at?: string;
+  ended_before?: string;
   severity?: string;
   event_type?: string;
   source_type?: string;
@@ -89,12 +93,28 @@ export function Events() {
   const [sources, setSources] = useState<EventSource[]>([]);
   const [showUpload, setShowUpload] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [timeWindow, setTimeWindow] = useState<{ started_at?: string; ended_before?: string }>({});
+  const [startInput, setStartInput] = useState('');
+  const [endInput, setEndInput] = useState('');
+  const [timeError, setTimeError] = useState('');
+  const timeDirty = startInput !== utcInput(timeWindow.started_at) || endInput !== utcInput(timeWindow.ended_before);
+  const applyTimeWindow = (event: React.FormEvent) => {
+    event.preventDefault();
+    try {
+      const started_at = startInput ? new Date(`${startInput}Z`).toISOString() : undefined;
+      const ended_before = endInput ? new Date(`${endInput}Z`).toISOString() : undefined;
+      if (started_at && ended_before && started_at >= ended_before) { setTimeError('Start must be before the exclusive end time.'); return; }
+      setTimeError(''); setTimeWindow({ ...(started_at ? { started_at } : {}), ...(ended_before ? { ended_before } : {}) }); setPage(1);
+    } catch { setTimeError('Enter valid UTC timestamps.'); }
+  };
+
 
   const exportCsv = async () => {
     if (exporting) return;
     setExporting(true);
     try {
       const params: Record<string, string> = {};
+      Object.assign(params, timeWindow);
       if (severityFilter) params.severity = severityFilter;
       if (eventTypeFilter) params.event_type = eventTypeFilter;
       if (sourceTypeFilter) params.source_type = sourceTypeFilter;
@@ -124,6 +144,7 @@ export function Events() {
     setErrors([]);
     try {
       const params: Record<string, string | number> = { page, size: 50 };
+      Object.assign(params, timeWindow);
       if (severityFilter) params.severity = severityFilter;
       if (eventTypeFilter) params.event_type = eventTypeFilter;
       if (ipSearch.trim()) params.ip = ipSearch.trim();
@@ -148,7 +169,7 @@ export function Events() {
     } finally {
       if (request === eventRequestId.current) setLoading(false);
     }
-  }, [page, severityFilter, eventTypeFilter, ipSearch, signatureSearch, sourceTypeFilter, sort]);
+  }, [page, severityFilter, eventTypeFilter, ipSearch, signatureSearch, sourceTypeFilter, sort, timeWindow]);
 
   useEffect(() => {
     void fetchEvents();
@@ -181,6 +202,8 @@ export function Events() {
       setUploading(false);
     }
   };
+
+  const hasEventFilters = !!(severityFilter || eventTypeFilter || sourceTypeFilter || ipSearch.trim() || signatureSearch.trim() || timeWindow.started_at || timeWindow.ended_before);
 
   return (
     <div className="space-y-6">
@@ -241,6 +264,19 @@ export function Events() {
         </div>
       )}
 
+      <section aria-label="Event time window" className="oa-panel space-y-3 rounded-md p-4">
+        <h2 className="text-sm font-semibold text-surface-200">Event time window (UTC)</h2>
+        <form onSubmit={applyTimeWindow} className="flex flex-wrap items-end gap-3">
+          <label className="min-w-0 space-y-1 text-xs text-surface-400"><span className="block">Start, included (UTC)</span><input aria-label="Event start time UTC" type="datetime-local" step="0.001" value={startInput} onChange={event => setStartInput(event.target.value)} className="max-w-full rounded border border-surface-600 bg-surface-900 px-2 py-2 text-sm text-surface-200" /></label>
+          <label className="min-w-0 space-y-1 text-xs text-surface-400"><span className="block">End, excluded (UTC)</span><input aria-label="Event end time UTC" type="datetime-local" step="0.001" value={endInput} onChange={event => setEndInput(event.target.value)} className="max-w-full rounded border border-surface-600 bg-surface-900 px-2 py-2 text-sm text-surface-200" /></label>
+          <button type="submit" className="rounded border border-surface-600 px-3 py-2 text-sm text-primary-300">Apply time window</button>
+          <button type="button" onClick={() => { setStartInput(''); setEndInput(''); setTimeWindow({}); setTimeError(''); setPage(1); }} className="rounded border border-surface-600 px-3 py-2 text-sm text-surface-200">Clear time window</button>
+        </form>
+        {timeError && <p role="alert" className="text-xs text-danger-400">{timeError}</p>}
+        {timeDirty && <p className="text-xs text-warning-300">Time draft not applied. Results, saved views and CSV export still use the applied window below.</p>}
+        <p className="break-words text-xs text-surface-400 [overflow-wrap:anywhere]">Applied window: {timeWindow.started_at ?? 'No start limit'} to {timeWindow.ended_before ?? 'No end limit'} (end excluded). Filters use event timestamps, not upload times. Severity counts and sensor totals above cover all recorded events.</p>
+      </section>
+
       {/* Event filters */}
       <div className="flex items-center gap-4 flex-wrap">
       <SavedViewsMenu<EventViewFilters>
@@ -252,8 +288,11 @@ export function Events() {
           ...(ipSearch.trim() ? { ip: ipSearch.trim() } : {}),
           ...(signatureSearch.trim() ? { signature: signatureSearch.trim() } : {}),
           sort,
+          ...timeWindow,
         }}
         onApply={(filters: EventViewFilters) => {
+          setTimeWindow({ ...(filters.started_at ? { started_at: filters.started_at } : {}), ...(filters.ended_before ? { ended_before: filters.ended_before } : {}) });
+          setStartInput(utcInput(filters.started_at)); setEndInput(utcInput(filters.ended_before)); setTimeError('');
           setSeverityFilter(filters.severity ?? '');
           setEventTypeFilter(filters.event_type ?? '');
           setSourceTypeFilter(filters.source_type ?? '');
@@ -349,9 +388,9 @@ export function Events() {
       ) : events.length === 0 ? (
         <div className="text-center py-20">
           <Activity className="w-16 h-16 text-surface-600 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-surface-300">No events ingested yet</h3>
+          <h3 className="text-lg font-medium text-surface-300">{hasEventFilters ? 'No events match these filters' : 'No events ingested yet'}</h3>
           <p className="text-surface-500 mt-2 max-w-md mx-auto">
-            Upload Suricata EVE JSON or Zeek logs, or configure a webhook receiver for real-time ingestion.
+            {hasEventFilters ? 'Try a wider applied time window or adjust the other event filters.' : 'Upload Suricata EVE JSON or Zeek logs, or configure a webhook receiver for real-time ingestion.'}
           </p>
         </div>
       ) : (
