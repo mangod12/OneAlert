@@ -229,3 +229,45 @@ it('limits bulk request concurrency to five and freezes selection until completi
   await act(async () => finish[5]({ data: { due_date: null } }));
   await screen.findByText(/Saved due dates for 6 of 6/);
 });
+
+it('confirms completion of the exact selected set including hidden tasks, without changing due dates', async () => {
+  vi.mocked(apiClient.patch).mockImplementation(async (url: string) => ({ data: { id: Number(url.split('/').pop()), done: true, due_date: null } }));
+  mount();
+  await screen.findByText('Collect host evidence');
+  fireEvent.click(screen.getByRole('button', { name: 'Select matching tasks' }));
+  fireEvent.change(screen.getByLabelText('Investigation severity'), { target: { value: 'low' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review selected completion' }));
+  expect(screen.getByRole('dialog').textContent).toContain('including 3 hidden');
+  expect(apiClient.patch).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Complete 4 selected tasks' }));
+  await screen.findByText(/Confirmed completion for 4 of 4/);
+  expect(apiClient.patch).toHaveBeenCalledTimes(4);
+  expect(apiClient.patch).toHaveBeenCalledWith('/cases/7/tasks/1', { done: true });
+  expect(screen.getByText('No assigned tasks returned')).toBeTruthy();
+});
+
+it('keeps unconfirmed completion responses selected while removing only confirmed successes', async () => {
+  vi.mocked(apiClient.patch).mockImplementation(async (url: string) => ({ data: { id: Number(url.split('/').pop()), done: !url.endsWith('/2'), due_date: null } }));
+  mount();
+  await screen.findByText('Collect host evidence');
+  fireEvent.click(screen.getByRole('button', { name: 'Select matching tasks' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Review selected completion' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Complete 4 selected tasks' }));
+  await screen.findByText(/Confirmed completion for 3 of 4/);
+  expect(screen.getByText(/1 selected in the loaded set/)).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Review access' })).toBeTruthy();
+  expect(screen.queryByRole('heading', { name: 'Collect host evidence' })).toBeNull();
+  expect(screen.getByText(/Completion was not confirmed for this task/)).toBeTruthy();
+});
+
+it('protects date drafts from selected completion and supports cancellation', async () => {
+  mount();
+  await screen.findByText('Collect host evidence');
+  fireEvent.click(screen.getByRole('button', { name: 'Select matching tasks' }));
+  fireEvent.change(screen.getByLabelText('Task due date for #1'), { target: { value: '2099-11-20' } });
+  expect((screen.getByRole('button', { name: 'Review selected completion' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Discard due date draft for task #1' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Review selected completion' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(apiClient.patch).not.toHaveBeenCalled();
+});
