@@ -26,3 +26,9 @@ describe('Topology snapshot CSV', () => {
     expect(topologyCsv([edge], [{ id: edge.source, label: 'Gateway, "north"\nLine 2', zone: null }], scope)).toContain('"Gateway, ""north""\nLine 2"');
   });
 });
+
+it('exports missing encryption distinctly from a recorded cleartext flag', () => {
+  const csv = topologyCsv([{ ...edge, is_encrypted: null }], [], scope);
+  expect(csv).toContain('"0","not recorded"');
+  expect(csv).not.toContain('"0","cleartext"');
+});

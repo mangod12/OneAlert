@@ -320,3 +320,12 @@ describe('Endpoint identity review', () => {
     expect(screen.queryByText('1 of 2 connections')).toBeNull();
   });
 });
+
+it('keeps unknown encryption out of recorded-cleartext filters and summaries', async () => {
+  get.mockImplementation(async url => ({ data: url === '/topology/graph' ? { ...graph, edges: [...graph.edges, { id: 103, source: '10.0.1.5', target: '10.0.0.1', protocol: 'unknownflag', port: 0, is_encrypted: null }] } : { ...stats, total_connections: 3, encryption_unknown: 1 } }));
+  render(<Topology />); await screen.findByRole('button', { name: 'View connection 103 evidence' });
+  expect(screen.getByText('Encryption not recorded')).toBeTruthy(); expect(screen.getByText('Encryption flag unknown: 1')).toBeTruthy();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Cleartext only' }));
+  expect(screen.queryByRole('button', { name: 'View connection 103 evidence' })).toBeNull();
+  expect(screen.getByText('modbus')).toBeTruthy();
+});

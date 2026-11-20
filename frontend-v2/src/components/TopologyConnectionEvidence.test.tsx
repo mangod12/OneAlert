@@ -35,3 +35,9 @@ describe('Recorded topology connection evidence', () => {
     expect(screen.getByRole('alert').textContent).toContain('could not be downloaded'); expect(screen.getByText('9223372036854775807')).toBeTruthy();
   });
 });
+
+it('shows an absent recorded encryption flag as missing, not cleartext', () => {
+  show({ ...edge, is_encrypted: null });
+  expect(screen.getByText('Recorded encryption flag').nextElementSibling?.textContent).toBe('Not recorded');
+  expect(screen.queryByText('Cleartext')).toBeNull();
+});
