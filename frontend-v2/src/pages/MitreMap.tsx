@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
-import { Search } from 'lucide-react';
+import { mitreCsv } from '../utils/mitreCsv';
+import { Search, Download } from 'lucide-react';
 import clsx from 'clsx';
 import { getApiErrorMessage } from '../api/errors';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -102,6 +103,12 @@ export function MitreMap() {
     return t.name.toLowerCase().includes(search.toLowerCase()) || t.id.toLowerCase().includes(search.toLowerCase());
   });
 
+  const exportFiltered = () => {
+    if (!filteredTechniques.length || loading) return;
+    const url = URL.createObjectURL(new Blob([mitreCsv(filteredTechniques, coverage?.covered_ids, search, gapsOnly)], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'mitre-filtered-techniques.csv'; link.click(); URL.revokeObjectURL(url);
+  };
+
   if (loading) {
     return <LoadingSurface rows={6} label="Loading MITRE ATT&CK coverage" />;
   }
@@ -110,7 +117,8 @@ export function MitreMap() {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Analyze" title="MITRE ATT&CK Coverage" description="Detection coverage mapped to enterprise and industrial ATT&CK techniques." />
+      <PageHeader eyebrow="Analyze" title="MITRE ATT&CK Coverage" description="Detection coverage mapped to enterprise and industrial ATT&CK techniques." actions={<button type="button" disabled={filteredTechniques.length === 0} onClick={exportFiltered} className="flex items-center gap-2 rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40"><Download className="h-4 w-4" aria-hidden="true" />Export filtered techniques</button>} />
+      <p className="text-xs text-surface-400">{filteredTechniques.length} of {techniques.length} loaded techniques shown. CSV matches these filters and available coverage. Missing coverage is unknown, not a gap. Download stays on your device.</p>
       {errors.length > 0 && <DegradedBanner messages={errors} onRetry={() => void fetchData()} />}
 
       {/* Overall Coverage */}

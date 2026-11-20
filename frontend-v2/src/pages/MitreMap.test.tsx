@@ -250,3 +250,19 @@ it('does not retain a stale technique catalog when the next retry cannot load it
   expect(screen.queryByText('T1059')).toBeNull();
   expect(screen.getByText('Some live data is unavailable')).toBeTruthy();
 });
+
+it('exports exactly the loaded gap-filtered techniques without another request', async () => {
+  URL.createObjectURL = vi.fn(() => 'blob:mitre');
+  URL.revokeObjectURL = vi.fn();
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  render(<MitreMap />);
+  await screen.findByText('T1059');
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Gaps only' }));
+  const reads = get.mock.calls.length;
+  fireEvent.click(screen.getByRole('button', { name: 'Export filtered techniques' }));
+  expect(click).toHaveBeenCalledOnce();
+  expect(get.mock.calls.length).toBe(reads);
+  expect(screen.getByText(/1 of 2 loaded techniques shown/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Search techniques'), { target: { value: 'no match' } });
+  expect(screen.getByRole('button', { name: 'Export filtered techniques' })).toHaveProperty('disabled', true);
+});
