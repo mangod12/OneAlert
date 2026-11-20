@@ -296,6 +296,7 @@ async def execute_plan(
         "status": action_result.get("status", "unknown"),
         "detail": action_result.get("detail", ""),
         "executed_at": action_result.get("executed_at"),
+        "execution_mode": action_result.get("execution_mode", "unknown"),
     } for action_result in result.get("results", [])]
 
     add_audit_log(
@@ -305,7 +306,7 @@ async def execute_plan(
         target_type="response_plan",
         target_id=result.get("plan_id", plan_id),
         detail=(
-            f"Plan executed: {result.get('succeeded', 0)} of "
+            f"Plan run ({result.get('execution_mode', 'unknown')}): {result.get('succeeded', 0)} of "
             f"{result.get('total_actions', 0)} action(s) succeeded"
         ),
     )
@@ -315,6 +316,7 @@ async def execute_plan(
         "success": True,
         "data": {
             "plan_id": result.get("plan_id", plan_id),
+            "execution_mode": result.get("execution_mode", "unknown"),
             "status": result.get("status", "unknown"),
             "total_actions": result.get("total_actions", 0),
             "succeeded": result.get("succeeded", 0),

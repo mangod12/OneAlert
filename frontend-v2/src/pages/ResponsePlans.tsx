@@ -16,7 +16,7 @@ interface ResponseAction {
   target: string;
   reason: string;
   policy_check?: { approved?: boolean };
-  execution_result?: { status?: string; detail?: string; executed_at?: string };
+  execution_result?: { execution_mode?: string; status?: string; detail?: string; executed_at?: string };
 }
 
 interface ResponsePlan {
@@ -32,6 +32,7 @@ interface ResponsePlan {
 }
 
 interface ExecutionOutcome {
+  execution_mode?: string;
   plan_id: number;
   status: string;
   total_actions: number;
@@ -166,12 +167,13 @@ export function ResponsePlans() {
         && Number.isInteger(outcome.succeeded) && Number.isInteger(outcome.failed)
         && outcome.total_actions > 0 && outcome.succeeded >= 0 && outcome.failed >= 0
         && outcome.succeeded + outcome.failed === outcome.total_actions;
-      const allSucceeded = verified && outcome.status === 'completed' && outcome.failed === 0;
+      const simulated = outcome?.execution_mode === 'simulated';
+      const allSucceeded = verified && simulated && outcome.status === 'completed' && outcome.failed === 0;
       const text = verified
-        ? `Plan #${planId} reported ${outcome.succeeded} of ${outcome.total_actions} actions succeeded; ${outcome.failed} failed or skipped. Recorded status: ${outcome.status}.`
+        ? `Plan #${planId} reported ${outcome.succeeded} of ${outcome.total_actions} actions succeeded; ${outcome.failed} failed or skipped. Recorded status: ${outcome.status}. ${simulated ? 'Simulation only. No external action was performed.' : 'Execution mode not verified. These counts do not establish external action.'}`
         : `Execution request for plan #${planId} returned without a verifiable outcome. Review the refreshed plan before trying any action again.`;
       setExecutionNotice({ text, success: !!allSucceeded });
-      toast(allSucceeded ? `Plan #${planId}: all actions succeeded.` : `Plan #${planId}: review execution outcome.`, allSucceeded ? 'success' : 'warning');
+      toast(allSucceeded ? `Plan #${planId}: all simulated actions succeeded. No external action performed.` : `Plan #${planId}: review execution outcome.`, allSucceeded ? 'success' : 'warning');
       setConfirmAction(null);
       await fetchPlans();
     } catch (err) { toast(getApiErrorMessage(err, 'Execution failed.'), 'error'); }
@@ -198,7 +200,7 @@ export function ResponsePlans() {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Act" title="Response Plans" description="Review, approve, and execute guarded response actions with a durable human decision trail." />
+      <PageHeader eyebrow="Act" title="Response Plans" description="Review saved plans and approval records. Built-in action handlers run simulations, not external containment or notifications." />
 
       {approvalError && <p role="alert" className="rounded border border-warning/40 p-3 text-sm text-warning">{approvalError}</p>}
       {executionNotice && <p role={executionNotice.success ? 'status' : 'alert'} className={`rounded-md border p-4 text-sm ${executionNotice.success ? 'border-success/30 text-success' : 'border-warning/30 text-warning'}`}>{executionNotice.text}</p>}
@@ -363,6 +365,7 @@ export function ResponsePlans() {
                 <dl className="space-y-2 border-t border-surface-700 pt-3 text-sm">
                   <div><dt className="text-xs text-surface-400">Recorded execution status</dt><dd className={action.execution_result?.status === 'completed' ? 'text-success' : 'text-surface-200'}>{action.execution_result?.status || 'No execution result recorded'}</dd></div>
                   {action.execution_result && <>
+                    <div><dt className="text-xs text-surface-400">Recorded execution mode</dt><dd className="text-warning">{action.execution_result.execution_mode === 'simulated' ? 'Simulated, no external action performed' : 'Not verified, external action not established'}</dd></div>
                     <div><dt className="text-xs text-surface-400">Recorded execution detail</dt><dd className="whitespace-pre-wrap break-words text-surface-300">{action.execution_result.detail || 'No execution detail recorded.'}</dd></div>
                     <div><dt className="text-xs text-surface-400">Recorded execution time</dt><dd className="break-words text-surface-300">{action.execution_result.executed_at ? (Number.isNaN(Date.parse(action.execution_result.executed_at)) ? action.execution_result.executed_at : new Date(action.execution_result.executed_at).toLocaleString()) : 'Not recorded'}</dd></div>
                   </>}
@@ -376,7 +379,7 @@ export function ResponsePlans() {
       {confirmAction?.type === 'execute' && (
         <ConfirmDialog
           title={`Execute plan #${confirmAction.planId}?`}
-          description="Execution runs every guarded action in this approved plan immediately. Results are recorded on the plan's decision trail."
+          description="The built-in handlers simulate actions and record results. They do not notify responders, create tickets, isolate hosts, block traffic or change accounts. Review the returned execution mode; historical results without a mode are unverified."
           confirmLabel="Execute now"
           busy={workingPlan !== null}
           onCancel={() => setConfirmAction(null)}

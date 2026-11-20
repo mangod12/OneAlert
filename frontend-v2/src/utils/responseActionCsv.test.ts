@@ -11,3 +11,13 @@ it.each(['=SUM(1)', '+cmd', '-cmd', '@cmd', '\t =1', '\r@cmd'])('neutralizes for
   const csv = responseActionCsv({ ...plan, actions: [{ action_type: value, target: value, reason: value, execution_result: { detail: value } }] });
   expect(csv.split(`"'${value}"`)).toHaveLength(5);
 });
+it('exports explicit simulation mode and never infers it for historical results', () => {
+  const csv = responseActionCsv({ ...plan, actions: [
+    { ...plan.actions[0], execution_result: { status: 'completed', execution_mode: 'simulated' } },
+    { ...plan.actions[0], execution_result: { status: 'completed' } },
+    { ...plan.actions[0], execution_result: { status: 'completed', execution_mode: 'live' } },
+  ] });
+  expect(csv).toContain('"recorded_execution_mode"');
+  expect(csv.match(/"simulated"/g)).toHaveLength(1);
+  expect(csv.match(/"unknown","loaded saved/g)).toHaveLength(2);
+});

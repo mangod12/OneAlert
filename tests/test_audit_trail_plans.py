@@ -130,8 +130,18 @@ class TestResponsePlanAudit:
         resp = client.post(f"/api/v1/response-plans/{plan_id}/execute", headers=headers)
         assert resp.status_code == 200, resp.text
 
+        payload = resp.json()["data"]
+        assert payload["execution_mode"] == "simulated"
+        assert all(row["execution_mode"] == "simulated" for row in payload["results"])
+        with _TestingSessionLocal() as db:
+            saved = db.get(ResponsePlan, plan_id)
+            assert all(action["execution_result"]["execution_mode"] == "simulated" for action in saved.actions)
+
         rows = _audit_rows("response_plan_executed")
-        assert any(r.target_type == "response_plan" and r.target_id == plan_id for r in rows)
+        assert any(
+            r.target_type == "response_plan" and r.target_id == plan_id and "simulated" in r.detail
+            for r in rows
+        )
 
 
 class TestAlertUpdateAudit:
