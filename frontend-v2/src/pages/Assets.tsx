@@ -11,7 +11,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { criticalityTones } from '../components/ui/tones';
 import { useDialogFocus } from '../components/ui/useDialogFocus';
-import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { AssetRemovalReview } from '../components/AssetRemovalReview';
 import { AssetCriticalityReview } from '../components/AssetCriticalityReview';
 import { AssetInspector } from '../components/AssetInspector';
 import { toast } from '../components/Toast';
@@ -45,7 +45,6 @@ export function Assets() {
   const [editAsset, setEditAsset] = useState<Asset | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
   const [pendingDelete, setPendingDelete] = useState<Asset | null>(null);
   const [typeFilter, setTypeFilter] = useState('');
   const [vendorFilter, setVendorFilter] = useState('');
@@ -123,23 +122,7 @@ export function Assets() {
   }, []);
 
   const requestDelete = (asset: Asset) => {
-    if (!deletingIds.has(asset.id)) setPendingDelete(asset);
-  };
-
-  const handleDelete = async (asset: Asset) => {
-    if (deletingIds.has(asset.id)) return;
-    setDeletingIds(current => new Set(current).add(asset.id));
-    try {
-      await apiClient.delete(`/assets/${asset.id}`);
-      setPendingDelete(null);
-      setComparisonRevision(value => value + 1);
-      await fetchAssets();
-      toast('Asset deleted.', 'success');
-    } catch (err: unknown) {
-      toast(getApiErrorMessage(err, 'Asset could not be deleted.'), 'error');
-    } finally {
-      setDeletingIds(current => { const next = new Set(current); next.delete(asset.id); return next; });
-    }
+    setPendingDelete(asset);
   };
 
   const handleSave = async (data: AssetCreate) => {
@@ -259,7 +242,7 @@ export function Assets() {
       </fieldset>
       <p className="text-xs text-surface-400">Saved inventory views store filters and order, not selected asset records, comparison evidence or a frozen inventory snapshot.</p>
 
-      {!loading && !error && assets.length > 0 && <button type="button" disabled={criticalityBusy || saving || !!deletingIds.size || showModal || !!pendingDelete} onClick={() => setShowCriticalityReview(value => !value)} className="rounded border border-surface-600 px-3 py-2 text-sm text-surface-200 disabled:opacity-40">{showCriticalityReview ? 'Hide criticality review' : 'Review page criticality'}</button>}
+      {!loading && !error && assets.length > 0 && <button type="button" disabled={criticalityBusy || saving || showModal || !!pendingDelete} onClick={() => setShowCriticalityReview(value => !value)} className="rounded border border-surface-600 px-3 py-2 text-sm text-surface-200 disabled:opacity-40">{showCriticalityReview ? 'Hide criticality review' : 'Review page criticality'}</button>}
       {!loading && !error && showCriticalityReview && assets.length > 0 && <AssetCriticalityReview key={JSON.stringify([page, search, typeFilter, vendorFilter, criticalityFilter, otFilter, sort])} assets={assets} onBusy={setCriticalityBusy} onSaved={saved => { setComparisonRevision(value => value + 1); setAssets(current => current.map(asset => saved.has(asset.id) ? { ...asset, criticality: saved.get(asset.id)!, risk_score: undefined, risk_level: undefined } : asset)); }} />}
       {!loading && !error && showCriticalityReview && <button type="button" disabled={criticalityBusy} onClick={() => { setShowCriticalityReview(false); void fetchAssets(); }} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40">Refresh inventory after review</button>}
 
@@ -295,7 +278,7 @@ export function Assets() {
                   </button>
                   <button
                     onClick={() => requestDelete(asset)}
-                    disabled={criticalityBusy || showCriticalityReview || deletingIds.has(asset.id)}
+                    disabled={criticalityBusy || showCriticalityReview}
                     className="p-1.5 text-surface-500 hover:text-danger transition-colors"
                     aria-label={`Delete ${asset.name}`}
                   >
@@ -351,17 +334,11 @@ export function Assets() {
 
       {inspectAssetId !== null && <AssetInspector key={inspectAssetId} assetId={inspectAssetId} onClose={() => setInspectAssetId(null)} />}
 
-      {pendingDelete && (
-        <ConfirmDialog
-          title="Delete asset?"
-          description={`${pendingDelete.name} will be removed from the managed inventory. This cannot be undone.`}
-          confirmLabel="Delete asset"
-          tone="danger"
-          busy={deletingIds.has(pendingDelete.id)}
-          onCancel={() => { if (!deletingIds.has(pendingDelete.id)) setPendingDelete(null); }}
-          onConfirm={() => { void handleDelete(pendingDelete); }}
-        />
-      )}
+      {pendingDelete && <AssetRemovalReview key={pendingDelete.id} id={pendingDelete.id}
+        onClose={() => setPendingDelete(null)} onDeleted={() => {
+          setPendingDelete(null); setComparisonRevision(value => value + 1);
+          void fetchAssets(); toast('Asset removed.', 'success');
+        }} />}
 
       {showModal && (
         <AssetModal

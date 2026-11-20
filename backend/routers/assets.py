@@ -5,17 +5,25 @@ Provides CRUD operations for assets that users want to monitor for vulnerabiliti
 
 
 import csv
+import hashlib
+import hmac
 import io
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import case as sql_case
+from sqlalchemy import delete as sql_delete
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
 from backend.models.alert import Alert, AlertStatus
 from backend.models.asset import Asset, AssetCreate, AssetListResponse, AssetResponse, AssetUpdate
+from backend.models.discovered_device import DiscoveredDevice
+from backend.models.sbom import SBOM
+from backend.models.suppression_rule import AlertSuppressionRule
 from backend.models.user import User
 from backend.routers.auth import get_active_user
 
@@ -340,29 +348,81 @@ async def update_asset(
     return asset
 
 
+_ASSET_REFERENCES = {"alerts": Alert, "sboms": SBOM,
+                     "discovered_devices": DiscoveredDevice, "suppression_rules": AlertSuppressionRule}
+
+
+def _asset_values(asset):
+    return {column.key: getattr(asset, column.key) for column in Asset.__table__.columns}
+
+
+def _removal_fingerprint(asset, dependencies):
+    return hashlib.sha256(json.dumps({"asset": _asset_values(asset), "dependencies": dependencies},
+                                     sort_keys=True, default=str).encode()).hexdigest()
+
+
+async def _asset_removal_state(db, asset):
+    dependencies = {}
+    for key, model in _ASSET_REFERENCES.items():
+        dependencies[key] = (await db.execute(select(func.count()).select_from(model)
+                                              .where(model.asset_id == asset.id))).scalar_one()
+    return {"asset_id": asset.id, "name": asset.name, "asset_type": asset.asset_type,
+            "criticality": asset.criticality, "is_ot_asset": asset.is_ot_asset,
+            "dependencies": dependencies, "can_delete": not any(dependencies.values()),
+            "reviewed_fingerprint": _removal_fingerprint(asset, dependencies)}
+
+
+@router.get("/{asset_id}/removal-review")
+async def review_asset_removal(
+    asset_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Read deletion blockers without exposing or changing the linked records."""
+    asset = (await db.execute(select(Asset).where(
+        Asset.id == asset_id, Asset.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return await _asset_removal_state(db, asset)
+
+
 @router.delete("/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_asset(
     asset_id: int,
+    reviewed_fingerprint: str | None = Query(None, min_length=64, max_length=64, pattern="^[a-f0-9]{64}$"),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
 ):
-    """Delete an asset."""
-    result = await db.execute(
-        select(Asset).where(
-            Asset.id == asset_id,
-            Asset.user_id == current_user.id
-        )
-    )
-    asset = result.scalar_one_or_none()
-
-    if not asset:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Asset not found"
-        )
-
-    await db.delete(asset)
-    await db.commit()
+    """Remove only unreferenced inventory rows, never orphan operational evidence."""
+    asset = (await db.execute(select(Asset).where(
+        Asset.id == asset_id, Asset.user_id == current_user.id,
+    ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    review = await _asset_removal_state(db, asset)
+    if reviewed_fingerprint is not None and not hmac.compare_digest(
+        reviewed_fingerprint, review["reviewed_fingerprint"]
+    ):
+        raise HTTPException(status_code=409, detail="Asset or linked records changed. Reload the removal review.")
+    if not review["can_delete"]:
+        raise HTTPException(status_code=409,
+                            detail="Asset still has linked records. Resolve the removal blockers first.")
+    conditions = [Asset.id == asset_id, Asset.user_id == current_user.id]
+    conditions.extend(~select(model.id).where(model.asset_id == asset_id).exists()
+                      for model in _ASSET_REFERENCES.values())
+    if reviewed_fingerprint is not None:
+        conditions.extend(getattr(Asset, key).is_(None) if value is None else getattr(Asset, key) == value
+                          for key, value in _asset_values(asset).items() if key not in {"created_at", "updated_at"})
+    try:
+        result = await db.execute(sql_delete(Asset).where(*conditions).execution_options(synchronize_session=False))
+        if result.rowcount != 1:
+            await db.rollback()
+            raise HTTPException(status_code=409, detail="Asset or linked records changed. Reload the removal review.")
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Asset has linked records. Reload the removal review.") from None
 
 
 @router.get("/types/", response_model=list[str])

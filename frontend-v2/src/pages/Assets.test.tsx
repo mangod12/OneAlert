@@ -21,8 +21,8 @@ const put = vi.mocked(apiClient.put);
 
 beforeEach(() => {
   vi.resetAllMocks();
-  get.mockResolvedValue({ data: { assets: [asset], total: 1 } });
-  remove.mockResolvedValue({ data: {} });
+  get.mockImplementation(async url => url === '/assets/7/removal-review' ? { data: { asset_id: 7, name: asset.name, asset_type: asset.asset_type, criticality: asset.criticality, is_ot_asset: asset.is_ot_asset, can_delete: true, dependencies: { alerts: 0, sboms: 0, discovered_devices: 0, suppression_rules: 0 }, reviewed_fingerprint: 'a'.repeat(64) } } : { data: { assets: [asset], total: 1 } });
+  remove.mockResolvedValue({ status: 204 });
   put.mockResolvedValue({ data: {} });
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -141,8 +141,8 @@ describe('Assets page', () => {
     render(<MemoryRouter><Assets /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'Delete Plant gateway' }));
     const dialog = within(await screen.findByRole('dialog'));
-    expect(dialog.getByText('Delete asset?')).toBeTruthy();
-    expect(dialog.getByText(/Plant gateway will be removed/)).toBeTruthy();
+    expect(dialog.getByText('Review asset removal')).toBeTruthy();
+    expect(await dialog.findByText('Asset #7: Plant gateway')).toBeTruthy();
     fireEvent.click(dialog.getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(remove).not.toHaveBeenCalled();
@@ -152,9 +152,10 @@ describe('Assets page', () => {
     render(<MemoryRouter><Assets /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'Delete Plant gateway' }));
     const dialog = within(await screen.findByRole('dialog'));
-    fireEvent.click(dialog.getByRole('button', { name: 'Delete asset' }));
+    fireEvent.click(await dialog.findByRole('checkbox'));
+    fireEvent.click(dialog.getByRole('button', { name: 'Remove reviewed asset' }));
     await waitFor(() => {
-      expect(remove).toHaveBeenCalledWith('/assets/7');
+      expect(remove).toHaveBeenCalledWith('/assets/7', { params: { reviewed_fingerprint: 'a'.repeat(64) } });
       expect(get.mock.calls.filter(([url]) => url === '/assets/').length).toBe(2);
       expect(screen.queryByRole('dialog')).toBeNull();
     });
@@ -309,15 +310,17 @@ describe('Asset inventory pagination', () => {
   it('returns to the last existing page when deletion empties a later page', async () => {
     let total = 16;
     get.mockImplementation(async (url, config) => {
+      if (url === '/assets/7/removal-review') return { data: { asset_id: 7, name: 'Gateway page 2', asset_type: 'hardware', criticality: 'high', is_ot_asset: true, can_delete: true, dependencies: { alerts: 0, sboms: 0, discovered_devices: 0, suppression_rules: 0 }, reviewed_fingerprint: 'a'.repeat(64) } };
       if (url !== '/assets/') return { data: [] };
       const page = (config?.params as { page?: number } | undefined)?.page ?? 1;
       return { data: { assets: total === 15 && page === 2 ? [] : [{ ...asset, name: `Gateway page ${page}` }], total } };
     });
-    remove.mockImplementation(async () => { total = 15; return { data: {} }; });
+    remove.mockImplementation(async () => { total = 15; return { status: 204 }; });
     render(<MemoryRouter><Assets /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'Next assets' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Delete Gateway page 2' }));
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete asset' }));
+    fireEvent.click(await within(screen.getByRole('dialog')).findByRole('checkbox'));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Remove reviewed asset' }));
     expect(await screen.findByText('Gateway page 1')).toBeTruthy();
     expect(screen.getByText('Showing 1–15 of 15 matching assets · Page 1 of 1')).toBeTruthy();
   });
