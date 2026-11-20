@@ -25,3 +25,22 @@ describe('caseHandoff', () => {
     expect(text).toContain('full alert/event bodies and network graphs are not included.');
   });
 });
+
+it('includes only the selected plan page with explicit mode, missing evidence and no plan actor fields', () => {
+  const plan = { id: 21, case_id: 7, status: 'partial', autonomy_level: 'L1', created_at: '2026-11-20T00:00:00Z', created_by: 'private-plan-actor', approved_by: 77, actions: [
+    { action_type: 'notify', target: 'soc', reason: 'Recorded reason\nsecond line', priority: 0, policy_check: { approved: false }, execution_result: { status: 'completed', execution_mode: 'simulated', detail: 'Recorded detail', executed_at: '2026-11-20T18:00:00+05:30' } },
+    { action_type: 'isolate_host', target: 'gateway', reason: 'No result' },
+  ] };
+  const text = caseHandoff({ ...snapshot, responsePlans: { plans: [plan], page: 2, size: 10, total: 21, fetchedAt: '2026-11-21T00:00:00Z' } }, false);
+  expect(text).toContain('Plan page: 2 of 3 | Page size: 10 | Total visible matching plan records: 21');
+  expect(text).toContain('Recorded priority: 0'); expect(text).toContain('Recorded policy approval flag: false');
+  expect(text).toContain('Simulated, no external action performed'); expect(text).toContain('Not verified, external action not established');
+  expect(text).toContain('Recorded execution status: Not recorded'); expect(text).toContain('2026-11-20T18:00:00+05:30');
+  expect(text).toContain('  Recorded reason\n  second line'); expect(text).not.toContain('private-plan-actor');
+  expect(text).not.toContain('77'); expect(text).toContain('Other plan pages and approval-request history are not included.');
+  expect(text).not.toContain('RESPONSE PLAN EVIDENCE OMITTED BY REVIEWER');
+});
+it('does not infer the absence of response work from an empty visible plan page', () => {
+  const text = caseHandoff({ ...snapshot, responsePlans: { plans: [], page: 1, size: 10, total: 0, fetchedAt: 'now' } }, false);
+  expect(text).toContain('This does not establish that no response plan exists elsewhere.');
+});
