@@ -57,17 +57,19 @@ const kindLabels: Record<string, string> = {
 function IncidentTimeline({ assetId }: { assetId: number }) {
   const [events, setEvents] = useState<TimelineEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setEvents(null); setError(null);
     apiClient.get<{ events: TimelineEvent[] }>(`/incidents/${assetId}/timeline`)
       .then(res => { if (!cancelled) setEvents(res.data.events); })
       .catch(err => { if (!cancelled) setError(getApiErrorMessage(err, 'The timeline could not be loaded.')); });
     return () => { cancelled = true; };
-  }, [assetId]);
+  }, [assetId, retry]);
 
-  if (error) return <p role="alert" className="mt-2 text-xs text-danger-400">{error}</p>;
-  if (events === null) return <p className="mt-2 text-xs text-surface-500">Loading timeline…</p>;
+  if (error) return <div className="mt-2 space-y-2"><p role="alert" className="text-xs text-danger-400">{error}</p><button type="button" onClick={() => setRetry(value => value + 1)} className="rounded border border-surface-600 px-2.5 py-1.5 text-xs text-primary-300 hover:border-primary-500">Retry incident timeline</button></div>;
+  if (events === null) return <p role="status" className="mt-2 text-xs text-surface-500">Loading timeline...</p>;
   if (events.length === 0) return <p className="mt-2 text-xs text-surface-500">No timeline events</p>;
   return (
     <ol className="mt-2 space-y-1.5" aria-label="Incident timeline">
