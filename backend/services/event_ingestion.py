@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.security_event import EventSource, SecurityEvent
+from backend.services.normalized_event import validate_normalized_event
 from backend.services.parsers.event_time import EventTimestampError
 from backend.services.parsers.suricata import parse_suricata_eve
 from backend.services.parsers.zeek import parse_zeek_log
@@ -57,9 +58,16 @@ async def ingest_events(
                 continue
 
             # Redact PII/secrets from raw_data before storage
+            record_redactions = 0
             if "raw_data" in parsed and isinstance(parsed["raw_data"], dict):
-                parsed["raw_data"], n = redact_dict(parsed["raw_data"])
-                redacted_count += n
+                parsed["raw_data"], record_redactions = redact_dict(parsed["raw_data"])
+
+            try:
+                parsed = validate_normalized_event(parsed)
+            except (ValueError, TypeError, OverflowError, RecursionError):
+                skipped += 1
+                skip_reasons["invalid_fields"] = skip_reasons.get("invalid_fields", 0) + 1
+                continue
 
             event = SecurityEvent(
                 user_id=user_id,
@@ -68,6 +76,7 @@ async def ingest_events(
             )
             db.add(event)
             ingested += 1
+            redacted_count += record_redactions
         except EventTimestampError:
             skipped += 1
             skip_reasons["invalid_timestamp"] = skip_reasons.get("invalid_timestamp", 0) + 1
@@ -82,7 +91,11 @@ async def ingest_events(
         source.last_event_at = datetime.now(UTC)
         source.status = "active"
 
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
     logger.info(f"Ingested {ingested} events ({skipped} skipped, {redacted_count} redactions) from {source_type}")
     return {
