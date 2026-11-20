@@ -137,7 +137,10 @@ async def list_cases(
     if status_filter:
         query = query.filter(Case.status == status_filter)
         count_q = count_q.filter(Case.status == status_filter)
-    if assigned == "unassigned":
+    if assigned == "me":
+        query = query.filter(Case.assigned_to_id == current_user.id)
+        count_q = count_q.filter(Case.assigned_to_id == current_user.id)
+    elif assigned == "unassigned":
         query = query.filter(Case.assigned_to_id.is_(None))
         count_q = count_q.filter(Case.assigned_to_id.is_(None))
     if overdue:
