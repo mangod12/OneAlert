@@ -23,11 +23,13 @@ from backend.models.security_event import (
 from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.routers.event_evidence import router as evidence_router
+from backend.routers.event_investigation import router as investigation_router
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 router.include_router(evidence_router)
+router.include_router(investigation_router)
 
 MAX_EVENT_UPLOAD_BYTES = 10 * 1024 * 1024
 UPLOAD_READ_CHUNK_BYTES = 64 * 1024

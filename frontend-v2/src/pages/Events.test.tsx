@@ -291,23 +291,19 @@ describe('Telemetry sources', () => {
 
 describe('Escalate to investigation', () => {
   it('creates a case, links the event and prefills title and severity', async () => {
-    mockPost.mockImplementation(async (url: string, data?: unknown) => {
-      if (url === '/cases/') return { data: { id: 7, ...(data as object) } };
-      if (url === '/cases/7/events/1') return { data: { ok: true } };
-      throw new Error(`unexpected POST ${url}`);
-    });
+    const originalGet = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation((url: string) => url === '/events/1/investigation-preview' ? Promise.resolve({ data: { event: makeEvent(), event_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: { info: null, low: null, medium: null, high: null, critical: null } } }) : originalGet(url));
+    mockPost.mockResolvedValue({ data: { id: 7, event_id: 1, linked: true, reviewed_fingerprint: 'b'.repeat(64) } });
     render(<MemoryRouter><Events /></MemoryRouter>);
     const escalateBtn = await screen.findByRole('button', { name: 'Escalate event 1' });
     fireEvent.click(escalateBtn);
-    await screen.findByRole('dialog', { name: 'Open investigation' });
+    await screen.findByLabelText('Title');
     expect(screen.getByLabelText('Title')).toHaveProperty('value', 'Investigate: ET SCAN SSH brute force');
     expect(screen.getByLabelText('Severity')).toHaveProperty('value', 'high');
     fireEvent.change(screen.getByLabelText('Summary'), { target: { value: 'Brute force against web-01' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Open investigation' }));
-    await waitFor(() => {
-      expect(mockPost).toHaveBeenCalledWith('/cases/', { title: 'Investigate: ET SCAN SSH brute force', summary: 'Brute force against web-01', severity: 'high' });
-      expect(mockPost).toHaveBeenCalledWith('/cases/7/events/1');
-    });
+    fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed this saved event/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create reviewed investigation' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledExactlyOnceWith('/events/1/investigations', { title: 'Investigate: ET SCAN SSH brute force', summary: 'Brute force against web-01', severity: 'high', reviewed_fingerprint: 'b'.repeat(64) }));
   });
 });
 
