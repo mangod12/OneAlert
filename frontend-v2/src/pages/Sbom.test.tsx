@@ -336,3 +336,15 @@ describe('Recorded component evidence', () => {
     }
   });
 });
+
+it('opens the read-only snapshot comparison without expanding or changing an inventory', async () => {
+  render(<Sbom />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Compare SBOM 1' }));
+  expect(screen.getByRole('region', { name: 'SBOM snapshot comparison' })).toBeTruthy();
+  expect(screen.getByText('Upload another SBOM for this asset to compare snapshots.')).toBeTruthy();
+  expect(get).not.toHaveBeenCalledWith('/sbom/1/components');
+  expect(post).not.toHaveBeenCalled();
+  expect(del).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Close comparison' }));
+  expect(screen.queryByRole('region', { name: 'SBOM snapshot comparison' })).toBeNull();
+});

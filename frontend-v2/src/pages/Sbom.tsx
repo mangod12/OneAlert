@@ -8,6 +8,7 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { toast } from '../components/Toast';
 import type { Asset, AssetListResponse } from '../api/types';
+import { SbomComparison } from '../components/SbomComparison';
 import { useDialogFocus } from '../components/ui/useDialogFocus';
 
 interface Sbom {
@@ -43,6 +44,7 @@ export function Sbom() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [componentEvidence, setComponentEvidence] = useState<{ component: SbomComponent; sbom: Sbom } | null>(null);
+  const [comparison, setComparison] = useState<Sbom | null>(null);
   const [expanded, setExpanded] = useState<number | null>(null);
   const componentRequestId = useRef(0);
   const [components, setComponents] = useState<SbomComponent[]>([]);
@@ -160,6 +162,7 @@ export function Sbom() {
     try {
       await apiClient.delete(`/sbom/${sbom.id}`);
       setPendingDelete(null);
+      if (comparison?.id === sbom.id) setComparison(null);
       if (expanded === sbom.id) { componentRequestId.current += 1; setExpanded(null); }
       await fetchSboms();
       toast('SBOM deleted.', 'success');
@@ -201,6 +204,8 @@ export function Sbom() {
         </button>
       } />
 
+      {comparison && <SbomComparison key={comparison.id} current={comparison} snapshots={sboms} onClose={() => setComparison(null)} />}
+
       {sboms.length === 0 ? (
         <div className="oa-panel p-12 text-center text-surface-500">
           <Package className="w-10 h-10 mx-auto mb-3 opacity-50" />
@@ -240,6 +245,7 @@ export function Sbom() {
                     </td>
                     <td className="px-4 py-3 text-surface-500 text-xs">{new Date(sbom.created_at).toLocaleDateString()}</td>
                     <td className="px-4 py-3 text-right">
+                      <button type="button" aria-label={`Compare SBOM ${sbom.id}`} onClick={event => { event.stopPropagation(); setComparison(sbom); }} className="mr-2 rounded border border-surface-600 px-2 py-1 text-xs text-primary-300">Compare</button>
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); setPendingDelete(sbom); }}
