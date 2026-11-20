@@ -6,6 +6,7 @@ import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { Panel } from '../ui/Panel';
 import { StatusBadge } from '../ui/StatusBadge';
 import { toast } from '../Toast';
+import { SuppressionDraftPreview, type SuppressionDraft } from './SuppressionDraftPreview';
 
 interface SuppressionRule {
   id: number;
@@ -48,6 +49,7 @@ export function SuppressionRulesPanel() {
   const [titleContains, setTitleContains] = useState('');
   const [durationHours, setDurationHours] = useState('24');
   const [creating, setCreating] = useState(false);
+  const [previewDraft, setPreviewDraft] = useState<SuppressionDraft | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<SuppressionRule | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -85,29 +87,29 @@ export function SuppressionRulesPanel() {
     setDurationHours('24');
   };
 
-  const createRule = async () => {
+  const buildDraft = (): SuppressionDraft | null => {
     const trimmed = name.trim();
-    const hours = parseInt(durationHours, 10);
-    if (!trimmed || creating) return;
+    const hours = Number(durationHours);
+    if (!trimmed || creating) return null;
     if (!cveId.trim() && !assetId && !severity && !titleContains.trim()) {
       setFormError('Set at least one criterion: a CVE, an asset, a severity, or title text.');
-      return;
+      return null;
     }
-    if (!Number.isFinite(hours) || hours < 1 || hours > 720) {
-      setFormError('Snooze duration must be between 1 and 720 hours.');
-      return;
+    if (!/^[0-9]+$/.test(durationHours) || !Number.isSafeInteger(hours) || hours < 1 || hours > 720) {
+      setFormError('Snooze duration must be a whole number between 1 and 720 hours.');
+      return null;
     }
     setFormError(null);
+    return { name: trimmed, ...(cveId.trim() ? { cve_id: cveId.trim() } : {}),
+      ...(assetId ? { asset_id: Number(assetId) } : {}), ...(severity ? { severity } : {}),
+      ...(titleContains.trim() ? { title_contains: titleContains.trim() } : {}), duration_hours: hours };
+  };
+  const createRule = async () => {
+    const proposal = buildDraft();
+    if (!proposal) return;
     setCreating(true);
     try {
-      await apiClient.post('/suppression-rules/', {
-        name: trimmed,
-        ...(cveId.trim() ? { cve_id: cveId.trim() } : {}),
-        ...(assetId ? { asset_id: parseInt(assetId, 10) } : {}),
-        ...(severity ? { severity } : {}),
-        ...(titleContains.trim() ? { title_contains: titleContains.trim() } : {}),
-        duration_hours: hours,
-      });
+      await apiClient.post('/suppression-rules/', proposal);
       toast('Suppression rule created. New matching alerts will be snoozed.', 'success');
       resetForm();
       await loadRules();
@@ -228,6 +230,7 @@ export function SuppressionRulesPanel() {
               <input id="suppression-duration" type="number" min={1} max={720} value={durationHours} onChange={(e) => setDurationHours(e.target.value)} className={inputClass} />
             </div>
           </div>
+          <button type="button" disabled={creating || !name.trim()} onClick={() => { const draft = buildDraft(); if (draft) setPreviewDraft(draft); }} className="mr-3 rounded border border-surface-600 px-4 py-2 text-sm text-primary-300 disabled:opacity-40">Preview draft scope</button>
           <button
             type="submit"
             disabled={creating || !name.trim()}
@@ -238,6 +241,7 @@ export function SuppressionRulesPanel() {
         </form>
       </div>
 
+      {previewDraft && <SuppressionDraftPreview proposal={previewDraft} onClose={() => setPreviewDraft(null)} />}
       {pendingDelete && (
         <ConfirmDialog
           title="Delete suppression rule?"

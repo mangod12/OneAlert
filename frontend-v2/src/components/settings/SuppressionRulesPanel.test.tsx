@@ -76,3 +76,15 @@ describe('SuppressionRulesPanel', () => {
     await waitFor(() => expect(del).toHaveBeenCalledWith('/suppression-rules/1'));
   });
 });
+it('previews the same validated draft body without creating a rule', async () => {
+  mockGets([]); post.mockRejectedValueOnce(new Error('Preview offline')); render(<SuppressionRulesPanel />);
+  fireEvent.change(await screen.findByLabelText('Rule name'), { target: { value: '  Draft gateway  ' } }); fireEvent.change(screen.getByLabelText('Title contains (optional)'), { target: { value: ' scanner ' } }); fireEvent.change(screen.getByLabelText('Snooze hours'), { target: { value: '12' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Preview draft scope' })); await screen.findByRole('dialog'); await screen.findByRole('alert');
+  expect(post).toHaveBeenCalledExactlyOnceWith('/suppression-rules/preview', { name: 'Draft gateway', title_contains: 'scanner', duration_hours: 12 });
+  fireEvent.click(screen.getByRole('button', { name: 'Close draft preview' })); post.mockResolvedValueOnce({ data: rule }); fireEvent.click(screen.getByRole('button', { name: 'Create rule' }));
+  await waitFor(() => expect(post).toHaveBeenLastCalledWith('/suppression-rules/', { name: 'Draft gateway', title_contains: 'scanner', duration_hours: 12 }));
+});
+it('rejects fractional snooze windows in preview and creation', async () => {
+  mockGets([]); render(<SuppressionRulesPanel />); fireEvent.change(await screen.findByLabelText('Rule name'), { target: { value: 'Draft' } }); fireEvent.change(screen.getByLabelText('Title contains (optional)'), { target: { value: 'scanner' } }); fireEvent.change(screen.getByLabelText('Snooze hours'), { target: { value: '1.5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Preview draft scope' })); await screen.findByText(/Snooze duration must be a whole number/); expect(post).not.toHaveBeenCalled();
+});

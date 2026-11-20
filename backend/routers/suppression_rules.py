@@ -18,9 +18,11 @@ from backend.models.suppression_rule import (
     rule_matches,
 )
 from backend.models.user import User
+from backend.routers.suppression_preview import router as preview_router
 from backend.services.audit import add_audit_log
 
 router = APIRouter()
+router.include_router(preview_router)
 
 _ACTIVE_STATUSES = ("pending", "sent", "acknowledged")
 
