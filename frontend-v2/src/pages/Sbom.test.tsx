@@ -185,3 +185,79 @@ describe('SBOM component request identity', () => {
     expect((screen.getByLabelText('Vulnerable only') as HTMLInputElement).checked).toBe(false);
   });
 });
+
+
+describe('SBOM destination asset picker', () => {
+  it('reaches destination assets after the first hundred and uploads only to the chosen ID', async () => {
+    get.mockImplementation(async (url, config) => {
+      if (url === '/sbom/') return { data: sboms };
+      if ((config?.params as { page: number })?.page === 2) return { data: { assets: [{ id: 107, name: 'Later destination' }], total: 101 } };
+      return { data: { ...assets, total: 101 } };
+    });
+    render(<Sbom />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Upload SBOM' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More assets' }));
+    await screen.findByRole('option', { name: 'Later destination · #107' });
+    expect(screen.getByText('Showing 101–101 of 101 matching assets · Page 2 of 2')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Asset'), { target: { value: '107' } });
+    fireEvent.change(screen.getByLabelText('SBOM JSON document'), { target: { value: '{"bomFormat":"CycloneDX"}' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/sbom/upload', { asset_id: 107, sbom_data: { bomFormat: 'CycloneDX' }, source: 'upload' }));
+  });
+  it('searches server-side while visibly retaining an already selected destination', async () => {
+    get.mockImplementation(async (url, config) => {
+      if (url === '/sbom/') return { data: sboms };
+      if ((config?.params as { search?: string })?.search) return { data: { assets: [], total: 0 } };
+      return { data: assets };
+    });
+    render(<Sbom />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Upload SBOM' }));
+    fireEvent.change(screen.getByLabelText('Asset'), { target: { value: '7' } });
+    fireEvent.change(screen.getByLabelText('Find destination asset'), { target: { value: 'missing-vendor' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search assets' }));
+    expect(await screen.findByText('No matching destination assets.')).toBeTruthy();
+    expect(get).toHaveBeenCalledWith('/assets/', { params: { page: 1, size: 100, search: 'missing-vendor' } });
+    expect(screen.getByText(/Selected destination: Plant gateway/)).toBeTruthy();
+    expect((screen.getByLabelText('Asset') as HTMLSelectElement).value).toBe('7');
+  });
+  it('blocks upload on a destination load failure and retries the same search', async () => {
+    let fail = true;
+    get.mockImplementation(async (url, config) => {
+      if (url === '/sbom/') return { data: sboms };
+      if ((config?.params as { search?: string })?.search) {
+        if (fail) throw new Error('Destination lookup unavailable');
+        return { data: { assets: [{ id: 107, name: 'Recovered destination' }], total: 1 } };
+      }
+      return { data: assets };
+    });
+    render(<Sbom />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Upload SBOM' }));
+    fireEvent.change(screen.getByLabelText('Find destination asset'), { target: { value: 'recovered' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search assets' }));
+    expect(await screen.findByText('Destination lookup unavailable')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Upload' }) as HTMLButtonElement).disabled).toBe(true);
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry destination assets' }));
+    expect(await screen.findByRole('option', { name: 'Recovered destination · #107' })).toBeTruthy();
+  });
+  it('ignores a slower obsolete destination search', async () => {
+    let resolveOld!: (value: unknown) => void;
+    get.mockImplementation((url, config) => {
+      if (url === '/sbom/') return Promise.resolve({ data: sboms });
+      const search = (config?.params as { search?: string })?.search;
+      if (search === 'old') return new Promise(resolve => { resolveOld = resolve; });
+      return Promise.resolve({ data: search ? { assets: [{ id: 107, name: 'Current destination' }], total: 1 } : assets });
+    });
+    render(<Sbom />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Upload SBOM' }));
+    const search = screen.getByLabelText('Find destination asset');
+    fireEvent.change(search, { target: { value: 'old' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search assets' }));
+    fireEvent.change(search, { target: { value: 'new' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search assets' }));
+    await screen.findByRole('option', { name: 'Current destination · #107' });
+    await act(async () => { resolveOld({ data: assets }); });
+    expect(screen.getByRole('option', { name: 'Current destination · #107' })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: 'Plant gateway · #7' })).toBeNull();
+  });
+});
