@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import apiClient from '../api/client';
 import { Play, Plus, ShieldCheck, Target, CheckCircle, XCircle, Trash2, Download } from 'lucide-react';
 import clsx from 'clsx';
@@ -62,6 +62,11 @@ export function Validation() {
   const [runs, setRuns] = useState<ValidationRun[]>([]);
   const [coverage, setCoverage] = useState<TechniqueCoverage[] | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const detailRequestId = useRef(0);
+  const requestedRunId = useRef<number | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
+  const [detailRunId, setDetailRunId] = useState<number | null>(null);
   const [selectedRun, setSelectedRun] = useState<ValidationRunDetail | null>(null);
   const [newRun, setNewRun] = useState({ name: '', description: '', techniques: [] as string[] });
   const [resultFilter, setResultFilter] = useState<'all' | 'attention' | 'detected'>('all');
@@ -140,20 +145,37 @@ export function Validation() {
     try {
       await apiClient.delete(`/validation/runs/${deletingRun.id}`);
       toast('Validation run deleted', 'success');
-      if (selectedRun?.id === deletingRun.id) setSelectedRun(null);
+      if (requestedRunId.current === deletingRun.id) closeDetails();
       setDeletingRun(null);
       await fetchRuns();
     } catch (err) { toast(getApiErrorMessage(err, 'The validation run could not be deleted.'), 'error'); }
     finally { setDeletingBusy(false); }
   };
 
+  const closeDetails = () => {
+    detailRequestId.current += 1;
+    requestedRunId.current = null;
+    setDetailRunId(null); setSelectedRun(null); setDetailError(''); setDetailLoading(false);
+  };
+
   const viewRun = async (runId: number) => {
+    const request = ++detailRequestId.current;
+    requestedRunId.current = runId;
+    setDetailRunId(runId); setSelectedRun(null); setDetailError(''); setDetailLoading(true);
+    setResultFilter('all');
     try {
       const res = await apiClient.get(`/validation/runs/${runId}`);
+      if (request !== detailRequestId.current) return;
+      if (res.data.data?.id !== runId) throw new Error('The response did not match this validation run. Try again.');
       setSelectedRun(res.data.data);
-      setResultFilter('all');
-    } catch (err) { toast(getApiErrorMessage(err, 'Run details could not be loaded.'), 'error'); }
+    } catch (err) {
+      if (request === detailRequestId.current) setDetailError(getApiErrorMessage(err, 'Run details could not be loaded.'));
+    } finally {
+      if (request === detailRequestId.current) setDetailLoading(false);
+    }
   };
+
+  useEffect(() => () => { detailRequestId.current += 1; }, []);
 
   const toggleTechnique = (techId: string) => {
     setNewRun(prev => ({
@@ -294,6 +316,11 @@ export function Validation() {
       </div>}
 
       {/* Run Detail */}
+      {detailRunId !== null && <section aria-label={`Validation run ${detailRunId} detail status`} className="oa-panel space-y-3 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-sm font-semibold text-surface-200">Selected validation run #{detailRunId}</h2><button type="button" onClick={closeDetails} className="rounded-md border border-surface-600 px-3 py-1.5 text-sm text-surface-200">Close results</button></div>
+        {detailLoading && <p role="status" className="text-sm text-surface-400">Loading selected run results...</p>}
+        {detailError && <><p role="alert" className="text-sm text-danger">{detailError}</p><button type="button" onClick={() => void viewRun(detailRunId)} className="rounded-md border border-surface-600 px-3 py-2 text-sm text-surface-200">Retry run details</button></>}
+      </section>}
       {selectedRun && (
         <div className="oa-panel p-6">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

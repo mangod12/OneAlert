@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { Validation } from './Validation';
@@ -193,5 +193,50 @@ describe('Export validation run', () => {
     fireEvent.click(await screen.findByRole('button', { name: /export csv/i }));
     await waitFor(() => expect(get).toHaveBeenCalledWith('/validation/runs/8/export', { responseType: 'blob' }));
     await waitFor(() => expect(clicks).toContain('validation-run-8.csv'));
+  });
+});
+
+
+describe('Validation detail request identity', () => {
+  it.each(['success', 'failure'])('ignores an obsolete detail %s after another run is selected', async result => {
+    let resolveOld!: (value: unknown) => void;
+    let rejectOld!: (error: Error) => void;
+    vi.mocked(apiClient.get).mockImplementation(url => {
+      if (url === '/validation/runs/8') return new Promise((resolve, reject) => { resolveOld = resolve; rejectOld = reject; });
+      if (url === '/validation/runs/9') return Promise.resolve({ data: { data: { ...run, id: 9, name: 'Current check', steps: [{ ...run.steps[0], test_name: 'Current evidence' }] } } });
+      return Promise.resolve({ data: { data: [{ ...run }, { ...run, id: 9, name: 'Current check' }] } });
+    });
+    render(<Validation />);
+    fireEvent.click(await screen.findByRole('button', { name: 'View results for Perimeter check' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View results for Current check' }));
+    await screen.findByText('Current evidence');
+    await act(async () => { if (result === 'success') resolveOld({ data: { data: run } }); else rejectOld(new Error('Old detail failure')); });
+    expect(screen.getByText('Current evidence')).toBeTruthy();
+    expect(screen.queryByText('Missed password guessing')).toBeNull();
+    expect(screen.queryByText('Old detail failure')).toBeNull();
+  });
+  it('clears old evidence on failure and retries the selected run', async () => {
+    let fail = false;
+    vi.mocked(apiClient.get).mockImplementation(async url => {
+      if (url.endsWith('/8')) { if (fail) throw new Error('Detail unavailable'); return { data: { data: run } }; }
+      return { data: { data: [run] } };
+    });
+    await openResults();
+    fail = true;
+    fireEvent.click(screen.getByRole('button', { name: 'View results for Perimeter check' }));
+    expect(await screen.findByText('Detail unavailable')).toBeTruthy();
+    expect(screen.queryByText('Missed password guessing')).toBeNull();
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry run details' }));
+    expect(await screen.findByText('Missed password guessing')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Close results' }));
+    expect(screen.queryByText('Missed password guessing')).toBeNull();
+  });
+  it('rejects a detail payload for the wrong run', async () => {
+    vi.mocked(apiClient.get).mockImplementation(async url => ({ data: { data: url.endsWith('/8') ? { ...run, id: 99 } : [run] } }));
+    render(<Validation />);
+    fireEvent.click(await screen.findByRole('button', { name: 'View results for Perimeter check' }));
+    expect(await screen.findByText('The response did not match this validation run. Try again.')).toBeTruthy();
+    expect(screen.queryByText('Missed password guessing')).toBeNull();
   });
 });
