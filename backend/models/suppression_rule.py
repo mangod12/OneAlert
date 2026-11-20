@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.sql import func
 
@@ -63,6 +63,13 @@ class SuppressionRuleUpdate(BaseModel):
     title_contains: str | None = None
     duration_hours: int | None = Field(None, ge=1, le=720)
     enabled: bool | None = None
+
+    @field_validator("name", "duration_hours", "enabled", mode="before")
+    @classmethod
+    def required_fields_cannot_be_cleared(cls, value):
+        if value is None:
+            raise ValueError("This field cannot be null; omit it to leave the saved value unchanged")
+        return value
 
 
 class SuppressionRuleResponse(BaseModel):
