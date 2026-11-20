@@ -2,6 +2,7 @@
 
 import csv
 import io
+import secrets
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -19,6 +20,7 @@ from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.services.audit import add_audit_log
 from backend.services.csv_export import spreadsheet_safe_row
+from backend.services.response_review import review_fingerprint
 
 router = APIRouter()
 
@@ -128,6 +130,7 @@ async def list_pending_approvals(
             "reason": approval.reason,
             "requested_by": approval.requested_by,
             "actions": plan.actions,
+            "review_fingerprint": review_fingerprint(plan),
             "autonomy_level": plan.autonomy_level,
             "created_at": approval.created_at.isoformat(),
         })
@@ -154,9 +157,25 @@ async def get_response_plan(
     return plan
 
 
+@router.get("/{plan_id}/approval-review")
+async def get_approval_review(
+    plan_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Read exact owned plan evidence and its content fingerprint, without approving it."""
+    plan = (await db.execute(select(ResponsePlan).where(
+        ResponsePlan.id == plan_id, ResponsePlan.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Response plan not found")
+    return {"plan": ResponsePlanResponse.model_validate(plan), "review_fingerprint": review_fingerprint(plan)}
+
+
 @router.post("/{plan_id}/approve")
 async def approve_plan(
     plan_id: int,
+    reviewed_fingerprint: str = Body(..., embed=True, min_length=64, max_length=64, pattern="^[a-f0-9]{64}$"),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -165,7 +184,7 @@ async def approve_plan(
         select(ResponsePlan).where(
             ResponsePlan.id == plan_id,
             ResponsePlan.user_id == current_user.id,
-        )
+        ).with_for_update()
     )).scalar_one_or_none()
 
     if not plan:
@@ -173,6 +192,11 @@ async def approve_plan(
 
     if plan.status not in ("pending_approval", "draft"):
         raise HTTPException(status_code=400, detail=f"Plan status is '{plan.status}', cannot approve")
+
+    if not secrets.compare_digest(reviewed_fingerprint, review_fingerprint(plan)):
+        raise HTTPException(status_code=409, detail="The saved plan changed after review. Refresh and review it again.")
+    if not plan.actions or not all(isinstance(action, dict) for action in plan.actions):
+        raise HTTPException(status_code=400, detail="A plan requires saved action evidence before approval")
 
     now = datetime.now(UTC)
     plan.status = "approved"
@@ -198,7 +222,8 @@ async def approve_plan(
         action="response_plan_approved",
         target_type="response_plan",
         target_id=plan.id,
-        detail=f"Plan approved; {len(approvals)} approval request(s) resolved",
+        detail=(f"Plan approved; {len(approvals)} approval request(s) resolved; "
+                f"reviewed fingerprint {reviewed_fingerprint}"),
     )
     await db.commit()
 
@@ -222,7 +247,7 @@ async def reject_plan(
         select(ResponsePlan).where(
             ResponsePlan.id == plan_id,
             ResponsePlan.user_id == current_user.id,
-        )
+        ).with_for_update()
     )).scalar_one_or_none()
 
     if not plan:
@@ -275,7 +300,7 @@ async def execute_plan(
         select(ResponsePlan).where(
             ResponsePlan.id == plan_id,
             ResponsePlan.user_id == current_user.id,
-        )
+        ).with_for_update()
     )).scalar_one_or_none()
 
     if not plan:
@@ -335,7 +360,7 @@ async def delete_response_plan(
         select(ResponsePlan).where(
             ResponsePlan.id == plan_id,
             ResponsePlan.user_id == current_user.id,
-        )
+        ).with_for_update()
     )).scalar_one_or_none()
 
     if not plan:

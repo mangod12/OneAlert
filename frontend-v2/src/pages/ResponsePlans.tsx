@@ -1,4 +1,5 @@
 import { ResponseDecisionEvidence } from '../components/ResponseDecisionEvidence';
+import { isAxiosError } from 'axios';
 import { useCallback, useState, useEffect, useRef } from 'react';
 import apiClient from '../api/client';
 import { CheckCircle, XCircle, Play, Clock, Download, Shield, Trash2 } from 'lucide-react';
@@ -42,6 +43,7 @@ interface ExecutionOutcome {
 }
 
 interface PendingApproval {
+  review_fingerprint?: string;
   id: number;
   plan_id: number;
   case_id: number;
@@ -127,11 +129,13 @@ export function ResponsePlans() {
 
   const approvePlan = async (planId: number) => {
     if (approving.current || workingPlan !== null || loading || errors.length || !pending.some(item => item.plan_id === planId && item.id === reviewApprovalId)) return;
+    const reviewedFingerprint = pending.find(item => item.id === reviewApprovalId)?.review_fingerprint;
+    if (!reviewedFingerprint || !/^[a-f0-9]{64}$/.test(reviewedFingerprint)) { setApprovalError('Refresh the approval queue to load a verifiable plan review.'); return; }
     approving.current = true;
     setApprovalError('');
     setWorkingPlan(planId);
     try {
-      const response = await apiClient.post(`/response-plans/${planId}/approve`);
+      const response = await apiClient.post(`/response-plans/${planId}/approve`, { reviewed_fingerprint: reviewedFingerprint });
       if (response.data?.success !== true || response.data?.plan_status !== 'approved') {
         setApprovalError('Approval returned without a confirmed approved state. Refresh and review the current plan before trying again.');
         setReviewApprovalId(null);
@@ -141,7 +145,10 @@ export function ResponsePlans() {
       setReviewApprovalId(null);
       toast('Plan approved', 'success');
       await fetchPlans();
-    } catch (err) { setApprovalError(getApiErrorMessage(err, 'Approval could not be confirmed. Review the current plan before retrying.')); }
+    } catch (err) {
+      setApprovalError(getApiErrorMessage(err, 'Approval could not be confirmed. Review the current plan before retrying.'));
+      if (isAxiosError(err) && err.response?.status === 409) { setReviewApprovalId(null); await fetchPlans(); }
+    }
     finally { approving.current = false; setWorkingPlan(null); }
   };
 
@@ -239,7 +246,7 @@ export function ResponsePlans() {
                     <XCircle className="w-3.5 h-3.5" /> Reject
                   </button>
                 </div>
-                {!loading && !errors.length && reviewApprovalId === a.id && <ResponseApprovalReview key={JSON.stringify(a)} planId={a.plan_id} caseId={a.case_id} actions={a.actions || []} busy={workingPlan !== null} onApprove={() => void approvePlan(a.plan_id)} onCancel={() => { if (workingPlan === null) setReviewApprovalId(null); }} />}
+                {!loading && !errors.length && reviewApprovalId === a.id && <ResponseApprovalReview reviewFingerprint={a.review_fingerprint} key={JSON.stringify(a)} planId={a.plan_id} caseId={a.case_id} actions={a.actions || []} busy={workingPlan !== null} onApprove={() => void approvePlan(a.plan_id)} onCancel={() => { if (workingPlan === null) setReviewApprovalId(null); }} />}
               </div>
             ))}
           </div>
