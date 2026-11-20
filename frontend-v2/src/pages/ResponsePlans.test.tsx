@@ -251,3 +251,30 @@ describe('Response plan pagination', () => {
     expect(await screen.findByText('Showing 1–20 of 20 matching plans · Page 1 of 1')).toBeTruthy();
   });
 });
+
+
+describe('Recorded response action evidence', () => {
+  it('shows recorded failure reasons and timestamps without executing again', async () => {
+    get.mockImplementation(async url => ({ data: { data: url.endsWith('pending-approvals') ? [] : [{ ...plan, status: 'partial', actions: [{ ...plan.actions[0], execution_result: { status: 'skipped', detail: 'Unknown action type: isolate_host', executed_at: '2026-11-20T00:00:00Z' } }] }] } }));
+    render(<ResponsePlans />);
+    fireEvent.click(await screen.findByText('Case #4'));
+    expect(screen.getByText('Unknown action type: isolate_host')).toBeTruthy();
+    expect(screen.getByText('skipped')).toBeTruthy();
+    expect(screen.getByText(new Date('2026-11-20T00:00:00Z').toLocaleString())).toBeTruthy();
+    expect(post).not.toHaveBeenCalled();
+  });
+  it('labels missing execution evidence without claiming the action never ran', async () => {
+    get.mockImplementation(async url => ({ data: { data: url.endsWith('pending-approvals') ? [] : [plan] } }));
+    render(<ResponsePlans />);
+    fireEvent.click(await screen.findByText('Case #4'));
+    expect(screen.getByText('No execution result recorded')).toBeTruthy();
+    expect(screen.getByText(/Missing results do not establish whether an action ran/)).toBeTruthy();
+  });
+  it('preserves unparseable recorded times and labels missing detail', async () => {
+    get.mockImplementation(async url => ({ data: { data: url.endsWith('pending-approvals') ? [] : [{ ...plan, actions: [{ ...plan.actions[0], execution_result: { status: 'error', executed_at: 'unknown-clock' } }] }] } }));
+    render(<ResponsePlans />);
+    fireEvent.click(await screen.findByText('Case #4'));
+    expect(screen.getByText('unknown-clock')).toBeTruthy();
+    expect(screen.getByText('No execution detail recorded.')).toBeTruthy();
+  });
+});
