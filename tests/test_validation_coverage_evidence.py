@@ -35,7 +35,8 @@ def client(tmp_path):
                                       technique_name=name, test_name=f'Step {i}', simulated=simulated))
             for i, step, detected in [(1, 1, True), (2, 1, False), (3, 2, True), (4, 3, True),
                                       (5, 5, False), (6, 6, True)]:
-                db.add(ControlResult(id=i, step_id=step, control_name=f'Control {i}', control_type='manual', detected=detected))
+                db.add(ControlResult(id=i, step_id=step, control_name=f'Control {i}',
+                                     control_type='manual', detected=detected))
             await db.commit()
             await db.execute(update(ValidationStep).where(ValidationStep.id == 3).values(simulated=None))
             await db.execute(update(ControlResult).where(ControlResult.id == 4).values(detected=None))
