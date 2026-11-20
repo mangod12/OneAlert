@@ -90,3 +90,36 @@ async def component_affected_assets(
 
 def or_missing_version():
     return (SBOMComponent.version.is_(None)) | (SBOMComponent.version == '')
+
+
+@router.get('/component-search/versions')
+async def component_recorded_versions(
+    search: Annotated[str, Query(min_length=1, max_length=200, pattern=r'.*\S.*')],
+    page: Annotated[int, Query(ge=1)] = 1,
+    size: Annotated[int, Query(ge=1, le=100)] = 10,
+    version: Annotated[str, Query(max_length=200)] = '',
+    vulnerable_only: bool = False,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Recorded version groups describe retained evidence, never installed versions or upgrade advice."""
+    query, exact_version = search.strip(), version.strip()
+    conditions = component_conditions(current_user.id, query, exact_version, vulnerable_only)
+    recorded_version = func.nullif(SBOMComponent.version, '')
+    base = (select(recorded_version.label('version'), func.count(SBOMComponent.id).label('matching_rows'),
+                   func.count(func.distinct(SBOM.id)).label('document_count'),
+                   func.count(func.distinct(Asset.id)).label('asset_count'),
+                   func.sum(case((SBOMComponent.has_known_vulnerability > 0, 1), else_=0))
+                   .label('rows_with_recorded_vulnerabilities'),
+                   func.max(SBOM.created_at).label('newest_matching_document_at'))
+            .select_from(SBOMComponent).join(SBOM, SBOM.id == SBOMComponent.sbom_id)
+            .join(Asset, Asset.id == SBOM.asset_id).where(*conditions).group_by(recorded_version))
+    grouped = base.subquery()
+    total = (await db.execute(select(func.count()).select_from(grouped))).scalar_one()
+    records = (await db.execute(select(grouped).order_by(
+        grouped.c.rows_with_recorded_vulnerabilities.desc(), grouped.c.matching_rows.desc(),
+        grouped.c.version.asc().nulls_last(),
+    ).offset((page - 1) * size).limit(size))).mappings().all()
+    return {'search': query, 'version': exact_version, 'vulnerable_only': vulnerable_only,
+            'page': page, 'size': size, 'total': total, 'retrieved_at': datetime.now(UTC).isoformat(),
+            'versions': [dict(row) for row in records]}
