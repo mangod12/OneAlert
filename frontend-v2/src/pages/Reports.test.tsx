@@ -283,3 +283,21 @@ it('shows unknown completion timing without presenting a false percentage and re
   expect(csv).toContain('cases,all,2,0,0,,2,met/(met+breached); unknown timing excluded');
   expect(csv).toContain('cases,critical,2,0,0,,2,met/(met+breached); unknown timing excluded');
 });
+
+it('loads SLA record evidence only when requested and keeps its own cohort window', async () => {
+  get.mockImplementation(async (url: string) => {
+    if (url === '/reports/sla/records') return { data: { kind: 'cases', days: 30, window_start: '2026-10-22', window_end: '2026-11-20', generated_at: '2026-11-20T14:00:00Z', total: 0, offset: 0, records: [] } };
+    if (url === '/reports/sla') return { data: slaReport };
+    if (url === '/reports/team-workload') return { data: workload };
+    if (url === '/reports/alert-trend') return { data: trend };
+    return { data: report };
+  });
+  renderPage();
+  await screen.findByText('SLA compliance');
+  expect(get.mock.calls.some(([url]) => url === '/reports/sla/records')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Review investigation SLA records' }));
+  await screen.findByText(/No records match this page/);
+  expect(get).toHaveBeenCalledWith('/reports/sla/records', { params: { kind: 'cases', days: 30, outcome: 'all', query: '', offset: 0, limit: 20 } });
+  fireEvent.click(screen.getByRole('button', { name: 'Hide investigation SLA records' }));
+  expect(screen.queryByRole('region', { name: 'investigation SLA evidence' })).toBeNull();
+});

@@ -1,9 +1,11 @@
 """Posture report: on-demand security posture summary over a trailing window."""
 
 from datetime import UTC, date, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import String, and_, cast, func, or_, select
+from sqlalchemy import case as sql_case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -52,6 +54,15 @@ def _as_date(value) -> date | None:
     if isinstance(value, datetime):
         return value.date()
     return value
+
+
+def _sla_completion(record, kind: str) -> tuple[bool | None, date | None]:
+    """Use the same completion evidence for summary counts and record review."""
+    done = _status_value(record) == "resolved" if kind == "alerts" else record.status in _DONE_CASE_STATUSES
+    completed_on = _as_date(record.resolved_at if kind == "alerts" else record.closed_at)
+    if not done:
+        return False, completed_on
+    return (completed_on <= record.due_date if completed_on else None), completed_on
 
 
 def _sla_bucket() -> dict:
@@ -247,8 +258,7 @@ async def get_sla_compliance_report(
     ).scalars().all()
     alerts = _sla_bucket()
     for alert in alert_rows:
-        resolved_on = _as_date(alert.resolved_at)
-        met = (resolved_on <= alert.due_date if resolved_on else None) if _status_value(alert) == "resolved" else False
+        met, _ = _sla_completion(alert, "alerts")
         _sla_tally(alerts, _severity_value(alert), met)
 
     alert_upcoming = (
@@ -279,10 +289,7 @@ async def get_sla_compliance_report(
     ).scalars().all()
     cases = _sla_bucket()
     for case in case_rows:
-        completed_on = (
-            _as_date(case.closed_at) if case.status in _DONE_CASE_STATUSES else None
-        )
-        met = (completed_on <= case.due_date if completed_on else None) if case.status in _DONE_CASE_STATUSES else False
+        met, _ = _sla_completion(case, "cases")
         _sla_tally(cases, case.severity or "medium", met)
 
     case_upcoming = (
@@ -304,6 +311,69 @@ async def get_sla_compliance_report(
         "generated_at": datetime.now(UTC).isoformat(),
         "alerts": _sla_finish(alerts, len(alert_upcoming)),
         "cases": _sla_finish(cases, len(case_upcoming)),
+    }
+
+
+@router.get("/sla/records")
+async def get_sla_records(
+    kind: Literal["alerts", "cases"] = "alerts",
+    days: int = Query(30, ge=1, le=90),
+    outcome: Literal["all", "met", "breached", "unknown"] = "all",
+    query: str = Query("", max_length=200),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Read the owner-scoped records behind the SLA summary, without editing them."""
+    today = datetime.now(UTC).date()
+    start = today - timedelta(days=days - 1)
+    model = Alert if kind == "alerts" else Case
+    done = model.status == "resolved" if kind == "alerts" else model.status.in_(_DONE_CASE_STATUSES)
+    done = func.coalesce(done, False)
+    completion = model.resolved_at if kind == "alerts" else model.closed_at
+    result_expression = sql_case(
+        (~done, "breached"),
+        (completion.is_(None), "unknown"),
+        (func.date(completion) <= model.due_date, "met"),
+        else_="breached",
+    )
+    conditions = [model.user_id == current_user.id, model.due_date >= start, model.due_date <= today]
+    if outcome != "all":
+        conditions.append(result_expression == outcome)
+    needle = query.strip().lower()
+    if needle:
+        conditions.append(or_(
+            func.lower(model.title).contains(needle, autoescape=True),
+            func.lower(cast(model.status, String)).contains(needle, autoescape=True),
+            cast(model.id, String).contains(needle, autoescape=True),
+        ))
+    total = (await db.execute(select(func.count()).select_from(model).where(*conditions))).scalar_one()
+    records = (await db.execute(
+        select(model).where(*conditions).order_by(model.due_date, model.id).offset(offset).limit(limit)
+    )).scalars().all()
+    matched = []
+    for record in records:
+        met, completed_on = _sla_completion(record, kind)
+        result = "unknown" if met is None else "met" if met else "breached"
+        status = _status_value(record)
+        done = status == "resolved" if kind == "alerts" else status in _DONE_CASE_STATUSES
+        reason = (
+            "Record is not currently resolved or closed. Any older completion time does not establish completion."
+            if not done else "Completion time was not recorded; timing cannot be scored."
+            if met is None else "Recorded completion was on or before the due date."
+            if met else "Recorded completion was after the due date."
+        )
+        matched.append({
+            "id": record.id, "title": record.title, "status": status,
+            "severity": _severity_value(record), "due_date": record.due_date,
+            "completed_on": completed_on, "outcome": result, "reason": reason,
+        })
+    return {
+        "kind": kind, "days": days, "window_start": start, "window_end": today,
+        "generated_at": datetime.now(UTC).isoformat(), "outcome": outcome,
+        "query": query, "total": total, "offset": offset, "limit": limit,
+        "records": matched,
     }
 
 
