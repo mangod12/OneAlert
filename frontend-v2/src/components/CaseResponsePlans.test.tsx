@@ -61,3 +61,21 @@ it('keeps checklist mutation disabled when its source workflow is unavailable or
   render(<MemoryRouter><CaseResponsePlans {...props} tasksUnavailable /></MemoryRouter>); await screen.findByText('Plan #21');
   expect((screen.getByRole('button', { name: 'Seed checklist from plan 21' }) as HTMLButtonElement).disabled).toBe(true);
 });
+
+it('keeps two-plan comparison selection across pages and limits selection to two', async () => {
+  get.mockImplementation(async (_url, config) => { const { page } = config?.params as { page: number }; return { data: { data: page === 1 ? [plan] : [{ ...plan, id: 11 }, { ...plan, id: 10 }], total: 12, page, size: 10 } }; });
+  show(); fireEvent.click(await screen.findByLabelText('Select plan 21 for comparison'));
+  fireEvent.click(screen.getByRole('button', { name: 'Next investigation plans' }));
+  fireEvent.click(await screen.findByLabelText('Select plan 11 for comparison'));
+  expect(screen.getByRole('link', { name: 'Open selected plan comparison' }).getAttribute('href')).toBe('/response-plans?compare_from=21&compare_to=11');
+  expect((screen.getByLabelText('Select plan 10 for comparison') as HTMLInputElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Clear comparison selection' }));
+  expect(screen.queryByRole('link', { name: 'Open selected plan comparison' })).toBeNull();
+  expect((screen.getByLabelText('Select plan 10 for comparison') as HTMLInputElement).disabled).toBe(false);
+});
+it('clears comparison selections when the visible investigation changes', async () => {
+  const view = show(); fireEvent.click(await screen.findByLabelText('Select plan 21 for comparison'));
+  get.mockResolvedValue({ data: { data: [{ ...plan, case_id: 8, id: 30 }], total: 1 } });
+  view.rerender(<MemoryRouter><CaseResponsePlans {...props} caseId={8} /></MemoryRouter>);
+  await screen.findByText('Plan #30'); expect(screen.getByText('Compare saved plans: Select a baseline, then a comparison plan.')).toBeTruthy();
+});

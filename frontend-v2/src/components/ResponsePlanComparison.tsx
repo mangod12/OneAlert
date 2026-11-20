@@ -6,8 +6,11 @@ import { compareActionPositions } from '../utils/responsePlanComparison';
 interface Plan { id: number; case_id: number; status: string; autonomy_level: string; actions: unknown[]; }
 interface Snapshot { before: Plan; after: Plan; loadedAt: string; }
 const control = 'max-w-full rounded border border-surface-600 bg-surface-950 px-3 py-2 text-xs text-surface-200 disabled:opacity-40';
-export function ResponsePlanComparison() {
-  const [open, setOpen] = useState(false), [beforeId, setBeforeId] = useState(''), [afterId, setAfterId] = useState('');
+export function ResponsePlanComparison({ baseline = null, comparison = null }: { baseline?: string | null; comparison?: string | null }) {
+  return <Comparison key={`${baseline ?? ''}:${comparison ?? ''}`} baseline={baseline} comparison={comparison} />;
+}
+function Comparison({ baseline, comparison }: { baseline: string | null; comparison: string | null }) {
+  const [open, setOpen] = useState(baseline !== null || comparison !== null), [beforeId, setBeforeId] = useState(baseline ?? ''), [afterId, setAfterId] = useState(comparison ?? '');
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null), [loading, setLoading] = useState(false), [error, setError] = useState('');
   const [page, setPage] = useState(1), [changedOnly, setChangedOnly] = useState(true);
   const requestId = useRef(0);
@@ -33,6 +36,7 @@ export function ResponsePlanComparison() {
   return <section aria-label="Saved response plan comparison" className="oa-panel space-y-4 p-4 sm:p-6">
     <button type="button" aria-expanded={open} className="text-left text-sm font-semibold text-primary-300" onClick={() => { reset(); setOpen(!open); }}>Compare two saved response plans</button>
     {open && <>
+      {(baseline !== null || comparison !== null) && <p className="text-xs text-primary-300">Selected plan IDs are ready for review. Load the comparison to fetch current records. No data is fetched automatically.</p>}
       <p className="text-xs text-surface-400">Read-only comparison of two current saved plans from the same investigation. Stored action positions are aligned, not action identities. Reordering may appear as changes. These separate reads are not an atomic snapshot or an immutable version history. Differences are not proof of execution.</p>
       <form className="flex flex-wrap items-end gap-3" onSubmit={event => { event.preventDefault(); void load(); }}><label className="space-y-1 text-xs text-surface-300">Baseline plan ID<input aria-label="Baseline plan ID" inputMode="numeric" value={beforeId} onChange={event => { reset(); setBeforeId(event.target.value); }} className={`${control} block w-36`} /></label><label className="space-y-1 text-xs text-surface-300">Comparison plan ID<input aria-label="Comparison plan ID" inputMode="numeric" value={afterId} onChange={event => { reset(); setAfterId(event.target.value); }} className={`${control} block w-36`} /></label><button type="submit" disabled={loading} className={control}>{loading ? 'Loading comparison...' : 'Load saved plan comparison'}</button></form>
       {loading && <p role="status" className="text-sm text-surface-300">Loading both saved plans...</p>}
