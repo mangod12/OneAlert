@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Events } from './Events';
@@ -349,4 +349,42 @@ describe('Event saved views', () => {
     fireEvent.click(await screen.findByText('Critical DNS'));
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/events/', { params: expect.objectContaining({ severity: 'critical', event_type: 'dns', ip: '10.0.0.8', sort: 'severity_desc' }) }));
   });
+});
+
+it('does not let an old initial event response replace the current IP filter', async () => {
+  let resolveOld!: (value: unknown) => void;
+  mockGet.mockImplementation((url, config) => {
+    if (url === '/events/') return (config?.params as { ip?: string } | undefined)?.ip ? Promise.resolve({ data: { events: [makeEvent({ signature: 'Current filtered evidence' })], total: 1 } })
+      : new Promise(resolve => { resolveOld = resolve; });
+    if (url === '/events/stats') return Promise.resolve({ data: { data: STATS } });
+    return Promise.resolve({ data: [] });
+  });
+  render(<Events />);
+  fireEvent.change(screen.getByLabelText('Search by IP address'), { target: { value: '192.0.2' } });
+  await screen.findByText('Current filtered evidence');
+  await act(async () => { resolveOld({ data: { events: [makeEvent({ signature: 'Obsolete unfiltered evidence' })], total: 99 } }); });
+  expect(screen.getByText('Current filtered evidence')).toBeTruthy();
+  expect(screen.queryByText('Obsolete unfiltered evidence')).toBeNull();
+});
+
+it('does not leave old event rows visible when a new filter read fails', async () => {
+  mockGet.mockImplementation((url, config) => {
+    if (url === '/events/') return (config?.params as { ip?: string } | undefined)?.ip ? Promise.reject(new Error('Filtered stream failed'))
+      : Promise.resolve({ data: { events: [makeEvent()], total: 1 } });
+    if (url === '/events/stats') return Promise.resolve({ data: { data: STATS } });
+    return Promise.resolve({ data: [] });
+  });
+  render(<Events />);
+  await screen.findByText('ET SCAN SSH brute force');
+  fireEvent.change(screen.getByLabelText('Search by IP address'), { target: { value: '192.0.2' } });
+  await screen.findByText('Event stream unavailable');
+  expect(screen.queryByText('ET SCAN SSH brute force')).toBeNull();
+});
+
+it('does not label a successful empty event stream as failed when only statistics are unavailable', async () => {
+  mockGet.mockImplementation(url => url === '/events/stats' ? Promise.reject(new Error('Stats unavailable'))
+    : Promise.resolve({ data: url === '/events/' ? { events: [], total: 0 } : [] }));
+  render(<Events />);
+  await screen.findByText('No events ingested yet');
+  expect(screen.queryByText('Event stream unavailable')).toBeNull();
 });
