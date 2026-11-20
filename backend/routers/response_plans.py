@@ -356,3 +356,40 @@ async def delete_response_plan(
     await db.commit()
 
     return {"success": True, "message": f"Plan {plan_id} deleted"}
+
+
+@router.get("/{plan_id}/decision-evidence")
+async def get_response_decision_evidence(
+    plan_id: int,
+    page: int = Query(1, ge=1, le=1000000),
+    size: int = Query(10, ge=1, le=100),
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Read the current plan and recorded approval rows without making a decision."""
+    plan = (await db.execute(select(ResponsePlan).where(
+        ResponsePlan.id == plan_id, ResponsePlan.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Response plan not found")
+    total = (await db.execute(select(func.count(ApprovalRequest.id)).where(
+        ApprovalRequest.plan_id == plan_id,
+    ))).scalar_one()
+    approvals = (await db.execute(select(ApprovalRequest).where(ApprovalRequest.plan_id == plan_id)
+                                 .order_by(ApprovalRequest.created_at.desc(), ApprovalRequest.id.desc())
+                                 .offset((page - 1) * size).limit(size))).scalars().all()
+    return {
+        "schema_version": 1,
+        "scope": "Current saved plan and one page of recorded approval-request rows. These are mutable records, "
+                 "not an immutable decision log or proof that an action ran. "
+                 "Missing results do not establish execution. "
+                 "No approval, rejection or execution is performed by this read.",
+        "retrieved_at": datetime.now(UTC),
+        "plan": ResponsePlanResponse.model_validate(plan),
+        "approval_page": page, "approval_size": size, "approval_total": total,
+        "approval_records": [{
+            "id": row.id, "plan_id": row.plan_id, "requested_by": row.requested_by,
+            "status": row.status, "reason": row.reason, "reviewed_by": row.reviewed_by,
+            "reviewed_at": row.reviewed_at, "created_at": row.created_at,
+        } for row in approvals],
+    }

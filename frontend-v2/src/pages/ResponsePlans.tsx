@@ -1,3 +1,4 @@
+import { ResponseDecisionEvidence } from '../components/ResponseDecisionEvidence';
 import { useCallback, useState, useEffect, useRef } from 'react';
 import apiClient from '../api/client';
 import { CheckCircle, XCircle, Play, Clock, Download, Shield, Trash2 } from 'lucide-react';
@@ -208,6 +209,8 @@ export function ResponsePlans() {
         ? <DegradedBanner messages={errors} onRetry={() => void fetchPlans()} />
         : errors.length > 0 && <ErrorState title="Response plans unavailable" description={errors.join(' · ')} action={<RetryButton onClick={() => void fetchPlans()} />} />}
       {loading && <LoadingSurface label="Loading response plans" />}
+
+      <ResponseDecisionEvidence />
 
       {/* Pending Approvals */}
       {pending.length > 0 && (
