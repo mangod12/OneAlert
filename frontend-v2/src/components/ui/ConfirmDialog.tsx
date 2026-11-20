@@ -50,7 +50,7 @@ export function ConfirmDialog({
         className="relative w-full max-w-md rounded-lg border border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]"
       >
         <h2 id="confirm-dialog-title" className="text-lg font-semibold text-surface-50">{title}</h2>
-        <p id="confirm-dialog-description" className="mt-2 text-sm text-surface-400">{description}</p>
+        <p id="confirm-dialog-description" className="mt-2 break-words text-sm text-surface-400">{description}</p>
 
         {reasonLabel && (
           <div className="mt-4">
