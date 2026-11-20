@@ -1624,6 +1624,19 @@ async def get_case_alerts(
     return [a.to_dict() for a in alerts]
 
 
+async def _owned_evidence_destination(db: AsyncSession, case_id: int, user_id: int) -> Case:
+    # Row locking serializes evidence decisions on PostgreSQL; SQLite needs its writer lock.
+    # Preserve updated_at explicitly so a repeated no-op does not change case metadata.
+    if db.bind.dialect.name == 'sqlite':
+        await db.execute(update(Case).where(Case.id == case_id, Case.user_id == user_id)
+                         .values(id=Case.id, updated_at=Case.updated_at))
+    case = (await db.execute(select(Case).where(Case.id == case_id, Case.user_id == user_id)
+                             .with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return case
+
+
 @router.post("/{case_id}/alerts/{alert_id}")
 async def link_alert_to_case(
     case_id: int,
@@ -1634,11 +1647,7 @@ async def link_alert_to_case(
     """Link an alert to a case manually. Idempotent: re-linking is a no-op."""
     from backend.models.alert import Alert
 
-    case = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.user_id == current_user.id).with_for_update()
-    )).scalar_one_or_none()
-    if case is None:
-        raise HTTPException(status_code=404, detail="Case not found")
+    case = await _owned_evidence_destination(db, case_id, current_user.id)
 
     alert = (await db.execute(
         select(Alert).where(Alert.id == alert_id, Alert.user_id == current_user.id)
@@ -1649,7 +1658,7 @@ async def link_alert_to_case(
     existing = (await db.execute(
         select(CaseAlert).where(
             CaseAlert.case_id == case_id, CaseAlert.alert_id == alert_id
-        )
+        ).limit(1)
     )).scalar_one_or_none()
     if existing is not None:
         return {"success": True, "data": {"linked": False, "message": "Alert already linked to this case"}}
@@ -1683,21 +1692,17 @@ async def unlink_alert_from_case(
     db: AsyncSession = Depends(get_async_db),
 ):
     """Remove an alert link from a case. Idempotent: unlinking twice is a no-op."""
-    case = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.user_id == current_user.id).with_for_update()
-    )).scalar_one_or_none()
-    if case is None:
-        raise HTTPException(status_code=404, detail="Case not found")
+    case = await _owned_evidence_destination(db, case_id, current_user.id)
 
     link = (await db.execute(
         select(CaseAlert).where(
             CaseAlert.case_id == case_id, CaseAlert.alert_id == alert_id
-        )
+        ).limit(1)
     )).scalar_one_or_none()
     if link is None:
         return {"success": True, "data": {"unlinked": False, "message": "Alert is not linked to this case"}}
 
-    await db.delete(link)
+    await db.execute(delete(CaseAlert).where(CaseAlert.case_id == case_id, CaseAlert.alert_id == alert_id))
     db.add(CaseTimeline(
         case_id=case.id,
         entry_type="alert",
@@ -1744,11 +1749,7 @@ async def link_event_to_case(
     """Link a security event to a case manually. Idempotent: re-linking is a no-op."""
     from backend.models.security_event import SecurityEvent
 
-    case = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
-    )).scalar_one_or_none()
-    if case is None:
-        raise HTTPException(status_code=404, detail="Case not found")
+    case = await _owned_evidence_destination(db, case_id, current_user.id)
 
     event = (await db.execute(
         select(SecurityEvent).where(SecurityEvent.id == event_id, SecurityEvent.user_id == current_user.id)
@@ -1759,7 +1760,7 @@ async def link_event_to_case(
     existing = (await db.execute(
         select(CaseEvent).where(
             CaseEvent.case_id == case_id, CaseEvent.event_id == event_id
-        )
+        ).limit(1)
     )).scalar_one_or_none()
     if existing is not None:
         return {"success": True, "data": {"linked": False, "message": "Event already linked to this case"}}
@@ -1789,21 +1790,17 @@ async def unlink_event_from_case(
     db: AsyncSession = Depends(get_async_db),
 ):
     """Remove an event link from a case. Idempotent: unlinking twice is a no-op."""
-    case = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
-    )).scalar_one_or_none()
-    if case is None:
-        raise HTTPException(status_code=404, detail="Case not found")
+    case = await _owned_evidence_destination(db, case_id, current_user.id)
 
     link = (await db.execute(
         select(CaseEvent).where(
             CaseEvent.case_id == case_id, CaseEvent.event_id == event_id
-        )
+        ).limit(1)
     )).scalar_one_or_none()
     if link is None:
         return {"success": True, "data": {"unlinked": False, "message": "Event is not linked to this case"}}
 
-    await db.delete(link)
+    await db.execute(delete(CaseEvent).where(CaseEvent.case_id == case_id, CaseEvent.event_id == event_id))
     db.add(CaseTimeline(
         case_id=case.id,
         entry_type="event",
