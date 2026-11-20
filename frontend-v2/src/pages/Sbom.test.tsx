@@ -1,7 +1,11 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import type { ReactElement } from 'react';
+import { act, cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { Sbom } from './Sbom';
+
+const render = (ui: ReactElement) => rtlRender(<MemoryRouter>{ui}</MemoryRouter>);
 
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), delete: vi.fn(), post: vi.fn() } }));
 
@@ -461,4 +465,28 @@ describe('Recorded SBOM evidence completeness', () => {
     expect(await screen.findByText('openssl')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Clear evidence gap' })).toBeNull();
   });
+});
+
+it('opens an exact document outside the loaded list even when the list is unavailable', async () => {
+  get.mockImplementation(async url => {
+    if (url === '/sbom/') throw new Error('List offline');
+    if (url === '/assets/') return { data: assets };
+    if (url === '/sbom/99/component-evidence') return { data: { sbom: { ...sboms[0], id: 99 }, page: 1, size: 10, search: '', gap: '', vulnerable_only: false, total: 0, document_total: 0, retrieved_at: 'now', components: [] } };
+    throw new Error(`unexpected ${url}`);
+  });
+  rtlRender(<MemoryRouter initialEntries={['/sbom?sbom=99']}><Sbom /></MemoryRouter>);
+  await screen.findByRole('dialog', { name: 'SBOM record #99' }); await screen.findByText('No saved components match these filters.');
+  expect(screen.getByText('SBOM unavailable')).toBeTruthy();
+  expect(get).toHaveBeenCalledWith('/sbom/99/component-evidence', expect.anything());
+});
+it.each(['0', '-1', 'bad', '1&sbom=2'])('rejects invalid exact document links %s without a record lookup', async value => {
+  rtlRender(<MemoryRouter initialEntries={[`/sbom?sbom=${value}`]}><Sbom /></MemoryRouter>);
+  await screen.findByText(/This SBOM link needs exactly one positive document ID/);
+  expect(get.mock.calls.some(([url]) => String(url).includes('/component-evidence'))).toBe(false);
+});
+it('opens exact record evidence from a list row without loading all components', async () => {
+  const fallback = get.getMockImplementation()!;
+  get.mockImplementation(async (url, config) => url === '/sbom/1/component-evidence' ? { data: { sbom: sboms[0], page: 1, size: 10, search: '', gap: '', vulnerable_only: false, total: 0, document_total: 0, retrieved_at: 'now', components: [] } } : fallback(url, config));
+  render(<Sbom />); fireEvent.click(await screen.findByRole('button', { name: 'Open exact SBOM 1' }));
+  await screen.findByRole('dialog', { name: 'SBOM record #1' }); expect(get.mock.calls.some(([url]) => url === '/sbom/1/components')).toBe(false);
 });

@@ -1,3 +1,5 @@
+import { useSearchParams } from 'react-router-dom';
+import { SbomRecordInspector } from '../components/SbomRecordInspector';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { Download, Package, Trash2, Upload } from 'lucide-react';
@@ -40,6 +42,12 @@ interface SbomComponent {
 const COPYLEFT_RE = /gpl|sspl|cddl|epl|eupl|cc-by-sa/i;
 
 export function Sbom() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const documentValues = searchParams.getAll('sbom');
+  const documentValue = documentValues.length === 1 ? documentValues[0] : '';
+  const exactDocumentId = /^[1-9][0-9]*$/.test(documentValue) && Number.isSafeInteger(Number(documentValue)) ? Number(documentValue) : null;
+  const invalidDocumentLink = documentValues.length > 0 && exactDocumentId === null;
+  const inspectDocument = (id: number | null) => setSearchParams(current => { const next = new URLSearchParams(current); if (id === null) next.delete('sbom'); else next.set('sbom', String(id)); return next; }, { replace: id === null });
   const listRequestId = useRef(0);
   const [assetNamesError, setAssetNamesError] = useState('');
   const [sboms, setSboms] = useState<Sbom[]>([]);
@@ -204,11 +212,17 @@ export function Sbom() {
     }
   };
 
-  if (loading) return <LoadingSurface rows={4} label="Loading software bills of materials" />;
-  if (error) return <ErrorState title="SBOM unavailable" description={error} action={<RetryButton onClick={() => void fetchSboms()} />} />;
+  const recordPanel = <>
+      {invalidDocumentLink && <p role="alert" className="text-sm text-warning">This SBOM link needs exactly one positive document ID. No document was opened. <button type="button" onClick={() => inspectDocument(null)} className="ml-2 text-primary-300">Clear invalid SBOM link</button></p>}
+      {exactDocumentId !== null && <SbomRecordInspector key={exactDocumentId} sbomId={exactDocumentId} onClose={() => inspectDocument(null)} />}
+  </>;
+
+  if (loading) return <>{recordPanel}<LoadingSurface rows={4} label="Loading software bills of materials" /></>;
+  if (error) return <>{recordPanel}<ErrorState title="SBOM unavailable" description={error} action={<RetryButton onClick={() => void fetchSboms()} />} /></>;
 
   return (
     <div className="space-y-6">
+      {recordPanel}
       {assetNamesError && <DegradedBanner messages={[assetNamesError, 'SBOM records remain available by asset ID.']} onRetry={() => void fetchSboms()} />}
       <PageHeader eyebrow="Observe" title="Software Bill of Materials" description="Recorded component inventory, evidence completeness and vulnerability references per asset." actions={
         <button
@@ -261,6 +275,7 @@ export function Sbom() {
                     </td>
                     <td className="px-4 py-3 text-surface-500 text-xs">{new Date(sbom.created_at).toLocaleDateString()}</td>
                     <td className="px-4 py-3 text-right">
+                      <button type="button" aria-label={`Open exact SBOM ${sbom.id}`} onClick={event => { event.stopPropagation(); inspectDocument(sbom.id); }} className="mr-2 rounded border border-surface-600 px-2 py-1 text-xs text-primary-300">Exact record</button>
                       <button type="button" aria-label={`Compare SBOM ${sbom.id}`} onClick={event => { event.stopPropagation(); setComparison(sbom); }} className="mr-2 rounded border border-surface-600 px-2 py-1 text-xs text-primary-300">Compare</button>
                       <button
                         type="button"

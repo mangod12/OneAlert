@@ -1,0 +1,43 @@
+import { useEffect, useRef, useState } from 'react';
+import apiClient from '../api/client';
+import { getApiErrorMessage } from '../api/errors';
+import { useDialogFocus } from './ui/useDialogFocus';
+interface Component { id: number; sbom_id: number; name: string; version: string | null; supplier: string | null; purl: string | null; cpe: string | null; license: string | null; hash_sha256: string | null; has_known_vulnerability: number }
+interface Snapshot { sbom: { id: number; asset_id: number; format: string; version: string | null; source: string; created_at: string; component_count: number }; page: number; size: number; search: string; vulnerable_only: boolean; gap: string; total: number; document_total: number; retrieved_at: string; components: Component[] }
+const gaps = { '': 'Any evidence', version: 'Missing version', supplier: 'Missing supplier', license: 'Missing license', identifiers: 'Missing PURL and CPE', hash: 'Missing SHA-256' };
+const text = (value: unknown) => value === null || value === undefined || value === '' ? 'Not recorded' : String(value);
+export function SbomRecordInspector({ sbomId, onClose }: { sbomId: number; onClose: () => void }) {
+  const dialog = useRef<HTMLDivElement>(null), reads = useRef(0); useDialogFocus(dialog, onClose);
+  const [query, setQuery] = useState(''), [search, setSearch] = useState(''), [page, setPage] = useState(1), [gap, setGap] = useState(''), [vulnerable, setVulnerable] = useState(false), [retry, setRetry] = useState(0);
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState(''), [copyStatus, setCopyStatus] = useState('');
+  useEffect(() => {
+    const request = ++reads.current; setLoading(true); setSnapshot(null); setError('');
+    void apiClient.get<Snapshot>(`/sbom/${sbomId}/component-evidence`, { params: { page, size: 10, search, vulnerable_only: vulnerable, gap } }).then(({ data }) => {
+      if (request !== reads.current) return;
+      if (data.sbom?.id !== sbomId || !Number.isSafeInteger(data.sbom.asset_id) || data.sbom.asset_id <= 0 || !Number.isSafeInteger(data.document_total) || data.document_total < 0 || data.page !== page || data.size !== 10 || data.search !== search || data.gap !== gap || data.vulnerable_only !== vulnerable || !Number.isSafeInteger(data.total) || data.total < 0 || !Array.isArray(data.components) || data.components.some(row => row.sbom_id !== sbomId || !Number.isSafeInteger(row.id) || row.id <= 0)) throw new Error('Component evidence did not match this exact document and page. Refresh before relying on it.');
+      const lastPage = Math.max(1, Math.ceil(data.total / 10)); if (page > lastPage) { setPage(lastPage); return; }
+      setSnapshot(data);
+    }).catch(err => { if (request === reads.current) setError(getApiErrorMessage(err, 'SBOM evidence could not be loaded.')); })
+      .finally(() => { if (request === reads.current) setLoading(false); });
+    return () => { reads.current += 1; };
+  }, [sbomId, page, search, vulnerable, gap, retry]);
+  const copy = async () => {
+    setCopyStatus('');
+    try { const url = new URL(window.location.href); url.search = ''; url.hash = ''; url.searchParams.set('sbom', String(sbomId)); await navigator.clipboard.writeText(url.toString()); setCopyStatus('Exact SBOM record link copied. It grants no access.'); }
+    catch { setCopyStatus('Copy unavailable. The address bar contains this exact document link.'); }
+  };
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-surface-950/80 p-4"><div ref={dialog} role="dialog" aria-modal="true" aria-label={`SBOM record #${sbomId}`} className="max-h-[90dvh] w-full max-w-3xl space-y-4 overflow-y-auto rounded-xl border border-surface-700 bg-surface-900 p-5 text-surface-200">
+    <div className="flex items-start justify-between gap-3"><h2 className="text-base font-semibold">SBOM record #{sbomId}</h2><button type="button" onClick={onClose} className="shrink-0 rounded border border-surface-600 px-3 py-2 text-xs">Close SBOM record</button></div>
+    <p className="text-xs text-surface-400">Read-only saved document and component evidence, not a new scan or live vulnerability check. Search and filters apply to the full owned document inventory, not only the current component page.</p>
+    <div className="flex flex-wrap items-end gap-2"><form className="flex min-w-0 flex-wrap items-end gap-2" onSubmit={event => { event.preventDefault(); setPage(1); setSearch(query.trim()); setRetry(value => value + 1); }}><label className="min-w-0 text-xs">Component search<input aria-label="Exact SBOM component search" value={query} maxLength={200} onChange={e => setQuery(e.target.value)} className="mt-1 block w-full rounded border border-surface-600 bg-surface-950 p-2" /></label><button type="submit" className="rounded border border-surface-600 px-3 py-2 text-xs">Search saved components</button></form><label className="text-xs">Evidence gap<select aria-label="Exact SBOM evidence gap" value={gap} onChange={e => { setGap(e.target.value); setPage(1); }} className="mt-1 block max-w-full rounded border border-surface-600 bg-surface-950 p-2">{Object.entries(gaps).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
+    <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={vulnerable} onChange={e => { setVulnerable(e.target.checked); setPage(1); }} /><span>Recorded vulnerability count greater than zero. This is not current exploitability or scan coverage.</span></label>
+    {loading && <p role="status" className="text-sm">Loading exact SBOM evidence...</p>}{error && <p role="alert" className="break-words text-sm text-danger">{error}</p>}
+    {!loading && !error && snapshot && <>
+      <section aria-label="Saved SBOM document" className="space-y-1 rounded border border-surface-700 p-3 text-xs"><p>Document #{snapshot.sbom.id} · Asset #{snapshot.sbom.asset_id} · {snapshot.sbom.format} {snapshot.sbom.version}</p><p>Source: {snapshot.sbom.source} · Created: {snapshot.sbom.created_at}</p><p>Saved component count: {snapshot.sbom.component_count} · Current component rows: {snapshot.document_total}</p><p className="text-surface-400">Counts and rows are separate current reads. Received {snapshot.retrieved_at}, not a frozen historical version.</p><a className="inline-block text-primary-300" href={`/app/assets?asset=${snapshot.sbom.asset_id}`}>Open exact asset #{snapshot.sbom.asset_id}</a></section>
+      <p className="text-xs">{snapshot.total} matching components · Page {page} of {Math.max(1, Math.ceil(snapshot.total / 10))}</p>{!snapshot.components.length && <p className="text-sm text-surface-400">No saved components match these filters.</p>}
+      <ol className="space-y-3">{snapshot.components.map(row => <li key={row.id} className="space-y-2 rounded border border-surface-700 p-3 text-xs"><h3 className="break-words text-sm font-semibold">Component #{row.id}: {row.name}</h3><dl className="grid gap-2 sm:grid-cols-2">{Object.entries({ Version: row.version, Supplier: row.supplier, PURL: row.purl, CPE: row.cpe, License: row.license, 'Recorded SHA-256 (not verified here)': row.hash_sha256, 'Recorded vulnerability count': row.has_known_vulnerability }).map(([field, value]) => <div key={field} className="min-w-0"><dt className="text-surface-400">{field}</dt><dd className="whitespace-pre-wrap break-words">{text(value)}</dd></div>)}</dl></li>)}</ol>
+      <div className="flex flex-wrap gap-2"><button type="button" disabled={page <= 1} onClick={() => setPage(value => value - 1)} className="rounded border border-surface-600 px-3 py-2 text-xs disabled:opacity-40">Previous evidence components</button><button type="button" disabled={page * 10 >= snapshot.total} onClick={() => setPage(value => value + 1)} className="rounded border border-surface-600 px-3 py-2 text-xs disabled:opacity-40">More evidence components</button></div>
+    </>}
+    <div className="flex flex-wrap gap-2"><button type="button" disabled={loading} onClick={() => setRetry(value => value + 1)} className="rounded border border-surface-600 px-3 py-2 text-xs disabled:opacity-40">Refresh SBOM evidence</button><button type="button" onClick={() => void copy()} className="rounded border border-surface-600 px-3 py-2 text-xs">Copy exact SBOM link</button></div>{copyStatus && <p role="status" className="text-xs">{copyStatus}</p>}
+  </div></div>;
+}
