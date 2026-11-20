@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import io
 import json
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -26,6 +27,7 @@ from backend.models.sbom import SBOM
 from backend.models.suppression_rule import AlertSuppressionRule
 from backend.models.user import User
 from backend.routers.auth import get_active_user
+from backend.services.asset_linked_records import asset_linked_records
 
 router = APIRouter()
 
@@ -313,6 +315,25 @@ async def get_asset(
     return AssetResponse.model_validate(asset).model_copy(
         update={"risk_score": score, "risk_level": _risk_level(score)}
     )
+
+
+@router.get("/{asset_id}/linked-records")
+async def list_asset_linked_records(
+    asset_id: int,
+    kind: Literal["alerts", "sboms", "discovered_devices", "suppression_rules"] = "alerts",
+    page: Annotated[int, Query(ge=1)] = 1,
+    size: Annotated[int, Query(ge=1, le=100)] = 10,
+    search: Annotated[str, Query(max_length=200)] = "",
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Browse current linked records; foreign references return only a combined unavailable count."""
+    asset = (await db.execute(select(Asset).where(
+        Asset.id == asset_id, Asset.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return await asset_linked_records(db, asset, current_user.id, kind, page, size, search.strip())
 
 
 @router.put("/{asset_id}", response_model=AssetResponse)

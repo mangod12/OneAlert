@@ -1,3 +1,4 @@
+import { AssetLinkedRecords } from './AssetLinkedRecords';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
@@ -67,6 +68,7 @@ export function AssetInspector({ assetId, onClose }: { assetId: number; onClose:
           <p className="mt-1 text-xs text-surface-400">Calculated by OneAlert from its recorded asset and alert data, not a separate scan.</p>
           <Link onClick={onClose} to={`/alerts?asset_id=${asset.id}`} className="mt-3 inline-block text-primary-400 hover:text-primary-300">Review alerts for this asset</Link>
         </div>
+        <AssetLinkedRecords key={asset.id} assetId={asset.id} />
         <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
           {fields.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs text-surface-400">{label}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-surface-100">{value || 'Not recorded'}</dd></div>)}
         </dl>
