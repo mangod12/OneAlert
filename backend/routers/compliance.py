@@ -103,10 +103,16 @@ async def export_compliance(
         "framework", "framework_version", "control_id", "title", "category",
         "status", "evidence_type", "evidence_detail", "assessed_by", "assessed_at",
     ])
+    def spreadsheet_text(value):
+        # Quoting CSV cells does not prevent spreadsheet formula interpretation.
+        if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@")):
+            return "'" + value
+        return value
+
     for control in controls:
         assessment = latest.get(control.id)
         framework = frameworks.get(control.framework_id)
-        writer.writerow([
+        writer.writerow([spreadsheet_text(value) for value in [
             framework.name if framework else "",
             framework.version if framework else "",
             control.control_id,
@@ -117,7 +123,7 @@ async def export_compliance(
             (assessment.evidence_detail or "") if assessment else "",
             assessment.assessed_by if assessment else "",
             assessment.assessed_at.isoformat() if assessment and assessment.assessed_at else "",
-        ])
+        ]])
     buffer.seek(0)
     filename = f"compliance-{framework_id}.csv" if framework_id is not None else "compliance.csv"
     return StreamingResponse(
