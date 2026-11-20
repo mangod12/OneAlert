@@ -284,7 +284,7 @@ describe('Linking alerts to the case', () => {
   function mockLoadWithRecentAlerts() {
     mockGet.mockImplementation(url => {
     if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
-      if (url === '/alerts/') return Promise.resolve({ data: { alerts: recentAlerts, total: 2 } });
+      if (url.endsWith('/evidence-candidates')) return Promise.resolve({ data: { data: [{ id: 12, kind: 'alert', title: 'New exposure', severity: 'critical' }], total: 1, page: 1, size: 10, kind: 'alert', case_id: 7 } });
       if (url.endsWith('/alerts')) return Promise.resolve({ data: [{ id: 11, severity: 'high', title: 'Suspicious login burst' }] });
       if (url.endsWith('/events')) return Promise.resolve({ data: [] });
       if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: null } });
@@ -299,20 +299,20 @@ describe('Linking alerts to the case', () => {
     renderDetail();
     await screen.findByText('Suspicious lateral movement');
     fireEvent.click(screen.getByRole('button', { name: 'Link alert' }));
-    const select = await screen.findByLabelText('Alert to link');
+    const radio = await screen.findByLabelText('Select alert #12');
     // Alert 11 is already linked, so only alert 12 is offered.
     expect(screen.queryByRole('option', { name: /Suspicious login burst/ })).toBeNull();
-    fireEvent.change(select, { target: { value: '12' } });
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Link alert' }));
+    fireEvent.click(radio);
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Link selected alert' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/alerts/12'));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2));
   });
 
-  it('notes when every recent alert is already linked', async () => {
+  it('explains when no unlinked alerts match the current query', async () => {
     mockGet.mockImplementation(url => {
     if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
-      if (url === '/alerts/') return Promise.resolve({ data: { alerts: recentAlerts, total: 2 } });
+      if (url.endsWith('/evidence-candidates')) return Promise.resolve({ data: { data: [], total: 0, page: 1, size: 10, kind: 'alert', case_id: 7 } });
       if (url.endsWith('/alerts')) return Promise.resolve({ data: recentAlerts });
       if (url.endsWith('/events')) return Promise.resolve({ data: [] });
       if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: null } });
@@ -322,7 +322,7 @@ describe('Linking alerts to the case', () => {
     renderDetail();
     await screen.findByText('Suspicious lateral movement');
     fireEvent.click(screen.getByRole('button', { name: 'Link alert' }));
-    expect(await screen.findByText('Every recent alert is already linked.')).toBeTruthy();
+    expect(await screen.findByText(/No linkable records match this page/)).toBeTruthy();
   });
 });
 
@@ -335,7 +335,7 @@ describe('Linking events to the case', () => {
   function mockLoadWithRecentEvents() {
     mockGet.mockImplementation(url => {
     if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
-      if (url === '/events/') return Promise.resolve({ data: { events: recentEvents, total: 2 } });
+      if (url.endsWith('/evidence-candidates')) return Promise.resolve({ data: { data: [{ id: 22, kind: 'event', title: 'DNS event', severity: 'medium' }], total: 1, page: 1, size: 10, kind: 'event', case_id: 7 } });
       if (url.endsWith('/events')) return Promise.resolve({ data: [{ id: 21, event_type: 'alert', severity: 'high', signature: 'ET SCAN Nmap' }] });
       if (url.endsWith('/alerts')) return Promise.resolve({ data: [] });
       if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: null } });
@@ -350,20 +350,20 @@ describe('Linking events to the case', () => {
     renderDetail();
     await screen.findByText('Suspicious lateral movement');
     fireEvent.click(screen.getByRole('button', { name: 'Link event' }));
-    const select = await screen.findByLabelText('Event to link');
+    const radio = await screen.findByLabelText('Select event #22');
     // Event 21 is already linked, so only event 22 is offered.
     expect(screen.queryByRole('option', { name: /ET SCAN Nmap/ })).toBeNull();
-    fireEvent.change(select, { target: { value: '22' } });
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Link event' }));
+    fireEvent.click(radio);
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Link selected event' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/events/22'));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2));
   });
 
-  it('notes when every recent event is already linked', async () => {
+  it('explains when no unlinked events match the current query', async () => {
     mockGet.mockImplementation(url => {
     if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
-      if (url === '/events/') return Promise.resolve({ data: { events: recentEvents, total: 2 } });
+      if (url.endsWith('/evidence-candidates')) return Promise.resolve({ data: { data: [], total: 0, page: 1, size: 10, kind: 'event', case_id: 7 } });
       if (url.endsWith('/events')) return Promise.resolve({ data: recentEvents });
       if (url.endsWith('/alerts')) return Promise.resolve({ data: [] });
       if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: null } });
@@ -373,7 +373,7 @@ describe('Linking events to the case', () => {
     renderDetail();
     await screen.findByText('Suspicious lateral movement');
     fireEvent.click(screen.getByRole('button', { name: 'Link event' }));
-    expect(await screen.findByText('Every recent event is already linked.')).toBeTruthy();
+    expect(await screen.findByText(/No linkable records match this page/)).toBeTruthy();
   });
 });
 
