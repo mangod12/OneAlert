@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
+import { DeviceConnectionEvidence } from './DeviceConnectionEvidence';
 import { DeviceEnrichmentForm } from './DeviceEnrichmentForm';
 import { deviceEvidenceSnapshot } from '../utils/deviceEvidenceSnapshot';
 import { useDialogFocus } from './ui/useDialogFocus';
@@ -122,6 +123,7 @@ export function DiscoveredDeviceInspector({ deviceId, onClose, onUpdated, onCopy
         <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
           {fields.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs text-surface-400">{label}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-surface-100">{value || 'Not recorded'}</dd></div>)}
         </dl>
+        <DeviceConnectionEvidence key={`connections-${record.id}`} deviceId={record.id} />
         <section><h3 className="text-sm font-semibold text-surface-100">Description</h3><p className="mt-2 whitespace-pre-wrap break-words text-sm text-surface-300">{record.description || 'Not recorded'}</p></section>
         <section><h3 className="text-sm font-semibold text-surface-100">Notes</h3><p className="mt-2 whitespace-pre-wrap break-words text-sm text-surface-300">{record.notes || 'Not recorded'}</p></section>
       </div>}
