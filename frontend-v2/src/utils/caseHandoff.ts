@@ -69,7 +69,7 @@ export function caseHandoff(snapshot: HandoffSnapshot, includeTimeline: boolean)
   }
   if (snapshot.responsePlans) {
     const page = snapshot.responsePlans;
-    const value = (field: unknown) => field == null || field === '' ? 'Not recorded' : String(field);
+    const value = (field: unknown) => field == null || field === '' ? 'Not recorded' : typeof field === 'object' ? JSON.stringify(field) : String(field);
     lines.push('', `SAVED RESPONSE PLAN EVIDENCE (${page.plans.length} records on loaded page)`,
       `Plan page: ${page.page} of ${Math.max(1, Math.ceil(page.total / page.size))} | Page size: ${page.size} | Total visible matching plan records: ${page.total}`,
       `Plan page fetched at: ${page.fetchedAt}`,

@@ -44,3 +44,7 @@ it('does not infer the absence of response work from an empty visible plan page'
   const text = caseHandoff({ ...snapshot, responsePlans: { plans: [], page: 1, size: 10, total: 0, fetchedAt: 'now' } }, false);
   expect(text).toContain('This does not establish that no response plan exists elsewhere.');
 });
+it('retains unexpected legacy action field values as JSON data instead of invoking string conversion', () => {
+  const text = caseHandoff({ ...snapshot, responsePlans: { plans: [{ id: 21, case_id: 7, status: 'partial', autonomy_level: 'L1', created_at: '2026-11-20T00:00:00Z', actions: [{ action_type: 'notify', target: { toString: 'recorded-data' } as unknown as string, reason: 'Review legacy value' }] }], page: 1, size: 10, total: 1, fetchedAt: 'now' } }, false);
+  expect(text).toContain('  {"toString":"recorded-data"}');
+});
