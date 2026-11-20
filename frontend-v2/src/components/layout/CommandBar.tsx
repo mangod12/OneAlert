@@ -4,6 +4,7 @@ import { useLocation } from 'react-router-dom';
 import type { RefObject } from 'react';
 
 const routeMeta: Array<{ match: (path: string) => boolean; section: string; title: string }> = [
+  { match: path => /^\/settings\/suppression-rules\/[^/]+$/.test(path), section: 'Govern', title: 'Suppression rule evidence' },
   { match: path => /^\/cases\/\d+/.test(path), section: 'Command / Investigations', title: 'Case workspace' },
   { match: path => path === '/my-tasks', section: 'Command', title: 'My tasks' },
   { match: path => path === '/cases', section: 'Command', title: 'Investigations' },
