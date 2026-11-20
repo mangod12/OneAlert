@@ -37,6 +37,7 @@ from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.services.assignment import _open_work_loads, org_members
 from backend.services.audit import add_audit_log
+from backend.services.csv_export import spreadsheet_safe_row
 from backend.services.investigation_notify import notify_investigation_event
 
 
@@ -321,7 +322,7 @@ async def export_alerts(
     ])
     for row in rows:
         alert = row.Alert
-        writer.writerow([
+        writer.writerow(spreadsheet_safe_row([
             alert.id,
             alert.cve_id or "",
             alert.title,
@@ -333,7 +334,7 @@ async def export_alerts(
             alert.created_at.isoformat() if alert.created_at else "",
             alert.acknowledged_at.isoformat() if alert.acknowledged_at else "",
             alert.snoozed_until.isoformat() if alert.snoozed_until else "",
-        ])
+        ]))
     buffer.seek(0)
     return StreamingResponse(
         iter([buffer.getvalue()]),

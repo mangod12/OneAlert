@@ -44,6 +44,7 @@ from backend.models.response_plan import ApprovalRequest, ResponsePlan
 from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.services.audit import add_audit_log
+from backend.services.csv_export import spreadsheet_safe_row
 from backend.services.investigation_notify import notify_investigation_event
 from backend.services.sla import sla_due_date
 
@@ -269,7 +270,7 @@ async def export_cases(
     ])
     for row in rows:
         case = row.Case
-        writer.writerow([
+        writer.writerow(spreadsheet_safe_row([
             case.id,
             case.title,
             case.summary or "",
@@ -282,7 +283,7 @@ async def export_cases(
             case.due_date.isoformat() if case.due_date else "",
             case.created_by,
             case.created_at.isoformat() if case.created_at else "",
-        ])
+        ]))
     buffer.seek(0)
     return StreamingResponse(
         iter([buffer.getvalue()]),
@@ -477,14 +478,14 @@ async def export_case_timeline(
     writer = csv.writer(buffer)
     writer.writerow(["case_id", "case_title", "timestamp", "entry_type", "source", "content"])
     for entry in timeline:
-        writer.writerow([
+        writer.writerow(spreadsheet_safe_row([
             case.id,
             case.title,
             entry.timestamp.isoformat() if entry.timestamp else "",
             entry.entry_type,
             entry.source,
             entry.content,
-        ])
+        ]))
     buffer.seek(0)
     return StreamingResponse(
         iter([buffer.getvalue()]),

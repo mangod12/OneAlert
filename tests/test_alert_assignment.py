@@ -312,3 +312,24 @@ class TestAlertAssignmentNotifications:
         feed = client.get("/api/v1/notifications/", headers=member)
         assert feed.json()["total"] == 0
         assert feed.json()["unread_count"] == 0
+
+
+@pytest.mark.parametrize('value', ['=1+1', '+cmd', '-1+2', '@SUM(1)', '  =1', '\t+cmd', '\r@cmd', '\n-cmd'])
+def test_alert_export_protects_recorded_titles_and_asset_names(client, value):
+    import csv
+    import io
+    headers = _register_and_login(client, 'alert-csv-safety@example.com')
+    alert_id = _seed_alert(_user_id(client, headers))
+    with _TestingSessionLocal() as db:
+        record = db.get(Alert, alert_id)
+        record.title = record.cve_id = value
+        record.cvss_score = 0
+        db.get(Asset, record.asset_id).name = value
+        db.commit()
+    response = client.get('/api/v1/alerts/export', headers=headers)
+    assert response.status_code == 200
+    row = next(csv.DictReader(io.StringIO(response.text)))
+    assert row['title'] == row['cve_id'] == row['asset_name'] == "'" + value
+    assert row['cvss_score'] in ('0', '0.0')
+    with _TestingSessionLocal() as db:
+        assert db.get(Alert, alert_id).title == value

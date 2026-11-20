@@ -289,3 +289,26 @@ def test_empty_validation_run_needs_no_control_query(client, auth_headers, monke
         f"/api/v1/validation/runs/{run_id}" + ("/export" if export else ""), headers=auth_headers,
     )
     assert response.status_code == 200
+
+
+@pytest.mark.parametrize('value', ['=1+1', '+cmd', '-1+2', '@SUM(1)', '  =1', '\t+cmd', '\r@cmd', '\n-cmd'])
+def test_validation_csv_protects_recorded_run_step_and_control_text(client, auth_headers, value):
+    from backend.models.validation import ControlResult, ValidationStep
+    run_id = _create_run(client, auth_headers, name=value)
+    with TestingSessionLocal() as db:
+        step = ValidationStep(run_id=run_id, step_number=1, technique_id=value, technique_name=value,
+                              test_name=value, test_type='manual', status='completed', duration_ms=0)
+        db.add(step)
+        db.flush()
+        db.add(ControlResult(step_id=step.id, control_name=value, control_type='manual', detected=False))
+        db.commit()
+    response = client.get(f'/api/v1/validation/runs/{run_id}/export', headers=auth_headers)
+    assert response.status_code == 200
+    row = next(csv.DictReader(io.StringIO(response.text)))
+    assert all(row[field] == "'" + value for field in ['run', 'technique_id', 'technique_name', 'test_name'])
+    assert row['controls'] == "'" + value + ' (missed)'
+    assert row['step_number'] == '1'
+    assert row['duration_ms'] == '0'
+    detail = client.get(f'/api/v1/validation/runs/{run_id}', headers=auth_headers).json()['data']
+    assert detail['name'] == value
+    assert detail['steps'][0]['test_name'] == value
