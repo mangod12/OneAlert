@@ -161,3 +161,71 @@ it('retains the capped-snapshot warning after completing a returned task', async
   expect(screen.getAllByRole('listitem')).toHaveLength(199);
   expect(screen.getByText(/200-task return limit was reached/)).toBeTruthy();
 });
+
+it('previews selected tasks across filters, confirms the exact count, and applies only to those tasks', async () => {
+  vi.mocked(apiClient.patch).mockResolvedValue({ data: { due_date: '2099-03-04' } });
+  mount();
+  fireEvent.click(await screen.findByLabelText('Select task #1: Collect host evidence'));
+  fireEvent.click(screen.getByLabelText('Select task #2: Review access'));
+  fireEvent.change(screen.getByLabelText('Find assigned work'), { target: { value: 'Collect' } });
+  expect(screen.getByText(/2 selected in the loaded set; 1 hidden/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Due date for selected tasks'), { target: { value: '2099-03-04' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review date change' }));
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect(screen.getByText(/2099-03-04 for 2 selected loaded tasks, including 1 hidden/)).toBeTruthy();
+  expect(apiClient.patch).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(apiClient.patch).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Review date change' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply to 2 tasks' }));
+  await screen.findByText(/Saved due dates for 2 of 2 selected tasks/);
+  expect(vi.mocked(apiClient.patch).mock.calls).toEqual([['/cases/7/tasks/1', { due_date: '2099-03-04' }], ['/cases/8/tasks/2', { due_date: '2099-03-04' }]]);
+  expect(screen.getByText('Task #1 due: 2099-03-04')).toBeTruthy();
+  expect(screen.getByText(/0 selected in the loaded set/)).toBeTruthy();
+});
+
+it('retains failed selections for a targeted retry and updates only confirmed dates', async () => {
+  vi.mocked(apiClient.patch).mockResolvedValueOnce({ data: { due_date: null } }).mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce({ data: { due_date: null } });
+  mount();
+  fireEvent.click(await screen.findByLabelText('Select task #1: Collect host evidence'));
+  fireEvent.click(screen.getByLabelText('Select task #2: Review access'));
+  fireEvent.change(screen.getByLabelText('Selected task date action'), { target: { value: 'clear' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review date change' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply to 2 tasks' }));
+  await screen.findByText(/Saved due dates for 1 of 2/);
+  expect(screen.getByLabelText('Select task #1: Collect host evidence')).toHaveProperty('checked', false);
+  expect(screen.getByLabelText('Select task #2: Review access')).toHaveProperty('checked', true);
+  expect(screen.getByText('Task #1 due: Not set')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Review date change' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply to 1 tasks' }));
+  await screen.findByText(/Saved due dates for 1 of 1/);
+  expect(vi.mocked(apiClient.patch).mock.calls.map(([url]) => url)).toEqual(['/cases/7/tasks/1', '/cases/8/tasks/2', '/cases/8/tasks/2']);
+});
+
+it('requires selected row drafts to be saved or discarded before bulk changes', async () => {
+  mount();
+  fireEvent.click(await screen.findByLabelText('Select task #1: Collect host evidence'));
+  fireEvent.change(screen.getByLabelText('Task due date for #1'), { target: { value: '2099-02-02' } });
+  fireEvent.change(screen.getByLabelText('Selected task date action'), { target: { value: 'clear' } });
+  expect(screen.getByRole('button', { name: 'Review date change' })).toHaveProperty('disabled', true);
+  fireEvent.click(screen.getByLabelText('Discard due date draft for task #1'));
+  expect(screen.getByRole('button', { name: 'Review date change' })).toHaveProperty('disabled', false);
+  expect(apiClient.patch).not.toHaveBeenCalled();
+});
+
+it('limits bulk request concurrency to five and freezes selection until completion', async () => {
+  get.mockResolvedValue({ data: Array.from({ length: 6 }, (_, i) => task({ task_id: i + 1, title: `Selected work ${i + 1}` })) });
+  const finish: Array<(value: unknown) => void> = [];
+  vi.mocked(apiClient.patch).mockImplementation(() => new Promise(resolve => { finish.push(resolve); }));
+  mount();
+  fireEvent.click(await screen.findByRole('button', { name: 'Select matching tasks' }));
+  fireEvent.change(screen.getByLabelText('Selected task date action'), { target: { value: 'clear' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review date change' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply to 6 tasks' }));
+  expect(apiClient.patch).toHaveBeenCalledTimes(5);
+  expect(screen.getByLabelText('Find assigned work')).toHaveProperty('disabled', true);
+  await act(async () => { finish.slice(0, 5).forEach(resolve => resolve({ data: { due_date: null } })); });
+  expect(apiClient.patch).toHaveBeenCalledTimes(6);
+  await act(async () => finish[5]({ data: { due_date: null } }));
+  await screen.findByText(/Saved due dates for 6 of 6/);
+});
