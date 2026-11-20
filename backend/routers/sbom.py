@@ -28,6 +28,7 @@ from backend.models.sbom import (
 )
 from backend.models.user import User
 from backend.routers.auth import get_active_user
+from backend.routers.sbom_component_search import router as component_search_router
 from backend.services.sbom_service import (
     parse_cyclonedx,
     parse_cyclonedx_vulnerabilities,
@@ -35,6 +36,7 @@ from backend.services.sbom_service import (
 )
 
 router = APIRouter()
+router.include_router(component_search_router)
 
 
 @router.post("/upload", response_model=SBOMResponse, status_code=status.HTTP_201_CREATED)
