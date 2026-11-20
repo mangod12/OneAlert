@@ -1,5 +1,7 @@
+import { validRecordedAddress } from '../utils/topologyAddress';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
+import { useSearchParams } from 'react-router-dom';
 import { Network, Lock, LockOpen, Plus, Trash2, Download } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -49,7 +51,12 @@ export function Topology() {
   const [deletingBusy, setDeletingBusy] = useState(false);
   const [protocolFilter, setProtocolFilter] = useState('');
   const [cleartextOnly, setCleartextOnly] = useState(false);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedNodes = searchParams.getAll('node');
+  const validNodeLink = requestedNodes.length === 1 && validRecordedAddress(requestedNodes[0]);
+  const selectedNodeId = validNodeLink ? requestedNodes[0] : null;
+  const invalidNodeLink = requestedNodes.length > 0 && !validNodeLink;
+  const setSelectedNodeId = (value: string | null) => setSearchParams(current => { const next = new URLSearchParams(current); if (value === null) next.delete('node'); else next.set('node', value); return next; }, { replace: value === null });
   const [identityNode, setIdentityNode] = useState<TopologyNode | null>(null);
   const [selectedConnection, setSelectedConnection] = useState<TopologyEdge | null>(null);
   const [graphReceivedAt, setGraphReceivedAt] = useState<string | null>(null);
@@ -162,7 +169,7 @@ export function Topology() {
   );
 
   const exportConnections = () => {
-    if (!filteredEdges.length) return;
+    if (!filteredEdges.length || invalidNodeLink) return;
     try {
       const content = topologyCsv(filteredEdges, nodes, { protocol: protocolFilter, cleartextOnly, nodeId: selectedNodeId, receivedAt: graphReceivedAt });
       const url = URL.createObjectURL(new Blob([content], { type: 'text/csv;charset=utf-8' }));
@@ -179,8 +186,10 @@ export function Topology() {
     <div className="space-y-6">
       {selectedConnection && <TopologyConnectionEvidence edge={selectedConnection} receivedAt={graphReceivedAt} sourceLabel={nodeLabel(selectedConnection.source)} targetLabel={nodeLabel(selectedConnection.target)} onClose={() => setSelectedConnection(null)} />}
       {identityNode && <TopologyEndpointIdentity node={identityNode} onClose={() => setIdentityNode(null)} />}
+      {invalidNodeLink && <div role="alert" className="oa-panel space-y-2 p-4 text-sm text-warning"><p>The topology link must contain one non-empty recorded address, without extra whitespace or control characters. No address filter was applied and export is disabled.</p><button type="button" onClick={() => setSelectedNodeId(null)} className="text-xs text-primary-300">Clear invalid topology link</button></div>}
+      {selectedNodeId && <div className="oa-panel space-y-2 p-4 text-xs text-surface-300"><p className="break-all">Exact recorded-address filter: {selectedNodeId}. This compares address text only, not physical device identity, network segment or a live traffic capture.</p><button type="button" onClick={() => setSelectedNodeId(null)} className="text-primary-300">Clear recorded address filter</button>{!selectedNode && !edges.some(edge => edge.source === selectedNodeId || edge.target === selectedNodeId) && <p role="status">This address has no matching node or connection in the loaded topology. That does not prove the address or device has no activity.</p>}</div>}
       <PageHeader eyebrow="Observe" title="Network Topology" description="Observed devices, zones and connections, with encryption exposure." actions={
-        <button type="button" onClick={exportConnections} disabled={filteredEdges.length === 0} className="flex items-center gap-2 rounded-md border border-surface-700 px-3 py-2 text-xs text-surface-200 hover:bg-surface-800 disabled:opacity-40">
+        <button type="button" onClick={exportConnections} disabled={filteredEdges.length === 0 || invalidNodeLink} className="flex items-center gap-2 rounded-md border border-surface-700 px-3 py-2 text-xs text-surface-200 hover:bg-surface-800 disabled:opacity-40">
           <Download className="h-4 w-4" aria-hidden="true" /> Export filtered connections
         </button>
       } />
@@ -228,7 +237,7 @@ export function Topology() {
                       type="button"
                       aria-pressed={selectedNodeId === node.id}
                       title="Show this node's connections"
-                      onClick={() => setSelectedNodeId(prev => (prev === node.id ? null : node.id))}
+                      onClick={() => setSelectedNodeId(selectedNodeId === node.id ? null : node.id)}
                       className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left transition-colors ${
                         selectedNodeId === node.id
                           ? 'border-primary-500/60 bg-primary-500/10 ring-1 ring-primary-500/40'
