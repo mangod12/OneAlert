@@ -764,10 +764,13 @@ async def delete_case_note(
 # --- Investigation task checklist ---
 
 
-async def _get_visible_case(db: AsyncSession, case_id: int, current_user: User) -> Case:
-    case = (await db.execute(
-        _visible_cases(case_id, current_user)
-    )).scalar_one_or_none()
+async def _get_visible_case(
+    db: AsyncSession, case_id: int, current_user: User, *, write: bool = False
+) -> Case:
+    query = _visible_cases(case_id, current_user)
+    if write:
+        query = query.with_for_update()
+    case = (await db.execute(query)).scalar_one_or_none()
     if case is None:
         raise HTTPException(status_code=404, detail="Case not found")
     return case
@@ -833,7 +836,7 @@ async def create_case_task(
     db: AsyncSession = Depends(get_async_db),
 ):
     """Add a task to the end of the case checklist."""
-    case = await _get_visible_case(db, case_id, current_user)
+    case = await _get_visible_case(db, case_id, current_user, write=True)
     _require_checklist_manager(case, current_user)
     title = payload.title.strip()
     if not title:
@@ -879,7 +882,7 @@ async def update_case_task(
     the case timeline so the investigation keeps an audit trail of
     checklist progress. Send ``assignee_id: null`` to unassign.
     """
-    case = await _get_visible_case(db, case_id, current_user)
+    case = await _get_visible_case(db, case_id, current_user, write=True)
     task = await _get_case_task(db, case.id, task_id)
     if not _can_manage_checklist(case, current_user) and (
         task.assignee_id != current_user.id or payload.model_fields_set - {"done", "due_date"}
@@ -951,7 +954,7 @@ async def delete_case_task(
     db: AsyncSession = Depends(get_async_db),
 ):
     """Remove a task from the case checklist."""
-    case = await _get_visible_case(db, case_id, current_user)
+    case = await _get_visible_case(db, case_id, current_user, write=True)
     _require_checklist_manager(case, current_user)
     task = await _get_case_task(db, case.id, task_id)
     await db.delete(task)
@@ -1010,7 +1013,7 @@ async def seed_case_tasks_from_plan(
     Re-seeding skips actions already on the checklist, so an updated plan
     only adds its new steps.
     """
-    case = await _get_visible_case(db, case_id, current_user)
+    case = await _get_visible_case(db, case_id, current_user, write=True)
     _require_checklist_manager(case, current_user)
     # Serialize all imports on the case, including legacy bodyless requests.
     await db.execute(select(Case.id).where(Case.id == case.id).with_for_update())
@@ -1113,6 +1116,21 @@ async def seed_case_tasks_from_plan(
     return SeedTasksFromPlanResponse(created=created, skipped=skipped)
 
 
+@router.get("/{case_id}/closeout-review")
+async def preview_case_closeout(
+    case_id: int, target_status: Literal["resolved", "closed", "false_positive"],
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_close_review import closeout_review
+
+    case = await _get_visible_case(db, case_id, current_user)
+    if case.user_id != current_user.id and case.assigned_to_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the investigation owner or assignee can review close-out")
+    if case.status == target_status:
+        raise HTTPException(status_code=409, detail="The investigation already has that status. Refresh the case.")
+    return await closeout_review(db, case, current_user.id, target_status)
+
+
 @router.patch("/{case_id}")
 async def update_case(
     case_id: int,
@@ -1126,12 +1144,13 @@ async def update_case(
     resolution: str | None = Query(
         None, description="Close-out summary, empty to clear, omitted to leave unchanged"
     ),
+    reviewed_fingerprint: str | None = Query(None, pattern="^[a-f0-9]{64}$"),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Update case status, severity, title, summary, or close-out resolution."""
     case = (await db.execute(
-        _visible_cases(case_id, current_user)
+        _visible_cases(case_id, current_user).with_for_update()
     )).scalar_one_or_none()
 
     if not case:
@@ -1151,6 +1170,21 @@ async def update_case(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Assignees can update the status only; the case owner edits the details",
         )
+
+    if reviewed_fingerprint is not None:
+        if status_update not in {"resolved", "closed", "false_positive"} or any(
+            value is not None for value in (severity, title, summary, due_date)
+        ):
+            raise HTTPException(status_code=422, detail=(
+                "A reviewed close-out changes only status and optional resolution"))
+        from backend.services.case_close_review import closeout_review
+
+        preview = await closeout_review(db, case, current_user.id, status_update, lock=True)
+        if case.status == status_update or not secrets.compare_digest(
+            reviewed_fingerprint, preview["reviewed_fingerprint"]
+        ):
+            raise HTTPException(status_code=409, detail=(
+                "The case or remaining work changed. Refresh and review close-out again."))
 
     old_severity = case.severity
     old_due_date = case.due_date
@@ -1247,7 +1281,10 @@ async def update_case(
                 ),
                 link_path=f"/app/cases/{case.id}",
             )
-    return {"success": True, "message": "Case updated"}
+    return {"success": True, "message": "Case updated", **({"data": {
+        "case_id": case.id, "status": case.status, "resolution": case.resolution,
+        "closed_at": case.closed_at, "reviewed_fingerprint": reviewed_fingerprint,
+    }} if reviewed_fingerprint is not None else {})}
 
 
 @router.delete("/{case_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1598,7 +1635,7 @@ async def link_alert_to_case(
     from backend.models.alert import Alert
 
     case = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+        select(Case).where(Case.id == case_id, Case.user_id == current_user.id).with_for_update()
     )).scalar_one_or_none()
     if case is None:
         raise HTTPException(status_code=404, detail="Case not found")
@@ -1647,7 +1684,7 @@ async def unlink_alert_from_case(
 ):
     """Remove an alert link from a case. Idempotent: unlinking twice is a no-op."""
     case = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+        select(Case).where(Case.id == case_id, Case.user_id == current_user.id).with_for_update()
     )).scalar_one_or_none()
     if case is None:
         raise HTTPException(status_code=404, detail="Case not found")

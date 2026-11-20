@@ -1,3 +1,4 @@
+import { CaseCloseReview } from '../components/CaseCloseReview';
 import { CaseEvidencePicker } from '../components/CaseEvidencePicker';
 import { ChecklistBatchTools } from '../components/ChecklistBatchTools';
 import type { ChecklistSelection } from '../components/ChecklistImportPreview';
@@ -1136,19 +1137,7 @@ export function CaseDetail() {
           setTasks(current => current.map(task => task.id === editingTask.id ? response.data : task));
         }} />}
 
-      {pendingClose && (
-        <ConfirmDialog
-          title={`${pendingClose.label} this case?`}
-          description="The case moves to a done state. You can reopen it later from the case page."
-          confirmLabel={pendingClose.label}
-          reasonLabel={isOwner ? 'Resolution summary (optional)' : undefined}
-          reasonPlaceholder="Root cause, containment, follow-ups."
-          defaultReason={caseData.resolution ?? ''}
-          busy={updatingStatus}
-          onCancel={() => { if (!updatingStatus) setPendingClose(null); }}
-          onConfirm={(reason) => { setPendingClose(null); void changeStatus(pendingClose.status, reason); }}
-        />
-      )}
+      {pendingClose && <CaseCloseReview key={`${caseData.id}:${pendingClose.status}`} caseId={caseData.id} targetStatus={pendingClose.status} label={pendingClose.label} onClose={() => { setPendingClose(null); void fetchAll(); }} onSaved={() => { setPendingClose(null); toast(`Case marked ${pendingClose.status}`, 'success'); void fetchAll(); }} />}
 
       {pendingDeleteNote && (
         <ConfirmDialog
