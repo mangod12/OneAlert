@@ -103,3 +103,67 @@ def test_database_commit_failure_rolls_back_and_never_returns_a_false_ingested_c
         asyncio.run(ingest_events(db, 1, [{"timestamp": STAMP, "event_type": "alert"}], "suricata"))
     db.rollback.assert_awaited_once()
     db.commit.assert_awaited_once()
+
+
+def test_unknown_source_nested_errors_and_redactions_are_accounted_only_for_stored_rows(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'edge.db'}")
+        try:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            async with async_sessionmaker(engine, expire_on_commit=False)() as db:
+                output = await ingest_events(db, 9, [
+                    {"event_type": "auth", "source_ip": "10.0.0.1", "note": "analyst@example.test"},
+                    {"event_type": {}, "note": "other@example.test"},
+                    {"event_type": "auth", "bad": float("inf")},
+                ], "webhook")
+                assert output["received"] == 3 and output["ingested"] == 1 and output["skipped"] == 2
+                assert output["redacted"] == 1 and output["skip_reasons"] == {"invalid_fields": 2}
+                event = (await db.execute(select(SecurityEvent))).scalar_one()
+                assert event.user_id == 9 and event.source_type == "unknown"
+                assert event.raw_data["note"] == "[REDACTED_EMAIL]"
+                output = await ingest_events(db, 9, [
+                    {"timestamp": STAMP, "event_type": "alert", "alert": []},
+                    {"timestamp": STAMP, "event_type": "http", "http": None},
+                    {"timestamp": STAMP, "event_type": "flow", "flow": "bad"},
+                    {"timestamp": STAMP, "event_type": "alert"},
+                    None,
+                ], "suricata")
+                assert output["received"] == 5 and output["ingested"] == 1 and output["skipped"] == 4
+                assert output["skip_reasons"] == {"parse_error": 3, "invalid_record": 1}
+                assert (await db.execute(select(func.count(SecurityEvent.id)))).scalar_one() == 2
+        finally:
+            await engine.dispose()
+    asyncio.run(scenario())
+
+
+def test_real_database_failure_reverts_source_receipt_and_leaves_session_usable(tmp_path):
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'rollback.db'}")
+        try:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            async with async_sessionmaker(engine, expire_on_commit=False)() as db:
+                await ingest_events(db, 1, [{"timestamp": STAMP, "event_type": "alert"}], "suricata")
+                source = (await db.execute(select(EventSource))).scalar_one()
+                original_id, original_time = source.id, source.last_event_at
+                await db.execute(text(
+                    "CREATE TRIGGER reject_events BEFORE INSERT ON security_events "
+                    "BEGIN SELECT RAISE(ABORT, 'forced insert failure'); END"
+                ))
+                await db.commit()
+                with pytest.raises(IntegrityError):
+                    await ingest_events(db, 1, [{"timestamp": STAMP, "event_type": "alert"}], "suricata")
+                source = (await db.execute(select(EventSource).where(EventSource.id == original_id))).scalar_one()
+                assert source.event_count == 1 and source.last_event_at == original_time
+                assert (await db.execute(select(func.count(SecurityEvent.id)))).scalar_one() == 1
+                await db.execute(text("DROP TRIGGER reject_events"))
+                await db.commit()
+                output = await ingest_events(db, 1, [{"timestamp": STAMP, "event_type": "alert"}], "suricata")
+                assert output["ingested"] == 1
+        finally:
+            await engine.dispose()
+    asyncio.run(scenario())

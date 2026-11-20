@@ -1,25 +1,15 @@
 import { useState } from 'react';
 
-export interface ImportReceipt {
-  filename: string;
-  parser: string;
-  received_at: string;
-  result: { received?: number; ingested?: number; skipped?: number; redacted?: number; source_id?: number; skip_reasons?: Record<string, number> };
-}
-const reasonLabels: Record<string, string> = {
-  invalid_timestamp: 'Missing, invalid or ambiguous recorded timestamp',
-  invalid_fields: 'Invalid normalized field types or values',
-  invalid_record: 'Not a JSON object', unsupported_record: 'Unsupported source record', parse_error: 'Source parser error',
-};
+import { importResponseMetadata, reasonLabels, type ImportReceipt } from '../utils/eventImportReceipt';
 const count = (value?: number) => typeof value === 'number' ? value.toLocaleString() : 'Not recorded';
 
 export function EventImportReceipt({ receipt, onDismiss }: { receipt: ImportReceipt; onDismiss: () => void }) {
   const [downloadError, setDownloadError] = useState('');
-  const result = receipt.result;
+  const result = importResponseMetadata(receipt.result);
   const download = () => {
     setDownloadError('');
     try {
-      const body = { format: 'onealert_event_import_receipt_v1', scope: 'Last import response from this browser visit. No raw event values or file bytes included. Not a live check, persistent import history or duplicate-detection guarantee.', ...receipt };
+      const body = { format: 'onealert_event_import_receipt_v1', scope: 'Last import response from this browser visit. No raw event values or file bytes included. Not a live check, persistent import history or duplicate-detection guarantee.', filename: receipt.filename, parser: receipt.parser, received_at: receipt.received_at, result };
       const url = URL.createObjectURL(new Blob([JSON.stringify(body, null, 2) + '\n'], { type: 'application/json' }));
       const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'event-import-receipt.json';
       document.body.appendChild(anchor); anchor.click(); anchor.remove();

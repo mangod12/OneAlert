@@ -11,7 +11,8 @@ import { useDialogFocus } from '../components/ui/useDialogFocus';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { SavedViewsMenu } from '../components/SavedViewsMenu';
 import { reviewEventFile, type EventFileReview } from '../utils/eventFileReview';
-import { EventImportReceipt, type ImportReceipt } from '../components/EventImportReceipt';
+import { EventImportReceipt } from '../components/EventImportReceipt';
+import { importResponseMetadata, type ImportReceipt } from '../utils/eventImportReceipt';
 import { eventSeverityTones } from '../components/ui/tones';
 
 const utcInput = (value?: string) => value ? new Date(value).toISOString().replace(/Z$/, '').replace(/\.000$/, '').replace(/:00$/, '') : '';
@@ -195,7 +196,7 @@ export function Events() {
         params: { source_type: sourceType },
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      const result = res.data?.data ?? {};
+      const result = importResponseMetadata(res.data?.data);
       const ingested = result.ingested ?? 0;
       const skipped = result.skipped ?? 0;
       setImportReceipt({ filename: file.name, parser: sourceType, received_at: new Date().toISOString(), result });
