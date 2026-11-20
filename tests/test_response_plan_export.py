@@ -125,3 +125,19 @@ class TestResponsePlanExport:
 
         rows = _read_csv(client.get("/api/v1/response-plans/export", headers=other))
         assert rows == []
+
+
+@pytest.mark.parametrize('value', ['=1+1', '+cmd', '-1+2', '@SUM(1)', '  =1', '\t+cmd', '\r@cmd', '\n-cmd'])
+def test_plan_export_protects_recorded_actor_text_and_preserves_counts(client, value):
+    headers = _register_and_login(client, 'plan-csv-safety@example.com')
+    plan_id = _make_plan(client, headers, 'draft', 'Case')
+    with _TestingSessionLocal() as db:
+        record = db.get(ResponsePlan, plan_id)
+        record.created_by = value
+        db.commit()
+    row = _read_csv(client.get('/api/v1/response-plans/export', headers=headers))[0]
+    assert row['created_by'] == "'" + value
+    assert row['action_count'] == '0'
+    assert row['id'] == str(plan_id)
+    with _TestingSessionLocal() as db:
+        assert db.get(ResponsePlan, plan_id).created_by == value

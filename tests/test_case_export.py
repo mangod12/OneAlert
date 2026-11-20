@@ -197,3 +197,21 @@ def test_keyword_is_literal_owner_scoped_and_bounded(client):
         assert len(_export(client, headers, search=query)) == 1
     assert client.get('/api/v1/cases/', params={'search': 'x' * 201}, headers=headers).status_code == 422
     assert client.get('/api/v1/cases/export', params={'search': 'x' * 201}, headers=headers).status_code == 422
+
+
+@pytest.mark.parametrize('value', ['=1+1', '+cmd', '-1+2', '@SUM(1)', '  =1', '\t+cmd', '\r@cmd', '\n-cmd'])
+def test_case_export_protects_formula_text_without_changing_evidence(client, value):
+    headers = _register_and_login(client, 'case-csv-safety@example.com')
+    case_id = _make_case(client, headers, value)
+    with _TestingSessionLocal() as db:
+        record = db.get(Case, case_id)
+        record.title = record.summary = value
+        record.created_by = value
+        record.confidence_score = 0
+        db.commit()
+    row = _export(client, headers)[0]
+    assert row['title'] == row['summary'] == row['created_by'] == "'" + value
+    assert row['confidence_score'] in ('0', '0.0')
+    assert row['alert_count'] == row['event_count'] == '0'
+    with _TestingSessionLocal() as db:
+        assert db.get(Case, case_id).summary == value

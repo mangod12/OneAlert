@@ -18,6 +18,7 @@ from backend.models.response_plan import (
 from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.services.audit import add_audit_log
+from backend.services.csv_export import spreadsheet_safe_row
 
 router = APIRouter()
 
@@ -81,7 +82,7 @@ async def export_response_plans(
         "action_count", "approved_by", "approved_at", "created_at",
     ])
     for plan in plans:
-        writer.writerow([
+        writer.writerow(spreadsheet_safe_row([
             plan.id,
             plan.case_id,
             plan.status,
@@ -91,7 +92,7 @@ async def export_response_plans(
             plan.approved_by if plan.approved_by is not None else "",
             plan.approved_at.isoformat() if plan.approved_at else "",
             plan.created_at.isoformat() if plan.created_at else "",
-        ])
+        ]))
     buffer.seek(0)
     return StreamingResponse(
         iter([buffer.getvalue()]),

@@ -106,3 +106,22 @@ class TestCaseTimelineExport:
         headers = _register_and_login(client, "missing@example.com")
         resp = client.get("/api/v1/cases/99999/export", headers=headers)
         assert resp.status_code == 404
+
+
+@pytest.mark.parametrize('value', ['=1+1', '+cmd', '-1+2', '@SUM(1)', '  =1', '\t+cmd', '\r@cmd', '\n-cmd'])
+def test_timeline_csv_protects_titles_sources_and_notes_without_rewriting_them(client, value):
+    from backend.models.case import Case, CaseTimeline
+    headers = _register_and_login(client, 'timeline-csv-safety@example.com')
+    case_id = _make_case(client, headers, title=value)
+    with _TestingSessionLocal() as db:
+        db.get(Case, case_id).title = value
+        entry = CaseTimeline(case_id=case_id, entry_type='note', source=value, content=value)
+        db.add(entry)
+        db.commit()
+        entry_id = entry.id
+    rows = _read_csv(client.get(f'/api/v1/cases/{case_id}/export', headers=headers))
+    row = next(row for row in rows if row['source'] == "'" + value)
+    assert row['case_title'] == row['content'] == "'" + value
+    assert row['case_id'] == str(case_id)
+    with _TestingSessionLocal() as db:
+        assert db.get(CaseTimeline, entry_id).content == value

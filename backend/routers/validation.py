@@ -21,6 +21,7 @@ from backend.models.validation import (
     ValidationStepResponse,
 )
 from backend.routers.auth import get_active_user
+from backend.services.csv_export import spreadsheet_safe_row
 
 router = APIRouter()
 
@@ -175,7 +176,7 @@ async def export_validation_run(
             f"{c.control_name} ({'detected' if c.detected else 'missed'})"
             for c in controls
         )
-        writer.writerow([
+        writer.writerow(spreadsheet_safe_row([
             vrun.name,
             vrun.mode,
             vrun.status,
@@ -189,7 +190,7 @@ async def export_validation_run(
             step.duration_ms if step.duration_ms is not None else "",
             control_summary,
             step.executed_at.isoformat() if step.executed_at else "",
-        ])
+        ]))
     buffer.seek(0)
     return StreamingResponse(
         iter([buffer.getvalue()]),
