@@ -45,6 +45,27 @@ async def override_get_async_db():
 
 TODAY = datetime.now(UTC).date()
 
+@pytest.fixture(autouse=True)
+def stable_utc_clock(monkeypatch):
+    """Keep imported date fixtures and the exercised clock on the same UTC day.
+
+    CI can collect before midnight and run these tests after midnight. Freeze
+    both fixture timestamps and the service clock to noon on the collected day.
+    """
+    import importlib
+    import sys
+
+    fixed = datetime.combine(TODAY, datetime.min.time(), tzinfo=UTC).replace(hour=12)
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed.astimezone(tz) if tz is not None else fixed.replace(tzinfo=None)
+
+    monkeypatch.setattr(importlib.import_module("backend.routers.reports"), "datetime", FrozenDateTime)
+    monkeypatch.setattr(sys.modules[__name__], "datetime", FrozenDateTime)
+
+
 
 def _naive(days_ago=0):
     return (datetime.now(UTC) - timedelta(days=days_ago)).replace(tzinfo=None)
