@@ -215,8 +215,14 @@ async def export_sbom_components(
     writer.writerow([
         "name", "version", "supplier", "purl", "cpe", "license", "known_vulnerabilities",
     ])
+    def spreadsheet_text(value):
+        # CSV quoting alone does not prevent spreadsheet formula interpretation.
+        if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@")):
+            return "'" + value
+        return value
+
     for component in components:
-        writer.writerow([
+        writer.writerow([spreadsheet_text(value) for value in [
             component.name,
             component.version or "",
             component.supplier or "",
@@ -224,7 +230,7 @@ async def export_sbom_components(
             component.cpe or "",
             component.license or "",
             component.has_known_vulnerability,
-        ])
+        ]])
     buffer.seek(0)
     return StreamingResponse(
         iter([buffer.getvalue()]),
