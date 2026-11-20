@@ -36,6 +36,18 @@ describe('Recorded discovery evidence inspector', () => {
     await screen.findByText('invalid-time');
     expect(screen.getAllByText('Not recorded').length).toBeGreaterThan(15);
   });
+  it('downloads only the loaded record and disables export during manual enrichment', async () => {
+    const create = vi.fn().mockReturnValue('blob:device'); const revoke = vi.fn();
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke }));
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(view()); await screen.findByText('Line two controller');
+    fireEvent.click(screen.getByRole('button', { name: 'Download device evidence JSON' }));
+    expect(create).toHaveBeenCalledOnce(); expect(click).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: 'Review manual enrichment' }));
+    expect((screen.getByRole('button', { name: 'Download device evidence JSON' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('Save or cancel manual enrichment before downloading the record.')).toBeTruthy();
+    click.mockRestore(); vi.unstubAllGlobals();
+  });
   it('retries a failed read', async () => {
     get.mockRejectedValueOnce(new Error('Temporarily unavailable'));
     render(view());

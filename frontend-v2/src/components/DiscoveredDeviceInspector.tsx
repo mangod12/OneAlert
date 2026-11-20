@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
 import { DeviceEnrichmentForm } from './DeviceEnrichmentForm';
+import { deviceEvidenceSnapshot } from '../utils/deviceEvidenceSnapshot';
 import { useDialogFocus } from './ui/useDialogFocus';
 
 export interface DeviceRecord {
@@ -42,8 +43,10 @@ function recordedTime(value?: string | null) {
 }
 function items(value?: (string | number)[] | null) { return value?.length ? value.join(', ') : null; }
 
-export function DiscoveredDeviceInspector({ deviceId, onClose, onUpdated }: { deviceId: number; onClose: () => void; onUpdated?: () => void }) {
+export function DiscoveredDeviceInspector({ deviceId, onClose, onUpdated, onCopyLink, copyLinkError, copiedLink }: { deviceId: number; onClose: () => void; onUpdated?: () => void; onCopyLink?: () => void; copyLinkError?: string; copiedLink?: boolean }) {
   const dialog = useRef<HTMLDivElement>(null);
+  const [includeAnnotations, setIncludeAnnotations] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   useDialogFocus(dialog, () => { if (!saving) onClose(); });
@@ -53,7 +56,7 @@ export function DiscoveredDeviceInspector({ deviceId, onClose, onUpdated }: { de
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     let active = true;
-    setLoading(true); setRecord(null); setError(''); setEditing(false); setSaving(false);
+    setLoading(true); setRecord(null); setIncludeAnnotations(false); setDownloadError(''); setError(''); setEditing(false); setSaving(false);
     void apiClient.get<DeviceRecord>(`/ot/discovered-devices/${deviceId}`).then(response => {
       if (!active) return;
       if (response.data.id !== deviceId) throw new Error('The response did not match this device. Try again.');
@@ -62,6 +65,18 @@ export function DiscoveredDeviceInspector({ deviceId, onClose, onUpdated }: { de
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [deviceId, retry]);
+
+  const downloadEvidence = () => {
+    if (!record || loading || error || editing || saving || record.id !== deviceId) return;
+    setDownloadError('');
+    let url: string | undefined;
+    try {
+      const blob = new Blob([JSON.stringify(deviceEvidenceSnapshot(record, includeAnnotations, new Date().toISOString()), null, 2)], { type: 'application/json' });
+      url = URL.createObjectURL(blob);
+      const link = document.createElement('a'); link.href = url; link.download = `device-${record.id}-recorded-evidence.json`; link.click();
+    } catch { setDownloadError('Device evidence could not be downloaded. Try again.'); }
+    finally { if (url) { const downloadUrl = url; window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000); } }
+  };
 
   const fields = record ? [
     ['IP address', record.ip_address], ['MAC address', record.mac_address],
@@ -87,6 +102,7 @@ export function DiscoveredDeviceInspector({ deviceId, onClose, onUpdated }: { de
         <button type="button" disabled={saving} onClick={onClose} className="shrink-0 rounded-md border border-surface-600 px-3 py-1.5 text-sm text-surface-200">Close details</button>
       </div>
       <p className="mt-2 text-sm text-surface-400">Fingerprints, ports, risk and timestamps are recorded evidence, not a live scan or connectivity check. Manual enrichment changes only the selected inventory fields, not observed ports, risk, source or timestamps.</p>
+      {onCopyLink && <div className="mt-3 space-y-2"><button type="button" disabled={saving} onClick={onCopyLink} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Copy device record link</button><p className="text-xs text-surface-400">The link opens this record by ID, not an IP search or frozen snapshot. It does not grant access. Recipients must already have permission to view this inventory record.</p>{copiedLink && <p role="status" className="text-xs text-primary-300">Device record link copied.</p>}{copyLinkError && <p role="alert" className="text-xs text-danger">{copyLinkError}</p>}</div>}
       {loading && <p role="status" className="mt-5 text-sm text-surface-300">Loading recorded device details...</p>}
       {error && <div className="mt-5 space-y-3"><p role="alert" className="text-sm text-danger">{error}</p><button type="button" onClick={() => setRetry(value => value + 1)} className="rounded-md border border-surface-600 px-3 py-2 text-sm text-surface-200">Retry device details</button></div>}
       {!loading && !error && record && <div className="mt-5 space-y-5">
@@ -95,6 +111,14 @@ export function DiscoveredDeviceInspector({ deviceId, onClose, onUpdated }: { de
           {!editing && <button type="button" onClick={() => setEditing(true)} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Review manual enrichment</button>}
         </div>
         {editing && <DeviceEnrichmentForm key={record.id} record={record} onBusy={setSaving} onCancel={() => setEditing(false)} onSaved={updated => { setRecord(updated); setEditing(false); onUpdated?.(); }} /> }
+        <section className="space-y-3 rounded-lg border border-surface-700 p-3">
+          <h3 className="text-sm font-semibold text-surface-100">Device evidence handoff</h3>
+          <p className="text-xs text-surface-400">Download this loaded record with its original timestamps, fingerprint, ports, protocols and missing values. This is a snapshot, not a live scan. Notes, description and tags are excluded unless selected. Check the contents before sharing.</p>
+          <label className="flex items-start gap-2 text-xs text-surface-300"><input type="checkbox" checked={includeAnnotations} disabled={editing || saving} onChange={event => setIncludeAnnotations(event.target.checked)} />Include notes, description and tags</label>
+          <button type="button" disabled={editing || saving} onClick={downloadEvidence} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300 disabled:opacity-50">Download device evidence JSON</button>
+          {editing && <p className="text-xs text-surface-400">Save or cancel manual enrichment before downloading the record.</p>}
+          {downloadError && <p role="alert" className="text-xs text-danger">{downloadError}</p>}
+        </section>
         <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
           {fields.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs text-surface-400">{label}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-surface-100">{value || 'Not recorded'}</dd></div>)}
         </dl>

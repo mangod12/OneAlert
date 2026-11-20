@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useLayoutEffect } from 'react';
 import apiClient from '../api/client';
+import { useSearchParams } from 'react-router-dom';
 import type { DiscoveredDevice, OTSummary, ProtocolData } from '../api/types';
 import { Network, Wifi, AlertTriangle, Link2, Plus, Trash2, Edit2 } from 'lucide-react';
 import clsx from 'clsx';
@@ -23,7 +24,24 @@ interface NetworkSensor {
 }
 
 export function OTDiscovery() {
-  const [inspectDeviceId, setInspectDeviceId] = useState<number | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deviceValues = searchParams.getAll('device');
+  const requestedDevice = deviceValues.length === 1 ? deviceValues[0] : '';
+  const inspectDeviceId = /^[1-9][0-9]*$/.test(requestedDevice) && Number.isSafeInteger(Number(requestedDevice)) ? Number(requestedDevice) : null;
+  const invalidDeviceLink = deviceValues.length > 0 && inspectDeviceId === null;
+  const setInspectDeviceId = (value: number | null) => {
+    setSearchParams(current => { const next = new URLSearchParams(current); if (value === null) next.delete('device'); else next.set('device', String(value)); return next; }, { replace: value === null });
+  };
+  const [copyLinkError, setCopyLinkError] = useState<{ id: number; text: string } | null>(null);
+  const [copiedLink, setCopiedLink] = useState<number | null>(null);
+  const copyDeviceLink = async () => {
+    if (inspectDeviceId === null) return;
+    setCopyLinkError(null); setCopiedLink(null);
+    try {
+      const url = new URL(window.location.href); url.search = ''; url.hash = ''; url.searchParams.set('device', String(inspectDeviceId));
+      await navigator.clipboard.writeText(url.toString()); setCopiedLink(inspectDeviceId);
+    } catch { setCopyLinkError({ id: inspectDeviceId, text: 'The record link could not be copied. The current address bar also contains this device link.' }); }
+  };
   const [summary, setSummary] = useState<OTSummary | null>(null);
   const [devicePage, setDevicePage] = useState(1);
   const [deviceTotal, setDeviceTotal] = useState(0);
@@ -240,7 +258,8 @@ export function OTDiscovery() {
 
   return (
     <div className="space-y-8">
-      {inspectDeviceId !== null && <DiscoveredDeviceInspector key={inspectDeviceId} deviceId={inspectDeviceId} onUpdated={() => { void fetchDevices(); }} onClose={() => setInspectDeviceId(null)} />}
+      {invalidDeviceLink && <div role="alert" className="oa-panel p-4 text-sm text-warning">The device link must contain exactly one positive record ID. No linked record was opened. <button type="button" onClick={() => setInspectDeviceId(null)} className="ml-2 text-primary-300">Clear invalid device link</button></div>}
+      {inspectDeviceId !== null && <DiscoveredDeviceInspector key={inspectDeviceId} deviceId={inspectDeviceId} onUpdated={() => { void fetchDevices(); }} onClose={() => { setInspectDeviceId(null); setCopyLinkError(null); setCopiedLink(null); }} onCopyLink={copyDeviceLink} copyLinkError={copyLinkError?.id === inspectDeviceId ? copyLinkError.text : undefined} copiedLink={copiedLink === inspectDeviceId} />}
       <PageHeader eyebrow="Observe" title="OT Discovery" description="Passive network device discovery, protocol visibility, and inventory correlation." />
       {errors.length > 0 && <DegradedBanner messages={errors} onRetry={() => void fetchData()} />}
 
