@@ -282,7 +282,7 @@ export function Sbom() {
                         ) : components.length === 0 ? (
                           <p className="text-sm text-surface-500">No components in this SBOM.</p>
                         ) : (
-                          <div>
+                          <div className="w-[calc(100vw-5rem)] lg:w-full">
                             <section aria-label="Component evidence completeness" className="mb-4 space-y-3 rounded border border-surface-700 p-3">
                               <h3 className="text-sm font-semibold text-surface-100">Recorded evidence completeness</h3>
                               <p className="max-w-2xl text-xs text-surface-400">Loaded {components.length} component records; SBOM summary records {sbom.component_count}. Missing evidence is not proof of risk or safety. Counts cover loaded records, not a live scan, verified package hashes or legal license review.</p>
@@ -333,7 +333,7 @@ export function Sbom() {
                             {visibleComponents.length === 0 ? (
                               <p className="text-sm text-surface-500">No components match the current filters.</p>
                             ) : (
-                          <table className="w-full text-sm">
+                          <div><p className="mb-2 text-xs text-surface-400 lg:hidden">Scroll component rows horizontally to review all recorded fields.</p><div role="region" aria-label="Recorded component rows" tabIndex={0} className="overflow-x-auto"><table className="min-w-[44rem] w-full text-sm">
                             <thead>
                               <tr className="text-surface-500 text-xs">
                                 <th className="py-1.5 text-left">Component</th>
@@ -362,7 +362,7 @@ export function Sbom() {
                                 </tr>
                               ))}
                             </tbody>
-                          </table>
+                          </table></div></div>
                             )}
                           </div>
                         )}
