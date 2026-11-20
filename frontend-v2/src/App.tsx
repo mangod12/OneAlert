@@ -71,7 +71,7 @@ function App() {
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/topology" element={<Topology />} />
-          <Route path="/sbom-components" element={<SbomComponentSearch />} />
+          <Route path="/sbom/components" element={<SbomComponentSearch />} />
           <Route path="/sbom" element={<Sbom />} />
           <Route path="/compliance" element={<Compliance />} />
           <Route path="/audit-log" element={<AuditLog />} />

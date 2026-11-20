@@ -223,7 +223,7 @@ export function Sbom() {
   return (
     <div className="space-y-6">
       {recordPanel}
-      <a href="/app/sbom-components" className="inline-block text-sm text-primary-300">Find recorded components across assets</a>
+      <a href="/app/sbom/components" className="inline-block text-sm text-primary-300">Find recorded components across assets</a>
       {assetNamesError && <DegradedBanner messages={[assetNamesError, 'SBOM records remain available by asset ID.']} onRetry={() => void fetchSboms()} />}
       <PageHeader eyebrow="Observe" title="Software Bill of Materials" description="Recorded component inventory, evidence completeness and vulnerability references per asset." actions={
         <button
