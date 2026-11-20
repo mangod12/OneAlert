@@ -59,6 +59,9 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 export function Validation() {
+  const listRequestId = useRef(0);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [runs, setRuns] = useState<ValidationRun[]>([]);
   const [coverage, setCoverage] = useState<TechniqueCoverage[] | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -82,16 +85,25 @@ export function Validation() {
   const [coverageError, setCoverageError] = useState('');
 
   const fetchRuns = useCallback(async () => {
+    const request = ++listRequestId.current;
+    setLoading(true);
     const [runsResult, coverageResult] = await Promise.allSettled([
-      apiClient.get('/validation/runs', { params: runStatusFilter ? { status: runStatusFilter } : {} }),
+      apiClient.get('/validation/runs', { params: { page, size: 20, ...(runStatusFilter ? { status: runStatusFilter } : {}) } }),
       apiClient.get('/validation/coverage'),
     ]);
-    if (runsResult.status === 'fulfilled') { setRuns(runsResult.value.data.data || []); setError(''); }
+    if (request !== listRequestId.current) return;
+    if (runsResult.status === 'fulfilled') {
+      const data = runsResult.value.data;
+      const count = typeof data.total === 'number' ? data.total : (data.data || []).length;
+      const lastPage = Math.max(1, Math.ceil(count / 20));
+      if (page > lastPage) { setPage(lastPage); return; }
+      setRuns(data.data || []); setTotal(count); setError('');
+    }
     else setError(getApiErrorMessage(runsResult.reason, 'Validation runs could not be loaded.'));
     if (coverageResult.status === 'fulfilled') { setCoverage(coverageResult.value.data.data || []); setCoverageError(''); }
     else { setCoverage(null); setCoverageError(getApiErrorMessage(coverageResult.reason, 'Coverage data could not be loaded.')); }
     setLoading(false);
-  }, [runStatusFilter]);
+  }, [runStatusFilter, page]);
 
   const createRun = async () => {
     if (!newRun.name.trim() || newRun.techniques.length === 0) return;
@@ -186,7 +198,7 @@ export function Validation() {
     }));
   };
 
-  useEffect(() => { void fetchRuns(); }, [fetchRuns]);
+  useEffect(() => { void fetchRuns(); return () => { listRequestId.current += 1; }; }, [fetchRuns]);
 
   return (
     <div className="space-y-6">
@@ -254,7 +266,7 @@ export function Validation() {
       )}
 
       {/* Runs List */}
-      {loading ? <LoadingSurface label="Loading validation runs" /> : error ? <ErrorState title="Validation unavailable" description={error} action={<RetryButton onClick={fetchRuns} />} /> : <div className="oa-panel p-6">
+      <div className="oa-panel p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-surface-50">Validation Runs</h2>
           <label className="flex items-center gap-2 text-xs text-surface-400">
@@ -262,7 +274,7 @@ export function Validation() {
             <select
               aria-label="Filter runs by status"
               value={runStatusFilter}
-              onChange={(e) => setRunStatusFilter(e.target.value)}
+              onChange={(e) => { setRunStatusFilter(e.target.value); setPage(1); }}
               className="rounded-md border border-surface-600 bg-surface-950 px-2 py-1.5 text-sm text-surface-100"
             >
               <option value="">All statuses</option>
@@ -274,7 +286,7 @@ export function Validation() {
             </select>
           </label>
         </div>
-        {runs.length === 0 ? (
+        {loading ? <LoadingSurface label="Loading validation runs" /> : error ? <ErrorState title="Validation unavailable" description={error} action={<RetryButton onClick={fetchRuns} />} /> : runs.length === 0 ? (
           <EmptyState title="No validation runs" description="Create one to test current detection coverage." />
         ) : (
           <div className="space-y-3">
@@ -313,7 +325,15 @@ export function Validation() {
             ))}
           </div>
         )}
-      </div>}
+      </div>
+
+      {!loading && !error && total > 0 && <nav aria-label="Validation run pages" className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <p role="status" className="text-surface-400">Showing {(page - 1) * 20 + 1}–{Math.min(page * 20, total)} of {total} matching runs · Page {page} of {Math.ceil(total / 20)}</p>
+        <div className="flex gap-2">
+          <button type="button" disabled={page === 1 || executing !== null || deletingBusy} onClick={() => setPage(value => value - 1)} className="rounded-md border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Previous runs</button>
+          <button type="button" disabled={page * 20 >= total || executing !== null || deletingBusy} onClick={() => setPage(value => value + 1)} className="rounded-md border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Next runs</button>
+        </div>
+      </nav>}
 
       {/* Run Detail */}
       {detailRunId !== null && <section aria-label={`Validation run ${detailRunId} detail status`} className="oa-panel space-y-3 p-4">
