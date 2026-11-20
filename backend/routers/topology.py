@@ -9,8 +9,13 @@ Provides endpoints for:
 """
 
 
-from fastapi import APIRouter, Body, Depends, HTTPException, status
-from sqlalchemy import func, select
+import hashlib
+import hmac
+import json
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from sqlalchemy import String, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -94,23 +99,65 @@ async def list_connections(
     return result.scalars().all()
 
 
-@router.delete("/connections/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_connection(
+_CONNECTION_FIELDS = ("id", "source_device_id", "target_device_id", "source_ip", "target_ip", "protocol",
+                      "port", "direction", "first_seen", "last_seen", "bytes_transferred", "is_encrypted")
+
+
+def _connection_values(connection):
+    return {field: getattr(connection, field) for field in _CONNECTION_FIELDS}
+
+
+def _connection_fingerprint(connection):
+    body = json.dumps(_connection_values(connection), default=str, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(body.encode()).hexdigest()
+
+
+@router.get("/connections/{connection_id}/removal-review")
+async def review_connection_removal(
     connection_id: int,
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Delete a network connection owned by the current user."""
-    result = await db.execute(
-        select(NetworkConnection).where(
-            NetworkConnection.id == connection_id,
-            NetworkConnection.user_id == current_user.id,
-        )
-    )
-    conn = result.scalar_one_or_none()
-    if not conn:
+    connection = (await db.execute(select(NetworkConnection).where(
+        NetworkConnection.id == connection_id, NetworkConnection.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if connection is None:
         raise HTTPException(status_code=404, detail="Connection not found")
-    await db.delete(conn)
+    values = _connection_values(connection)
+    values["bytes_transferred"] = (str(connection.bytes_transferred)
+                                   if connection.bytes_transferred is not None else None)
+    return {"connection": values, "reviewed_fingerprint": _connection_fingerprint(connection),
+            "retrieved_at": datetime.now(UTC).isoformat()}
+
+
+@router.delete("/connections/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_connection(
+    connection_id: int,
+    reviewed_fingerprint: str | None = Query(None, min_length=64, max_length=64, pattern="^[a-f0-9]{64}$"),
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Remove an owned saved connection, optionally guarded by an exact current-record review."""
+    connection = (await db.execute(select(NetworkConnection).where(
+        NetworkConnection.id == connection_id, NetworkConnection.user_id == current_user.id,
+    ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
+    if connection is None:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    if reviewed_fingerprint is not None and not hmac.compare_digest(
+        reviewed_fingerprint, _connection_fingerprint(connection)
+    ):
+        raise HTTPException(status_code=409, detail="Connection changed. Reload the removal review.")
+    conditions = [NetworkConnection.id == connection_id, NetworkConnection.user_id == current_user.id]
+    if reviewed_fingerprint is not None:
+        for field, value in _connection_values(connection).items():
+            column = getattr(NetworkConnection, field)
+            conditions.append(column.is_(None) if value is None else
+                              or_(column == value, cast(column, String) == str(value)) if isinstance(value, datetime)
+                              else column == value)
+    result = await db.execute(delete(NetworkConnection).where(*conditions).execution_options(synchronize_session=False))
+    if result.rowcount != 1:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Connection changed. Reload the removal review.")
     await db.commit()
 
 
