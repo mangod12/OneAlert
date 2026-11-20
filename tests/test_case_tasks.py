@@ -1,5 +1,7 @@
 """Tests for case investigation task checklists."""
 
+from datetime import date
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -689,3 +691,55 @@ def test_checklist_preview_rejects_oversized_plan_without_creating_tasks(client)
     path = f"/api/v1/cases/{case_id}/tasks/from-plan/{plan_id}"
     assert client.get(path + "/preview", headers=headers).status_code == 400
     assert client.get(f"/api/v1/cases/{case_id}/tasks", headers=headers).json() == []
+
+
+def test_assigned_task_explorer_reaches_beyond_legacy_cap_with_global_filters(client):
+    from backend.models.case import CaseTask
+    headers, case_id = _setup(client)
+    user_id = _user_id(client, headers)
+    with _TestingSessionLocal() as db:
+        db.add_all([CaseTask(case_id=case_id, title=f"Work {i:03d}", position=i, assignee_id=user_id,
+                            due_date=date(2026, 11, 20) if i == 209 else None, done=False)
+                    for i in range(210)])
+        db.commit()
+    path = "/api/v1/cases/assigned-task-explorer"
+    response = client.get(path, params={"page": 9, "size": 25, "today": "2026-11-21"}, headers=headers)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["total"] == 210 and data["page"] == 9 and data["size"] == 25
+    assert len(data["data"]) == 10
+    found = client.get(path, params={"query": "Work 209", "today": "2026-11-21"}, headers=headers).json()
+    assert found["total"] == 1 and found["data"][0]["title"] == "Work 209"
+    due = client.get(path, params={"due": "overdue", "today": "2026-11-21"}, headers=headers).json()
+    assert due["total"] == 1 and due["data"][0]["title"] == "Work 209"
+    assert len(client.get("/api/v1/cases/my-tasks", headers=headers).json()) == 200
+
+
+def test_assigned_task_explorer_keeps_owner_open_case_and_literal_search_scope(client):
+    from backend.models.case import CaseTask
+    headers, case_id = _setup(client)
+    user_id = _user_id(client, headers)
+    outsider = _register_and_login(client, "task-explorer@example.com")
+    with _TestingSessionLocal() as db:
+        db.add_all([CaseTask(case_id=case_id, title="100%_literal", position=0, assignee_id=user_id, done=False),
+                    CaseTask(case_id=case_id, title="100different", position=1, assignee_id=user_id, done=False),
+                    CaseTask(case_id=case_id, title="Completed", position=2, assignee_id=user_id, done=True)])
+        db.commit()
+    path = "/api/v1/cases/assigned-task-explorer"
+    assert client.get(path, headers=outsider).json()["total"] == 0
+    assert client.get(path, headers=headers).json()["total"] == 2
+    literal = client.get(path, params={"query": "%_"}, headers=headers).json()
+    assert literal["total"] == 1 and literal["data"][0]["title"] == "100%_literal"
+    assert client.get(path, params={"severity": "low"}, headers=headers).json()["total"] == 0
+    with _TestingSessionLocal() as db:
+        db.get(Case, case_id).status = "resolved"
+        db.commit()
+    assert client.get(path, headers=headers).json()["total"] == 0
+
+
+@pytest.mark.parametrize("params", [{"page": 0}, {"size": 101}, {"due": "overdue"},
+                                    {"due": "unknown"}, {"today": "2026-02-30"}, {"severity": "unknown"}])
+def test_assigned_task_explorer_rejects_invalid_filters(client, params):
+    headers, _case_id = _setup(client)
+    response = client.get("/api/v1/cases/assigned-task-explorer", params=params, headers=headers)
+    assert response.status_code == 422
