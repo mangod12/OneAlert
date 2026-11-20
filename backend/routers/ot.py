@@ -145,6 +145,13 @@ async def create_discovered_device(
     db: AsyncSession = Depends(get_async_db)
 ):
     """Register a newly discovered device (from sensor or manual report)."""
+    if device_data.sensor_id is not None:
+        sensor = (await db.execute(select(NetworkSensor.id).where(
+            NetworkSensor.id == device_data.sensor_id,
+            NetworkSensor.user_id == current_user.id,
+        ))).scalar_one_or_none()
+        if sensor is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sensor not found")
     db_device = DiscoveredDevice(
         user_id=current_user.id,
         ports_open=device_data.ports_open,
@@ -300,7 +307,7 @@ async def correlate_device_to_asset(
     # Update correlation
     device.asset_id = asset_id
     device.is_correlated = True
-    device.correlation_score = correlation_score or 100.0
+    device.correlation_score = 100.0 if correlation_score is None else correlation_score
 
     await db.commit()
     await db.refresh(device)
@@ -319,11 +326,29 @@ async def promote_device_to_asset(
         select(DiscoveredDevice).where(
             DiscoveredDevice.id == device_id,
             DiscoveredDevice.user_id == current_user.id
-        )
+        ).with_for_update()
     )
     device = device_result.scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+
+    # Retry-safe promotion: re-use an existing owned correlation, never create
+    # duplicate inventory after a client timeout or a second tab's request.
+    if device.asset_id is not None or device.is_correlated:
+        if device.asset_id is not None and device.is_correlated:
+            existing = (await db.execute(select(Asset).where(
+                Asset.id == device.asset_id, Asset.user_id == current_user.id,
+            ))).scalar_one_or_none()
+            if existing is not None:
+                return {
+                    "message": "Device is already linked to a managed asset",
+                    "asset_id": existing.id,
+                    "asset_name": existing.name,
+                }
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Device correlation is inconsistent; review its existing link before promotion",
+        )
 
     # Create managed asset from discovered device
     new_asset = Asset(
