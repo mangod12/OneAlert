@@ -8,11 +8,14 @@ Provides endpoints for:
 - OT-specific asset filtering and drilldown
 """
 
+import hashlib
+import hmac
 import json
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
+from sqlalchemy import update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -306,11 +309,48 @@ async def update_discovered_device(
     return device
 
 
+_CORRELATION_DEVICE_FIELDS = ("id", "ip_address", "hostname", "mac_address", "manufacturer", "model",
+                              "firmware_version", "serial_number", "is_ot_device", "ot_device_type", "protocols",
+                              "asset_id", "is_correlated", "correlation_score")
+_CORRELATION_ASSET_FIELDS = ("id", "name", "asset_type", "vendor", "product", "version", "firmware_version",
+                            "serial_number", "last_known_ip", "is_ot_asset", "primary_protocol", "criticality")
+
+
+def _correlation_review(device, asset):
+    device_data = {key: getattr(device, key) for key in _CORRELATION_DEVICE_FIELDS}
+    asset_data = {key: getattr(asset, key) for key in _CORRELATION_ASSET_FIELDS}
+    fingerprint = hashlib.sha256(json.dumps({"device": device_data, "asset": asset_data},
+                                            sort_keys=True, default=str).encode()).hexdigest()
+    return {"device": device_data, "asset": asset_data, "reviewed_fingerprint": fingerprint,
+            "can_link": device.asset_id is None and not device.is_correlated}
+
+
+@router.get("/discovered-devices/{device_id}/correlation-review/{asset_id}")
+async def review_device_correlation(
+    device_id: int, asset_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Review two owned records before a manual association, without creating inventory."""
+    device = (await db.execute(select(DiscoveredDevice).where(
+        DiscoveredDevice.id == device_id, DiscoveredDevice.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    asset = (await db.execute(select(Asset).where(
+        Asset.id == asset_id, Asset.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return _correlation_review(device, asset)
+
+
 @router.post("/discovered-devices/{device_id}/correlate/{asset_id}", response_model=DiscoveredDeviceResponse)
 async def correlate_device_to_asset(
     device_id: int,
     asset_id: int,
-    correlation_score: float | None = Query(None, ge=0, le=100),
+    correlation_score: Annotated[float | None, Query(ge=0, le=100)] = None,
+    reviewed_fingerprint: Annotated[str | None, Query(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")] = None,
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -320,7 +360,7 @@ async def correlate_device_to_asset(
         select(DiscoveredDevice).where(
             DiscoveredDevice.id == device_id,
             DiscoveredDevice.user_id == current_user.id
-        )
+        ).with_for_update().execution_options(populate_existing=True)
     )
     device = device_result.scalar_one_or_none()
     if not device:
@@ -331,11 +371,40 @@ async def correlate_device_to_asset(
         select(Asset).where(
             Asset.id == asset_id,
             Asset.user_id == current_user.id
-        )
+        ).with_for_update().execution_options(populate_existing=True)
     )
     asset = asset_result.scalar_one_or_none()
     if not asset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+
+    if reviewed_fingerprint is not None:
+        review = _correlation_review(device, asset)
+        if not hmac.compare_digest(reviewed_fingerprint, review["reviewed_fingerprint"]) or not review["can_link"]:
+            raise HTTPException(status_code=409, detail="Device or asset changed. Reload the correlation review.")
+        if correlation_score is not None and correlation_score != 100:
+            raise HTTPException(status_code=422, detail="Reviewed manual associations use a score of 100.")
+        device_conditions = [DiscoveredDevice.user_id == current_user.id]
+        for key in _CORRELATION_DEVICE_FIELDS:
+            if key == "protocols":
+                continue
+            value = getattr(device, key)
+            column = getattr(DiscoveredDevice, key)
+            device_conditions.append(column.is_(None) if value is None else column == value)
+        asset_conditions = [Asset.user_id == current_user.id]
+        for key in _CORRELATION_ASSET_FIELDS:
+            value = getattr(asset, key)
+            column = getattr(Asset, key)
+            asset_conditions.append(column.is_(None) if value is None else column == value)
+        result = await db.execute(sql_update(DiscoveredDevice).where(
+            *device_conditions, select(Asset.id).where(*asset_conditions).exists(),
+        ).values(asset_id=asset_id, is_correlated=True, correlation_score=100)
+          .execution_options(synchronize_session=False))
+        if result.rowcount != 1:
+            await db.rollback()
+            raise HTTPException(status_code=409, detail="Device or asset changed. Reload the correlation review.")
+        await db.commit()
+        await db.refresh(device)
+        return device
 
     # Update correlation
     device.asset_id = asset_id

@@ -1,3 +1,4 @@
+import { DeviceAssetLinkReview } from '../components/DeviceAssetLinkReview';
 import { useCallback, useEffect, useRef, useState, useLayoutEffect } from 'react';
 import apiClient from '../api/client';
 import { useSearchParams } from 'react-router-dom';
@@ -52,6 +53,7 @@ export function OTDiscovery() {
   const [protocols, setProtocols] = useState<ProtocolData[]>([]);
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState<string[]>([]);
+  const [linkDeviceId, setLinkDeviceId] = useState<number | null>(null);
   const [pendingDevices, setPendingDevices] = useState<Set<number>>(new Set());
   const [sensors, setSensors] = useState<NetworkSensor[]>([]);
   const [showSensorForm, setShowSensorForm] = useState(false);
@@ -259,6 +261,11 @@ export function OTDiscovery() {
   return (
     <div className="space-y-8">
       {invalidDeviceLink && <div role="alert" className="oa-panel p-4 text-sm text-warning">The device link must contain exactly one positive record ID. No linked record was opened. <button type="button" onClick={() => setInspectDeviceId(null)} className="ml-2 text-primary-300">Clear invalid device link</button></div>}
+      {linkDeviceId !== null && <DeviceAssetLinkReview key={linkDeviceId} deviceId={linkDeviceId} onClose={() => setLinkDeviceId(null)} onLinked={() => {
+        setLinkDeviceId(null); setDeviceRefresh(value => value + 1);
+        void apiClient.get('/ot/summary').then(response => setSummary(response.data)).catch(() => setErrors(current => [...current, 'OT summary could not be refreshed after linking.']));
+        toast('Device linked to the reviewed existing asset.', 'success');
+      }} />}
       {inspectDeviceId !== null && <DiscoveredDeviceInspector key={inspectDeviceId} deviceId={inspectDeviceId} onUpdated={() => { void fetchDevices(); }} onClose={() => { setInspectDeviceId(null); setCopyLinkError(null); setCopiedLink(null); }} onCopyLink={copyDeviceLink} copyLinkError={copyLinkError?.id === inspectDeviceId ? copyLinkError.text : undefined} copiedLink={copiedLink === inspectDeviceId} />}
       <PageHeader eyebrow="Observe" title="OT Discovery" description="Passive network device discovery, protocol visibility, and inventory correlation." />
       {errors.length > 0 && <DegradedBanner messages={errors} onRetry={() => void fetchData()} />}
@@ -516,6 +523,7 @@ export function OTDiscovery() {
                   </td>
                   <td className="px-4 py-3">
                     <button type="button" onClick={() => setInspectDeviceId(device.id)} aria-label={`View recorded details for ${device.ip_address}`} className="mr-3 text-xs text-primary-400 hover:text-primary-300">View details</button>
+                    {!device.is_correlated && <button type="button" disabled={pendingDevices.has(device.id)} onClick={() => setLinkDeviceId(device.id)} aria-label={`Link ${device.ip_address} to existing asset`} className="mr-3 text-xs text-primary-400 hover:text-primary-300">Link existing asset</button>}
                     {!device.is_correlated && (
                       <button disabled={pendingDevices.has(device.id)}
                         onClick={() => handlePromote(device.id)}
