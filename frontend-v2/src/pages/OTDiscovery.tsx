@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useLayoutEffect } from 'react';
 import apiClient from '../api/client';
 import type { DiscoveredDevice, OTSummary, ProtocolData } from '../api/types';
 import { Network, Wifi, AlertTriangle, Link2, Plus, Trash2, Edit2 } from 'lucide-react';
@@ -45,30 +45,79 @@ export function OTDiscovery() {
   const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set());
   const [otOnly, setOtOnly] = useState(false);
   const [ipSearch, setIpSearch] = useState('');
+  const [searchDraft, setSearchDraft] = useState('');
+  const [deviceSearch, setDeviceSearch] = useState('');
+  const [correlation, setCorrelation] = useState('');
+  const [sourceSensor, setSourceSensor] = useState('');
+  const [confidence, setConfidence] = useState('');
+  const [riskMin, setRiskMin] = useState('');
+  const [riskMax, setRiskMax] = useState('');
+  const [deviceSort, setDeviceSort] = useState('risk');
+  const [deviceRefresh, setDeviceRefresh] = useState(0);
+  const [exportingDevices, setExportingDevices] = useState(false);
+  const invalidRisk = [riskMin, riskMax].some(value => value !== '' && (!Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100)) || (riskMin !== '' && riskMax !== '' && Number(riskMin) > Number(riskMax));
+  const deviceKey = JSON.stringify([otOnly, ipSearch, devicePage, deviceSearch, correlation, sourceSensor, confidence, riskMin, riskMax, deviceSort, deviceRefresh]);
+  const currentDeviceKey = useRef(deviceKey);
+  useLayoutEffect(() => { currentDeviceKey.current = deviceKey; }, [deviceKey]);
+  const filterParams = useCallback(() => {
+    const params: Record<string, string | number | boolean> = {};
+    if (otOnly) params.ot_only = true;
+    if (ipSearch.trim()) params.ip_address = ipSearch.trim();
+    if (deviceSearch) params.search = deviceSearch;
+    if (correlation) params.correlated = correlation === 'true';
+    if (sourceSensor !== '') params.sensor_id = Number(sourceSensor);
+    if (confidence) params.confidence = confidence;
+    if (riskMin !== '') params.risk_min = Number(riskMin);
+    if (riskMax !== '') params.risk_max = Number(riskMax);
+    if (deviceSort !== 'risk') params.sort = deviceSort;
+    return params;
+  }, [otOnly, ipSearch, deviceSearch, correlation, sourceSensor, confidence, riskMin, riskMax, deviceSort]);
+  const filteredDevices = Boolean(otOnly || ipSearch.trim() || deviceSearch || correlation || sourceSensor !== '' || confidence || riskMin !== '' || riskMax !== '' || deviceSort !== 'risk');
+  const clearDeviceFilters = () => {
+    setOtOnly(false); setIpSearch(''); setSearchDraft(''); setDeviceSearch(''); setCorrelation('');
+    setSourceSensor(''); setConfidence(''); setRiskMin(''); setRiskMax(''); setDeviceSort('risk'); setDevicePage(1);
+  };
+
+  const exportDevices = async () => {
+    if (exportingDevices || invalidRisk) return;
+    setExportingDevices(true);
+    try {
+      const response = await apiClient.get('/ot/discovered-devices/export', { params: filterParams(), responseType: 'blob' });
+      const url = URL.createObjectURL(response.data);
+      const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'discovered-devices.csv';
+      document.body.appendChild(anchor); anchor.click(); anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast('CSV downloaded using the filters applied when export started. No scan was started.', 'success');
+    } catch (err) { toast(getApiErrorMessage(err, 'Device CSV could not be exported.'), 'error'); }
+    finally { setExportingDevices(false); }
+  };
 
   const fetchDevices = useCallback(async () => {
+    if (currentDeviceKey.current !== deviceKey) return;
     const request = ++devicesRequestId.current;
     setDevicesLoading(true);
     setDevicesError('');
     setDevices([]);
     setDeviceTotal(0);
-    const params: Record<string, string | number | boolean> = { page: devicePage, size: 20 };
-    if (otOnly) params.ot_only = true;
-    if (ipSearch.trim()) params.ip_address = ipSearch.trim();
+    if (invalidRisk) {
+      setDevicesError('Use risk scores from 0 to 100, with minimum no greater than maximum.');
+      setDevicesLoading(false); return;
+    }
+    const params = { page: devicePage, size: 20, ...filterParams() };
     try {
       const res = await apiClient.get('/ot/discovered-devices', { params });
-      if (request !== devicesRequestId.current) return;
+      if (request !== devicesRequestId.current || currentDeviceKey.current !== deviceKey) return;
       const total = res.data.total ?? 0;
       const lastPage = Math.max(1, Math.ceil(total / 20));
       if (devicePage > lastPage) { setDevicePage(lastPage); return; }
       setDevices(res.data.devices || []);
       setDeviceTotal(total);
     } catch (err: unknown) {
-      if (request === devicesRequestId.current) setDevicesError(getApiErrorMessage(err, 'Discovered devices could not be loaded.'));
+      if (request === devicesRequestId.current && currentDeviceKey.current === deviceKey) setDevicesError(getApiErrorMessage(err, 'Discovered devices could not be loaded.'));
     } finally {
       if (request === devicesRequestId.current) setDevicesLoading(false);
     }
-  }, [otOnly, ipSearch, devicePage]);
+  }, [devicePage, filterParams, deviceKey, invalidRisk]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -100,7 +149,8 @@ export function OTDiscovery() {
     setPendingDevices(current => new Set(current).add(deviceId));
     try {
       await apiClient.post(`/ot/discovered-devices/${deviceId}/promote-to-asset`);
-      setDevices(current => current.map(device => device.id === deviceId ? { ...device, is_correlated: true } : device));
+      setDeviceRefresh(value => value + 1);
+      void apiClient.get('/ot/summary').then(response => setSummary(response.data)).catch(() => { setErrors(current => [...current, 'OT summary could not be refreshed after promotion.']); });
       toast('Device promoted to the managed asset inventory.', 'success');
     } catch (error: unknown) {
       toast(getApiErrorMessage(error, 'Device could not be promoted.'), 'error');
@@ -174,6 +224,7 @@ export function OTDiscovery() {
       await apiClient.delete(`/ot/sensors/${sensor.id}`);
       setPendingSensorDelete(null);
       setSensors(current => current.filter(item => item.id !== sensor.id));
+      setDeviceRefresh(value => value + 1);
       toast('Sensor removed.', 'success');
     } catch (error: unknown) {
       toast(getApiErrorMessage(error, 'Sensor could not be removed.'), 'error');
@@ -383,14 +434,35 @@ export function OTDiscovery() {
             </label>
           </div>
         </div>
+        <div className="space-y-3 border-b border-surface-700 p-4 sm:px-6">
+          <p className="text-xs text-surface-400">Filter all recorded discovery inventory, not just this page. No filter or export starts a scan. Summary cards above remain account-wide.</p>
+          <form onSubmit={event => { event.preventDefault(); setDeviceSearch(searchDraft.trim()); setDevicePage(1); }} className="flex flex-wrap gap-2">
+            <input aria-label="Search recorded devices" maxLength={200} placeholder="Hostname, manufacturer, model, serial, firmware or network ID" value={searchDraft} onChange={event => setSearchDraft(event.target.value)} className="min-w-0 basis-full rounded border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 sm:basis-0 sm:flex-1" />
+            <button type="submit" className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Search devices</button>
+          </form>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+            <label className="text-xs text-surface-400">Correlation<select aria-label="Device correlation" value={correlation} onChange={event => { setCorrelation(event.target.value); setDevicePage(1); }} className="mt-1 w-full rounded border border-surface-600 bg-surface-950 px-2 py-2 text-sm text-surface-100"><option value="">Any correlation</option><option value="false">Unmatched</option><option value="true">Correlated</option></select></label>
+            <label className="text-xs text-surface-400">Source<select aria-label="Device source sensor" value={sourceSensor} onChange={event => { setSourceSensor(event.target.value); setDevicePage(1); }} className="mt-1 w-full rounded border border-surface-600 bg-surface-950 px-2 py-2 text-sm text-surface-100"><option value="">Any source</option><option value="0">No source sensor</option>{sourceSensor !== '' && sourceSensor !== '0' && !sensors.some(sensor => String(sensor.id) === sourceSensor) && <option value={sourceSensor}>Unavailable source #{sourceSensor}</option>}{sensors.map(sensor => <option key={sensor.id} value={sensor.id}>Source #{sensor.id}: {sensor.name}</option>)}</select></label>
+            <label className="text-xs text-surface-400">Confidence<select aria-label="Device confidence" value={confidence} onChange={event => { setConfidence(event.target.value); setDevicePage(1); }} className="mt-1 w-full rounded border border-surface-600 bg-surface-950 px-2 py-2 text-sm text-surface-100"><option value="">Any confidence</option>{['low','medium','high','critical'].map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+            <label className="text-xs text-surface-400">Minimum risk<input aria-label="Minimum device risk" type="number" min="0" max="100" step="any" value={riskMin} onChange={event => { setRiskMin(event.target.value); setDevicePage(1); }} className="mt-1 w-full rounded border border-surface-600 bg-surface-950 px-2 py-2 text-sm text-surface-100" /></label>
+            <label className="text-xs text-surface-400">Maximum risk<input aria-label="Maximum device risk" type="number" min="0" max="100" step="any" value={riskMax} onChange={event => { setRiskMax(event.target.value); setDevicePage(1); }} className="mt-1 w-full rounded border border-surface-600 bg-surface-950 px-2 py-2 text-sm text-surface-100" /></label>
+            <label className="text-xs text-surface-400">Order<select aria-label="Device order" value={deviceSort} onChange={event => { setDeviceSort(event.target.value); setDevicePage(1); }} className="mt-1 w-full rounded border border-surface-600 bg-surface-950 px-2 py-2 text-sm text-surface-100"><option value="risk">Highest risk first</option><option value="newest">Last seen, newest</option><option value="oldest">Last seen, oldest</option><option value="ip">IP text A-Z</option></select></label>
+          </div>
+          {searchDraft.trim() !== deviceSearch && <p className="text-xs text-warning">Search draft is not applied. Results and CSV still use the applied search.</p>}
+          <div className="flex flex-wrap items-center gap-3">
+            <button type="button" disabled={exportingDevices || devicesLoading || Boolean(devicesError) || !deviceTotal || invalidRisk} onClick={() => void exportDevices()} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300 disabled:opacity-40">{exportingDevices ? 'Exporting devices...' : 'Export matching devices CSV'}</button>
+            {filteredDevices && <button type="button" onClick={clearDeviceFilters} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">Clear device filters</button>}
+            <p className="text-xs text-surface-500">CSV includes up to 5,000 matching devices in the applied order, plus filter and truncation metadata. It may contain sensitive inventory details.</p>
+          </div>
+        </div>
         {devicesLoading ? <LoadingSurface rows={4} label="Loading discovered devices" /> : devicesError ? (
           <ErrorState title="Discovered devices unavailable" description={devicesError} action={<RetryButton onClick={() => void fetchDevices()} />} />
         ) : devices.length === 0 ? (
           <div className="p-8 text-center text-surface-500">
-            {ipSearch.trim() || otOnly ? 'No devices match these filters.' : 'No devices discovered yet. Deploy a network sensor to start scanning.'}
+            {filteredDevices ? 'No devices match these filters.' : 'No devices discovered yet. Deploy a network sensor to start scanning.'}
           </div>
         ) : (
-          <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm">
+          <div className="overflow-x-auto"><table aria-label="Recorded discovered devices" className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="border-b border-surface-700 text-surface-400">
                 <th className="px-4 py-3 text-left">IP Address</th>
