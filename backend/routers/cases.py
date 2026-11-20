@@ -883,30 +883,16 @@ async def seed_case_tasks_from_plan(
     only adds its new steps.
     """
     case = await _get_visible_case(db, case_id, current_user)
-    plan = (
-        await db.execute(select(ResponsePlan).where(ResponsePlan.id == plan_id, ResponsePlan.case_id == case.id))
-    ).scalar_one_or_none()
-    if plan is None:
+    # Serialize all imports on the case, including legacy bodyless requests.
+    await db.execute(select(Case.id).where(Case.id == case.id).with_for_update())
+    plan = (await db.execute(select(ResponsePlan).where(
+        ResponsePlan.id == plan_id, ResponsePlan.case_id == case.id,
+    ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
+    if plan is None or (payload is not None and plan.user_id != current_user.id):
         raise HTTPException(status_code=404, detail="Response plan not found")
 
     selected_indexes = None
     if payload is not None:
-        # Serialize selected imports on the case and bind selection to the saved plan.
-        await db.execute(select(Case.id).where(Case.id == case.id).with_for_update())
-        plan = (
-            await db.execute(
-                select(ResponsePlan)
-                .where(
-                    ResponsePlan.id == plan_id,
-                    ResponsePlan.case_id == case.id,
-                    ResponsePlan.user_id == current_user.id,
-                )
-                .with_for_update()
-                .execution_options(populate_existing=True)
-            )
-        ).scalar_one_or_none()
-        if plan is None:
-            raise HTTPException(status_code=404, detail="Response plan not found")
         if not secrets.compare_digest(payload.reviewed_fingerprint, review_fingerprint(plan)):
             raise HTTPException(
                 status_code=409,
