@@ -42,7 +42,7 @@ function recordedTime(value?: string | null) {
 }
 function items(value?: (string | number)[] | null) { return value?.length ? value.join(', ') : null; }
 
-export function DiscoveredDeviceInspector({ deviceId, onClose, onUpdated }: { deviceId: number; onClose: () => void; onUpdated?: () => void }) {
+export function DiscoveredDeviceInspector({ deviceId, onClose, onUpdated, onCopyLink, copyLinkError, copiedLink }: { deviceId: number; onClose: () => void; onUpdated?: () => void; onCopyLink?: () => void; copyLinkError?: string; copiedLink?: boolean }) {
   const dialog = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -87,6 +87,7 @@ export function DiscoveredDeviceInspector({ deviceId, onClose, onUpdated }: { de
         <button type="button" disabled={saving} onClick={onClose} className="shrink-0 rounded-md border border-surface-600 px-3 py-1.5 text-sm text-surface-200">Close details</button>
       </div>
       <p className="mt-2 text-sm text-surface-400">Fingerprints, ports, risk and timestamps are recorded evidence, not a live scan or connectivity check. Manual enrichment changes only the selected inventory fields, not observed ports, risk, source or timestamps.</p>
+      {onCopyLink && <div className="mt-3 space-y-2"><button type="button" disabled={saving} onClick={onCopyLink} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Copy device record link</button><p className="text-xs text-surface-400">The link opens this record by ID, not an IP search or frozen snapshot. It does not grant access. Recipients must already have permission to view this inventory record.</p>{copiedLink && <p role="status" className="text-xs text-primary-300">Device record link copied.</p>}{copyLinkError && <p role="alert" className="text-xs text-danger">{copyLinkError}</p>}</div>}
       {loading && <p role="status" className="mt-5 text-sm text-surface-300">Loading recorded device details...</p>}
       {error && <div className="mt-5 space-y-3"><p role="alert" className="text-sm text-danger">{error}</p><button type="button" onClick={() => setRetry(value => value + 1)} className="rounded-md border border-surface-600 px-3 py-2 text-sm text-surface-200">Retry device details</button></div>}
       {!loading && !error && record && <div className="mt-5 space-y-5">
