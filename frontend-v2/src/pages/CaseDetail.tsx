@@ -159,6 +159,8 @@ export function CaseDetail() {
   }, []);
   const [seedingPlanId, setSeedingPlanId] = useState<number | null>(null);
   const currentUserId = useAuthStore(state => state.user?.id ?? null);
+  const canManageChecklist = currentUserId !== null && caseData !== null && (caseData.user_id === currentUserId || caseData.assigned_to_id === currentUserId);
+  const canEditAssignedTask = (task: CaseTask) => canManageChecklist || (currentUserId !== null && task.assignee_id === currentUserId);
 
   useEffect(() => {
     apiClient.get('/orgs/me/members')
@@ -261,7 +263,7 @@ export function CaseDetail() {
 
   const addTask = async () => {
     const title = newTaskTitle.trim();
-    if (!title || addingTask || tasksUnavailable || batchTaskBusy) return;
+    if (!canManageChecklist || !title || addingTask || tasksUnavailable || batchTaskBusy) return;
     setAddingTask(true);
     try {
       await apiClient.post(`/cases/${caseId}/tasks`, { title });
@@ -273,7 +275,7 @@ export function CaseDetail() {
   };
 
   const toggleTask = async (task: CaseTask) => {
-    if (taskBusyId !== null || batchTaskBusy) return;
+    if (!canEditAssignedTask(task) || taskBusyId !== null || batchTaskBusy) return;
     setTaskBusyId(task.id);
     try {
       await apiClient.patch(`/cases/${caseId}/tasks/${task.id}`, { done: !task.done });
@@ -283,7 +285,7 @@ export function CaseDetail() {
   };
 
   const assignTask = async (task: CaseTask, assigneeId: number | null) => {
-    if (taskBusyId !== null || batchTaskBusy) return;
+    if (!canManageChecklist || taskBusyId !== null || batchTaskBusy) return;
     setTaskBusyId(task.id);
     try {
       await apiClient.patch(`/cases/${caseId}/tasks/${task.id}`, { assignee_id: assigneeId });
@@ -293,7 +295,7 @@ export function CaseDetail() {
   };
 
   const setTaskDueDate = async (task: CaseTask, dueDate: string | null) => {
-    if (taskBusyId !== null || batchTaskBusy) return;
+    if (!canEditAssignedTask(task) || taskBusyId !== null || batchTaskBusy) return;
     setTaskBusyId(task.id);
     try {
       await apiClient.patch(`/cases/${caseId}/tasks/${task.id}`, { due_date: dueDate });
@@ -303,7 +305,7 @@ export function CaseDetail() {
   };
 
   const removeTask = async (taskId: number) => {
-    if (taskBusyId !== null || batchTaskBusy) return;
+    if (!canManageChecklist || taskBusyId !== null || batchTaskBusy) return;
     setTaskBusyId(taskId);
     try {
       await apiClient.delete(`/cases/${caseId}/tasks/${taskId}`);
@@ -314,7 +316,7 @@ export function CaseDetail() {
   };
 
   const seedTasksFromPlan = async (planId: number, payload: ChecklistSelection) => {
-    if (seedingPlanId !== null || tasksUnavailable || batchTaskBusy) return false;
+    if (!canManageChecklist || seedingPlanId !== null || tasksUnavailable || batchTaskBusy) return false;
     setSeedingPlanId(planId);
     try {
       const res = await apiClient.post(`/cases/${caseId}/tasks/from-plan/${planId}`, payload);
@@ -746,10 +748,11 @@ export function CaseDetail() {
             />
           </div>
         )}
+        {!canManageChecklist && <p className="mb-3 text-xs text-warning">Only the investigation owner or assignee can add, rename, reassign, delete or import checklist tasks. You can change completion and due dates only for tasks currently assigned to you. Other checklist records are read-only.</p>}
         {invalidTaskLink && <p role="alert" className="mb-3 text-sm text-warning">The task link has an invalid task ID. No task was selected or changed.</p>}
         {!tasksUnavailable && tasks.length === 0 && linkedTaskId !== null && <p role="alert" className="mb-3 text-sm text-warning">Task #{linkedTaskId} is not in this loaded investigation checklist. No task was changed.</p>}
         {tasks.length > 0 && (
-          <ChecklistBatchTools key={caseData.id} caseId={caseData.id} tasks={tasks} members={members} externalBusy={batchTaskBusy || taskBusyId !== null || addingTask || seedingPlanId !== null} onRefresh={() => void fetchAll()} onBusyChange={busy => setBatchBusyCaseId(current => busy ? caseData.id : current === caseData.id ? null : current)} onSaved={saved => setTasks(current => current.map(task => ({ ...task, ...saved.find(row => row.id === task.id) })))}>
+          <ChecklistBatchTools readOnly={!canManageChecklist} key={caseData.id} caseId={caseData.id} tasks={tasks} members={members} externalBusy={batchTaskBusy || taskBusyId !== null || addingTask || seedingPlanId !== null} onRefresh={() => void fetchAll()} onBusyChange={busy => setBatchBusyCaseId(current => busy ? caseData.id : current === caseData.id ? null : current)} onSaved={saved => setTasks(current => current.map(task => ({ ...task, ...saved.find(row => row.id === task.id) })))}>
           {selection => <ChecklistTriage onSelectMatching={selection.select} selectionBusy={selection.busy || taskBusyId !== null} key={`${caseData.id}:${linkedTaskId ?? ''}`} tasks={tasks} today={todayStr ?? ''} currentUserId={currentUserId} members={members} linkedTaskId={linkedTaskId}>
             {task => (
               <li key={task.id} id={`case-task-${task.id}`} tabIndex={-1} className={`flex min-w-0 flex-wrap items-center gap-2 rounded-md border border-surface-800 bg-surface-900/60 px-3 py-2 focus:outline-none ${linkedTaskId === task.id ? 'ring-2 ring-primary-400' : ''}`}>
@@ -757,7 +760,7 @@ export function CaseDetail() {
                 <button
                   type="button"
                   aria-label={task.done ? `Reopen task ${task.title}` : `Complete task ${task.title}`}
-                  disabled={batchTaskBusy || taskBusyId !== null}
+                  disabled={!canEditAssignedTask(task) || batchTaskBusy || taskBusyId !== null}
                   onClick={() => void toggleTask(task)}
                   className="shrink-0 text-primary-400 transition-colors hover:text-primary-300 disabled:opacity-40"
                 >
@@ -778,7 +781,7 @@ export function CaseDetail() {
                     <select
                       aria-label={`Assign task ${task.title}`}
                       value={task.assignee_id ?? ''}
-                      disabled={batchTaskBusy || taskBusyId !== null}
+                      disabled={!canManageChecklist || batchTaskBusy || taskBusyId !== null}
                       onChange={e => void assignTask(task, e.target.value ? Number(e.target.value) : null)}
                       className="max-w-36 shrink-0 truncate rounded-md border border-surface-700 bg-surface-950 px-1.5 py-1 text-xs text-surface-300 focus:border-primary-500 focus:outline-none disabled:opacity-40"
                     >
@@ -792,18 +795,18 @@ export function CaseDetail() {
                     type="date"
                     aria-label={`Due date for task ${task.title}`}
                     value={task.due_date ?? ''}
-                    disabled={batchTaskBusy || taskBusyId !== null}
+                    disabled={!canEditAssignedTask(task) || batchTaskBusy || taskBusyId !== null}
                     onChange={e => void setTaskDueDate(task, e.target.value || null)}
                     className="w-28 shrink-0 rounded-md border border-surface-700 bg-surface-950 px-1.5 py-1 text-xs text-surface-300 focus:border-primary-500 focus:outline-none disabled:opacity-40 [color-scheme:dark]"
                   />
-                  <button type="button" aria-label={`Edit task ${task.title}`} disabled={batchTaskBusy || taskBusyId !== null}
+                  <button type="button" aria-label={`Edit task ${task.title}`} disabled={!canManageChecklist || batchTaskBusy || taskBusyId !== null}
                     onClick={() => setEditingTask(task)} className="shrink-0 text-surface-400 hover:text-primary-300 disabled:opacity-40">
                     <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                   <button
                     type="button"
                     aria-label={`Delete task ${task.title}`}
-                    disabled={batchTaskBusy || taskBusyId !== null}
+                    disabled={!canManageChecklist || batchTaskBusy || taskBusyId !== null}
                     onClick={() => void removeTask(task.id)}
                     className="shrink-0 text-surface-500 transition-colors hover:text-danger disabled:opacity-40"
                   >
@@ -830,13 +833,13 @@ export function CaseDetail() {
             onChange={e => setNewTaskTitle(e.target.value)}
             placeholder="Add an investigation task..."
             aria-label="New task title"
-            disabled={tasksUnavailable || batchTaskBusy}
+            disabled={!canManageChecklist || tasksUnavailable || batchTaskBusy}
             maxLength={300}
             className="min-h-9 min-w-0 flex-1 rounded-md border border-surface-700 bg-surface-950 px-3 text-sm text-surface-100 placeholder:text-surface-500 focus:border-primary-500 focus:outline-none"
           />
           <button
             type="submit"
-            disabled={tasksUnavailable || batchTaskBusy || !newTaskTitle.trim() || addingTask}
+            disabled={!canManageChecklist || tasksUnavailable || batchTaskBusy || !newTaskTitle.trim() || addingTask}
             className="rounded-md bg-primary-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Add task
@@ -927,7 +930,7 @@ export function CaseDetail() {
         </div>
       )}
 
-      <CaseResponsePlans key={caseData.id} caseId={caseData.id} onSeed={(id, payload) => seedTasksFromPlan(id, payload)} seedBusy={seedingPlanId !== null || batchTaskBusy} tasksUnavailable={tasksUnavailable} />
+      <CaseResponsePlans key={caseData.id} caseId={caseData.id} onSeed={(id, payload) => seedTasksFromPlan(id, payload)} seedBusy={!canManageChecklist || seedingPlanId !== null || batchTaskBusy} tasksUnavailable={tasksUnavailable} />
 
       {/* Two-column layout: Timeline + Related Items */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1127,6 +1130,7 @@ export function CaseDetail() {
 
       {editingTask && <TaskTitleDialog key={editingTask.id} title={editingTask.title} onClose={() => setEditingTask(null)}
         onSave={async title => {
+          if (!canManageChecklist) throw new Error('Checklist management permission is required.');
           const response = await apiClient.patch<CaseTask>(`/cases/${caseId}/tasks/${editingTask.id}`, { title });
           if (response.data.id !== editingTask.id || typeof response.data.title !== 'string') throw new Error('The saved task could not be verified. Retry to refresh it.');
           setTasks(current => current.map(task => task.id === editingTask.id ? response.data : task));

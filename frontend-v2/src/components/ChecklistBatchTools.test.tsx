@@ -84,3 +84,11 @@ it('offers an explicit reload after unconfirmed saves rather than losing failed 
   expect((screen.getByLabelText('Pick 1') as HTMLInputElement).checked).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Reload investigation to verify results (clears selection)' })); expect(reload).toHaveBeenCalledTimes(1);
 });
+
+it('does not provide batch selection or mutation authority in read-only mode', async () => {
+  show({ readOnly: true }); fireEvent.click(screen.getByRole('button', { name: 'Select loaded matches' })); fireEvent.click(screen.getByLabelText('Pick 1'));
+  expect(screen.getByLabelText('Pick 1')).toHaveProperty('checked', false); expect(screen.queryByRole('region')).toBeNull(); expect(patch).not.toHaveBeenCalled();
+});
+it('drops a prepared batch review if management permission is removed', async () => {
+  const view = show(); selectOne(); review(); expect(screen.getByRole('dialog')).toBeTruthy(); view.rerender(<ChecklistBatchTools {...props} readOnly>{rows}</ChecklistBatchTools>); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull()); expect(patch).not.toHaveBeenCalled();
+});

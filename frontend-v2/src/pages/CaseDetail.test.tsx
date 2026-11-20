@@ -99,7 +99,7 @@ function renderDetail(path = '/cases/7') {
   );
 }
 
-beforeEach(() => { vi.resetAllMocks(); });
+beforeEach(() => { vi.resetAllMocks(); useAuthStore.setState({ user: { id: 5, email: 'owner@example.com', full_name: 'Owner', company: 'Acme', role: 'analyst', is_active: true, is_verified: true, mfa_enabled: false, created_at: '2026-01-01T00:00:00Z' } }); });
 afterEach(() => {
   cleanup();
   useAuthStore.setState({ user: null });
@@ -1080,4 +1080,54 @@ it('keeps independent checklist batch locks when navigating between investigatio
   expect((screen.getByLabelText('Due date for task Eighth task') as HTMLInputElement).disabled).toBe(false);
   expect(screen.queryByText('Seventh task')).toBeNull();
   expect(screen.getByText('Investigation 8')).toBeTruthy();
+});
+
+describe('Checklist permissions', () => {
+  const user = { id: 42, email: 'worker@example.com', full_name: 'Worker', company: 'Acme', role: 'analyst', is_active: true, is_verified: true, mfa_enabled: false, created_at: '2026-01-01T00:00:00Z' };
+  const mine = { id: 101, title: 'Work assigned to me', done: false, position: 0, assignee_id: 42, due_date: null, created_at: '2026-11-20T00:00:00Z', completed_at: null };
+  const other = { ...mine, id: 102, title: 'Other analyst work', assignee_id: 9, position: 1 };
+  function load(assignedTo: number | null = null) {
+    mockGet.mockImplementation(async url => {
+      if (url.endsWith('/tasks')) return { data: [mine, other] };
+      if (url === '/orgs/me/members') return { data: [user, { ...user, id: 9, email: 'other@example.com' }] };
+      if (url.endsWith('/watchers') || url.endsWith('/alerts') || url.endsWith('/events')) return { data: [] };
+      if (url.endsWith('/blast-radius')) return { data: { success: true, data: null } };
+      if (url.endsWith('/similar')) return { data: { success: true, data: [] } };
+      return { data: { ...caseData, assigned_to_id: assignedTo } };
+    });
+  }
+  it('keeps watcher evidence readable but management and unassigned task controls disabled', async () => {
+    useAuthStore.setState({ user: { ...user, id: 55 } }); load(); renderDetail(); await screen.findByText(mine.title);
+    expect(screen.getByRole('button', { name: `Complete task ${mine.title}` })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: `Edit task ${mine.title}` })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: `Delete task ${mine.title}` })).toHaveProperty('disabled', true);
+    expect(screen.getByLabelText(`Assign task ${mine.title}`)).toHaveProperty('disabled', true);
+    expect(screen.getByLabelText(`Due date for task ${mine.title}`)).toHaveProperty('disabled', true);
+    expect(screen.getByLabelText('New task title')).toHaveProperty('disabled', true);
+    expect(screen.queryByRole('region', { name: 'Review selected checklist changes' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: `Complete task ${mine.title}` })); expect(mockPatch).not.toHaveBeenCalled();
+  });
+  it('lets a task assignee change only their own completion and due date, not checklist management', async () => {
+    useAuthStore.setState({ user }); load(); mockPatch.mockResolvedValue({ data: mine }); renderDetail(); await screen.findByText(mine.title);
+    expect(screen.getByRole('button', { name: `Complete task ${mine.title}` })).toHaveProperty('disabled', false);
+    expect(screen.getByLabelText(`Due date for task ${mine.title}`)).toHaveProperty('disabled', false);
+    expect(screen.getByRole('button', { name: `Complete task ${other.title}` })).toHaveProperty('disabled', true);
+    expect(screen.getByLabelText(`Due date for task ${other.title}`)).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: `Edit task ${mine.title}` })).toHaveProperty('disabled', true);
+    expect(screen.getByLabelText(`Assign task ${mine.title}`)).toHaveProperty('disabled', true);
+    fireEvent.click(screen.getByRole('button', { name: `Complete task ${mine.title}` })); await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/101', { done: true }));
+  });
+  it('preserves full checklist management for the investigation assignee', async () => {
+    useAuthStore.setState({ user }); load(42); renderDetail(); await screen.findByText(mine.title);
+    expect(screen.getByRole('button', { name: `Edit task ${other.title}` })).toHaveProperty('disabled', false);
+    expect(screen.getByRole('button', { name: `Delete task ${other.title}` })).toHaveProperty('disabled', false);
+    expect(screen.getByLabelText('New task title')).toHaveProperty('disabled', false);
+    expect(screen.getByRole('region', { name: 'Review selected checklist changes' })).toBeTruthy();
+  });
+  it('does not infer checklist edit rights while the current user is unknown', async () => {
+    useAuthStore.setState({ user: null }); load(); renderDetail(); await screen.findByText(mine.title);
+    expect(screen.getByRole('button', { name: `Complete task ${mine.title}` })).toHaveProperty('disabled', true);
+    expect(screen.getByLabelText('New task title')).toHaveProperty('disabled', true);
+    expect(screen.queryByRole('region', { name: 'Review selected checklist changes' })).toBeNull();
+  });
 });

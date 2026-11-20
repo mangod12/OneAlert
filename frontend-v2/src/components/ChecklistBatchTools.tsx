@@ -6,17 +6,17 @@ import { verifiedChecklistPatch, type BatchTask, type ChecklistPatch } from '../
 import { ConfirmDialog } from './ui/ConfirmDialog';
 const control = 'max-w-full rounded border border-surface-700 bg-surface-950 px-3 py-2 text-xs text-surface-200 disabled:opacity-40';
 interface Selection { selected: Set<number>; toggle: (id: number) => void; select: (ids: number[]) => void; busy: boolean; }
-interface Props { caseId: number; tasks: BatchTask[]; members: { id: number; full_name: string | null; email: string }[]; externalBusy: boolean; onRefresh?: () => void; onBusyChange: (busy: boolean) => void; onSaved: (tasks: BatchTask[]) => void; children: (selection: Selection) => ReactNode; }
-export function ChecklistBatchTools({ caseId, tasks, members, externalBusy, onRefresh, onBusyChange, onSaved, children }: Props) {
+interface Props { readOnly?: boolean; caseId: number; tasks: BatchTask[]; members: { id: number; full_name: string | null; email: string }[]; externalBusy: boolean; onRefresh?: () => void; onBusyChange: (busy: boolean) => void; onSaved: (tasks: BatchTask[]) => void; children: (selection: Selection) => ReactNode; }
+export function ChecklistBatchTools({ readOnly = false, caseId, tasks, members, externalBusy, onRefresh, onBusyChange, onSaved, children }: Props) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [action, setAction] = useState('complete'), [date, setDate] = useState(''), [assignee, setAssignee] = useState('');
   const [review, setReview] = useState<{ tasks: BatchTask[]; patch: ChecklistPatch; label: string } | null>(null);
   const [busy, setBusy] = useState(false), [notice, setNotice] = useState(''), [errors, setErrors] = useState<Record<number, string>>({});
   const lock = useRef(false), mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  useEffect(() => { setReview(null); }, [tasks]);
+  useEffect(() => { setReview(null); }, [tasks, readOnly]);
   const chosen = tasks.filter(task => selected.has(task.id));
-  const blocked = busy || externalBusy;
+  const blocked = readOnly || busy || externalBusy;
   const valid = action !== 'date' || validTaskDate(date);
   const assignmentValid = action !== 'assign' || members.some(member => member.id === Number(assignee));
   const select = (ids: number[]) => { if (!blocked) setSelected(current => new Set([...current, ...ids.filter(id => tasks.some(task => task.id === id))].slice(0, 100))); };
@@ -27,7 +27,7 @@ export function ChecklistBatchTools({ caseId, tasks, members, externalBusy, onRe
     setReview({ tasks: [...chosen], patch, label });
   };
   const apply = async () => {
-    if (!review || lock.current || externalBusy) return;
+    if (readOnly || !review || lock.current || externalBusy) return;
     lock.current = true; setBusy(true); onBusyChange(true); setNotice(''); setErrors({});
     const snapshot = review, saved: BatchTask[] = [], failures: Record<number, string> = {};
     for (let index = 0; index < snapshot.tasks.length; index += 3) {
@@ -48,7 +48,7 @@ export function ChecklistBatchTools({ caseId, tasks, members, externalBusy, onRe
     onBusyChange(false); lock.current = false;
   };
   return <>
-    <section aria-label="Review selected checklist changes" className="mb-4 space-y-3 rounded border border-surface-700 p-3">
+    {!readOnly && <section aria-label="Review selected checklist changes" className="mb-4 space-y-3 rounded border border-surface-700 p-3">
       <h3 className="text-sm font-semibold text-surface-100">Change selected checklist tasks</h3>
       <p className="text-xs text-surface-400">Select up to 100 loaded tasks across checklist pages or filters. Selection can include hidden tasks. Review every selected task before applying. Changes use individual task saves, not an atomic batch. Other people may edit records during review.</p>
       <div className="flex flex-wrap items-center gap-2"><span className="text-xs text-surface-200">{chosen.length} selected loaded tasks{selected.size > chosen.length ? `; ${selected.size - chosen.length} no longer loaded and excluded` : ''}</span><button type="button" className={control} disabled={blocked || !selected.size} onClick={() => setSelected(new Set())}>Clear checklist selection</button></div>
@@ -63,8 +63,8 @@ export function ChecklistBatchTools({ caseId, tasks, members, externalBusy, onRe
       {notice && <p role={Object.keys(errors).length ? 'alert' : 'status'} className="text-sm text-surface-200">{notice}</p>}
       {notice && onRefresh && <button type="button" className={control} disabled={blocked} onClick={onRefresh}>Reload investigation to verify results (clears selection)</button>}
       {Object.keys(errors).length > 0 && <ul className="space-y-1 text-xs text-danger">{Object.entries(errors).map(([id, error]) => <li key={id}>Task #{id}: {error}</li>)}</ul>}
-    </section>
-    {children({ selected, select, toggle: id => { if (!blocked) setSelected(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else if (next.size < 100) next.add(id); return next; }); }, busy })}
+    </section>}
+    {children({ selected, select, toggle: id => { if (!blocked) setSelected(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else if (next.size < 100) next.add(id); return next; }); }, busy: busy || readOnly })}
     {review && <ConfirmDialog title="Apply reviewed checklist change" description={`${review.label} for exactly ${review.tasks.length} selected tasks: ${review.tasks.slice(0, 12).map(task => `#${task.id}`).join(', ') + (review.tasks.length > 12 ? ` and ${review.tasks.length - 12} more in the selection preview` : '')}. The selection includes tasks hidden by filters or on other pages. Only the chosen field changes. Checklist completion is not response execution or proof of remediation. This cannot be cancelled once saves start.`} confirmLabel={`Apply to ${review.tasks.length} reviewed tasks`} busy={busy} onCancel={() => { if (!lock.current) setReview(null); }} onConfirm={() => void apply()} />}
   </>;
 }
