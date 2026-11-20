@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { MyTasks, type AssignedTask } from './MyTasks';
 
-vi.mock('../api/client', () => ({ default: { get: vi.fn() } }));
+vi.mock('../api/client', () => ({ default: { get: vi.fn(), patch: vi.fn() } }));
 const get = vi.mocked(apiClient.get);
 const today = new Date().toISOString().slice(0, 10);
 const task = (overrides: Partial<AssignedTask> = {}): AssignedTask => ({ task_id: 1, case_id: 7, case_title: 'Edge investigation', case_severity: 'high', case_status: 'investigating', case_due_date: '2099-01-01', title: 'Collect host evidence', due_date: '2020-01-01', created_at: '2026-11-19T08:00:00Z', ...overrides });
@@ -101,4 +101,63 @@ describe('MyTasks workspace', () => {
     await act(async () => { finish({ data }); });
     await waitFor(() => expect(screen.queryByText('Collect host evidence')).toBeNull());
   });
+});
+
+it('keeps due-date drafts private until saved, supports clear and discard, and updates filters after success', async () => {
+  vi.mocked(apiClient.patch).mockResolvedValue({ data: { done: false, due_date: null } });
+  mount();
+  const input = await screen.findByLabelText('Task due date for #1');
+  fireEvent.change(input, { target: { value: '2099-02-03' } });
+  expect(apiClient.patch).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('Complete task #1: Collect host evidence')).toHaveProperty('disabled', true);
+  fireEvent.click(screen.getByLabelText('Discard due date draft for task #1'));
+  expect(input).toHaveProperty('value', '2020-01-01');
+  fireEvent.change(input, { target: { value: '' } });
+  fireEvent.click(screen.getByLabelText('Save due date for task #1'));
+  await screen.findByText('Saved the due date for task #1.');
+  expect(apiClient.patch).toHaveBeenCalledWith('/cases/7/tasks/1', { due_date: null });
+  expect(screen.getByText('Task #1 due: Not set')).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Task due scope'), { target: { value: 'overdue' } });
+  expect(screen.getByText('No returned tasks match')).toBeTruthy();
+});
+
+it('does not remove a task before completion succeeds and blocks duplicate and competing saves', async () => {
+  let finish!: (value: unknown) => void;
+  vi.mocked(apiClient.patch).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  mount();
+  const button = await screen.findByLabelText('Complete task #1: Collect host evidence');
+  fireEvent.click(button); fireEvent.click(button);
+  expect(screen.getByText('Collect host evidence')).toBeTruthy();
+  expect(screen.getByLabelText('Task due date for #1')).toHaveProperty('disabled', true);
+  expect(screen.getByRole('button', { name: 'Refresh tasks' })).toHaveProperty('disabled', true);
+  expect(apiClient.patch).toHaveBeenCalledTimes(1);
+  await act(async () => finish({ data: { done: true, due_date: '2020-01-01' } }));
+  expect(screen.queryByText('Collect host evidence')).toBeNull();
+  expect(screen.getByText(/Completed task #1/)).toBeTruthy();
+  expect(screen.getAllByRole('listitem')).toHaveLength(3);
+  expect(apiClient.patch).toHaveBeenCalledWith('/cases/7/tasks/1', { done: true });
+});
+
+it('keeps failed due-date drafts and task rows available for retry', async () => {
+  vi.mocked(apiClient.patch).mockRejectedValueOnce(new Error('save offline')).mockResolvedValueOnce({ data: { done: false, due_date: '2099-02-03' } });
+  mount();
+  const input = await screen.findByLabelText('Task due date for #1');
+  fireEvent.change(input, { target: { value: '2099-02-03' } });
+  fireEvent.click(screen.getByLabelText('Save due date for task #1'));
+  await screen.findByRole('alert');
+  expect(input).toHaveProperty('value', '2099-02-03');
+  expect(screen.getByText('Task #1 due: 2020-01-01')).toBeTruthy();
+  fireEvent.click(screen.getByLabelText('Save due date for task #1'));
+  await screen.findByText('Task #1 due: 2099-02-03');
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+it('retains the capped-snapshot warning after completing a returned task', async () => {
+  get.mockResolvedValue({ data: Array.from({ length: 200 }, (_, i) => task({ task_id: i + 1 })) });
+  vi.mocked(apiClient.patch).mockResolvedValue({ data: { done: true, due_date: null } });
+  mount();
+  fireEvent.click(await screen.findByLabelText('Complete task #1: Collect host evidence'));
+  await screen.findByText(/Completed task #1/);
+  expect(screen.getAllByRole('listitem')).toHaveLength(199);
+  expect(screen.getByText(/200-task return limit was reached/)).toBeTruthy();
 });

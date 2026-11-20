@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
@@ -20,6 +20,12 @@ export interface AssignedTask {
 }
 
 export function MyTasks() {
+  const pending = useRef(new Set<number>());
+  const [busyIds, setBusyIds] = useState<Set<number>>(new Set());
+  const [actionErrors, setActionErrors] = useState<Record<number, string>>({});
+  const [dueDrafts, setDueDrafts] = useState<Record<number, string>>({});
+  const [actionNotice, setActionNotice] = useState('');
+  const [limitReached, setLimitReached] = useState(false);
   const [tasks, setTasks] = useState<AssignedTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -35,11 +41,32 @@ export function MyTasks() {
     setLoading(true);
     setError('');
     void apiClient.get<AssignedTask[]>('/cases/my-tasks').then(response => {
-      if (active) { setTasks(response.data); setLoadedAt(new Date().toLocaleString()); }
+      if (active) { setTasks(response.data); setLimitReached(response.data.length >= 200); setDueDrafts({}); setActionErrors({}); setLoadedAt(new Date().toLocaleString()); }
     }).catch(err => { if (active) setError(getApiErrorMessage(err, 'Assigned tasks could not be loaded.')); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [refresh]);
+  const saveTask = async (task: AssignedTask, payload: { done: true } | { due_date: string | null }) => {
+    if (pending.current.has(task.task_id)) return;
+    pending.current.add(task.task_id);
+    setBusyIds(new Set(pending.current));
+    setActionErrors(current => ({ ...current, [task.task_id]: '' }));
+    setActionNotice('');
+    try {
+      const response = await apiClient.patch<{ done: boolean; due_date: string | null }>(`/cases/${task.case_id}/tasks/${task.task_id}`, payload);
+      setTasks(current => response.data.done ? current.filter(row => row.task_id !== task.task_id)
+        : current.map(row => row.task_id === task.task_id ? { ...row, due_date: response.data.due_date } : row));
+      setDueDrafts(current => { const next = { ...current }; delete next[task.task_id]; return next; });
+      setActionNotice(response.data.done
+        ? `Completed task #${task.task_id}. Open the investigation checklist to reopen it. Refresh tasks to load any additional assigned work.`
+        : `Saved the due date for task #${task.task_id}.`);
+    } catch (err: unknown) {
+      setActionErrors(current => ({ ...current, [task.task_id]: getApiErrorMessage(err, 'Task could not be saved. Your draft is kept; try again.') }));
+    } finally {
+      pending.current.delete(task.task_id);
+      setBusyIds(new Set(pending.current));
+    }
+  };
   const needle = query.trim().toLowerCase();
   const visible = tasks.filter(task => (!needle || [task.title, task.case_title, String(task.case_id), String(task.task_id)].some(value => value.toLowerCase().includes(needle)))
     && (severity === 'all' || task.case_severity === severity)
@@ -51,13 +78,14 @@ export function MyTasks() {
   });
   const filtered = !!query || due !== 'all' || severity !== 'all' || order !== 'recorded';
   return <div className="min-w-0 space-y-5">
-    <PageHeader eyebrow="Command" title="My tasks" description="Review open checklist tasks assigned to you across active investigations. Open an investigation to update its checklist."
-      actions={<button type="button" disabled={loading} onClick={() => setRefresh(value => value + 1)} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-200 disabled:opacity-40">Refresh tasks</button>} />
+    <PageHeader eyebrow="Command" title="My tasks" description="Review open checklist tasks assigned to you across active investigations. Complete assigned work and edit task due dates here, or open the investigation for its full checklist."
+      actions={<button type="button" disabled={loading || busyIds.size > 0} onClick={() => setRefresh(value => value + 1)} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-200 disabled:opacity-40">Refresh tasks</button>} />
     <p className="text-sm text-surface-400">This view returns up to 200 assigned tasks, not a complete workload count. Completed tasks and resolved, closed or false-positive investigations are excluded. Filters and order apply only to returned records.</p>
+    {actionNotice && <p role="status" className="rounded border border-success/40 p-3 text-sm text-success">{actionNotice}</p>}
     {loading ? <LoadingSurface label="Loading assigned tasks" /> : error ? <ErrorState title="Assigned tasks unavailable" description={error} action={<RetryButton onClick={() => setRefresh(value => value + 1)} />} /> : <>
       <div className="rounded-lg border border-surface-700 bg-surface-900 p-4">
-        <p className="text-xs text-surface-400">Snapshot loaded {loadedAt}. Task due dates use UTC today: {today}. Investigation due dates are shown separately.</p>
-        {tasks.length >= 200 && <p role="status" className="mt-2 text-sm text-warning">The 200-task return limit was reached. Other assigned tasks may be missing. Open investigations to review work outside this returned set.</p>}
+        <p className="text-xs text-surface-400">Snapshot loaded {loadedAt}; successful task edits are reflected below. Task due dates use UTC today: {today}. Investigation due dates are shown separately.</p>
+        {limitReached && <p role="status" className="mt-2 text-sm text-warning">The 200-task return limit was reached. Other assigned tasks may be missing, including after completing a task here. Refresh to load more, or open investigations to review work outside this returned set.</p>}
         <dl className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">{[
           ['Returned tasks', tasks.length], ['Investigations represented', new Set(tasks.map(task => task.case_id)).size],
           ['Overdue tasks', tasks.filter(task => task.due_date && task.due_date < today).length], ['Without task due date', tasks.filter(task => !task.due_date).length],
@@ -80,6 +108,21 @@ export function MyTasks() {
           <h2 className="mt-3 break-words text-base font-semibold text-surface-100">{task.title}</h2>
           <Link to={`/cases/${task.case_id}`} className="mt-2 inline-block max-w-full break-words text-sm text-primary-300 underline-offset-4 hover:underline">{task.case_title} · Investigation #{task.case_id}</Link>
           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-surface-400"><span>Task #{task.task_id} due: {task.due_date || 'Not set'}</span><span>Investigation due: {task.case_due_date || 'Not set'}</span></div>
+          <form className="mt-4 flex flex-wrap items-end gap-2" onSubmit={event => { event.preventDefault(); void saveTask(task, { due_date: (dueDrafts[task.task_id] ?? task.due_date) || null }); }}>
+            <label className="text-xs text-surface-300">Task due date for #{task.task_id}
+              <input aria-label={`Task due date for #${task.task_id}`} type="date" value={dueDrafts[task.task_id] ?? task.due_date ?? ''}
+                disabled={busyIds.has(task.task_id)} onChange={event => setDueDrafts(current => ({ ...current, [task.task_id]: event.target.value }))}
+                className="mt-1 block min-h-9 max-w-full rounded border border-surface-600 bg-surface-950 px-2 text-sm text-surface-100 disabled:opacity-40" />
+            </label>
+            <button type="submit" disabled={busyIds.has(task.task_id) || (dueDrafts[task.task_id] ?? task.due_date ?? '') === (task.due_date ?? '')}
+              aria-label={`Save due date for task #${task.task_id}`} className="min-h-9 rounded border border-surface-600 px-3 text-xs text-surface-200 disabled:opacity-40">Save due date</button>
+            {dueDrafts[task.task_id] !== undefined && <button type="button" disabled={busyIds.has(task.task_id)} onClick={() => setDueDrafts(current => { const next = { ...current }; delete next[task.task_id]; return next; })}
+              aria-label={`Discard due date draft for task #${task.task_id}`} className="min-h-9 rounded border border-surface-600 px-3 text-xs text-surface-200 disabled:opacity-40">Discard draft</button>}
+            <button type="button" disabled={busyIds.has(task.task_id) || (dueDrafts[task.task_id] ?? task.due_date ?? '') !== (task.due_date ?? '')} onClick={() => void saveTask(task, { done: true })}
+              aria-label={`Complete task #${task.task_id}: ${task.title}`} className="min-h-9 rounded bg-primary-500 px-3 text-xs font-semibold text-surface-950 disabled:opacity-40">{busyIds.has(task.task_id) ? 'Saving...' : 'Mark complete'}</button>
+          </form>
+          {(dueDrafts[task.task_id] ?? task.due_date ?? '') !== (task.due_date ?? '') && <p className="mt-2 text-xs text-surface-400">Save or discard the due-date draft before completing this task.</p>}
+          {actionErrors[task.task_id] && <p role="alert" className="mt-2 text-sm text-danger">{actionErrors[task.task_id]}</p>}
         </li>)}</ul> : <EmptyState title="No returned tasks match" description="Clear filters to see the returned task set. This does not mean you have no assigned work." />}
       </>}
     </>}
