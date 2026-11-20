@@ -8,10 +8,12 @@ retrieval, component listing, and deletion.
 
 import csv
 import io
+from datetime import UTC, datetime
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -193,6 +195,50 @@ async def get_sbom_components(
     )
     components = result.scalars().all()
     return components
+
+
+@router.get("/{sbom_id}/component-evidence")
+async def browse_sbom_component_evidence(
+    sbom_id: int,
+    page: Annotated[int, Query(ge=1)] = 1,
+    size: Annotated[int, Query(ge=1, le=100)] = 10,
+    search: Annotated[str, Query(max_length=200)] = "",
+    vulnerable_only: bool = False,
+    gap: Literal["", "version", "supplier", "license", "identifiers", "hash"] = "",
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Search and page saved component evidence without loading the whole document inventory."""
+    sbom = (await db.execute(select(SBOM).where(
+        SBOM.id == sbom_id, SBOM.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if sbom is None:
+        raise HTTPException(status_code=404, detail="SBOM not found")
+    predicates = [SBOMComponent.sbom_id == sbom_id]
+    query = search.strip()
+    if query:
+        needle = '%' + query.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+        predicates.append(or_(*(getattr(SBOMComponent, field).ilike(needle, escape='\\') for field in (
+            "name", "version", "supplier", "purl", "cpe", "license", "hash_sha256"
+        ))))
+    if vulnerable_only:
+        predicates.append(SBOMComponent.has_known_vulnerability > 0)
+    def missing(column):
+        return func.trim(func.coalesce(column, "")) == ""
+    if gap == "identifiers":
+        predicates.extend([missing(SBOMComponent.purl), missing(SBOMComponent.cpe)])
+    elif gap:
+        predicates.append(missing(getattr(SBOMComponent, "hash_sha256" if gap == "hash" else gap)))
+    total = (await db.execute(select(func.count()).select_from(SBOMComponent).where(*predicates))).scalar_one()
+    document_total = (await db.execute(select(func.count()).select_from(SBOMComponent)
+                                      .where(SBOMComponent.sbom_id == sbom_id))).scalar_one()
+    rows = (await db.execute(select(SBOMComponent).where(*predicates)
+                            .order_by(SBOMComponent.name, SBOMComponent.id)
+                            .offset((page - 1) * size).limit(size))).scalars().all()
+    return {"sbom": SBOMResponse.model_validate(sbom), "page": page, "size": size, "search": query,
+            "vulnerable_only": vulnerable_only, "gap": gap, "total": total, "document_total": document_total,
+            "retrieved_at": datetime.now(UTC).isoformat(),
+            "components": [SBOMComponentResponse.model_validate(row) for row in rows]}
 
 
 @router.get("/{sbom_id}/export")
