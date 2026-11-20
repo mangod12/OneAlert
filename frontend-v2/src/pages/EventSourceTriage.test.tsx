@@ -30,7 +30,7 @@ describe('Recorded event source triage', () => {
     await waitFor(() => expect(get).toHaveBeenCalledWith('/events/', { params: { page: 1, size: 50, sort: 'timestamp_desc', source_type: 'suricata' } }));
   });
   it('saves and restores the recorded ID without inventing missing source details', async () => {
-    setup(true); await screen.findByText('Recorded source details are unavailable');
+    setup(true); await screen.findByText('unavailable');
     fireEvent.click(screen.getByRole('button', { name: 'Saved views' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Saved plant', exact: true }));
     expect((screen.getByLabelText('Recorded source') as HTMLSelectElement).value).toBe('7');
@@ -38,7 +38,7 @@ describe('Recorded event source triage', () => {
     post.mockResolvedValue({ data: { id: 2, name: 'Copied plant', filters: { source_id: 7 }, created_at: '' } });
     fireEvent.click(screen.getByRole('button', { name: 'Saved views' }));
     fireEvent.change(screen.getByLabelText('Name for the saved view'), { target: { value: 'Copied plant' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save current view' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
     await waitFor(() => expect(post).toHaveBeenCalledWith('/events/views/', { name: 'Copied plant', filters: { source_id: 7, sort: 'timestamp_desc' } }));
   });
 });
