@@ -193,7 +193,7 @@ export function Topology() {
           <Download className="h-4 w-4" aria-hidden="true" /> Export filtered connections
         </button>
       } />
-      <p className="text-xs text-surface-400">CSV includes only the loaded connection rows matching the current protocol, cleartext and node filters. It is a recorded snapshot, not a live connectivity check.</p>
+      <p className="text-xs text-surface-400">Summary cards and device groups cover the loaded topology, not the filtered rows. CSV includes only the loaded connection rows matching the current protocol, cleartext and node filters. It is a recorded snapshot, not a live connectivity check.</p>
       {statsError && <DegradedBanner messages={[statsError]} onRetry={() => void fetchTopology()} />}
 
       {nodes.length === 0 && edges.length === 0 ? (
