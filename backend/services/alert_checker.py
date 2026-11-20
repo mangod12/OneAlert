@@ -19,7 +19,7 @@ from backend.models.audit_log import AuditLog
 from backend.models.case import Case, CaseAlert
 from backend.models.notification import Notification
 from backend.models.security_event import SecurityEvent as _SecurityEvent  # noqa: F401  (Case mapper dependency)
-from backend.models.suppression_rule import AlertSuppressionRule, rule_matches
+from backend.models.suppression_rule import AlertSuppressionRule, criteria_set, rule_matches
 from backend.models.user import User
 from backend.services.assignment import auto_assignee_id
 from backend.services.cve_enrichment import CVEEnrichmentService
@@ -162,6 +162,10 @@ async def _apply_suppression_rules(db: AsyncSession, user: User, alert: Alert) -
     severity = alert.severity
     severity = severity.value if hasattr(severity, "value") else (str(severity) if severity else None)
     for rule in rules:
+        # Legacy or out-of-band records must not bypass the API's no-match-all guard.
+        if not criteria_set({field: getattr(rule, field)
+                             for field in ("cve_id", "asset_id", "severity", "title_contains")}):
+            continue
         if rule_matches(rule, cve_id=alert.cve_id, asset_id=alert.asset_id, severity=severity, title=alert.title):
             alert.snoozed_until = datetime.now(UTC) + timedelta(hours=rule.duration_hours)
             db.add(AuditLog(
