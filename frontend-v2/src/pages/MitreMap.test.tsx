@@ -196,3 +196,20 @@ it('does not restore reference evidence from a collapsed request after reopening
   await act(async () => resolvers[1]({ data: { cases: [], detection_rules: [] } }));
   expect(screen.getByText('No cases reference this technique.')).toBeTruthy();
 });
+
+it('retries failed references in the expanded technique without reloading coverage', async () => {
+  let fail = true;
+  const fallback = get.getMockImplementation()!;
+  get.mockImplementation((url, config) => url === '/mitre/techniques/T1190/references' ? fail ? Promise.reject(new Error('References offline')) : Promise.resolve({ data: { cases: [], detection_rules: [] } }) : fallback(url, config));
+  render(<MemoryRouter><MitreMap /></MemoryRouter>);
+  const trigger = await screen.findByRole('button', { name: /Show what detects T1190/ });
+  fireEvent.click(trigger);
+  expect(await screen.findByRole('button', { name: 'Retry technique references' })).toBeTruthy();
+  expect(screen.queryByText('No cases reference this technique.')).toBeNull();
+  fail = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Retry technique references' }));
+  expect(await screen.findByText('No cases reference this technique.')).toBeTruthy();
+  expect(trigger.getAttribute('aria-expanded')).toBe('true');
+  expect(get.mock.calls.filter(([url]) => url === '/mitre/coverage')).toHaveLength(1);
+  expect(get.mock.calls.filter(([url]) => url === '/mitre/techniques')).toHaveLength(1);
+});

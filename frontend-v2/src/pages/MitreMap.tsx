@@ -49,14 +49,17 @@ export function MitreMap() {
   const [refsLoading, setRefsLoading] = useState(false);
   const [refsError, setRefsError] = useState('');
 
-  const toggleTechnique = async (id: string) => {
-    const request = ++refsRequest.current;
+  const toggleTechnique = (id: string) => {
     if (selectedId === id) {
-      setSelectedId(null);
-      setReferences(null);
-      setRefsError('');
+      refsRequest.current += 1;
+      setSelectedId(null); setReferences(null); setRefsError('');
       return;
     }
+    void loadReferences(id);
+  };
+
+  const loadReferences = async (id: string) => {
+    const request = ++refsRequest.current;
     setSelectedId(id);
     setReferences(null);
     setRefsError('');
@@ -171,9 +174,9 @@ export function MitreMap() {
 
       {/* Technique Browser */}
       <div className="oa-panel p-6">
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-surface-50">Techniques</h2>
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
             {coverage?.covered_ids && (
               <label className="flex items-center gap-2 text-xs text-surface-300">
                 <input
@@ -228,7 +231,7 @@ export function MitreMap() {
                   <p className="mt-3 text-xs text-surface-500">Loading references…</p>
                 )}
                 {expanded && refsError && (
-                  <p role="alert" className="mt-3 text-xs text-danger">{refsError}</p>
+                  <div className="mt-3 space-y-2"><p role="alert" className="text-xs text-danger">{refsError}</p><button type="button" onClick={() => void loadReferences(t.id)} className="rounded border border-surface-600 px-2.5 py-1.5 text-xs text-primary-300 hover:border-primary-500">Retry technique references</button></div>
                 )}
                 {expanded && references && (
                   <div className="mt-3 space-y-3 border-t border-surface-700 pt-3">
