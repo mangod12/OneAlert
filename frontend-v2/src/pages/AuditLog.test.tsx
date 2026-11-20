@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { AuditLog } from './AuditLog';
@@ -261,4 +261,37 @@ it('shows loading on an explicit audit retry rather than leaving the failure vis
   expect(screen.queryByText('Audit log unavailable')).toBeNull();
   expect(screen.getByText('Loading audit activity')).toBeTruthy();
   expect(screen.getByLabelText('Search audit actions')).toBeTruthy();
+});
+
+it('inspects full loaded audit evidence without another request and restores focus', async () => {
+  const detail = '{"changes":' + 'long recorded value '.repeat(30) + '}\n<script>plain text evidence</script>';
+  const fallback = get.getMockImplementation()!;
+  get.mockImplementation((url, config) => url === '/auth/audit-logs' ? Promise.resolve({ data: { logs: [{ ...logs[0], detail }], total: 1 } }) : fallback(url, config));
+  render(<AuditLog />);
+  const trigger = await screen.findByRole('button', { name: 'Inspect audit record 1' });
+  trigger.focus();
+  const reads = get.mock.calls.length;
+  fireEvent.click(trigger);
+  const dialog = within(screen.getByRole('dialog'));
+  expect(dialog.getByRole('heading', { name: 'Audit record #1' })).toBeTruthy();
+  expect(dialog.getByText('Full recorded detail').nextElementSibling?.textContent).toBe(detail);
+  expect(dialog.getByText('case.status_changed')).toBeTruthy();
+  expect(dialog.getByText('2026-11-17T09:00:00Z')).toBeTruthy();
+  expect(screen.getByRole('dialog').querySelector('script')).toBeNull();
+  expect(get.mock.calls.length).toBe(reads);
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+});
+
+it('shows absent audit fields explicitly and preserves a zero target ID', async () => {
+  const fallback = get.getMockImplementation()!;
+  get.mockImplementation((url, config) => url === '/auth/audit-logs' ? Promise.resolve({ data: { logs: [{ ...logs[0], target_type: null, target_id: '0', timestamp: null, detail: null }], total: 1 } }) : fallback(url, config));
+  render(<AuditLog />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Inspect audit record 1' }));
+  const dialog = within(screen.getByRole('dialog'));
+  expect(dialog.getAllByText('Not recorded')).toHaveLength(3);
+  expect(dialog.getByText('0')).toBeTruthy();
+  fireEvent.click(dialog.getByRole('button', { name: 'Close record' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
 });

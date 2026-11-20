@@ -6,6 +6,7 @@ import { ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncS
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { AgentRunInspector } from '../components/AgentRunInspector';
+import { useDialogFocus } from '../components/ui/useDialogFocus';
 
 interface AuditEntry {
   id: number;
@@ -38,6 +39,7 @@ const runStatusTones: Record<string, 'success' | 'danger' | 'warning' | 'neutral
 
 export function AuditLog() {
   const logRequest = useRef(0);
+  const [selectedRecord, setSelectedRecord] = useState<AuditEntry | null>(null);
   const [logs, setLogs] = useState<AuditEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -171,7 +173,7 @@ export function AuditLog() {
       {loading ? <LoadingSurface rows={6} label="Loading audit activity" /> : error ? (
         <ErrorState title="Audit log unavailable" description={error} action={<RetryButton onClick={() => void fetchLogs(page, search, userFilter, fromDate, toDate)} />} />
       ) : (
-          <div className="oa-panel relative overflow-x-auto rounded-md">
+          <div role="region" aria-label="Audit activity records" tabIndex={0} className="oa-panel relative overflow-x-auto rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b border-surface-700 text-surface-400">
@@ -179,12 +181,13 @@ export function AuditLog() {
                   <th className="px-4 py-3 text-left">Action</th>
                   <th className="px-4 py-3 text-left">Target</th>
                   <th className="px-4 py-3 text-left">Detail</th>
+                  <th className="px-4 py-3 text-right">Evidence</th>
                 </tr>
               </thead>
               <tbody>
                 {logs.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-4 py-8 text-center text-surface-500">
+                    <td colSpan={5} className="px-4 py-8 text-center text-surface-500">
                       No audit log entries found
                     </td>
                   </tr>
@@ -201,6 +204,7 @@ export function AuditLog() {
                       <td className="px-4 py-3 text-surface-500 text-xs max-w-xs truncate">
                         {log.detail || '-'}
                       </td>
+                      <td className="px-4 py-3 text-right"><button type="button" aria-label={`Inspect audit record ${log.id}`} onClick={() => setSelectedRecord(log)} className="whitespace-nowrap rounded border border-surface-600 px-2.5 py-1.5 text-xs text-primary-300 hover:border-primary-500">Inspect record</button></td>
                     </tr>
                   ))
                 )}
@@ -233,6 +237,7 @@ export function AuditLog() {
           </div>
 
       )}
+      {selectedRecord && <AuditRecordDialog record={selectedRecord} onClose={() => setSelectedRecord(null)} />}
       <section aria-label="Recorded agent activity" className="space-y-3">
         <p className="text-sm text-surface-400">Your latest 50 recorded agent runs. Inspect a run for its saved step summaries. This ledger is not a full execution transcript.</p>
         {agentLoading && <p role="status" className="text-sm text-surface-400">Loading recorded agent activity...</p>}
@@ -284,4 +289,20 @@ export function AuditLog() {
       {selectedRunId !== null && <AgentRunInspector key={selectedRunId} runId={selectedRunId} onClose={() => setSelectedRunId(null)} />}
     </div>
   );
+}
+
+function AuditRecordDialog({ record, onClose }: { record: AuditEntry; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef, onClose);
+  const fields = [['Record ID', String(record.id)], ['Actor user ID', String(record.user_id)], ['Action', record.action], ['Target type', record.target_type], ['Target ID', record.target_id], ['Recorded timestamp', record.timestamp]];
+  return <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="absolute inset-0 bg-surface-950/75 backdrop-blur-sm" onClick={onClose} />
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="audit-record-title" className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-surface-700 bg-surface-900 p-5 shadow-[var(--oa-shadow-float)]">
+      <div className="flex items-start justify-between gap-4"><h2 id="audit-record-title" className="text-lg font-semibold text-surface-50">Audit record #{record.id}</h2><button type="button" onClick={onClose} className="rounded border border-surface-600 px-3 py-1.5 text-xs text-surface-200">Close record</button></div>
+      <p className="my-3 text-xs text-surface-400">Read-only evidence from the loaded audit record. Actor IDs are recorded user IDs, not verified names. Missing fields are not reconstructed.</p>
+      <dl className="divide-y divide-surface-700">{fields.map(([label, value]) => <div key={label} className="grid gap-1 py-2.5 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4"><dt className="text-xs text-surface-400">{label}</dt><dd className="min-w-0 whitespace-pre-wrap break-words text-sm text-surface-100 [overflow-wrap:anywhere]">{value != null && String(value).trim() ? String(value) : 'Not recorded'}</dd></div>)}</dl>
+      <h3 className="mb-2 mt-4 text-xs font-semibold text-surface-300">Full recorded detail</h3>
+      <pre className="max-w-full whitespace-pre-wrap break-words rounded border border-surface-700 bg-surface-950 p-3 text-xs text-surface-200 [overflow-wrap:anywhere]">{record.detail?.trim() ? record.detail : 'Not recorded'}</pre>
+    </div>
+  </div>;
 }
