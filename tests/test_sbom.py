@@ -533,3 +533,101 @@ class TestSBOMVulnerabilityCrossReference:
         assert result["comp-zlib"] == {"CVE-2018-25032"}
         assert result["comp-missing"] == {"CVE-2018-25032"}
         assert parse_cyclonedx_vulnerabilities({"bomFormat": "CycloneDX"}) == {}
+
+
+def test_cyclonedx_nested_assemblies_native_cpe_and_license_evidence(client, auth_headers, asset_id):
+    document = {
+        'bomFormat': 'CycloneDX', 'specVersion': '1.6',
+        'components': [{'name': 'gateway-assembly', 'bom-ref': 'root', 'components': [
+            {'name': 'crypto-library', 'bom-ref': 'crypto', 'version': '3.0',
+             'cpe': 'cpe:2.3:a:vendor:crypto:3.0:*:*:*:*:*:*:*',
+             'licenses': [{'expression': '(MIT OR Apache-2.0) AND BSD-3-Clause'}]},
+            {'name': 'network-stack', 'bom-ref': 'net', 'licenses': [
+                {'license': {'id': 'MIT'}}, {'license': {'name': 'Recorded vendor license'}}]},
+        ]}],
+        'vulnerabilities': [{'id': 'CVE-2026-1001', 'affects': [{'ref': 'crypto'}]}],
+    }
+    response = client.post('/api/v1/sbom/upload', headers=auth_headers, json={'asset_id': asset_id, 'sbom_data': document})
+    assert response.status_code == 201, response.text
+    assert response.json()['component_count'] == 3
+    assert response.json()['vulnerability_count'] == 1
+    rows = client.get(f"/api/v1/sbom/{response.json()['id']}/components", headers=auth_headers).json()
+    by_name = {row['name']: row for row in rows}
+    assert by_name['crypto-library']['cpe'] == document['components'][0]['components'][0]['cpe']
+    assert by_name['crypto-library']['license'] == '(MIT OR Apache-2.0) AND BSD-3-Clause'
+    assert by_name['crypto-library']['has_known_vulnerability'] == 1
+    assert by_name['network-stack']['license'] == 'MIT\nRecorded vendor license'
+    assert by_name['gateway-assembly']['has_known_vulnerability'] == 0
+    import csv
+    import io
+    exported = client.get(f"/api/v1/sbom/{response.json()['id']}/export", headers=auth_headers)
+    evidence = {row['name']: row for row in csv.DictReader(io.StringIO(exported.text))}
+    assert evidence['crypto-library']['license'] == '(MIT OR Apache-2.0) AND BSD-3-Clause'
+    assert evidence['network-stack']['license'] == 'MIT\nRecorded vendor license'
+    assert evidence['crypto-library']['known_vulnerabilities'] == '1'
+
+
+@pytest.mark.parametrize('document', [
+    {'components': {}},
+    {'components': ['not an object']},
+    {'components': [{'name': 'root', 'components': None}]},
+    {'components': [{'name': 'root', 'version': {'unexpected': 'object'}}]},
+    {'components': [{'name': 'root', 'licenses': [{'expression': 'MIT'}, {'license': {'id': 'Apache-2.0'}}]}]},
+    {'components': [{'name': 'root', 'bom-ref': 'same', 'components': [{'name': 'child', 'bom-ref': 'same'}]}]},
+    {'components': [{'name': 'root'}], 'vulnerabilities': [{'id': 'CVE-2026-1001', 'affects': [{'ref': {}}]}]},
+])
+def test_invalid_cyclonedx_evidence_rejects_upload_atomically(client, auth_headers, asset_id, document):
+    before = client.get('/api/v1/sbom/', headers=auth_headers).json()
+    response = client.post('/api/v1/sbom/upload', headers=auth_headers, json={
+        'asset_id': asset_id, 'sbom_data': {'bomFormat': 'CycloneDX', **document},
+    })
+    assert response.status_code == 400, response.text
+    assert 'Invalid CycloneDX' in response.text
+    assert client.get('/api/v1/sbom/', headers=auth_headers).json() == before
+
+
+def test_cyclonedx_native_cpe_wins_without_mutating_document():
+    import copy
+    document = {'bomFormat': 'CycloneDX', 'components': [{'name': 'native', 'cpe': 'native-cpe',
+                 'externalReferences': [{'type': 'cpe', 'url': 'legacy-cpe'}]}]}
+    saved = copy.deepcopy(document)
+    assert parse_cyclonedx(document)[0]['cpe'] == 'native-cpe'
+    assert document == saved
+
+
+@pytest.mark.parametrize('document', [
+    {'bomFormat': 'unknown'},
+    {'specVersion': {}},
+    {'components': [{'name': '  '}]},
+    {'components': [{'name': 'root', 'supplier': []}]},
+    {'components': [{'name': 'root', 'licenses': [{'license': {}}]}]},
+    {'components': [{'name': 'root', 'externalReferences': [None]}]},
+    {'components': [{'name': 'root', 'hashes': [{'alg': 'SHA-256', 'content': {}}]}]},
+    {'vulnerabilities': None},
+])
+def test_cyclonedx_rejects_invalid_evidence_types(document):
+    from backend.services.sbom_service import parse_cyclonedx_vulnerabilities
+    data = {'bomFormat': 'CycloneDX', **document}
+    with pytest.raises(ValueError):
+        parse_cyclonedx(data)
+        parse_cyclonedx_vulnerabilities(data)
+
+
+def test_cyclonedx_assembly_order_and_distinct_vulnerability_counts():
+    from backend.services.sbom_service import parse_cyclonedx_vulnerabilities
+    data = {'bomFormat': 'CycloneDX', 'components': [
+        {'name': 'root', 'components': [{'name': 'child', 'components': [
+            {'name': 'leaf', 'bom-ref': 'leaf', 'hashes': [{'alg': 'SHA-256', 'content': 'abc123'}]}
+        ]}]}, {'name': 'sibling'},
+    ], 'vulnerabilities': [
+        {'id': 'CVE-2026-1001', 'affects': [{'ref': 'leaf'}, {'ref': 'leaf'}]},
+        {'id': 'CVE-2026-1001', 'affects': [{'ref': 'leaf'}]},
+        {'id': 'CVE-2026-1002', 'affects': [{'ref': 'leaf'}]},
+        {'id': 'CVE-2026-1003', 'affects': [{'ref': 'unknown-ref'}]},
+    ]}
+    rows = parse_cyclonedx(data)
+    assert [row['name'] for row in rows] == ['root', 'child', 'leaf', 'sibling']
+    assert rows[2]['hash_sha256'] == 'abc123'
+    assert parse_cyclonedx_vulnerabilities(data) == {
+        'leaf': {'CVE-2026-1001', 'CVE-2026-1002'}, 'unknown-ref': {'CVE-2026-1003'},
+    }
