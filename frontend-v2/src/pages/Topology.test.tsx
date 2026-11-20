@@ -224,3 +224,31 @@ describe('Remove connection', () => {
     expect(screen.queryByRole('button', { name: /Remove connection/ })).toBeNull();
   });
 });
+
+it('keeps graph and connection filters available when optional statistics fail, then retries', async () => {
+  let fail = true;
+  get.mockImplementation(async url => {
+    if (url === '/topology/graph') return { data: graph };
+    if (fail) throw new Error('Stats temporarily unavailable');
+    return { data: stats };
+  });
+  render(<Topology />);
+  await screen.findAllByText('scada-historian');
+  expect(screen.queryByText('Topology unavailable')).toBeNull();
+  expect(screen.getByText('Some live data is unavailable')).toBeTruthy();
+  expect(screen.queryByText('50%')).toBeNull();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Cleartext only' }));
+  expect(screen.getByText('1 of 2 connections')).toBeTruthy();
+  fail = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(await screen.findByText('50%')).toBeTruthy();
+  expect(screen.queryByText('Some live data is unavailable')).toBeNull();
+  expect(screen.getByText('1 of 2 connections')).toBeTruthy();
+});
+
+it('does not present missing graph data as an empty topology even when statistics load', async () => {
+  get.mockImplementation(url => url === '/topology/graph' ? Promise.reject(new Error('Graph failed')) : Promise.resolve({ data: stats }));
+  render(<Topology />);
+  expect(await screen.findByText('Topology unavailable')).toBeTruthy();
+  expect(screen.queryByText(/No topology observed yet/)).toBeNull();
+});
