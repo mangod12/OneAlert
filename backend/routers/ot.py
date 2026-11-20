@@ -204,7 +204,9 @@ async def list_discovered_devices(
     total = (await db.execute(count_query)).scalar_one()
 
     # Apply pagination and ordering
-    query = query.order_by(DiscoveredDevice.risk_score.desc(), DiscoveredDevice.last_seen.desc())
+    query = query.order_by(
+        DiscoveredDevice.risk_score.desc(), DiscoveredDevice.last_seen.desc(), DiscoveredDevice.id.desc()
+    )
     query = query.offset(skip).limit(size)
 
     result = await db.execute(query)

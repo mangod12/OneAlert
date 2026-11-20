@@ -23,6 +23,11 @@ interface NetworkSensor {
 
 export function OTDiscovery() {
   const [summary, setSummary] = useState<OTSummary | null>(null);
+  const [devicePage, setDevicePage] = useState(1);
+  const [deviceTotal, setDeviceTotal] = useState(0);
+  const [devicesLoading, setDevicesLoading] = useState(true);
+  const [devicesError, setDevicesError] = useState('');
+  const devicesRequestId = useRef(0);
   const [devices, setDevices] = useState<DiscoveredDevice[]>([]);
   const [protocols, setProtocols] = useState<ProtocolData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,27 +45,40 @@ export function OTDiscovery() {
   const [ipSearch, setIpSearch] = useState('');
 
   const fetchDevices = useCallback(async () => {
-    const params: Record<string, string | number | boolean> = { size: 20 };
+    const request = ++devicesRequestId.current;
+    setDevicesLoading(true);
+    setDevicesError('');
+    setDevices([]);
+    setDeviceTotal(0);
+    const params: Record<string, string | number | boolean> = { page: devicePage, size: 20 };
     if (otOnly) params.ot_only = true;
     if (ipSearch.trim()) params.ip_address = ipSearch.trim();
-    const res = await apiClient.get('/ot/discovered-devices', { params });
-    return res.data.devices || [];
-  }, [otOnly, ipSearch]);
+    try {
+      const res = await apiClient.get('/ot/discovered-devices', { params });
+      if (request !== devicesRequestId.current) return;
+      const total = res.data.total ?? 0;
+      const lastPage = Math.max(1, Math.ceil(total / 20));
+      if (devicePage > lastPage) { setDevicePage(lastPage); return; }
+      setDevices(res.data.devices || []);
+      setDeviceTotal(total);
+    } catch (err: unknown) {
+      if (request === devicesRequestId.current) setDevicesError(getApiErrorMessage(err, 'Discovered devices could not be loaded.'));
+    } finally {
+      if (request === devicesRequestId.current) setDevicesLoading(false);
+    }
+  }, [otOnly, ipSearch, devicePage]);
 
   const fetchData = async () => {
     setLoading(true);
     setErrors([]);
-    const [summaryResult, devicesResult, protocolsResult, sensorsResult] = await Promise.allSettled([
+    const [summaryResult, protocolsResult, sensorsResult] = await Promise.allSettled([
       apiClient.get('/ot/summary'),
-      fetchDevices(),
       apiClient.get('/ot/devices-by-protocol'),
       apiClient.get('/ot/sensors'),
     ]);
     const nextErrors: string[] = [];
     if (summaryResult.status === 'fulfilled') setSummary(summaryResult.value.data);
     else nextErrors.push(getApiErrorMessage(summaryResult.reason, 'OT summary is unavailable'));
-    if (devicesResult.status === 'fulfilled') setDevices(devicesResult.value);
-    else nextErrors.push(getApiErrorMessage(devicesResult.reason, 'Discovered devices are unavailable'));
     if (protocolsResult.status === 'fulfilled') setProtocols(protocolsResult.value.data.protocols || []);
     else nextErrors.push(getApiErrorMessage(protocolsResult.reason, 'Protocol telemetry is unavailable'));
     if (sensorsResult.status === 'fulfilled') setSensors(sensorsResult.value.data || []);
@@ -69,17 +87,10 @@ export function OTDiscovery() {
     setLoading(false);
   };
 
+  useEffect(() => { void fetchData(); }, []);
   useEffect(() => {
-    void fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const firstDevicesFetch = useRef(true);
-  useEffect(() => {
-    if (firstDevicesFetch.current) { firstDevicesFetch.current = false; return; }
-    let cancelled = false;
-    void fetchDevices().then(list => { if (!cancelled) setDevices(list); }).catch(() => {});
-    return () => { cancelled = true; };
+    void fetchDevices();
+    return () => { devicesRequestId.current += 1; };
   }, [fetchDevices]);
 
   const handlePromote = async (deviceId: number) => {
@@ -87,7 +98,7 @@ export function OTDiscovery() {
     setPendingDevices(current => new Set(current).add(deviceId));
     try {
       await apiClient.post(`/ot/discovered-devices/${deviceId}/promote-to-asset`);
-      setDevices(await fetchDevices());
+      setDevices(current => current.map(device => device.id === deviceId ? { ...device, is_correlated: true } : device));
       toast('Device promoted to the managed asset inventory.', 'success');
     } catch (error: unknown) {
       toast(getApiErrorMessage(error, 'Device could not be promoted.'), 'error');
@@ -173,7 +184,6 @@ export function OTDiscovery() {
     return <LoadingSurface rows={6} label="Loading OT discovery" />;
   }
 
-  if (!summary && devices.length === 0 && protocols.length === 0 && errors.length > 0) return <ErrorState title="OT discovery unavailable" description={errors.join(' · ')} action={<RetryButton onClick={() => void fetchData()} />} />;
 
   return (
     <div className="space-y-8">
@@ -356,23 +366,25 @@ export function OTDiscovery() {
               aria-label="Filter devices by IP"
               placeholder="Filter by IP"
               value={ipSearch}
-              onChange={(e) => setIpSearch(e.target.value)}
+              onChange={(e) => { setDevicePage(1); setIpSearch(e.target.value); }}
               className="w-40 rounded-md border border-surface-600 bg-surface-950 px-3 py-1.5 text-sm text-surface-100 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
             <label className="flex items-center gap-2 text-xs text-surface-300">
               <input
                 type="checkbox"
                 checked={otOnly}
-                onChange={(e) => setOtOnly(e.target.checked)}
+                onChange={(e) => { setDevicePage(1); setOtOnly(e.target.checked); }}
                 className="h-4 w-4 rounded border-surface-600 bg-surface-950 text-primary-500 focus:ring-2 focus:ring-primary-500"
               />
               OT devices only
             </label>
           </div>
         </div>
-        {devices.length === 0 ? (
+        {devicesLoading ? <LoadingSurface rows={4} label="Loading discovered devices" /> : devicesError ? (
+          <ErrorState title="Discovered devices unavailable" description={devicesError} action={<RetryButton onClick={() => void fetchDevices()} />} />
+        ) : devices.length === 0 ? (
           <div className="p-8 text-center text-surface-500">
-            No devices discovered yet. Deploy a network sensor to start scanning.
+            {ipSearch.trim() || otOnly ? 'No devices match these filters.' : 'No devices discovered yet. Deploy a network sensor to start scanning.'}
           </div>
         ) : (
           <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm">
@@ -422,6 +434,15 @@ export function OTDiscovery() {
               ))}
             </tbody>
           </table></div>
+        )}
+        {!devicesLoading && !devicesError && deviceTotal > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-surface-700 px-4 py-3 text-xs">
+            <p role="status" className="text-surface-400">Showing {(devicePage - 1) * 20 + 1}–{Math.min(devicePage * 20, deviceTotal)} of {deviceTotal} matching devices · Page {devicePage} of {Math.ceil(deviceTotal / 20)}</p>
+            <div className="flex gap-2">
+              <button type="button" disabled={devicePage === 1} onClick={() => setDevicePage(value => value - 1)} className="rounded-md border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Previous devices</button>
+              <button type="button" disabled={devicePage * 20 >= deviceTotal} onClick={() => setDevicePage(value => value + 1)} className="rounded-md border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Next devices</button>
+            </div>
+          </div>
         )}
       </div>
     </div>
