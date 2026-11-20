@@ -53,3 +53,8 @@ it('recovers when a result page disappears after records are removed', async () 
   await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
   expect(screen.getByRole('button', { name: 'Previous linked records' })).toHaveProperty('disabled', true);
 });
+it.each([['sboms', 'Open exact SBOM #99', '/app/sbom?sbom=99'], ['suppression_rules', 'Review exact suppression rule #99', '/app/settings/suppression-rules/99']])('opens exact %s evidence outside the asset record list', async (kind, name, href) => {
+  get.mockImplementation(async (_url, config) => ({ data: { ...snapshot, ...(config?.params as Record<string, unknown>), total: 1, records: [{ id: 99, enabled: false, format: 'SPDX' }] } }));
+  render(<AssetLinkedRecords assetId={7} />); open(); await screen.findByText('SPDX'); fireEvent.change(screen.getByLabelText('Linked record type'), { target: { value: kind } });
+  expect((await screen.findByRole('link', { name })).getAttribute('href')).toBe(href);
+});
