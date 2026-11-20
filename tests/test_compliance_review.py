@@ -81,3 +81,24 @@ def test_fingerprint_cannot_be_used_for_another_saved_record(client, auth_header
     response = client.patch(f"/api/v1/compliance/assessments/{second['id']}", headers=auth_headers,
                             params={'reviewed_fingerprint': fingerprint}, json={'status': 'compliant'})
     assert response.status_code == 409
+
+
+def test_legacy_server_default_timestamp_can_be_reviewed_and_saved(client, auth_headers):
+    from test_compliance import TestingSessionLocal
+
+    from backend.models.compliance import ComplianceAssessment
+    from backend.models.user import User
+
+    with TestingSessionLocal() as db:
+        user = db.query(User).filter_by(email='compliance_test@example.com').one()
+        assessment = ComplianceAssessment(user_id=user.id, control_id=1, status='partial', assessed_by='system')
+        db.add(assessment)
+        db.commit()
+        identity = assessment.id
+    path = f"/api/v1/compliance/assessments/{identity}"
+    review = client.get(path + '/review', headers=auth_headers).json()
+    response = client.patch(path, headers=auth_headers,
+                            params={'reviewed_fingerprint': review['reviewed_fingerprint']},
+                            json={'status': 'compliant'})
+    assert response.status_code == 200
+    assert response.json()['assessed_at'] == review['assessment']['assessed_at']

@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import String, cast, or_, select
 from sqlalchemy import update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -231,9 +231,15 @@ async def update_assessment(
     if reviewed_fingerprint is not None:
         if not hmac.compare_digest(reviewed_fingerprint, _assessment_fingerprint(assessment)):
             raise HTTPException(status_code=409, detail="Assessment changed. Reload the review before saving.")
-        predicates = [getattr(ComplianceAssessment, key).is_(None) if value is None
-                      else getattr(ComplianceAssessment, key) == value
-                      for key, value in _assessment_values(assessment).items()]
+        predicates = []
+        for key, value in _assessment_values(assessment).items():
+            column = getattr(ComplianceAssessment, key)
+            # SQLite CURRENT_TIMESTAMP defaults omit fractional seconds. Match
+            # that representation too, without dropping the reviewed timestamp.
+            if key == "assessed_at" and value is not None:
+                predicates.append(or_(column == value, cast(column, String) == str(value)))
+            else:
+                predicates.append(column.is_(None) if value is None else column == value)
         values = {"status": update.status, "assessed_by": current_user.email}
         for key in ("evidence_type", "evidence_detail"):
             if key in update.model_fields_set:
