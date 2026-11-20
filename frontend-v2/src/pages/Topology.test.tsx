@@ -252,3 +252,13 @@ it('does not present missing graph data as an empty topology even when statistic
   expect(await screen.findByText('Topology unavailable')).toBeTruthy();
   expect(screen.queryByText(/No topology observed yet/)).toBeNull();
 });
+
+it('keeps wide connection tables in a keyboard-focusable horizontal scroll region', async () => {
+  render(<Topology />);
+  const region = await screen.findByRole('region', { name: 'Topology connections' });
+  expect(region.tabIndex).toBe(0);
+  expect(region.classList.contains('overflow-x-auto')).toBe(true);
+  expect(region.contains(screen.getByRole('table'))).toBe(true);
+  region.focus();
+  expect(document.activeElement).toBe(region);
+});
