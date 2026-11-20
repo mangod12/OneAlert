@@ -35,9 +35,10 @@ interface SlaBucket {
   due: number;
   met: number;
   breached: number;
+  unknown?: number;
   upcoming: number;
   attainment_pct: number | null;
-  by_severity: Record<'critical' | 'high' | 'medium' | 'low', { due: number; met: number; breached: number }>;
+  by_severity: Record<'critical' | 'high' | 'medium' | 'low', { due: number; met: number; breached: number; unknown?: number }>;
 }
 
 interface SlaReport {
@@ -78,16 +79,16 @@ interface AlertTrend {
 }
 
 function slaCsv(sla: SlaReport): string {
-  const rows = [['scope', 'severity', 'due', 'met', 'breached', 'attainment_pct']];
+  const rows = [['scope', 'severity', 'due', 'met', 'breached', 'attainment_pct', 'unknown_timing', 'attainment_basis']];
   for (const scope of ['alerts', 'cases'] as const) {
     const bucket = sla[scope];
     rows.push([
       scope, 'all', String(bucket.due), String(bucket.met), String(bucket.breached),
-      bucket.attainment_pct === null ? '' : String(bucket.attainment_pct),
+      bucket.attainment_pct === null ? '' : String(bucket.attainment_pct), String(bucket.unknown ?? 0), 'met/(met+breached); unknown timing excluded',
     ]);
     for (const sev of SEVERITIES) {
       const s = bucket.by_severity[sev];
-      if (s.due > 0) rows.push([scope, sev, String(s.due), String(s.met), String(s.breached), '']);
+      if (s.due > 0) rows.push([scope, sev, String(s.due), String(s.met), String(s.breached), '', String(s.unknown ?? 0), 'met/(met+breached); unknown timing excluded']);
     }
   }
   return rows.map((r) => r.join(',')).join('\n');
@@ -304,7 +305,7 @@ export function Reports() {
           {sla && (
             <Panel
               title="SLA compliance"
-              description={`Items whose due date fell inside the last ${sla.days} days: met when resolved or closed by the due date, breached otherwise.`}
+              description={`Items whose due date fell inside the last ${sla.days} days: completion timing comes from recorded resolution/close-out timestamps, not later edits. Completed items with missing timing are unknown and excluded from the percentage; open items due through UTC today are counted as breached.`}
             >
               <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
                 {([['Alerts', sla.alerts], ['Investigations', sla.cases]] as Array<[string, SlaBucket]>).map(([label, bucket]) => (
@@ -314,7 +315,7 @@ export function Reports() {
                         <ShieldCheck className="h-4 w-4 text-primary-400" aria-hidden="true" />
                         {label}
                       </h3>
-                      {bucket.due > 0 ? (
+                      {bucket.due > 0 && bucket.attainment_pct === null ? <span className="text-sm text-surface-400">No timing-qualified score</span> : bucket.due > 0 ? (
                         <span className={`text-2xl font-bold ${bucket.attainment_pct !== null && bucket.attainment_pct >= 90 ? 'text-success' : bucket.attainment_pct !== null && bucket.attainment_pct >= 70 ? 'text-warning' : 'text-danger'}`}>
                           {bucket.attainment_pct}%
                         </span>
@@ -325,8 +326,9 @@ export function Reports() {
                     {bucket.due > 0 && (
                       <>
                         <p className="mt-1 text-xs text-surface-400">
-                          {bucket.met} met · {bucket.breached} breached · {bucket.upcoming} upcoming
+                          {bucket.met} met · {bucket.breached} breached · {bucket.upcoming} upcoming{bucket.unknown ? ` · ${bucket.unknown} unknown timing` : ''}
                         </p>
+                        {!!bucket.unknown && <p className="mt-2 text-xs text-warning">Unknown completion times are not counted as met or breached. Attainment uses only met + breached items; gray bar space includes unknown timing.</p>}
                         <div className="mt-3 space-y-2">
                           {SEVERITIES.map((sev) => {
                             const s = bucket.by_severity[sev];
