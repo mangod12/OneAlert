@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import apiClient from '../api/client';
 import { Play, FileCode, Clock, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
@@ -63,6 +63,9 @@ export function HuntLab() {
   const [hunting, setHunting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [detectionsLoading, setDetectionsLoading] = useState(true);
+  const [detectionsError, setDetectionsError] = useState('');
+  const detectionsRequest = useRef(0);
   const [detections, setDetections] = useState<DetectionRule[]>([]);
   const [ruleForm, setRuleForm] = useState<RuleFormState | null>(null);
   const [editingRule, setEditingRule] = useState<DetectionRule | null>(null);
@@ -120,15 +123,22 @@ export function HuntLab() {
   };
 
   const fetchDetections = async () => {
+    const request = ++detectionsRequest.current;
+    setDetectionsLoading(true); setDetectionsError('');
     try {
       const res = await apiClient.get('/hunt/detections');
-      setDetections(res.data);
-    } catch {
-      setDetections([]);
+      if (request === detectionsRequest.current) setDetections(res.data);
+    } catch (err: unknown) {
+      if (request === detectionsRequest.current) setDetectionsError(getApiErrorMessage(err, 'Detection rules could not be loaded.'));
+    } finally {
+      if (request === detectionsRequest.current) setDetectionsLoading(false);
     }
   };
 
-  useEffect(() => { fetchSessions(); void fetchDetections(); }, []);
+  useEffect(() => {
+    fetchSessions(); void fetchDetections();
+    return () => { detectionsRequest.current += 1; };
+  }, []);
 
   const toggleRule = async (rule: DetectionRule) => {
     if (togglingRuleId !== null) return;
@@ -389,7 +399,9 @@ export function HuntLab() {
           </form>
         )}
 
-        {detections.length === 0 && !ruleForm ? (
+        {detectionsLoading ? <LoadingSurface rows={3} label="Loading detection rules" /> : detectionsError ? (
+          <ErrorState title="Detection rules unavailable" description={detectionsError} action={<RetryButton onClick={() => void fetchDetections()} />} />
+        ) : detections.length === 0 && !ruleForm ? (
           <p className="text-sm text-surface-500">No detection rules saved yet. Run a hunt and save its Sigma output, or add a rule manually.</p>
         ) : (
           <ul className="divide-y divide-surface-800">

@@ -222,3 +222,27 @@ describe('Detection rules', () => {
     expect(mockPost).not.toHaveBeenCalled();
   });
 });
+
+describe('Detection rule loading truth', () => {
+  it('does not claim no rules exist while the request is pending', async () => {
+    mockGet.mockImplementation(url => url.endsWith('/detections') ? new Promise(() => {}) : Promise.resolve({ data: [] }));
+    render(<HuntLab />);
+    expect(screen.getByLabelText('Loading detection rules')).toBeTruthy();
+    expect(screen.queryByText(/No detection rules saved yet/)).toBeNull();
+  });
+
+  it('shows a failed read as unavailable, retries, and keeps hunt history available', async () => {
+    let fail = true;
+    mockGet.mockImplementation(url => {
+      if (url.endsWith('/detections')) return fail ? Promise.reject(new Error('Rule store unavailable')) : Promise.resolve({ data: [] });
+      return Promise.resolve({ data: [session] });
+    });
+    render(<HuntLab />);
+    expect(await screen.findByText('Detection rules unavailable')).toBeTruthy();
+    expect(screen.queryByText(/No detection rules saved yet/)).toBeNull();
+    expect(screen.getByRole('button', { name: /reopen hunt: dns tunneling/i })).toBeTruthy();
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText(/No detection rules saved yet/)).toBeTruthy();
+  });
+});
