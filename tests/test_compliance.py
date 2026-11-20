@@ -428,3 +428,43 @@ class TestComplianceExport:
         # their own assess run: statuses must come from their own run.
         assert len(rows) > 1
         assert all(row[8] in ("", "system", "compliance_test@example.com") for row in rows[1:])
+
+    @pytest.mark.parametrize('prefix', ['=', '+', '-', '@', '  =', '\t=', '\r='])
+    def test_export_neutralizes_formula_like_evidence_without_changing_storage(self, client, auth_headers, prefix):
+        client.post('/api/v1/compliance/assess', headers=auth_headers)
+        target = client.get('/api/v1/compliance/assessments', headers=auth_headers).json()[0]
+        detail = prefix + '1+2'
+        patched = client.patch(
+            f"/api/v1/compliance/assessments/{target['id']}", headers=auth_headers,
+            json={'status': 'partial', 'evidence_type': 'manual', 'evidence_detail': detail},
+        )
+        assert patched.status_code == 200
+        response = client.get('/api/v1/compliance/export', headers=auth_headers)
+        rows = list(csv.DictReader(io.StringIO(response.text)))
+        row = next(row for row in rows if row['status'] == 'partial')
+        assert row['evidence_detail'] == "'" + detail
+        stored = next(row for row in client.get('/api/v1/compliance/assessments', headers=auth_headers).json()
+                      if row['id'] == target['id'])
+        assert stored['evidence_detail'] == detail
+
+    def test_export_neutralizes_catalog_and_actor_text_and_preserves_plain_evidence(self, client, auth_headers):
+        client.post('/api/v1/compliance/assess', headers=auth_headers)
+        target = client.get('/api/v1/compliance/assessments', headers=auth_headers).json()[0]
+        detail = 'Policy, "north"\nReviewed in November.'
+        with TestingSessionLocal() as db:
+            assessment = db.get(ComplianceAssessment, target['id'])
+            control = db.get(ComplianceControl, target['control_id'])
+            framework = db.get(ComplianceFramework, control.framework_id)
+            framework.name = '=1+2'
+            framework.version = '+1+2'
+            control.control_id = '@1+2'
+            control.title = '-1+2'
+            control.category = '  =1+2'
+            assessment.evidence_detail = detail
+            assessment.assessed_by = '\t=1+2'
+            db.commit()
+        response = client.get('/api/v1/compliance/export', headers=auth_headers)
+        row = next(row for row in csv.DictReader(io.StringIO(response.text)) if row['evidence_detail'] == detail)
+        for field in ['framework', 'framework_version', 'control_id', 'title', 'category', 'assessed_by']:
+            assert row[field].startswith("'")
+        assert row['evidence_detail'] == detail
