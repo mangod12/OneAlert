@@ -45,33 +45,35 @@ def _alert_dict(alert: Alert) -> dict:
     }
 
 
-async def _blast_radius(db: AsyncSession, user_id: int, asset: Asset) -> int:
-    """Count observed topology connections touching the asset's last known IP."""
-    if not asset.last_known_ip:
-        return 0
-    result = await db.execute(
-        select(NetworkConnection).where(
-            NetworkConnection.user_id == user_id,
-            (NetworkConnection.source_ip == asset.last_known_ip)
-            | (NetworkConnection.target_ip == asset.last_known_ip),
+async def _incident_context(
+    db: AsyncSession, user_id: int, groups: dict[int, tuple[Asset, list[Alert]]]
+):
+    """Load topology counts and linked cases in at most two owner-scoped reads."""
+    ips = {asset.last_known_ip for asset, _alerts in groups.values() if asset.last_known_ip}
+    counts = {ip: 0 for ip in ips}
+    if ips:
+        rows = await db.execute(
+            select(NetworkConnection.source_ip, NetworkConnection.target_ip).where(
+                NetworkConnection.user_id == user_id,
+                NetworkConnection.source_ip.in_(ips) | NetworkConnection.target_ip.in_(ips),
+            )
         )
-    )
-    return len(result.scalars().all())
-
-
-async def _linked_cases(db: AsyncSession, user_id: int, alert_ids: list[int]) -> list[dict]:
-    if not alert_ids:
-        return []
-    rows = await db.execute(
-        select(Case)
-        .join(CaseAlert, CaseAlert.case_id == Case.id)
-        .where(CaseAlert.alert_id.in_(alert_ids), Case.user_id == user_id)
-        .distinct()
-    )
-    return [
-        {"id": case.id, "title": case.title, "status": case.status}
-        for case in rows.scalars().all()
-    ]
+        for source, target in rows.all():
+            for ip in {source, target} & ips:
+                counts[ip] += 1
+    cases_by_asset = {asset_id: [] for asset_id in groups}
+    if groups:
+        rows = await db.execute(
+            select(Alert.asset_id, Case)
+            .join(CaseAlert, CaseAlert.alert_id == Alert.id)
+            .join(Case, CaseAlert.case_id == Case.id)
+            .where(Alert.asset_id.in_(groups), Alert.user_id == user_id,
+                   Alert.status.in_(_ACTIVE_STATUSES), Case.user_id == user_id)
+            .distinct()
+        )
+        for asset_id, case in rows.all():
+            cases_by_asset[asset_id].append({"id": case.id, "title": case.title, "status": case.status})
+    return counts, cases_by_asset
 
 
 async def _active_alerts_by_asset(
@@ -111,14 +113,13 @@ async def list_incidents(
 
     groups = await _active_alerts_by_asset(db, current_user.id)
 
+    groups = {asset_id: group for asset_id, group in groups.items() if len(group[1]) >= 2}
+    counts, cases_by_asset = await _incident_context(db, current_user.id, groups)
     incidents = []
     for asset_id, (asset, alerts) in groups.items():
-        if len(alerts) < 2:
-            continue
         alerts.sort(
             key=lambda a: _SEVERITY_RANK.get(_severity_value(a), -1), reverse=True
         )
-        alert_ids = [a.id for a in alerts]
         timestamps = [a.created_at for a in alerts if a.created_at]
         incidents.append({
             "asset_id": asset_id,
@@ -131,8 +132,8 @@ async def list_incidents(
             "shared_cves": sorted({a.cve_id for a in alerts if a.cve_id}),
             "first_seen": min(timestamps).isoformat() if timestamps else None,
             "last_seen": max(timestamps).isoformat() if timestamps else None,
-            "blast_radius": await _blast_radius(db, current_user.id, asset),
-            "linked_cases": await _linked_cases(db, current_user.id, alert_ids),
+            "blast_radius": counts.get(asset.last_known_ip, 0),
+            "linked_cases": cases_by_asset[asset_id],
             "alerts": [_alert_dict(a) for a in alerts],
         })
 
