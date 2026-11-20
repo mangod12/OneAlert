@@ -4,6 +4,7 @@ import { FileCode } from 'lucide-react';
 type HuntRow = Record<string, unknown>;
 export interface HuntQueryResult {
   query?: { description?: string; sql?: string; params?: Record<string, unknown> };
+  execution?: { contract: string; selected_columns: string[]; order_by: string; direction: string; requested_limit: number | null; row_limit: number; tie_breaker?: { column: string; direction: string } | null };
   time_window?: { since?: string; before?: string };
   row_count?: number;
   rows?: HuntRow[];
@@ -29,6 +30,13 @@ export function HuntQueryEvidence({ result, index }: { result: HuntQueryResult; 
     <p className="mb-2 text-xs text-surface-400">{typeof result.row_count === 'number' ? `${result.row_count} results reported` : 'Result count not recorded'} · {rows.length} evidence rows retained</p>
     <p className="mb-3 text-xs text-surface-500">Recorded query output, not a new query or live check. Only retained rows can be reviewed here.</p>
     <pre className="mb-3 max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-950 p-3 text-xs text-surface-400">{result.query?.sql || 'SQL not recorded'}</pre>
+    {result.execution ? <div aria-label="Applied query execution" className="mb-3 space-y-1 rounded border border-surface-700 p-3 text-xs text-surface-300">
+      <p className="font-semibold text-surface-100">Applied query execution</p>
+      <p className="break-words">Selected fields: {result.execution.selected_columns.join(', ')}</p>
+      <p>Order: {result.execution.order_by} {result.execution.direction}{result.execution.tie_breaker ? `, then ${result.execution.tie_breaker.column} ${result.execution.tie_breaker.direction}` : ''}</p>
+      <p>Row limit: {result.execution.row_limit}{result.execution.requested_limit != null ? ` (requested ${result.execution.requested_limit})` : ' (default)'}</p>
+      <p className="text-surface-400">Contract: {result.execution.contract}. Unsupported SQL is rejected, not silently dropped. Filters remain in the recorded SQL above and parameters below.</p>
+    </div> : <p className="mb-3 text-xs text-surface-500">Applied selection, order and row limit were not recorded for this result.</p>}
     {result.time_window ? <div aria-label="Applied query time bounds" className="mb-3 space-y-1 rounded border border-surface-700 p-3 text-xs text-surface-300">
       <p className="font-semibold text-surface-100">Applied event-time bounds (UTC)</p>
       {result.time_window.since && <p className="break-all">From, inclusive: {result.time_window.since}</p>}
