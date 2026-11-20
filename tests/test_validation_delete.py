@@ -219,3 +219,73 @@ class TestExportValidationRun:
             f"/api/v1/validation/runs/{run_id}/export", headers=other_headers
         )
         assert response.status_code == 404
+
+
+@pytest.mark.parametrize("export", [False, True])
+def test_validation_controls_loaded_in_one_scoped_query(client, auth_headers, monkeypatch, export):
+    """Many-step detail/export needs one control read, with correct step grouping."""
+    from backend.models.validation import ControlResult, ValidationRun, ValidationStep
+
+    run_id = _create_run(client, auth_headers)
+    with TestingSessionLocal() as session:
+        owner_id = session.get(ValidationRun, run_id).user_id
+        other_run = ValidationRun(user_id=owner_id, name="Separate run", mode="dry_run")
+        session.add(other_run)
+        session.flush()
+        for index in range(31):
+            step = ValidationStep(
+                run_id=run_id if index < 30 else other_run.id,
+                step_number=index + 1, technique_id="T1110", technique_name="Brute force",
+                test_name=f"Step {index}", test_type="manual", status="completed", simulated=True,
+            )
+            session.add(step)
+            session.flush()
+            if index != 0:
+                for suffix in ["a", "b"]:
+                    session.add(ControlResult(
+                        step_id=step.id, control_name=f"Control {index}{suffix}",
+                        control_type="manual", expected=True, detected=False,
+                    ))
+        session.commit()
+
+    reads = []
+    original_execute = AsyncSession.execute
+
+    async def counted_execute(self, statement, *args, **kwargs):
+        if "FROM control_results" in str(statement):
+            reads.append(str(statement))
+        return await original_execute(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "execute", counted_execute)
+    response = client.get(
+        f"/api/v1/validation/runs/{run_id}" + ("/export" if export else ""), headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert len(reads) == 1
+    assert "Control 30" not in response.text
+    if export:
+        rows = list(csv.reader(io.StringIO(response.text)))
+        assert len(rows) == 31
+        assert rows[1][11] == ""
+        assert rows[2][11] == "Control 1a (missed); Control 1b (missed)"
+    else:
+        steps = response.json()["data"]["steps"]
+        assert len(steps) == 30
+        assert steps[0]["controls"] == []
+        assert [c["control_name"] for c in steps[1]["controls"]] == ["Control 1a", "Control 1b"]
+
+
+@pytest.mark.parametrize("export", [False, True])
+def test_empty_validation_run_needs_no_control_query(client, auth_headers, monkeypatch, export):
+    run_id = _create_run(client, auth_headers)
+    original_execute = AsyncSession.execute
+
+    async def no_control_read(self, statement, *args, **kwargs):
+        assert "FROM control_results" not in str(statement)
+        return await original_execute(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "execute", no_control_read)
+    response = client.get(
+        f"/api/v1/validation/runs/{run_id}" + ("/export" if export else ""), headers=auth_headers,
+    )
+    assert response.status_code == 200

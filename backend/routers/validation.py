@@ -85,6 +85,21 @@ async def create_validation_run(
     return {"success": True, "data": ValidationRunResponse.model_validate(vrun)}
 
 
+async def _controls_by_step(db: AsyncSession, steps: list[ValidationStep]) -> dict[int, list[ControlResult]]:
+    """Load controls once for the already owner-scoped run's steps."""
+    grouped: dict[int, list[ControlResult]] = {}
+    if not steps:
+        return grouped
+    controls = (await db.execute(
+        select(ControlResult)
+        .where(ControlResult.step_id.in_([step.id for step in steps]))
+        .order_by(ControlResult.step_id, ControlResult.id)
+    )).scalars().all()
+    for control in controls:
+        grouped.setdefault(control.step_id, []).append(control)
+    return grouped
+
+
 @router.get("/runs/{run_id}")
 async def get_validation_run(
     run_id: int,
@@ -108,11 +123,10 @@ async def get_validation_run(
         .order_by(ValidationStep.step_number)
     )).scalars().all()
 
+    controls_by_step = await _controls_by_step(db, steps)
     step_responses = []
     for step in steps:
-        controls = (await db.execute(
-            select(ControlResult).where(ControlResult.step_id == step.id)
-        )).scalars().all()
+        controls = controls_by_step.get(step.id, [])
 
         step_data = ValidationStepResponse.model_validate(step).model_dump()
         step_data["controls"] = [ControlResultResponse.model_validate(c).model_dump() for c in controls]
@@ -154,10 +168,9 @@ async def export_validation_run(
         "technique_name", "test_name", "test_type", "step_status",
         "actual_result", "duration_ms", "controls", "executed_at",
     ])
+    controls_by_step = await _controls_by_step(db, steps)
     for step in steps:
-        controls = (await db.execute(
-            select(ControlResult).where(ControlResult.step_id == step.id)
-        )).scalars().all()
+        controls = controls_by_step.get(step.id, [])
         control_summary = "; ".join(
             f"{c.control_name} ({'detected' if c.detected else 'missed'})"
             for c in controls
