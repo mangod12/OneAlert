@@ -51,7 +51,7 @@ describe('Recorded device connection matches', () => {
   it('does not turn a missing encryption flag into a cleartext claim', async () => {
     get.mockResolvedValueOnce({ data: { ...snapshot, connections: [{ ...row, is_encrypted: null, bytes_transferred_exact: null }] } }); await open();
     expect(screen.getByText(/Encryption flag not recorded/)).toBeTruthy();
-    expect(screen.queryByText(/Recorded cleartext$/)).toBeNull();
+    expect(screen.queryByText(/modbus, port 0 · Recorded cleartext/)).toBeNull();
   });
   it('downloads only the loaded page with filter, timestamp and match metadata', async () => {
     const create = vi.fn().mockReturnValue('blob:page'); vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: create, revokeObjectURL: vi.fn() }));
