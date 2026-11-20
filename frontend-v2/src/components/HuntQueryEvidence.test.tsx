@@ -42,3 +42,20 @@ describe('Retained hunt query evidence', () => {
     expect(within(screen.getByRole('region', { name: 'Query 2 evidence' })).getByText('host-1')).toBeTruthy();
   });
 });
+
+it('shows exact saved inclusive/exclusive UTC bounds and original parameters without recalculating them', () => {
+  render(<HuntQueryEvidence index={0} result={{ time_window: { since: '2026-11-20T05:00:00+00:00', before: '2026-11-20T06:00:00+00:00' }, query: { sql: 'SELECT id ...', params: { since: '2026-11-20T10:30:00+05:30', before: '2026-11-20T06:00:00Z' } }, rows: [] }} />);
+  expect(screen.getByText('From, inclusive: 2026-11-20T05:00:00+00:00')).toBeTruthy();
+  expect(screen.getByText('Before, exclusive: 2026-11-20T06:00:00+00:00')).toBeTruthy();
+  expect(screen.getByText(/not a new time window or live check/)).toBeTruthy();
+  fireEvent.click(screen.getByText('Recorded query parameters'));
+  expect(screen.getByText(/2026-11-20T10:30:00\+05:30/)).toBeTruthy();
+});
+
+it('distinguishes known unbounded execution from missing legacy bound evidence', () => {
+  const view = render(<HuntQueryEvidence index={0} result={{ time_window: {}, rows: [] }} />);
+  expect(screen.getByText('No event-time bounds were applied to this query.')).toBeTruthy();
+  view.rerender(<HuntQueryEvidence index={0} result={{ rows: [] }} />);
+  expect(screen.queryByText('No event-time bounds were applied to this query.')).toBeNull();
+  expect(screen.getByText('Applied event-time bounds were not recorded for this result.')).toBeTruthy();
+});

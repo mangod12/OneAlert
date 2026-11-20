@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import time
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import or_, select
 
@@ -15,7 +16,13 @@ from backend.services.ai.router import TASK_HUNT, get_ai_provider
 logger = logging.getLogger(__name__)
 
 DEFAULT_HUNT_COLUMNS = (
-    "id", "timestamp", "event_type", "severity", "source_ip", "dest_ip", "signature",
+    "id",
+    "timestamp",
+    "event_type",
+    "severity",
+    "source_ip",
+    "dest_ip",
+    "signature",
 )
 
 ALLOWED_HUNT_COLUMNS = {
@@ -44,12 +51,24 @@ ALLOWED_HUNT_COLUMNS = {
 }
 
 TEXT_FILTER_COLUMNS = {
-    "signature", "category", "hostname", "username", "domain", "url", "user_agent",
+    "signature",
+    "category",
+    "hostname",
+    "username",
+    "domain",
+    "url",
+    "user_agent",
 }
 
 EQUALITY_FILTER_COLUMNS = {
-    "event_type", "severity", "source_ip", "dest_ip", "protocol", "action",
-    "source_type", "processed",
+    "event_type",
+    "severity",
+    "source_ip",
+    "dest_ip",
+    "protocol",
+    "action",
+    "source_type",
+    "processed",
 }
 
 HUNT_SYSTEM_PROMPT = """You are a threat hunting specialist for an OT/ICS cybersecurity platform.
@@ -65,6 +84,10 @@ Rules:
 - ALWAYS include WHERE user_id = :user_id for data isolation
 - Use parameterized :user_id, never hardcode
 - Only SELECT queries — no INSERT/UPDATE/DELETE
+- Time filters must use timestamp >= :since and/or timestamp < :before with AND
+- Include since/before in each query params object as timezone-aware ISO8601 timestamps
+- Use the supplied current UTC time for relative windows; do not invent a date
+- Do not use timestamp functions, literal dates, BETWEEN, or OR for time windows
 - Return max 3 queries from simple to complex
 - Include a Sigma detection rule if findings confirm the hypothesis
 
@@ -92,10 +115,15 @@ class HuntAgent(BaseAgent):
         start = time.time()
         try:
             provider = get_ai_provider(TASK_HUNT)
-            response = await provider.complete_json([
-                AIMessage(role="system", content=HUNT_SYSTEM_PROMPT),
-                AIMessage(role="user", content=f"Hunting hypothesis: {hypothesis}"),
-            ])
+            response = await provider.complete_json(
+                [
+                    AIMessage(role="system", content=HUNT_SYSTEM_PROMPT),
+                    AIMessage(
+                        role="user",
+                        content=f"Current UTC time: {datetime.now(UTC).isoformat()}\nHunting hypothesis: {hypothesis}",
+                    ),
+                ]
+            )
             self._last_model = provider.model
             await self.log_step(
                 "generate_queries",
@@ -123,11 +151,17 @@ class HuntAgent(BaseAgent):
             start = time.time()
             try:
                 query_results = await self._execute_query(sql, q.get("params"))
-                results.append({
-                    "query": q,
-                    "rows": query_results[:100],  # Cap at 100 rows
-                    "row_count": len(query_results),
-                })
+                results.append(
+                    {
+                        "query": q,
+                        "rows": query_results[:100],  # Cap at 100 rows
+                        "row_count": len(query_results),
+                        "time_window": {
+                            key: value.isoformat()
+                            for key, value in self._timestamp_bounds(sql, q.get("params") or {}).items()
+                        },
+                    }
+                )
                 await self.log_step(
                     "execute_query",
                     q.get("description", ""),
@@ -162,14 +196,63 @@ class HuntAgent(BaseAgent):
 
         keyword = params.get("keyword")
         if keyword:
-            query = query.where(or_(
-                SecurityEvent.signature.like(keyword),
-                SecurityEvent.category.like(keyword),
-            ))
+            query = query.where(
+                or_(
+                    SecurityEvent.signature.like(keyword),
+                    SecurityEvent.category.like(keyword),
+                )
+            )
 
         query = self._apply_literal_filters(query, sql)
+        bounds = self._timestamp_bounds(sql, params)
+        if "since" in bounds:
+            query = query.where(SecurityEvent.timestamp >= bounds["since"])
+        if "before" in bounds:
+            query = query.where(SecurityEvent.timestamp < bounds["before"])
         query = self._apply_ordering(query, sql)
         return query.limit(self._limit(sql))
+
+    def _timestamp_bounds(self, sql: str, params: dict) -> dict[str, datetime]:
+        """Apply only explicit UTC-normalized, inclusive/exclusive time bounds.
+
+        Unsupported time predicates fail rather than silently widening a hunt.
+        This is not a general SQL interpreter.
+        """
+        sanitized = re.sub(r"'(?:[^']|'')*'", "'<literal>'", sql)
+        match = re.search(r"\bWHERE\b(.*?)(?:\bORDER\s+BY\b|\bLIMIT\b|$)", sanitized, re.IGNORECASE | re.DOTALL)
+        if not match:
+            return {}
+        clause = match.group(1)
+        # Ignore words inside literal text when identifying time predicates.
+        remaining = clause
+        bounds = {}
+        for key, operator in (("since", ">="), ("before", "<")):
+            pattern = rf"(?:^\s*|\bAND\s+)timestamp\s*{re.escape(operator)}\s*:{key}\b(?=\s*(?:AND\b|$))"
+            matches = re.findall(pattern, remaining, re.IGNORECASE)
+            if not matches:
+                continue
+            if len(matches) != 1:
+                raise ValueError("Repeated timestamp bounds are not supported")
+            raw = params.get(key)
+            if not isinstance(raw, str):
+                raise ValueError(f"Time bound :{key} needs a timezone-aware ISO8601 parameter")
+            try:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ValueError(f"Time bound :{key} is not a valid ISO8601 timestamp") from exc
+            if parsed.tzinfo is None or parsed.utcoffset() is None:
+                raise ValueError(f"Time bound :{key} must include a timezone")
+            bounds[key] = parsed.astimezone(UTC)
+            remaining = re.sub(pattern, "<time-bound>", remaining, flags=re.IGNORECASE)
+        if re.search(r"\btimestamp\b", remaining, re.IGNORECASE) or (
+            bounds and re.search(r"\b(?:OR|NOT)\b", remaining, re.IGNORECASE)
+        ):
+            raise ValueError(
+                "Unsupported time predicate. Use timestamp >= :since and/or timestamp < :before joined with AND"
+            )
+        if "since" in bounds and "before" in bounds and bounds["since"] >= bounds["before"]:
+            raise ValueError("Time window start must be earlier than its end")
+        return bounds
 
     def _selected_columns(self, sql: str) -> list[str]:
         """Extract simple selected column names, falling back to a safe default."""
@@ -179,7 +262,7 @@ class HuntAgent(BaseAgent):
         if select_idx != 0 or from_idx <= len("SELECT "):
             return list(DEFAULT_HUNT_COLUMNS)
 
-        raw_columns = [part.strip() for part in sql[len("SELECT "):from_idx].split(",")]
+        raw_columns = [part.strip() for part in sql[len("SELECT ") : from_idx].split(",")]
         if raw_columns == ["*"]:
             return list(DEFAULT_HUNT_COLUMNS)
 
@@ -241,9 +324,24 @@ class HuntAgent(BaseAgent):
             return False
 
         dangerous = (
-            "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "TRUNCATE",
-            "EXEC", "EXECUTE", "GRANT", "REVOKE", "MERGE", "CALL", "COPY",
-            "ATTACH", "DETACH", "PRAGMA", "VACUUM",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "DROP",
+            "ALTER",
+            "CREATE",
+            "TRUNCATE",
+            "EXEC",
+            "EXECUTE",
+            "GRANT",
+            "REVOKE",
+            "MERGE",
+            "CALL",
+            "COPY",
+            "ATTACH",
+            "DETACH",
+            "PRAGMA",
+            "VACUUM",
         )
         if re.search(rf"\b({'|'.join(dangerous)})\b", upper):
             return False
@@ -254,6 +352,7 @@ class HuntAgent(BaseAgent):
 
     def _fallback_queries(self, hypothesis: str) -> dict:
         """Generate basic queries when LLM is unavailable."""
+        now = datetime.now(UTC)
         raw_keyword = hypothesis.split()[0] if hypothesis else "alert"
         keyword = re.sub(r"[^a-zA-Z0-9_.:-]", "", raw_keyword)[:64] or "alert"
         keyword_pattern = f"%{keyword}%"
@@ -262,17 +361,18 @@ class HuntAgent(BaseAgent):
                 {
                     "description": f"Search events matching '{keyword}'",
                     "sql": "SELECT id, timestamp, event_type, severity, source_ip, dest_ip, signature "
-                           "FROM security_events WHERE user_id = :user_id "
-                           "AND (signature LIKE :keyword OR category LIKE :keyword) "
-                           "ORDER BY timestamp DESC LIMIT 50",
+                    "FROM security_events WHERE user_id = :user_id "
+                    "AND (signature LIKE :keyword OR category LIKE :keyword) "
+                    "ORDER BY timestamp DESC LIMIT 50",
                     "params": {"keyword": keyword_pattern},
                 },
                 {
                     "description": "High severity events in last 24h",
                     "sql": "SELECT id, timestamp, event_type, severity, source_ip, dest_ip, signature "
-                           "FROM security_events WHERE user_id = :user_id "
-                           "AND severity IN ('critical', 'high') "
-                           "ORDER BY timestamp DESC LIMIT 50",
+                    "FROM security_events WHERE user_id = :user_id "
+                    "AND severity IN ('critical', 'high') AND timestamp >= :since AND timestamp < :before "
+                    "ORDER BY timestamp DESC LIMIT 50",
+                    "params": {"since": (now - timedelta(hours=24)).isoformat(), "before": now.isoformat()},
                 },
             ],
             "sigma_rule": None,

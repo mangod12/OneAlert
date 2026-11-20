@@ -3,7 +3,8 @@ import { FileCode } from 'lucide-react';
 
 type HuntRow = Record<string, unknown>;
 export interface HuntQueryResult {
-  query?: { description?: string; sql?: string };
+  query?: { description?: string; sql?: string; params?: Record<string, unknown> };
+  time_window?: { since?: string; before?: string };
   row_count?: number;
   rows?: HuntRow[];
   error?: string;
@@ -28,6 +29,14 @@ export function HuntQueryEvidence({ result, index }: { result: HuntQueryResult; 
     <p className="mb-2 text-xs text-surface-400">{typeof result.row_count === 'number' ? `${result.row_count} results reported` : 'Result count not recorded'} · {rows.length} evidence rows retained</p>
     <p className="mb-3 text-xs text-surface-500">Recorded query output, not a new query or live check. Only retained rows can be reviewed here.</p>
     <pre className="mb-3 max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-950 p-3 text-xs text-surface-400">{result.query?.sql || 'SQL not recorded'}</pre>
+    {result.time_window ? <div aria-label="Applied query time bounds" className="mb-3 space-y-1 rounded border border-surface-700 p-3 text-xs text-surface-300">
+      <p className="font-semibold text-surface-100">Applied event-time bounds (UTC)</p>
+      {result.time_window.since && <p className="break-all">From, inclusive: {result.time_window.since}</p>}
+      {result.time_window.before && <p className="break-all">Before, exclusive: {result.time_window.before}</p>}
+      {!result.time_window.since && !result.time_window.before && <p>No event-time bounds were applied to this query.</p>}
+      <p className="text-surface-400">Recorded execution bounds, not a new time window or live check.</p>
+    </div> : <p className="mb-3 text-xs text-surface-500">Applied event-time bounds were not recorded for this result.</p>}
+    {result.query?.params && Object.keys(result.query.params).length > 0 && <details className="mb-3 rounded border border-surface-700 p-3 text-xs text-surface-400"><summary className="cursor-pointer">Recorded query parameters</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all">{JSON.stringify(result.query.params, null, 2)}</pre></details>}
     {rows.length > 0 ? <>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
