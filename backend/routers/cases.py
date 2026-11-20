@@ -47,7 +47,9 @@ from backend.models.notification import Notification
 from backend.models.response_plan import ApprovalRequest, ResponsePlan
 from backend.models.user import User
 from backend.routers.auth import get_active_user
+from backend.routers.case_linked_evidence import router as linked_evidence_router
 from backend.services.audit import add_audit_log
+from backend.services.case_visibility import visible_cases
 from backend.services.checklist_import import checklist_proposals
 from backend.services.csv_export import spreadsheet_safe_row
 from backend.services.investigation_notify import notify_investigation_event
@@ -68,23 +70,14 @@ def _severity_rank(value: str | None) -> int:
 def _visible_cases(case_id: int, current_user: User):
     """Cases the user may open: their own, assigned to them, watched by
     them, or carrying a checklist task assigned to them."""
-    watched = select(CaseWatcher.case_id).where(CaseWatcher.user_id == current_user.id)
-    tasked = select(CaseTask.case_id).where(CaseTask.assignee_id == current_user.id)
-    return select(Case).where(
-        Case.id == case_id,
-        or_(
-            Case.user_id == current_user.id,
-            Case.assigned_to_id == current_user.id,
-            Case.id.in_(watched),
-            Case.id.in_(tasked),
-        ),
-    )
+    return visible_cases(case_id, current_user)
 
 
 _MENTION_RE = re.compile(r"@([A-Za-z0-9._-]+)")
 
 
 router = APIRouter()
+router.include_router(linked_evidence_router)
 
 
 def _case_keyword_filter(search: str):
@@ -1618,7 +1611,7 @@ async def get_case_alerts(
     result = await db.execute(
         select(Alert)
         .join(CaseAlert, CaseAlert.alert_id == Alert.id)
-        .where(CaseAlert.case_id == case_id)
+        .where(CaseAlert.case_id == case_id, Alert.user_id == case.user_id).distinct()
     )
     alerts = result.scalars().all()
     return [a.to_dict() for a in alerts]
@@ -1725,7 +1718,7 @@ async def get_case_events(
     result = await db.execute(
         select(SecurityEvent)
         .join(CaseEvent, CaseEvent.event_id == SecurityEvent.id)
-        .where(CaseEvent.case_id == case_id)
+        .where(CaseEvent.case_id == case_id, SecurityEvent.user_id == case.user_id).distinct()
         .order_by(SecurityEvent.timestamp)
     )
     events = result.scalars().all()

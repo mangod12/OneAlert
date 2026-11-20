@@ -235,8 +235,8 @@ async def get_blast_radius(
     alert_rows = await db.execute(
         select(Alert, Asset)
         .join(CaseAlert, CaseAlert.alert_id == Alert.id)
-        .outerjoin(Asset, Alert.asset_id == Asset.id)
-        .where(CaseAlert.case_id == case_id)
+        .outerjoin(Asset, (Alert.asset_id == Asset.id) & (Asset.user_id == user_id))
+        .where(CaseAlert.case_id == case_id, Alert.user_id == user_id)
     )
     alert_assets = alert_rows.all()
 
@@ -244,7 +244,7 @@ async def get_blast_radius(
     event_rows = await db.execute(
         select(SecurityEvent)
         .join(CaseEvent, CaseEvent.event_id == SecurityEvent.id)
-        .where(CaseEvent.case_id == case_id)
+        .where(CaseEvent.case_id == case_id, SecurityEvent.user_id == user_id)
     )
     events = event_rows.scalars().all()
 
