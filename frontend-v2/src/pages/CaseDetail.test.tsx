@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CaseDetail } from './CaseDetail';
 
@@ -58,7 +58,7 @@ function mockLoadWithPlans(plans: Array<Record<string, unknown>>) {
     if (url.endsWith('/events')) return Promise.resolve({ data: [] });
     if (url.endsWith('/blast-radius')) return Promise.resolve({ data: { success: true, data: blastRadius } });
     if (url.endsWith('/similar')) return Promise.resolve({ data: { success: true, data: similarCases } });
-    if (url === '/response-plans/') return Promise.resolve({ data: { data: plans } });
+    if (url === '/response-plans/') return Promise.resolve({ data: { data: plans.map(plan => ({ ...plan, case_id: 7 })), total: plans.length } });
     return Promise.resolve({ data: caseData });
   });
 }
@@ -608,17 +608,17 @@ describe('Case response plans', () => {
     ]);
     renderDetail();
     expect(await screen.findByText('Response Plans')).toBeTruthy();
-    expect(screen.getByText('Plan #21').closest('a')?.getAttribute('href')).toBe('/response-plans?plan=21');
-    expect(screen.getByText('pending approval')).toBeTruthy();
+    expect((await screen.findByText('Plan #21')).closest('a')?.getAttribute('href')).toBe('/response-plans?plan=21');
+    expect(screen.getAllByText('pending approval').some(node => node.tagName === 'SPAN')).toBe(true);
     expect(screen.getByText(/2 actions · L2 · agent/)).toBeTruthy();
     expect(screen.getByText('Plan #20')).toBeTruthy();
   });
 
-  it('omits the section when the case has no plans', async () => {
+  it('shows an explicit empty response plan page when the case has no plans', async () => {
     mockLoadWithPlans([]);
     renderDetail();
     await screen.findByText(caseData.title);
-    expect(screen.queryByText('Response Plans')).toBeNull();
+    expect(await screen.findByText('No response plans match this investigation and status filter.')).toBeTruthy();
   });
 });
 
@@ -1010,4 +1010,26 @@ describe('Case close-out', () => {
     await screen.findByText('Suspicious lateral movement');
     expect(screen.queryByTestId('case-closeout')).toBeNull();
   });
+});
+
+it('does not let a slower investigation overwrite a newly navigated investigation', async () => {
+  let finish!: (value: unknown) => void;
+  mockGet.mockImplementation(async url => {
+    if (url === '/cases/7') return new Promise(resolve => { finish = resolve; });
+    if (url === '/cases/8') return { data: { ...caseData, id: 8, title: 'Newly selected investigation' } };
+    if (url === '/response-plans/') return { data: { data: [], total: 0 } };
+    if (url.endsWith('/blast-radius')) return { data: { success: true, data: null } };
+    return { data: [] };
+  });
+  render(<MemoryRouter initialEntries={['/cases/7']}><Link to="/cases/8">Open other investigation</Link><Routes><Route path="/cases/:caseId" element={<CaseDetail />} /></Routes></MemoryRouter>);
+  fireEvent.click(screen.getByRole('link', { name: 'Open other investigation' }));
+  await screen.findByText('Newly selected investigation');
+  await act(async () => finish({ data: caseData }));
+  expect(screen.queryByText(caseData.title)).toBeNull();
+  expect(screen.getByText('Newly selected investigation')).toBeTruthy();
+});
+it('does not show a mismatched investigation response with plan or checklist actions', async () => {
+  mockLoad(); mockGet.mockImplementation(async url => url === '/cases/7' ? { data: { ...caseData, id: 99 } } : { data: [] });
+  renderDetail(); await screen.findByText('The investigation response did not match the requested record. Retry to load it.');
+  expect(screen.queryByRole('region', { name: 'Investigation response plan explorer' })).toBeNull();
 });

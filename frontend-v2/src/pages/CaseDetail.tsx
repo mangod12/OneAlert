@@ -2,11 +2,12 @@ import { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { TimelineExplorer } from '../components/TimelineExplorer';
 import { TaskTitleDialog } from '../components/TaskTitleDialog';
+import { CaseResponsePlans } from '../components/CaseResponsePlans';
 import { CaseHandoff } from '../components/CaseHandoff';
 import { MentionTextarea } from '../components/MentionTextarea';
 import apiClient from '../api/client';
 import { useAuthStore } from '../stores/authStore';
-import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil, Trash2, Download, Shield, Eye, EyeOff, ListChecks, Square, CheckSquare, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil, Trash2, Download, Eye, EyeOff, ListChecks, Square, CheckSquare, CheckCircle2 } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { toast } from '../components/Toast';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -85,12 +86,13 @@ interface BlastRadius {
 }
 interface SimilarCase { case_id: number; title: string; similarity: number; shared_techniques: string[]; }
 interface RelatedEvent { id: number; severity: string; event_type: string; source_ip?: string | null; dest_ip?: string | null; signature?: string | null; }
-interface CasePlan { id: number; status: string; autonomy_level: string; created_by: string; created_at: string; actions: unknown[]; }
+
 interface CaseWatcher { user_id: number; email: string; full_name: string | null; }
 interface CaseTask { id: number; title: string; done: boolean; position: number; assignee_id: number | null; due_date: string | null; created_at: string; completed_at: string | null; }
 
 export function CaseDetail() {
   const { caseId } = useParams<{ caseId: string }>();
+  const caseRequestId = useRef(0);
   const [caseData, setCaseData] = useState<CaseData | null>(null);
   const [searchParams] = useSearchParams();
   const highlightedNoteId = Number(searchParams.get('note')) || null;
@@ -111,7 +113,6 @@ export function CaseDetail() {
   const [savingResolution, setSavingResolution] = useState(false);
   const [blastRadius, setBlastRadius] = useState<BlastRadius | null>(null);
   const [similarCases, setSimilarCases] = useState<SimilarCase[]>([]);
-  const [plans, setPlans] = useState<CasePlan[]>([]);
   const [noteText, setNoteText] = useState('');
   const [addingNote, setAddingNote] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
@@ -456,14 +457,16 @@ export function CaseDetail() {
   };
 
   const fetchAll = useCallback(async () => {
+    const request = ++caseRequestId.current;
     setLoading(true);
-    const [caseResult, alertsResult, eventsResult, blastResult, similarResult, plansResult, watchersResult, tasksResult] = await Promise.allSettled([
+    const [caseResult, alertsResult, eventsResult, blastResult, similarResult, watchersResult, tasksResult] = await Promise.allSettled([
       apiClient.get(`/cases/${caseId}`), apiClient.get(`/cases/${caseId}/alerts`), apiClient.get(`/cases/${caseId}/events`),
       apiClient.get(`/cases/${caseId}/blast-radius`), apiClient.get(`/cases/${caseId}/similar`),
-      apiClient.get('/response-plans/', { params: { case_id: caseId } }),
       apiClient.get(`/cases/${caseId}/watchers`),
       apiClient.get(`/cases/${caseId}/tasks`),
     ]);
+    if (request !== caseRequestId.current) return;
+    if (caseResult.status === 'fulfilled' && caseResult.value.data?.id !== Number(caseId)) { setCaseData(null); setError('The investigation response did not match the requested record. Retry to load it.'); setLoading(false); return; }
     if (caseResult.status === 'rejected') {
       setError(getApiErrorMessage(caseResult.reason, 'This case could not be loaded.'));
       setCaseData(null);
@@ -480,8 +483,6 @@ export function CaseDetail() {
     else setBlastRadius(null);
     if (similarResult.status === 'fulfilled') setSimilarCases(similarResult.value.data?.data ?? []);
     else setSimilarCases([]);
-    if (plansResult.status === 'fulfilled') setPlans(plansResult.value.data?.data ?? []);
-    else { setPlans([]); partial.push('Response plans unavailable'); }
     if (watchersResult.status === 'fulfilled') setWatchers(Array.isArray(watchersResult.value.data) ? watchersResult.value.data : []);
     else setWatchers([]);
     if (tasksResult.status === 'fulfilled' && Array.isArray(tasksResult.value.data)) {
@@ -496,7 +497,7 @@ export function CaseDetail() {
     setLoading(false);
   }, [caseId]);
 
-  useEffect(() => { void fetchAll(); }, [fetchAll]);
+  useEffect(() => { void fetchAll(); return () => { caseRequestId.current += 1; }; }, [fetchAll]);
 
   const isOwner = caseData === null || currentUserId === null || caseData.user_id === currentUserId;
   const isWatching = currentUserId !== null && watchers.some(w => w.user_id === currentUserId);
@@ -951,42 +952,7 @@ export function CaseDetail() {
         </div>
       )}
 
-      {/* Response Plans */}
-      {plans.length > 0 && (
-        <div className="oa-panel p-6">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-surface-50 mb-3">
-            <Shield className="w-5 h-5 text-primary-400" /> Response Plans
-          </h2>
-          <div className="space-y-2">
-            {plans.map(plan => (
-              <div key={plan.id} className="flex items-stretch gap-2">
-                <Link
-                  to={`/response-plans?plan=${plan.id}`}
-                  className="flex flex-1 items-center justify-between gap-3 rounded-md border border-surface-700 bg-surface-800/50 p-3 transition-colors hover:border-primary-500/40"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className="text-sm font-medium text-surface-100">Plan #{plan.id}</span>
-                    <StatusBadge tone={plan.status === 'approved' || plan.status === 'completed' ? 'success' : plan.status === 'rejected' ? 'danger' : plan.status === 'pending_approval' ? 'warning' : plan.status === 'executing' ? 'info' : 'neutral'}>{plan.status.replace('_', ' ')}</StatusBadge>
-                    <span className="text-xs text-surface-500">{plan.actions?.length ?? 0} actions · {plan.autonomy_level} · {plan.created_by}</span>
-                  </div>
-                  <span className="shrink-0 text-xs text-surface-500">{new Date(plan.created_at).toLocaleDateString()}</span>
-                </Link>
-                {(plan.actions?.length ?? 0) > 0 && (
-                  <button
-                    type="button"
-                    aria-label={`Seed checklist from plan ${plan.id}`}
-                    disabled={tasksUnavailable || seedingPlanId === plan.id}
-                    onClick={() => void seedTasksFromPlan(plan.id)}
-                    className="shrink-0 rounded-md border border-surface-700 px-3 text-xs font-medium text-surface-200 transition-colors hover:bg-surface-800 disabled:opacity-40"
-                  >
-                    Add to checklist
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <CaseResponsePlans key={caseData.id} caseId={caseData.id} onSeed={id => void seedTasksFromPlan(id)} seedBusy={seedingPlanId !== null} tasksUnavailable={tasksUnavailable} />
 
       {/* Two-column layout: Timeline + Related Items */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
