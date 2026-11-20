@@ -128,6 +128,7 @@ async def list_events(
     source_ip: str | None = Query(None),
     dest_ip: str | None = Query(None),
     source_type: str | None = Query(None),
+    source_id: int | None = Query(None, ge=1),
     ip: str | None = Query(None, description="Substring match against source or destination IP"),
     signature: str | None = Query(None, description="Substring match against the event signature"),
     started_at: AwareDatetime | None = Query(None, description="Inclusive event timestamp, timezone required"),
@@ -158,6 +159,9 @@ async def list_events(
     if dest_ip:
         query = query.filter(SecurityEvent.dest_ip == dest_ip)
         count_q = count_q.filter(SecurityEvent.dest_ip == dest_ip)
+    if source_id is not None:
+        query = query.filter(SecurityEvent.source_id == source_id)
+        count_q = count_q.filter(SecurityEvent.source_id == source_id)
     if source_type:
         query = query.filter(SecurityEvent.source_type == source_type)
         count_q = count_q.filter(SecurityEvent.source_type == source_type)
@@ -202,6 +206,7 @@ async def export_events(
     source_ip: str | None = Query(None),
     dest_ip: str | None = Query(None),
     source_type: str | None = Query(None),
+    source_id: int | None = Query(None, ge=1),
     ip: str | None = Query(None, description="Substring match against source or destination IP"),
     signature: str | None = Query(None, description="Substring match against the event signature"),
     started_at: AwareDatetime | None = Query(None, description="Inclusive event timestamp, timezone required"),
@@ -220,6 +225,8 @@ async def export_events(
         query = query.filter(SecurityEvent.source_ip == source_ip)
     if dest_ip:
         query = query.filter(SecurityEvent.dest_ip == dest_ip)
+    if source_id is not None:
+        query = query.filter(SecurityEvent.source_id == source_id)
     if source_type:
         query = query.filter(SecurityEvent.source_type == source_type)
     if ip:

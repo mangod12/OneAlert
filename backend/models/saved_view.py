@@ -56,6 +56,7 @@ class EventViewFilters(BaseModel):
     severity: str | None = None
     event_type: str | None = None
     source_type: str | None = None
+    source_id: int | None = Field(None, ge=1)
     ip: str | None = None
     signature: str | None = None
     sort: str | None = None
