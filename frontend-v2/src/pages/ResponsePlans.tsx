@@ -14,7 +14,7 @@ interface ResponseAction {
   target: string;
   reason: string;
   policy_check?: { approved?: boolean };
-  execution_result?: { status?: string };
+  execution_result?: { status?: string; detail?: string; executed_at?: string };
 }
 
 interface ResponsePlan {
@@ -327,22 +327,26 @@ export function ResponsePlans() {
             <Shield className="w-5 h-5 text-primary-400" />
             Plan #{selectedPlan.id} Actions
           </h2>
+          <p className="mb-4 text-sm text-surface-400">Saved action results from this plan. Missing results do not establish whether an action ran. Review recorded details before deciding on any follow-up.</p>
           <div className="space-y-2">
             {selectedPlan.actions?.map((action, i) => (
-              <div key={i} className="flex items-center gap-4 p-3 bg-surface-900/50 rounded-lg">
-                <span className="text-xs font-mono text-surface-500 w-6">#{action.priority || i + 1}</span>
-                <span className={clsx('text-xs px-2 py-0.5 rounded font-medium',
-                  action.policy_check?.approved ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning')}>
-                  {action.action_type}
-                </span>
-                <span className="text-sm text-surface-300 flex-1">{action.target}</span>
-                <span className="text-xs text-surface-500">{action.reason}</span>
-                {action.execution_result && (
-                  <span className={clsx('text-xs px-2 py-0.5 rounded',
-                    action.execution_result.status === 'completed' ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger')}>
-                    {action.execution_result.status}
+              <div key={i} className="min-w-0 space-y-3 rounded-lg border border-surface-700 bg-surface-900/50 p-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-xs font-mono text-surface-500">#{action.priority || i + 1}</span>
+                  <span className={clsx('break-all text-xs px-2 py-0.5 rounded font-medium',
+                    action.policy_check?.approved ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning')}>
+                    {action.action_type}
                   </span>
-                )}
+                  <span className="min-w-0 break-all text-sm text-surface-300">{action.target}</span>
+                </div>
+                <p className="whitespace-pre-wrap break-words text-xs text-surface-400">{action.reason || 'No action reason recorded.'}</p>
+                <dl className="space-y-2 border-t border-surface-700 pt-3 text-sm">
+                  <div><dt className="text-xs text-surface-400">Recorded execution status</dt><dd className={action.execution_result?.status === 'completed' ? 'text-success' : 'text-surface-200'}>{action.execution_result?.status || 'No execution result recorded'}</dd></div>
+                  {action.execution_result && <>
+                    <div><dt className="text-xs text-surface-400">Recorded execution detail</dt><dd className="whitespace-pre-wrap break-words text-surface-300">{action.execution_result.detail || 'No execution detail recorded.'}</dd></div>
+                    <div><dt className="text-xs text-surface-400">Recorded execution time</dt><dd className="break-words text-surface-300">{action.execution_result.executed_at ? (Number.isNaN(Date.parse(action.execution_result.executed_at)) ? action.execution_result.executed_at : new Date(action.execution_result.executed_at).toLocaleString()) : 'Not recorded'}</dd></div>
+                  </>}
+                </dl>
               </div>
             ))}
           </div>
