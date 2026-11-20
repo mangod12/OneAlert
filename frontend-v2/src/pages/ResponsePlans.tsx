@@ -271,7 +271,7 @@ export function ResponsePlans({ linkedPlanId = null }: { linkedPlanId?: string |
           </div>
           <nav aria-label="Pending approval request pages" className="mt-4 flex flex-wrap items-center gap-2 text-xs text-surface-300">
             <button type="button" disabled={loading || workingPlan !== null || approvalPage === 1} className="rounded border border-surface-600 px-3 py-2 disabled:opacity-40" onClick={() => { setReviewApprovalId(null); setApprovalPage(approvalPage - 1); }}>Previous approval page</button>
-            <span>Approval page {approvalPage} of {Math.max(1, Math.ceil(approvalTotal / 10))} · {pending.length} requests on this page</span>
+            <span>Approval page {approvalPage} of {Math.max(1, Math.ceil(approvalTotal / 10))} · Records on this page: {pending.length}</span>
             <button type="button" disabled={loading || workingPlan !== null || approvalPage * 10 >= approvalTotal} className="rounded border border-surface-600 px-3 py-2 disabled:opacity-40" onClick={() => { setReviewApprovalId(null); setApprovalPage(approvalPage + 1); }}>Next approval page</button>
           </nav>
         </div>
