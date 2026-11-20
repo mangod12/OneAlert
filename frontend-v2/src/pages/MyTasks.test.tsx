@@ -104,7 +104,7 @@ describe('MyTasks workspace', () => {
 });
 
 it('keeps due-date drafts private until saved, supports clear and discard, and updates filters after success', async () => {
-  vi.mocked(apiClient.patch).mockResolvedValue({ data: { done: false, due_date: null } });
+  vi.mocked(apiClient.patch).mockResolvedValue({ data: { id: 1, case_id: 7, done: false, due_date: null } });
   mount();
   const input = await screen.findByLabelText('Task due date for #1');
   fireEvent.change(input, { target: { value: '2099-02-03' } });
@@ -131,7 +131,7 @@ it('does not remove a task before completion succeeds and blocks duplicate and c
   expect(screen.getByLabelText('Task due date for #1')).toHaveProperty('disabled', true);
   expect(screen.getByRole('button', { name: 'Refresh tasks' })).toHaveProperty('disabled', true);
   expect(apiClient.patch).toHaveBeenCalledTimes(1);
-  await act(async () => finish({ data: { done: true, due_date: '2020-01-01' } }));
+  await act(async () => finish({ data: { id: 1, case_id: 7, done: true, due_date: '2020-01-01' } }));
   expect(screen.queryByText('Collect host evidence')).toBeNull();
   expect(screen.getByText(/Completed task #1/)).toBeTruthy();
   expect(screen.getAllByRole('listitem')).toHaveLength(3);
@@ -139,7 +139,7 @@ it('does not remove a task before completion succeeds and blocks duplicate and c
 });
 
 it('keeps failed due-date drafts and task rows available for retry', async () => {
-  vi.mocked(apiClient.patch).mockRejectedValueOnce(new Error('save offline')).mockResolvedValueOnce({ data: { done: false, due_date: '2099-02-03' } });
+  vi.mocked(apiClient.patch).mockRejectedValueOnce(new Error('save offline')).mockResolvedValueOnce({ data: { id: 1, case_id: 7, done: false, due_date: '2099-02-03' } });
   mount();
   const input = await screen.findByLabelText('Task due date for #1');
   fireEvent.change(input, { target: { value: '2099-02-03' } });
@@ -154,7 +154,7 @@ it('keeps failed due-date drafts and task rows available for retry', async () =>
 
 it('retains the capped-snapshot warning after completing a returned task', async () => {
   get.mockResolvedValue({ data: Array.from({ length: 200 }, (_, i) => task({ task_id: i + 1 })) });
-  vi.mocked(apiClient.patch).mockResolvedValue({ data: { done: true, due_date: null } });
+  vi.mocked(apiClient.patch).mockResolvedValue({ data: { id: 1, case_id: 7, done: true, due_date: null } });
   mount();
   fireEvent.click(await screen.findByLabelText('Complete task #1: Collect host evidence'));
   await screen.findByText(/Completed task #1/);
@@ -163,7 +163,7 @@ it('retains the capped-snapshot warning after completing a returned task', async
 });
 
 it('previews selected tasks across filters, confirms the exact count, and applies only to those tasks', async () => {
-  vi.mocked(apiClient.patch).mockResolvedValue({ data: { due_date: '2099-03-04' } });
+  vi.mocked(apiClient.patch).mockImplementation(async url => ({ data: { id: Number(url.split('/').pop()), case_id: Number(url.split('/')[2]), done: false, due_date: '2099-03-04' } }));
   mount();
   fireEvent.click(await screen.findByLabelText('Select task #1: Collect host evidence'));
   fireEvent.click(screen.getByLabelText('Select task #2: Review access'));
@@ -185,7 +185,7 @@ it('previews selected tasks across filters, confirms the exact count, and applie
 });
 
 it('retains failed selections for a targeted retry and updates only confirmed dates', async () => {
-  vi.mocked(apiClient.patch).mockResolvedValueOnce({ data: { due_date: null } }).mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce({ data: { due_date: null } });
+  vi.mocked(apiClient.patch).mockResolvedValueOnce({ data: { id: 1, case_id: 7, done: false, due_date: null } }).mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce({ data: { id: 2, case_id: 8, done: false, due_date: null } });
   mount();
   fireEvent.click(await screen.findByLabelText('Select task #1: Collect host evidence'));
   fireEvent.click(screen.getByLabelText('Select task #2: Review access'));
@@ -224,14 +224,14 @@ it('limits bulk request concurrency to five and freezes selection until completi
   fireEvent.click(screen.getByRole('button', { name: 'Apply to 6 tasks' }));
   expect(apiClient.patch).toHaveBeenCalledTimes(5);
   expect(screen.getByLabelText('Find assigned work')).toHaveProperty('disabled', true);
-  await act(async () => { finish.slice(0, 5).forEach(resolve => resolve({ data: { due_date: null } })); });
+  await act(async () => { finish.slice(0, 5).forEach((resolve, index) => resolve({ data: { id: index + 1, case_id: 7, done: false, due_date: null } })); });
   expect(apiClient.patch).toHaveBeenCalledTimes(6);
-  await act(async () => finish[5]({ data: { due_date: null } }));
+  await act(async () => finish[5]({ data: { id: 6, case_id: 7, done: false, due_date: null } }));
   await screen.findByText(/Saved due dates for 6 of 6/);
 });
 
 it('confirms completion of the exact selected set including hidden tasks, without changing due dates', async () => {
-  vi.mocked(apiClient.patch).mockImplementation(async (url: string) => ({ data: { id: Number(url.split('/').pop()), done: true, due_date: null } }));
+  vi.mocked(apiClient.patch).mockImplementation(async (url: string) => ({ data: { id: Number(url.split('/').pop()), case_id: Number(url.split('/')[2]), done: true, due_date: null } }));
   mount();
   await screen.findByText('Collect host evidence');
   fireEvent.click(screen.getByRole('button', { name: 'Select matching tasks' }));
@@ -247,7 +247,7 @@ it('confirms completion of the exact selected set including hidden tasks, withou
 });
 
 it('keeps unconfirmed completion responses selected while removing only confirmed successes', async () => {
-  vi.mocked(apiClient.patch).mockImplementation(async (url: string) => ({ data: { id: Number(url.split('/').pop()), done: !url.endsWith('/2'), due_date: null } }));
+  vi.mocked(apiClient.patch).mockImplementation(async (url: string) => ({ data: { id: Number(url.split('/').pop()), case_id: Number(url.split('/')[2]), done: !url.endsWith('/2'), due_date: null } }));
   mount();
   await screen.findByText('Collect host evidence');
   fireEvent.click(screen.getByRole('button', { name: 'Select matching tasks' }));
@@ -270,4 +270,20 @@ it('protects date drafts from selected completion and supports cancellation', as
   fireEvent.click(screen.getByRole('button', { name: 'Review selected completion' }));
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
   expect(apiClient.patch).not.toHaveBeenCalled();
+});
+
+it('does not remove a task or announce success when completion names another investigation', async () => {
+  vi.mocked(apiClient.patch).mockResolvedValue({ data: { id: 1, case_id: 99, done: true, due_date: null } });
+  mount(); fireEvent.click(await screen.findByLabelText('Complete task #1: Collect host evidence'));
+  await screen.findByRole('alert'); expect(screen.getByText('Collect host evidence')).toBeTruthy();
+  expect(screen.queryByText(/Completed task #1/)).toBeNull();
+});
+it('keeps bulk date selections and existing dates when returned values do not confirm the requested date', async () => {
+  vi.mocked(apiClient.patch).mockResolvedValue({ data: { id: 1, case_id: 7, done: false, due_date: '2099-01-01' } });
+  mount(); fireEvent.click(await screen.findByLabelText('Select task #1: Collect host evidence'));
+  fireEvent.change(screen.getByLabelText('Selected task date action'), { target: { value: 'clear' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review date change' })); fireEvent.click(screen.getByRole('button', { name: 'Apply to 1 tasks' }));
+  await screen.findByText(/Saved due dates for 0 of 1/);
+  expect(screen.getByText('Task #1 due: 2020-01-01')).toBeTruthy();
+  expect(screen.getByLabelText('Select task #1: Collect host evidence')).toHaveProperty('checked', true);
 });

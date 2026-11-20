@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
+import { verifiedTaskSave } from '../utils/verifiedTaskSave';
 import { getApiErrorMessage } from '../api/errors';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -63,10 +64,11 @@ export function MyTasks() {
     setNoticeFailed(false);
     try {
       const response = await apiClient.patch<{ done: boolean; due_date: string | null }>(`/cases/${task.case_id}/tasks/${task.task_id}`, payload);
-      setTasks(current => response.data.done ? current.filter(row => row.task_id !== task.task_id)
-        : current.map(row => row.task_id === task.task_id ? { ...row, due_date: response.data.due_date } : row));
+      const saved = verifiedTaskSave(response.data, task.task_id, task.case_id, payload);
+      setTasks(current => saved.done ? current.filter(row => row.task_id !== task.task_id)
+        : current.map(row => row.task_id === task.task_id ? { ...row, due_date: saved.due_date } : row));
       setDueDrafts(current => { const next = { ...current }; delete next[task.task_id]; return next; });
-      setActionNotice(response.data.done
+      setActionNotice(saved.done
         ? `Completed task #${task.task_id}. Open the investigation checklist to reopen it. Refresh tasks to load any additional assigned work.`
         : `Saved the due date for task #${task.task_id}.`);
     } catch (err: unknown) {
@@ -94,8 +96,8 @@ export function MyTasks() {
       await Promise.all(snapshot.slice(start, start + 5).map(async task => {
         try {
           const response = await apiClient.patch<{ id?: number; done?: boolean; due_date: string | null }>(`/cases/${task.case_id}/tasks/${task.task_id}`, complete ? { done: true } : { due_date: dueDate });
-          if (complete && (response.data.id !== task.task_id || response.data.done !== true)) throw new Error('Completion was not confirmed for this task. Refresh tasks to verify before retrying.');
-          saved.set(task.task_id, response.data.due_date);
+          const verified = verifiedTaskSave(response.data, task.task_id, task.case_id, complete ? { done: true } : { due_date: dueDate });
+          saved.set(task.task_id, verified.due_date);
         } catch (err: unknown) {
           failed[task.task_id] = getApiErrorMessage(err, complete ? 'Task completion could not be confirmed. It remains selected; refresh to verify before retrying.' : 'Task due date could not be saved. It remains selected for retry.');
         }
