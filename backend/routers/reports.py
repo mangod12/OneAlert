@@ -151,7 +151,7 @@ async def get_posture_report(
     active_result = await db.execute(
         select(Alert, Asset)
         .join(Asset, Asset.id == Alert.asset_id)
-        .where(Alert.user_id == current_user.id)
+        .where(Alert.user_id == current_user.id, Asset.user_id == current_user.id)
     )
     by_asset: dict[int, dict] = {}
     for alert, asset in active_result.all():

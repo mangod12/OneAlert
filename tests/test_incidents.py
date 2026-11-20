@@ -407,3 +407,25 @@ def test_timeline_filtered_totals_and_kinds_never_include_other_owners(client):
     assert client.get(endpoint, params={'search': str(alert_id)}, headers=owner).json()['total'] == 1
     assert client.get(endpoint, params={'search': 'MODBUS'}, headers=owner).json()['total'] == 1
     assert client.get(endpoint, headers=other).status_code == 404
+
+
+def test_incidents_and_posture_do_not_expose_cross_owner_asset_associations(client):
+    owner = _register_and_login(client, 'incident-assets@example.com')
+    other = _register_and_login(client, 'incident-assets-other@example.com')
+    uid = client.get('/api/v1/auth/me', headers=owner).json()['id']
+    other_uid = client.get('/api/v1/auth/me', headers=other).json()['id']
+    _seed(uid)
+    with _TestingSessionLocal() as db:
+        foreign = Asset(user_id=other_uid, name='Private foreign plant', asset_type='hardware')
+        db.add(foreign)
+        db.flush()
+        db.add_all([Alert(user_id=uid, asset_id=foreign.id, title=f'Mismatched association {i}',
+                          severity='critical', status='pending') for i in range(2)])
+        db.commit()
+    incidents = client.get('/api/v1/incidents', headers=owner).json()
+    assert incidents['total'] == 1
+    assert [row['asset_name'] for row in incidents['incidents']] == ['plc-01']
+    report = client.get('/api/v1/reports/posture', headers=owner)
+    assert report.status_code == 200, report.text
+    assert report.json()['incidents']['active'] == 1
+    assert [row['asset_name'] for row in report.json()['incidents']['top_assets']] == ['plc-01']

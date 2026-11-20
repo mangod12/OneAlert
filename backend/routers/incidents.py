@@ -82,7 +82,7 @@ async def _active_alerts_by_asset(
     rows = await db.execute(
         select(Alert, Asset)
         .join(Asset, Alert.asset_id == Asset.id)
-        .where(Alert.user_id == user_id, Alert.status.in_(_ACTIVE_STATUSES))
+        .where(Alert.user_id == user_id, Asset.user_id == user_id, Alert.status.in_(_ACTIVE_STATUSES))
     )
     groups: dict[int, tuple[Asset, list[Alert]]] = {}
     for alert, asset in rows.all():
