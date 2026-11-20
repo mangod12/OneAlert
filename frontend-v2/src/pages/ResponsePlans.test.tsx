@@ -232,7 +232,7 @@ describe('Response plan pagination', () => {
     expect(screen.getByText('Showing 21–21 of 21 matching plans · Page 2 of 2')).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Next plans' }) as HTMLButtonElement).disabled).toBe(true);
     expect(get).toHaveBeenCalledWith('/response-plans/', { params: { page: 2, size: 20 } });
-    expect(get).toHaveBeenCalledWith('/response-plans/pending-approvals');
+    expect(get).toHaveBeenCalledWith('/response-plans/pending-approvals', { params: { page: 1, size: 10 } });
     fireEvent.change(screen.getByLabelText('Filter plans by status'), { target: { value: 'completed' } });
     expect(await screen.findByText('Case #1')).toBeTruthy();
     expect(get).toHaveBeenCalledWith('/response-plans/', { params: { page: 1, size: 20, status: 'completed' } });
@@ -396,4 +396,47 @@ it('makes all fingerprint-bound action fields inspectable rather than hiding ext
   render(<ResponsePlans />); fireEvent.click(await screen.findByRole('button', { name: 'Review approval' }));
   expect(screen.getByText('Recorded priority: 0')).toBeTruthy();
   expect(screen.getByText(/"retained_parameter": "review-me"/)).toBeTruthy();
+});
+
+it('pages approval requests separately from the plan list and closes the previous review', async () => {
+  get.mockImplementation(async (url, config) => {
+    if (url.endsWith('pending-approvals')) {
+      const page = (config?.params as { page?: number } | undefined)?.page ?? 1;
+      return { data: { data: [{ ...approval, id: page, plan_id: page === 1 ? 12 : 13 }], total: 11, page, size: 10 } };
+    }
+    return { data: { data: [plan], total: 1 } };
+  });
+  render(<ResponsePlans />); fireEvent.click(await screen.findByRole('button', { name: 'Review approval' }));
+  fireEvent.click(screen.getByLabelText('I reviewed the saved actions and targets for plan #12.'));
+  fireEvent.click(screen.getByRole('button', { name: 'Next approval page' }));
+  await screen.findByText('Plan #13 — Case #4');
+  expect(screen.queryByRole('region', { name: 'Approval review for plan 12' })).toBeNull();
+  expect(get).toHaveBeenCalledWith('/response-plans/pending-approvals', { params: { page: 2, size: 10 } });
+  expect(get).toHaveBeenCalledWith('/response-plans/', { params: { page: 1, size: 20 } });
+  expect((screen.getByRole('button', { name: 'Next approval page' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText(/including records on other pages/)).toBeTruthy();
+});
+it('recovers the last approval page when resolving a plan removes the remaining rows', async () => {
+  let resolved = false;
+  get.mockImplementation(async (url, config) => {
+    if (url.endsWith('pending-approvals')) {
+      const page = (config?.params as { page?: number } | undefined)?.page ?? 1;
+      return { data: { data: resolved && page === 2 ? [] : [{ ...approval, id: page }], total: resolved ? 1 : 11, page, size: 10 } };
+    }
+    return { data: { data: [plan], total: 1 } };
+  });
+  post.mockImplementation(async () => { resolved = true; return { data: { success: true, plan_status: 'approved' } }; });
+  render(<ResponsePlans />); fireEvent.click(await screen.findByRole('button', { name: 'Next approval page' }));
+  await screen.findByText(/Approval page 2 of 2/);
+  fireEvent.click(screen.getByRole('button', { name: 'Review approval' }));
+  fireEvent.click(screen.getByLabelText('I reviewed the saved actions and targets for plan #12.'));
+  fireEvent.click(screen.getByRole('button', { name: 'Approve reviewed plan #12' }));
+  await screen.findByText(/Approval page 1 of 1/);
+  expect((screen.getByRole('button', { name: 'Previous approval page' }) as HTMLButtonElement).disabled).toBe(true);
+});
+it('does not present a mismatched approval page as reviewable evidence', async () => {
+  get.mockImplementation(async url => ({ data: url.endsWith('pending-approvals') ? { data: [approval], total: 11, page: 2, size: 10 } : { data: [plan], total: 1 } }));
+  render(<ResponsePlans />);
+  await screen.findByText('The approval response did not match the requested page. Retry before making a decision.');
+  expect(screen.queryByRole('button', { name: 'Review approval' })).toBeNull();
 });

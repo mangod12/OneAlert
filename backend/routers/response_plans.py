@@ -105,10 +105,17 @@ async def export_response_plans(
 
 @router.get("/pending-approvals")
 async def list_pending_approvals(
+    page: int = Query(1, ge=1),
+    size: int = Query(10, ge=1, le=100),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
     """List all pending approval requests for the current user's plans."""
+    total = (await db.execute(
+        select(func.count(ApprovalRequest.id))
+        .join(ResponsePlan, ApprovalRequest.plan_id == ResponsePlan.id)
+        .where(ResponsePlan.user_id == current_user.id, ApprovalRequest.status == "pending")
+    )).scalar_one()
     result = await db.execute(
         select(ApprovalRequest, ResponsePlan)
         .join(ResponsePlan, ApprovalRequest.plan_id == ResponsePlan.id)
@@ -116,7 +123,8 @@ async def list_pending_approvals(
             ResponsePlan.user_id == current_user.id,
             ApprovalRequest.status == "pending",
         )
-        .order_by(ApprovalRequest.created_at.desc())
+        .order_by(ApprovalRequest.created_at.desc(), ApprovalRequest.id.desc())
+        .offset((page - 1) * size).limit(size)
     )
     rows = result.all()
 
@@ -135,7 +143,7 @@ async def list_pending_approvals(
             "created_at": approval.created_at.isoformat(),
         })
 
-    return {"success": True, "data": approvals, "total": len(approvals)}
+    return {"success": True, "data": approvals, "total": total, "page": page, "size": size}
 
 
 @router.get("/{plan_id}", response_model=ResponsePlanResponse)

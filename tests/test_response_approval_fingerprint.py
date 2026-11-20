@@ -152,3 +152,35 @@ def test_empty_plan_is_not_approvable_even_with_matching_fingerprint(context):
             await db.commit()
     asyncio.run(clear_actions())
     assert approve(client, review(client)).status_code == 400
+
+
+def test_pending_inbox_has_bounded_stable_pages_and_owner_scoped_total(context):
+    from datetime import UTC, datetime
+
+    client, sessions = context
+
+    async def populate():
+        async with sessions() as db:
+            original = await db.get(ApprovalRequest, 7)
+            original.created_at = datetime(2026, 11, 20, 12, tzinfo=UTC)
+            for request_id in range(100, 120):
+                db.add(ApprovalRequest(id=request_id, plan_id=7, status='pending',
+                                       created_at=datetime(2026, 11, 20, 12, tzinfo=UTC)))
+            db.add(ApprovalRequest(id=200, plan_id=7, status='approved'))
+            await db.commit()
+    asyncio.run(populate())
+    pages = [client.get('/api/v1/response-plans/pending-approvals', params={'page': page, 'size': 10}).json()
+             for page in (1, 2, 3)]
+    assert [row['total'] for row in pages] == [21, 21, 21]
+    assert [len(row['data']) for row in pages] == [10, 10, 1]
+    ids = [item['id'] for page in pages for item in page['data']]
+    assert ids == [*range(119, 99, -1), 7]
+    assert all(item['review_fingerprint'] for page in pages for item in page['data'])
+    assert [row['page'] for row in pages] == [1, 2, 3]
+    assert len(client.get('/api/v1/response-plans/pending-approvals').json()['data']) == 10
+
+
+@pytest.mark.parametrize('params', [{'page': 0}, {'size': 0}, {'size': 101}, {'page': 'wrong'}])
+def test_pending_page_bounds_are_validated(context, params):
+    client, _ = context
+    assert client.get('/api/v1/response-plans/pending-approvals', params=params).status_code == 422

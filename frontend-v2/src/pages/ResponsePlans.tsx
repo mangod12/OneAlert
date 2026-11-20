@@ -102,6 +102,7 @@ export function ResponsePlans({ linkedPlanId = null }: { linkedPlanId?: string |
       setExporting(false);
     }
   };
+  const [approvalPage, setApprovalPage] = useState(1), [approvalTotal, setApprovalTotal] = useState(0);
   const [pending, setPending] = useState<PendingApproval[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const selectedPlan = plans.find(plan => plan.id === selectedPlanId) ?? null;
@@ -115,7 +116,7 @@ export function ResponsePlans({ linkedPlanId = null }: { linkedPlanId?: string |
     setLoading(true);
     const [planResult, approvalResult] = await Promise.allSettled([
       apiClient.get('/response-plans/', { params: { page, size: 20, ...(statusFilter ? { status: statusFilter } : {}) } }),
-      apiClient.get('/response-plans/pending-approvals'),
+      apiClient.get('/response-plans/pending-approvals', { params: { page: approvalPage, size: 10 } }),
     ]);
     if (request !== requestId.current) return;
     const nextErrors: string[] = [];
@@ -128,11 +129,21 @@ export function ResponsePlans({ linkedPlanId = null }: { linkedPlanId?: string |
       setTotal(count);
     }
     else { setPlans([]); setTotal(0); setSelectedPlanId(null); nextErrors.push(getApiErrorMessage(planResult.reason, 'Response plans could not be loaded.')); }
-    if (approvalResult.status === 'fulfilled') setPending(approvalResult.value.data.data || []);
-    else { setPending([]); nextErrors.push(getApiErrorMessage(approvalResult.reason, 'Pending approvals could not be loaded.')); }
+    if (approvalResult.status === 'fulfilled') {
+      const data = approvalResult.value.data;
+      const count = typeof data.total === 'number' ? data.total : (data.data || []).length;
+      if (!Array.isArray(data.data) || !Number.isSafeInteger(count) || count < 0 || (data.page !== undefined && data.page !== approvalPage) || (data.size !== undefined && data.size !== 10)) {
+        setPending([]); setApprovalTotal(0); nextErrors.push('The approval response did not match the requested page. Retry before making a decision.');
+      } else {
+        const lastPage = Math.max(1, Math.ceil(count / 10));
+        if (approvalPage > lastPage) { setApprovalPage(lastPage); return; }
+        setPending(data.data); setApprovalTotal(count);
+      }
+    }
+    else { setPending([]); setApprovalTotal(0); nextErrors.push(getApiErrorMessage(approvalResult.reason, 'Pending approvals could not be loaded.')); }
     setErrors(nextErrors);
     setLoading(false);
-  }, [statusFilter, page]);
+  }, [statusFilter, page, approvalPage]);
 
   const approvePlan = async (planId: number) => {
     if (approving.current || workingPlan !== null || loading || errors.length || !pending.some(item => item.plan_id === planId && item.id === reviewApprovalId)) return;
@@ -227,12 +238,13 @@ export function ResponsePlans({ linkedPlanId = null }: { linkedPlanId?: string |
       <ResponseDecisionEvidence linkedPlanId={linkedPlanId} />
 
       {/* Pending Approvals */}
-      {pending.length > 0 && (
+      {approvalTotal > 0 && (
         <div className="bg-warning/5 border border-warning/30 rounded-md p-6">
           <h2 className="text-lg font-semibold text-warning mb-4 flex items-center gap-2">
             <Clock className="w-5 h-5" />
-            Pending Approvals ({pending.length})
+            Pending Approvals ({approvalTotal})
           </h2>
+          <p className="mb-3 text-xs text-surface-400">Pending request records, newest first. Approving a plan resolves all of its pending requests, including records on other pages. Review the complete saved plan before deciding.</p>
           <div className="space-y-3">
             {pending.map(a => (
               <div key={a.id} className="min-w-0 rounded-lg bg-surface-900/50 p-4">
@@ -257,6 +269,11 @@ export function ResponsePlans({ linkedPlanId = null }: { linkedPlanId?: string |
               </div>
             ))}
           </div>
+          <nav aria-label="Pending approval request pages" className="mt-4 flex flex-wrap items-center gap-2 text-xs text-surface-300">
+            <button type="button" disabled={loading || workingPlan !== null || approvalPage === 1} className="rounded border border-surface-600 px-3 py-2 disabled:opacity-40" onClick={() => { setReviewApprovalId(null); setApprovalPage(approvalPage - 1); }}>Previous approval page</button>
+            <span>Approval page {approvalPage} of {Math.max(1, Math.ceil(approvalTotal / 10))} · {pending.length} requests on this page</span>
+            <button type="button" disabled={loading || workingPlan !== null || approvalPage * 10 >= approvalTotal} className="rounded border border-surface-600 px-3 py-2 disabled:opacity-40" onClick={() => { setReviewApprovalId(null); setApprovalPage(approvalPage + 1); }}>Next approval page</button>
+          </nav>
         </div>
       )}
 
