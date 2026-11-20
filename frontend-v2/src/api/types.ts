@@ -76,6 +76,14 @@ export interface Asset {
   is_ot_asset: boolean;
   network_zone: string | null;
   primary_protocol: string | null;
+  secondary_protocols?: string | null;
+  serial_number?: string | null;
+  firmware_version?: string | null;
+  model_number?: string | null;
+  manufacturer_date?: string | null;
+  last_known_ip?: string | null;
+  discovery_method?: string | null;
+  updated_at?: string | null;
   criticality: string | null;
   created_at: string;
   open_alert_count?: number | null;
