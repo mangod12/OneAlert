@@ -6,6 +6,7 @@ import { CaseResponsePlans } from '../components/CaseResponsePlans';
 import { CaseHandoff } from '../components/CaseHandoff';
 import { MentionTextarea } from '../components/MentionTextarea';
 import apiClient from '../api/client';
+import { ChecklistTriage } from '../components/ChecklistTriage';
 import { useAuthStore } from '../stores/authStore';
 import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil, Trash2, Download, Eye, EyeOff, ListChecks, Square, CheckSquare, CheckCircle2 } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
@@ -146,7 +147,10 @@ export function CaseDetail() {
   const [taskBusyId, setTaskBusyId] = useState<number | null>(null);
   const [todayStr, setTodayStr] = useState<string | null>(null);
   useEffect(() => {
-    setTodayStr(new Date().toISOString().slice(0, 10));
+    const refreshLocalDate = () => { const now = new Date(); setTodayStr(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`); };
+    refreshLocalDate();
+    const timer = window.setInterval(refreshLocalDate, 60_000);
+    return () => window.clearInterval(timer);
   }, []);
   const [seedingPlanId, setSeedingPlanId] = useState<number | null>(null);
   const currentUserId = useAuthStore(state => state.user?.id ?? null);
@@ -777,8 +781,8 @@ export function CaseDetail() {
           </div>
         )}
         {tasks.length > 0 && (
-          <ul className="mb-3 space-y-1.5">
-            {tasks.map(task => (
+          <ChecklistTriage key={caseData.id} tasks={tasks} today={todayStr ?? ''} currentUserId={currentUserId} members={members}>
+            {task => (
               <li key={task.id} className="flex min-w-0 flex-wrap items-center gap-2 rounded-md border border-surface-800 bg-surface-900/60 px-3 py-2">
                 <button
                   type="button"
@@ -837,8 +841,8 @@ export function CaseDetail() {
                   </button>
                 </div>
               </li>
-            ))}
-          </ul>
+            )}
+          </ChecklistTriage>
         )}
         {tasksUnavailable && (
           <div role="alert" className="mb-3 text-sm text-danger">Checklist could not be loaded. Task counts and completion status are unknown. <button type="button" onClick={() => void fetchAll()} className="underline">Retry checklist</button></div>
