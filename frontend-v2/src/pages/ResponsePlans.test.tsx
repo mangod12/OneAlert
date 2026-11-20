@@ -278,3 +278,30 @@ describe('Recorded response action evidence', () => {
     expect(screen.getByText('No execution detail recorded.')).toBeTruthy();
   });
 });
+
+it('removes stale plans and detail if the current status-filter read fails', async () => {
+  let fail = false;
+  get.mockImplementation(url => url.endsWith('pending-approvals') ? Promise.resolve({ data: { data: [] } }) : fail ? Promise.reject(new Error('Current plan read unavailable')) : Promise.resolve({ data: { data: [plan], total: 1 } }));
+  render(<ResponsePlans />);
+  fireEvent.click(await screen.findByText('Case #4'));
+  expect(screen.getByText('plant-gateway')).toBeTruthy();
+  fail = true;
+  fireEvent.change(screen.getByLabelText('Filter plans by status'), { target: { value: 'draft' } });
+  await screen.findByText('Current plan read unavailable');
+  expect(screen.queryByText('Case #4')).toBeNull();
+  expect(screen.queryByText('plant-gateway')).toBeNull();
+  expect(screen.queryByText('No response plans')).toBeNull();
+});
+
+it('removes stale approval requests when an approval queue refresh fails', async () => {
+  let fail = false;
+  get.mockImplementation(url => url.endsWith('pending-approvals') ? fail ? Promise.reject(new Error('Approval refresh unavailable')) : Promise.resolve({ data: { data: [{ id: 7, plan_id: 12, case_id: 4, reason: 'Old approval request', actions: [], autonomy_level: 'L2' }] } }) : Promise.resolve({ data: { data: [plan], total: 1 } }));
+  render(<ResponsePlans />);
+  await screen.findByText('Old approval request');
+  fail = true;
+  fireEvent.change(screen.getByLabelText('Filter plans by status'), { target: { value: 'approved' } });
+  await screen.findByText('Approval refresh unavailable');
+  expect(screen.queryByText('Old approval request')).toBeNull();
+  expect(screen.getByText('Case #4')).toBeTruthy();
+  expect(post).not.toHaveBeenCalled();
+});
