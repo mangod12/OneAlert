@@ -152,3 +152,19 @@ class TestDetectionRuleDelete:
         headers = _register_and_login(client, "hunter11@example.com")
         res = client.delete("/api/v1/hunt/detections/9999", headers=headers)
         assert res.status_code == 404
+
+
+@pytest.mark.parametrize('enabled', [False, True])
+def test_create_rule_preserves_explicit_enabled_state_without_test_confirmation(client, enabled):
+    headers = _register_and_login(client, 'draft-review@example.com')
+    response = client.post('/api/v1/hunt/detections', headers=headers, json={
+        'name': 'Reviewed draft', 'rule_type': 'sigma', 'rule_content': 'title: Retained guard',
+        'confidence': 'high', 'mitre_techniques': ['T1110'], 'enabled': enabled,
+    })
+    assert response.status_code == 200
+    saved = response.json()
+    assert saved['enabled'] is enabled
+    assert saved['tested'] is False
+    assert saved['mitre_techniques'] == ['T1110']
+    records = client.get('/api/v1/hunt/detections', headers=headers).json()
+    assert records == [saved]

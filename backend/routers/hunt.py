@@ -26,6 +26,7 @@ class DetectionRuleCreate(BaseModel):
     description: str | None = None
     mitre_techniques: list | None = None
     confidence: str = "medium"
+    enabled: bool = True
 
 
 class DetectionRuleUpdate(BaseModel):
@@ -155,6 +156,7 @@ async def create_detection_rule(
         rule_content=rule.rule_content,
         mitre_techniques=rule.mitre_techniques,
         confidence=rule.confidence,
+        enabled=rule.enabled,
         created_by="human",
     )
     db.add(detection)

@@ -41,6 +41,8 @@ interface DetectionRule {
 }
 
 interface RuleFormState {
+  enabled: boolean;
+  techniques: string;
   name: string;
   description: string;
   rule_type: string;
@@ -48,7 +50,7 @@ interface RuleFormState {
   confidence: string;
 }
 
-const emptyRuleForm: RuleFormState = { name: '', description: '', rule_type: 'sigma', rule_content: '', confidence: 'medium' };
+const emptyRuleForm: RuleFormState = { name: '', description: '', rule_type: 'sigma', rule_content: '', confidence: 'medium', enabled: false, techniques: '' };
 
 export function HuntLab() {
   const [hypothesis, setHypothesis] = useState('');
@@ -63,6 +65,9 @@ export function HuntLab() {
   const [detectionsError, setDetectionsError] = useState('');
   const detectionsRequest = useRef(0);
   const [detections, setDetections] = useState<DetectionRule[]>([]);
+  const [ruleSearch, setRuleSearch] = useState('');
+  const [ruleScope, setRuleScope] = useState('all');
+  const [rulePage, setRulePage] = useState(1);
   const [ruleForm, setRuleForm] = useState<RuleFormState | null>(null);
   const [editingRule, setEditingRule] = useState<DetectionRule | null>(null);
   const [savingRule, setSavingRule] = useState(false);
@@ -193,6 +198,8 @@ export function HuntLab() {
       rule_type: rule.rule_type,
       rule_content: rule.rule_content,
       confidence: rule.confidence,
+      enabled: rule.enabled,
+      techniques: (rule.mitre_techniques ?? []).join(', '),
     });
   };
 
@@ -221,6 +228,8 @@ export function HuntLab() {
           rule_content: ruleForm.rule_content,
           description: ruleForm.description.trim() || null,
           confidence: ruleForm.confidence,
+          enabled: ruleForm.enabled,
+          mitre_techniques: [...new Set(ruleForm.techniques.split(',').map(value => value.trim()).filter(Boolean))],
         });
         toast('Detection rule saved.', 'success');
         await fetchDetections();
@@ -232,6 +241,15 @@ export function HuntLab() {
       setSavingRule(false);
     }
   };
+
+  const ruleNeedle = ruleSearch.trim().toLowerCase();
+  const matchingRules = detections.filter(rule =>
+    (ruleScope === 'all' || (ruleScope === 'enabled' ? rule.enabled : ruleScope === 'disabled' ? !rule.enabled : ruleScope === 'tested' ? rule.tested : !rule.tested))
+    && (!ruleNeedle || [rule.name, rule.description, rule.rule_type, rule.rule_content, ...(rule.mitre_techniques ?? [])].some(value => value?.toLowerCase().includes(ruleNeedle))));
+  const rulePages = Math.max(1, Math.ceil(matchingRules.length / 10));
+  const currentRulePage = Math.min(rulePage, rulePages);
+  const shownRules = matchingRules.slice((currentRulePage - 1) * 10, currentRulePage * 10);
+
 
   return (
     <div className="space-y-6">
@@ -296,6 +314,7 @@ export function HuntLab() {
                 </h3>
                 <button
                   type="button"
+                  disabled={ruleForm !== null}
                   onClick={() => { setEditingRule(null); setRuleForm({ ...emptyRuleForm, rule_type: 'sigma', rule_content: activeResult.sigma_rule ?? '' }); }}
                   className="inline-flex items-center gap-1.5 rounded-md border border-primary-500/40 px-2.5 py-1 text-xs font-semibold text-primary-300 hover:bg-primary-500/10"
                 >
@@ -327,6 +346,7 @@ export function HuntLab() {
 
         {ruleForm && (
           <form className="mb-4 space-y-3 rounded-lg border border-surface-700 bg-surface-950/60 p-4" onSubmit={e => { e.preventDefault(); void saveRule(); }}>
+            <fieldset disabled={savingRule} className="contents">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="sm:col-span-2">
                 <label htmlFor="rule-name" className="mb-1 block text-xs font-medium text-surface-300">Name *</label>
@@ -361,10 +381,19 @@ export function HuntLab() {
                 </select>
               </div>
             </div>
+            {!editingRule && <div className="space-y-3">
+              <label className="block text-xs text-surface-300">MITRE technique IDs (comma separated)
+                <input aria-label="Rule MITRE techniques" value={ruleForm.techniques} onChange={event => setRuleForm({ ...ruleForm, techniques: event.target.value })}
+                  className="mt-1 w-full rounded border border-surface-600 bg-surface-900 px-3 py-2 text-sm text-surface-100" />
+              </label>
+              <label className="flex items-center gap-2 text-sm text-surface-300"><input type="checkbox" checked={ruleForm.enabled} onChange={event => setRuleForm({ ...ruleForm, enabled: event.target.checked })} />Enable rule after saving</label>
+              <p className="text-xs text-surface-400">New rules are untested and saved disabled unless you choose to enable them. Saving does not test or execute the rule.</p>
+            </div>}
             <div className="flex items-center gap-2">
               <button type="submit" disabled={savingRule} className="min-h-9 rounded-md bg-primary-500 px-4 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">{savingRule ? 'Saving…' : editingRule ? 'Update rule' : 'Save rule'}</button>
               <button type="button" onClick={closeRuleForm} className="rounded-md border border-surface-600 px-3 py-2 text-sm text-surface-300 hover:bg-surface-800">Cancel</button>
             </div>
+            </fieldset>
           </form>
         )}
 
@@ -373,9 +402,24 @@ export function HuntLab() {
         ) : detections.length === 0 && !ruleForm ? (
           <p className="text-sm text-surface-500">No detection rules saved yet. Run a hunt and save its Sigma output, or add a rule manually.</p>
         ) : (
+          <div className="min-w-0 space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <input aria-label="Search saved detection rules" value={ruleSearch} onChange={event => { setRuleSearch(event.target.value); setRulePage(1); }} placeholder="Name, content or MITRE technique"
+              className="min-w-0 basis-full rounded border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 sm:flex-1 sm:basis-auto" />
+            <select aria-label="Detection rule scope" value={ruleScope} onChange={event => { setRuleScope(event.target.value); setRulePage(1); }} className="rounded border border-surface-600 bg-surface-950 px-2 py-2 text-sm text-surface-200">
+              <option value="all">All saved rules</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option><option value="tested">Tested</option><option value="untested">Not tested</option>
+            </select>
+          </div>
+          <p className="text-xs text-surface-400">{matchingRules.length} of {detections.length} loaded rules match. Search and pages review saved content; they do not test or execute rules.</p>
+          <nav aria-label="Detection rule pages" className="flex flex-wrap items-center justify-between gap-2 text-xs text-surface-300"><span>Rule page {currentRulePage} of {rulePages}</span><div className="flex gap-2">
+            <button type="button" disabled={currentRulePage === 1} onClick={() => setRulePage(currentRulePage - 1)} className="rounded border border-surface-600 px-2 py-1 disabled:opacity-40">Previous rules</button>
+            <button type="button" disabled={currentRulePage === rulePages} onClick={() => setRulePage(currentRulePage + 1)} className="rounded border border-surface-600 px-2 py-1 disabled:opacity-40">More rules</button>
+          </div></nav>
+          {!matchingRules.length && <p className="text-sm text-surface-400">No loaded detection rules match.</p>}
           <ul className="divide-y divide-surface-800">
-            {detections.map(rule => (
-              <li key={rule.id} className="flex items-start justify-between gap-3 py-3">
+            {shownRules.map(rule => (
+              <li key={rule.id} className="min-w-0 space-y-3 py-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-surface-100">{rule.name}</p>
                   {rule.description && <p className="mt-0.5 truncate text-xs text-surface-500">{rule.description}</p>}
@@ -393,6 +437,7 @@ export function HuntLab() {
                     <button
                       type="button"
                       aria-label={`Edit rule ${rule.name}`}
+                      disabled={ruleForm !== null}
                       onClick={() => startEditRule(rule)}
                       className="min-h-8 rounded-md border border-surface-600 px-2.5 text-xs text-surface-200 hover:bg-surface-800"
                     >
@@ -417,9 +462,21 @@ export function HuntLab() {
                     </button>
                   </div>
                 </div>
+              </div>
+              <details className="min-w-0 rounded border border-surface-700 p-3">
+                <summary aria-label={`Inspect saved rule ${rule.name}`} className="cursor-pointer text-xs text-primary-300">Inspect full saved rule</summary>
+                <p className="mt-2 whitespace-pre-wrap break-words text-xs text-surface-400">{rule.description || 'No description recorded.'}</p>
+                <pre className="mt-3 whitespace-pre-wrap break-words font-mono text-xs text-surface-200">{rule.rule_content}</pre>
+                <p className="mt-3 text-xs text-surface-400">{rule.tested ? 'Recorded as tested' : 'No recorded test confirmation'}. Enabled state is not proof of detection.</p>
+                <button type="button" disabled={ruleForm !== null} onClick={() => {
+                  setEditingRule(null);
+                  setRuleForm({ name: `${rule.name} copy`, description: rule.description ?? '', rule_type: rule.rule_type, rule_content: rule.rule_content, confidence: rule.confidence, enabled: false, techniques: (rule.mitre_techniques ?? []).join(', ') });
+                }} aria-label={`Clone rule ${rule.name} as disabled draft`} className="mt-3 rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40">Clone as disabled draft</button>
+              </details>
               </li>
             ))}
           </ul>
+          </div>
         )}
       </div>
 
