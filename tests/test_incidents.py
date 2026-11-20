@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.database.db import Base, get_async_db, get_db
 from backend.main import app
+from backend.models.audit_log import AuditLog
 from backend.models.alert import Alert
 from backend.models.asset import Asset
 from backend.models.case import Case, CaseAlert
@@ -326,3 +327,23 @@ def test_incident_context_queries_are_batched_and_keep_owner_scope(client):
         assert incident['linked_cases'][0]['title'].startswith('Owned case')
     enrichments = [statement for statement in statements if 'network_connections' in statement or 'join case_alerts' in statement]
     assert len(enrichments) == 2, enrichments
+
+
+def test_timeline_excludes_foreign_actor_audit_rows_on_owned_alerts(client):
+    owner = _register_and_login(client, 'timelineowner@example.com')
+    other = _register_and_login(client, 'timelineother@example.com')
+    uid = client.get('/api/v1/auth/me', headers=owner).json()['id']
+    other_uid = client.get('/api/v1/auth/me', headers=other).json()['id']
+    asset_id = _seed(uid)
+    with _TestingSessionLocal() as db:
+        alert = db.query(Alert).filter(Alert.asset_id == asset_id).first()
+        db.add_all([
+            AuditLog(user_id=uid, action='alert_updated', target_type='alert', target_id=alert.id, detail='Owned recorded update'),
+            AuditLog(user_id=other_uid, action='alert_updated', target_type='alert', target_id=alert.id, detail='Foreign recorded update'),
+        ])
+        db.commit()
+    response = client.get(f'/api/v1/incidents/{asset_id}/timeline', headers=owner)
+    assert response.status_code == 200
+    details = [event['detail'] for event in response.json()['events']]
+    assert 'Owned recorded update' in details
+    assert 'Foreign recorded update' not in details
