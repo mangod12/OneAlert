@@ -689,3 +689,34 @@ def test_checklist_preview_rejects_oversized_plan_without_creating_tasks(client)
     path = f"/api/v1/cases/{case_id}/tasks/from-plan/{plan_id}"
     assert client.get(path + "/preview", headers=headers).status_code == 400
     assert client.get(f"/api/v1/cases/{case_id}/tasks", headers=headers).json() == []
+
+
+def test_reviewed_checklist_import_records_exact_created_task_provenance(client):
+    headers, case_id = _setup(client)
+    plan_id = _seed_plan(case_id, _user_id(client, headers))
+    client.post(f"/api/v1/cases/{case_id}/tasks", json={"title": "block_ip: 10.0.4.9"}, headers=headers)
+    path = f"/api/v1/cases/{case_id}/tasks/from-plan/{plan_id}"
+    fingerprint = client.get(path + "/preview", headers=headers).json()["review_fingerprint"]
+    result = client.post(path, json={"reviewed_fingerprint": fingerprint, "action_indexes": [0, 1]}, headers=headers)
+    assert result.status_code == 201, result.text
+    created = result.json()["created"]
+    assert len(created) == 1
+    detail = client.get(f"/api/v1/cases/{case_id}", headers=headers).json()
+    entry = next(row for row in detail["timeline"]
+                 if (row.get("metadata_json") or {}).get("kind") == "reviewed_checklist_import")
+    record = entry["metadata_json"]
+    assert record["reviewed_fingerprint"] == fingerprint
+    assert record["case_id"] == case_id and record["plan_id"] == plan_id
+    assert record["selected_action_indexes"] == [0, 1]
+    assert record["skipped_existing_titles"] == 1
+    assert record["created_tasks"] == [{"task_id": created[0]["id"], "action_index": 1,
+                                         "title_at_import": "isolate_host: eng-ws-04"}]
+    client.patch(f"/api/v1/cases/{case_id}/tasks/{created[0]['id']}",
+                 json={"title": "Renamed", "done": True}, headers=headers)
+    saved = client.get(f"/api/v1/cases/{case_id}", headers=headers).json()["timeline"]
+    retained = next(row for row in saved if row["id"] == entry["id"])
+    assert retained["metadata_json"] == record
+    repeat = client.post(path, json={"reviewed_fingerprint": fingerprint, "action_indexes": [0]}, headers=headers)
+    assert repeat.json()["created"] == []
+    final = client.get(f"/api/v1/cases/{case_id}", headers=headers).json()["timeline"]
+    assert sum((row.get("metadata_json") or {}).get("kind") == "reviewed_checklist_import" for row in final) == 1

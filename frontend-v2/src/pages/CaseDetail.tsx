@@ -9,6 +9,7 @@ import { MentionTextarea } from '../components/MentionTextarea';
 import apiClient from '../api/client';
 import { ChecklistTriage } from '../components/ChecklistTriage';
 import { useAuthStore } from '../stores/authStore';
+import { ChecklistImportRecord } from '../components/ChecklistImportRecord';
 import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitBranch, Link2, X, Pencil, Trash2, Download, Eye, EyeOff, ListChecks, Square, CheckSquare, CheckCircle2 } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { toast } from '../components/Toast';
@@ -1067,6 +1068,7 @@ export function CaseDetail() {
                         ) : (
                           <p className="break-words text-sm text-surface-300">{entry.content}</p>
                         )}
+                        {entry.entry_type === 'action' && <ChecklistImportRecord metadata={entry.metadata_json} caseId={caseData.id} />}
                       </div>
                     </div>
                   );

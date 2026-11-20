@@ -931,9 +931,10 @@ async def seed_case_tasks_from_plan(
         selected = [row for row in proposals if row["action_index"] in selected_indexes]
         if any(not row["title"] for row in selected):
             raise HTTPException(status_code=400, detail="A selected saved action has no usable checklist title")
-        actions = [{"_reviewed_title": row["title"]} for row in selected]
+        actions = [{"_reviewed_title": row["title"], "_action_index": row["action_index"]} for row in selected]
 
     created: list[CaseTask] = []
+    created_indexes: list[int] = []
     skipped = 0
     for action in actions:
         title = action["_reviewed_title"] if selected_indexes is not None else _task_title(action)
@@ -950,8 +951,22 @@ async def seed_case_tasks_from_plan(
         existing_titles.add(title)
         db.add(task)
         created.append(task)
+        if selected_indexes is not None:
+            created_indexes.append(action["_action_index"])
 
     if created:
+        await db.flush()
+        import_metadata = None
+        if payload is not None:
+            import_metadata = {
+                "kind": "reviewed_checklist_import", "schema_version": 1,
+                "case_id": case.id, "plan_id": plan.id,
+                "reviewed_fingerprint": payload.reviewed_fingerprint,
+                "selected_action_indexes": payload.action_indexes,
+                "skipped_existing_titles": skipped,
+                "created_tasks": [{"task_id": task.id, "action_index": index, "title_at_import": task.title}
+                                  for task, index in zip(created, created_indexes, strict=True)],
+            }
         suffix = "s" if len(created) != 1 else ""
         db.add(
             CaseTimeline(
@@ -960,6 +975,7 @@ async def seed_case_tasks_from_plan(
                 content=f"Checklist seeded from response plan #{plan.id}: {len(created)} task{suffix}",
                 source="human",
                 user_id=current_user.id,
+                metadata_json=import_metadata,
             )
         )
     await db.commit()
