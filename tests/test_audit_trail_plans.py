@@ -99,7 +99,13 @@ class TestResponsePlanAudit:
         headers = _register_and_login(client, "approve@example.com")
         plan_id = _make_plan(headers, "pending_approval")
 
-        resp = client.post(f"/api/v1/response-plans/{plan_id}/approve", headers=headers)
+        with _TestingSessionLocal() as db:
+            plan = db.get(ResponsePlan, plan_id)
+            plan.actions = [{"action_type": "notify", "target": "soc"}]
+            db.commit()
+        review = client.get(f"/api/v1/response-plans/{plan_id}/approval-review", headers=headers).json()
+        resp = client.post(f"/api/v1/response-plans/{plan_id}/approve", headers=headers,
+                           json={"reviewed_fingerprint": review["review_fingerprint"]})
         assert resp.status_code == 200, resp.text
 
         rows = _audit_rows("response_plan_approved")

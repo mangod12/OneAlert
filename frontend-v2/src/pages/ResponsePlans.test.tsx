@@ -321,7 +321,7 @@ it('exports selected recorded action evidence locally without executing or fetch
   expect(post).not.toHaveBeenCalled(); expect(del).not.toHaveBeenCalled();
 });
 
-const approval = { id: 7, plan_id: 12, case_id: 4, status: 'pending', reason: 'Contain the incident', autonomy_level: 'L2', created_at: '2026-11-20T10:00:00Z', actions: plan.actions };
+const approval = { review_fingerprint: 'a'.repeat(64), id: 7, plan_id: 12, case_id: 4, status: 'pending', reason: 'Contain the incident', autonomy_level: 'L2', created_at: '2026-11-20T10:00:00Z', actions: plan.actions };
 function loadApproval(actions = approval.actions) {
   get.mockImplementation(async url => ({ data: { data: url.endsWith('pending-approvals') ? [{ ...approval, actions }] : [{ ...plan, status: 'pending_approval' }] } }));
 }
@@ -338,7 +338,7 @@ it('requires action review and acknowledgement before approving without executin
   expect(approve.disabled).toBe(true);
   fireEvent.click(screen.getByLabelText('I reviewed the saved actions and targets for plan #12.'));
   fireEvent.click(approve);
-  await waitFor(() => expect(post).toHaveBeenCalledWith('/response-plans/12/approve'));
+  await waitFor(() => expect(post).toHaveBeenCalledWith('/response-plans/12/approve', { reviewed_fingerprint: 'a'.repeat(64) }));
   expect(post).toHaveBeenCalledTimes(1);
 });
 
@@ -370,4 +370,30 @@ it('keeps review open with an explicit error when approval fails', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Approve reviewed plan #12' }));
   await screen.findByText('Approval unavailable');
   expect(screen.getByRole('region', { name: 'Approval review for plan 12' })).toBeTruthy();
+});
+
+it('blocks approval when the backend did not provide a review fingerprint', async () => {
+  get.mockImplementation(async url => ({ data: { data: url.endsWith('pending-approvals') ? [{ ...approval, review_fingerprint: undefined }] : [plan] } }));
+  render(<ResponsePlans />); fireEvent.click(await screen.findByRole('button', { name: 'Review approval' }));
+  expect(screen.getByText(/Review fingerprint unavailable/)).toBeTruthy();
+  expect((screen.getByRole('button', { name: 'Approve reviewed plan #12' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(post).not.toHaveBeenCalled();
+});
+it('closes stale review on conflict and requires a fresh acknowledgement', async () => {
+  loadApproval(); post.mockRejectedValueOnce({ isAxiosError: true, response: { status: 409, data: { detail: 'The saved plan changed after review. Refresh and review it again.' } } });
+  render(<ResponsePlans />); fireEvent.click(await screen.findByRole('button', { name: 'Review approval' }));
+  fireEvent.click(screen.getByLabelText('I reviewed the saved actions and targets for plan #12.'));
+  fireEvent.click(screen.getByRole('button', { name: 'Approve reviewed plan #12' }));
+  await screen.findByText('The saved plan changed after review. Refresh and review it again.');
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Approve reviewed plan #12' })).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: 'Review approval' }));
+  expect((screen.getByLabelText('I reviewed the saved actions and targets for plan #12.') as HTMLInputElement).checked).toBe(false);
+  expect(post).toHaveBeenCalledTimes(1);
+});
+it('makes all fingerprint-bound action fields inspectable rather than hiding extra recorded details', async () => {
+  const recordedAction = { ...plan.actions[0], priority: 0, policy_check: { approved: false }, retained_parameter: 'review-me' };
+  loadApproval([recordedAction]);
+  render(<ResponsePlans />); fireEvent.click(await screen.findByRole('button', { name: 'Review approval' }));
+  expect(screen.getByText('Recorded priority: 0')).toBeTruthy();
+  expect(screen.getByText(/"retained_parameter": "review-me"/)).toBeTruthy();
 });
