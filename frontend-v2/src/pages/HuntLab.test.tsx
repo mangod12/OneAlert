@@ -259,3 +259,19 @@ it('reopens query evidence stored in the historical list format', async () => {
   expect(screen.getByText(/title: DNS tunneling/)).toBeTruthy();
   expect(screen.queryByText('Found periodic TXT lookups consistent with tunneling.')).toBeNull();
 });
+
+it('pages retained query evidence beyond twenty rows and resets paging on a reopened session', async () => {
+  mockGet.mockImplementation(url => Promise.resolve({ data: url.endsWith('/5') ? {
+    ...sessionDetail, result_data: { query_results: [{ row_count: 60, rows: Array.from({ length: 25 }, (_, index) => ({ host: `recorded-${index + 1}` })) }] },
+  } : url.endsWith('/detections') ? [] : [session] }));
+  render(<HuntLab />);
+  fireEvent.click(await screen.findByRole('button', { name: /reopen hunt: dns tunneling/i }));
+  await screen.findByText('recorded-1');
+  fireEvent.click(screen.getByRole('button', { name: 'Next rows for query 1' }));
+  expect(screen.getByText('recorded-25')).toBeTruthy();
+  expect(screen.queryByText('recorded-1')).toBeNull();
+  expect(screen.getByText(/35 reported rows were not retained/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: /reopen hunt: dns tunneling/i }));
+  expect(await screen.findByText('recorded-1')).toBeTruthy();
+  expect(screen.queryByText('recorded-25')).toBeNull();
+});
