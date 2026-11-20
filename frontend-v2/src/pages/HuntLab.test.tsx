@@ -275,3 +275,40 @@ it('pages retained query evidence beyond twenty rows and resets paging on a reop
   expect(await screen.findByText('recorded-1')).toBeTruthy();
   expect(screen.queryByText('recorded-25')).toBeNull();
 });
+
+it('does not launch duplicate hunts when Enter repeats during an in-flight hunt', async () => {
+  mockGet.mockImplementation(url => Promise.resolve({ data: url.endsWith('/detections') ? [] : [session] }));
+  mockPost.mockReturnValue(new Promise(() => {}));
+  render(<HuntLab />);
+  const input = await screen.findByLabelText('Hunting Hypothesis');
+  fireEvent.change(input, { target: { value: 'Check DNS records' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(mockPost).toHaveBeenCalledTimes(1);
+  expect((screen.getByRole('button', { name: 'Hunting...' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it('does not start a hunt while a historical session is loading', async () => {
+  mockGet.mockImplementation(url => url.endsWith('/5') ? new Promise(() => {})
+    : Promise.resolve({ data: url.endsWith('/detections') ? [] : [session] }));
+  render(<HuntLab />);
+  const input = await screen.findByLabelText('Hunting Hypothesis');
+  fireEvent.change(input, { target: { value: 'Check DNS records' } });
+  fireEvent.click(await screen.findByRole('button', { name: /reopen hunt: dns tunneling/i }));
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(mockPost).not.toHaveBeenCalled();
+  expect((screen.getByRole('button', { name: 'Hunt' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it('allows another hunt after a failed request', async () => {
+  mockGet.mockImplementation(url => Promise.resolve({ data: url.endsWith('/detections') ? [] : [session] }));
+  mockPost.mockRejectedValueOnce(new Error('Hunt unavailable')).mockResolvedValueOnce({ data: { data: { explanation: 'Retry completed' } } });
+  render(<HuntLab />);
+  fireEvent.change(await screen.findByLabelText('Hunting Hypothesis'), { target: { value: 'Check DNS records' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Hunt' }));
+  await waitFor(() => expect((screen.getByRole('button', { name: 'Hunt' }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: 'Hunt' }));
+  expect(await screen.findByText('Retry completed')).toBeTruthy();
+  expect(mockPost).toHaveBeenCalledTimes(2);
+});

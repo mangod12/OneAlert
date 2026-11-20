@@ -55,6 +55,7 @@ export function HuntLab() {
   const [sessions, setSessions] = useState<HuntSession[]>([]);
   const [resultVersion, setResultVersion] = useState(0);
   const [activeResult, setActiveResult] = useState<HuntResult | null>(null);
+  const huntInFlight = useRef(false);
   const [hunting, setHunting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -81,7 +82,8 @@ export function HuntLab() {
   };
 
   const startHunt = async () => {
-    if (!hypothesis.trim()) return;
+    if (huntInFlight.current || loadingSessionId !== null || !hypothesis.trim()) return;
+    huntInFlight.current = true;
     setHunting(true);
     setActiveResult(null);
     try {
@@ -92,6 +94,7 @@ export function HuntLab() {
     } catch (err) {
       toast(getApiErrorMessage(err, 'The hunt could not be completed.'), 'error');
     } finally {
+      huntInFlight.current = false;
       setHunting(false);
     }
   };
@@ -249,7 +252,7 @@ export function HuntLab() {
           />
           <button
             onClick={startHunt}
-            disabled={hunting || !hypothesis.trim()}
+            disabled={hunting || loadingSessionId !== null || !hypothesis.trim()}
             className="flex items-center gap-2 px-6 py-3 bg-primary-500 hover:bg-primary-400 disabled:opacity-50 text-surface-950 rounded-lg font-medium transition-colors"
           >
             <Play className="w-4 h-4" />
