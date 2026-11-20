@@ -4,6 +4,7 @@ import { ResponseDecisionEvidence } from '../components/ResponseDecisionEvidence
 import { isAxiosError } from 'axios';
 import { useCallback, useState, useEffect, useRef } from 'react';
 import apiClient from '../api/client';
+import { ResponsePlanComparison } from '../components/ResponsePlanComparison';
 import { CheckCircle, XCircle, Play, Clock, Download, Shield, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { responseActionCsv } from '../utils/responseActionCsv';
@@ -237,6 +238,7 @@ export function ResponsePlans({ linkedPlanId = null }: { linkedPlanId?: string |
       {loading && <LoadingSurface label="Loading response plans" />}
 
       <ResponseDecisionEvidence linkedPlanId={linkedPlanId} />
+      <ResponsePlanComparison />
 
       {/* Pending Approvals */}
       {approvalTotal > 0 && (
