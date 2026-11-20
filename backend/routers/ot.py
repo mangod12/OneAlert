@@ -30,6 +30,7 @@ from backend.models.discovered_device import (
 )
 from backend.models.user import User
 from backend.routers.auth import get_active_user
+from backend.services.device_connection_evidence import device_connection_evidence
 from backend.services.ot_discovery_query import (
     EXPORT_LIMIT,
     discovery_csv,
@@ -262,6 +263,20 @@ async def get_discovered_device(
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
     return device
+
+
+@router.get("/discovered-devices/{device_id}/connections")
+async def get_device_connection_evidence(
+    device_id: int,
+    page: int = Query(1, ge=1, le=1000000),
+    size: int = Query(20, ge=1, le=100),
+    match: Literal["all", "record", "ip"] = "all",
+    encryption: Literal["all", "encrypted", "cleartext"] = "all",
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Owner-scoped recorded references and IP matches, not verified device traffic."""
+    return await device_connection_evidence(db, current_user.id, device_id, page, size, match, encryption)
 
 
 @router.patch("/discovered-devices/{device_id}", response_model=DiscoveredDeviceResponse)
