@@ -71,3 +71,73 @@ describe('useDialogFocus', () => {
     expect(document.activeElement).toBe(trigger);
   });
 });
+
+function CustomDialog({ children, onClose = () => {} }: { children?: React.ReactNode; onClose?: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useDialogFocus(ref, onClose);
+  return <div ref={ref} role="dialog">{children}</div>;
+}
+
+describe('dialog focus safety', () => {
+  it('ignores hidden, inert, disabled and negative-tabindex controls', () => {
+    render(<CustomDialog><button hidden>hidden</button><div style={{ display: 'none' }}><button>css hidden</button></div><div inert><button>inert</button></div><fieldset disabled><button>fieldset</button></fieldset><button tabIndex={-1}>programmatic</button><button>visible</button></CustomDialog>);
+    expect(document.activeElement).toBe(getButton('visible'));
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(getButton('visible'));
+  });
+
+  it('focuses an empty dialog and retains focus on Tab', () => {
+    render(<CustomDialog />);
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(document.activeElement).toBe(dialog);
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(dialog);
+  });
+
+  it('recovers focus when all controls become disabled', () => {
+    const view = render(<CustomDialog><button>available</button></CustomDialog>);
+    view.rerender(<CustomDialog><button disabled>available</button></CustomDialog>);
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(document.querySelector('[role="dialog"]'));
+  });
+
+  it('handles Escape only on the topmost dialog and restores the underlying focus', () => {
+    const parentClose = vi.fn();
+    function Nested() {
+      const [open, setOpen] = useState(false);
+      return <CustomDialog onClose={parentClose}><button onClick={() => setOpen(true)}>open child</button>{open && <CustomDialog onClose={() => setOpen(false)}><button>child</button></CustomDialog>}</CustomDialog>;
+    }
+    render(<Nested />);
+    const trigger = getButton('open child');
+    fireEvent.click(trigger);
+    expect(document.activeElement).toBe(getButton('child'));
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(getButton('child'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(parentClose).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(trigger);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(parentClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an initially mounted nested dialog on top', () => {
+    const parentClose = vi.fn();
+    const childClose = vi.fn();
+    render(<CustomDialog onClose={parentClose}><button>parent</button><CustomDialog onClose={childClose}><button>nested</button></CustomDialog></CustomDialog>);
+    expect(document.activeElement).toBe(getButton('nested'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(childClose).toHaveBeenCalledTimes(1);
+    expect(parentClose).not.toHaveBeenCalled();
+  });
+
+  it('recovers focus from the dialog container in both directions', () => {
+    render(<CustomDialog><button>start</button><button>end</button></CustomDialog>);
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    dialog.focus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(getButton('end'));
+    dialog.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(getButton('start'));
+  });
+});
