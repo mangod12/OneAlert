@@ -192,3 +192,50 @@ def test_hunt_history_pages_all_owned_metadata_and_literal_search(client):
     assert client.get('/api/v1/hunt/history', params={'search': 'Hidden'}, headers=headers).json()['total'] == 0
     for params in ({'page': 0}, {'size': 101}, {'state': 'unknown'}, {'search': 'x' * 201}):
         assert client.get('/api/v1/hunt/history', params=params, headers=headers).status_code == 422
+
+
+def test_partial_hunt_persists_real_attempt_count_and_status_filter(client, monkeypatch):
+    from unittest.mock import AsyncMock
+    from backend.services.agents.hunt import HuntAgent
+
+    headers = _register_and_login(client, 'partial-hunt-owner@example.com')
+    result = {
+        'status': 'partial',
+        'execution_summary': {'completed': 1, 'rejected': 1, 'failed': 1, 'attempted': 2, 'skipped': 0},
+        'query_results': [
+            {'outcome': 'completed', 'row_count': 1, 'rows': [{'id': 1}]},
+            {'outcome': 'rejected', 'error': 'Unsupported query', 'rows': []},
+            {'outcome': 'failed', 'error': 'Database query failed', 'rows': []},
+        ],
+    }
+    monkeypatch.setattr(HuntAgent, 'execute', AsyncMock(return_value=result))
+    created = client.post('/api/v1/hunt/', headers=headers, json={'hypothesis': 'Partial review'})
+    assert created.status_code == 200
+    session_id = created.json()['data']['session_id']
+    reopened = client.get(f'/api/v1/hunt/{session_id}', headers=headers).json()
+    assert reopened['status'] == 'partial'
+    assert reopened['queries_run'] == 2
+    assert reopened['findings_count'] == 1
+    assert reopened['result_data'] == result
+    history = client.get('/api/v1/hunt/history', headers=headers, params={'state': 'partial'}).json()
+    assert history['total'] == 1
+    assert history['sessions'][0]['id'] == session_id
+    stranger = _register_and_login(client, 'partial-hunt-stranger@example.com')
+    assert client.get('/api/v1/hunt/history', headers=stranger, params={'state': 'partial'}).json()['total'] == 0
+
+
+def test_rejected_hunt_is_failed_not_completed_and_does_not_count_as_execution(client, monkeypatch):
+    from unittest.mock import AsyncMock
+    from backend.services.agents.hunt import HuntAgent
+
+    headers = _register_and_login(client, 'rejected-hunt@example.com')
+    monkeypatch.setattr(HuntAgent, 'execute', AsyncMock(return_value={
+        'status': 'failed',
+        'execution_summary': {'completed': 0, 'rejected': 1, 'failed': 0, 'attempted': 0, 'skipped': 0},
+        'query_results': [{'outcome': 'rejected', 'rows': [], 'error': 'Unsupported SELECT'}],
+    }))
+    created = client.post('/api/v1/hunt/', headers=headers, json={'hypothesis': 'Rejected query'})
+    detail = client.get('/api/v1/hunt/' + str(created.json()['data']['session_id']), headers=headers).json()
+    assert detail['status'] == 'failed'
+    assert detail['queries_run'] == 0
+    assert detail['findings_count'] == 0

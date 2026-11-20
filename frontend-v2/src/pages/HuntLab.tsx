@@ -8,7 +8,8 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { toast } from '../components/Toast';
-import { HuntQueryEvidence, type HuntQueryResult } from '../components/HuntQueryEvidence';
+import { huntEvidenceJson, saveHuntDownload, type HuntEvidenceResult } from '../utils/huntEvidence';
+import { HuntQueryEvidence } from '../components/HuntQueryEvidence';
 
 interface HuntSession {
   id: number;
@@ -19,11 +20,7 @@ interface HuntSession {
   created_at: string;
 }
 
-interface HuntResult {
-  explanation?: string;
-  query_results?: HuntQueryResult[];
-  sigma_rule?: string;
-}
+type HuntResult = HuntEvidenceResult;
 
 interface DetectionRule {
   id: number;
@@ -114,7 +111,7 @@ export function HuntLab() {
     try {
       const res = await apiClient.post('/hunt/', { hypothesis });
       setResultVersion(value => value + 1);
-      setActiveResult(res.data.data);
+      setActiveResult({ ...res.data.data, hypothesis });
       setHistoryRefresh(value => value + 1);
     } catch (err) {
       toast(getApiErrorMessage(err, 'The hunt could not be completed.'), 'error');
@@ -137,8 +134,7 @@ export function HuntLab() {
       setHypothesis(detail.hypothesis ?? '');
       setResultVersion(value => value + 1);
       setActiveResult({
-        explanation: resultData.explanation,
-        query_results: resultData.query_results,
+        ...resultData, session_id: detail.id, hypothesis: detail.hypothesis,
         sigma_rule: detail.sigma_rule ?? resultData.sigma_rule,
       });
     } catch (err) {
@@ -315,7 +311,19 @@ export function HuntLab() {
       {activeResult && (
         <div key={resultVersion} className="min-w-0 space-y-4">
           <div className="oa-panel min-w-0 p-6">
-            <h2 className="text-lg font-semibold text-surface-50 mb-3">Hunt Results</h2>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-surface-50">Hunt Results</h2>
+              <button type="button" onClick={() => saveHuntDownload(huntEvidenceJson(activeResult, new Date().toISOString()), `hunt-${activeResult.session_id ?? 'unsaved'}-evidence.json`, 'application/json')} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Export recorded evidence JSON</button>
+            </div>
+            <p className="mb-3 text-xs text-surface-400">Exports contain the currently retained evidence, including errors and applied metadata where recorded. They do not run a hunt or fetch additional rows. Exports may contain sensitive telemetry and parameters.</p>
+            {activeResult.execution_summary ? <section aria-label="Recorded hunt execution summary" className="mb-4 space-y-2 rounded border border-surface-700 p-3 text-sm text-surface-300">
+              <p className="font-semibold text-surface-100">Recorded outcome: {activeResult.status ?? 'not recorded'}</p>
+              <p>{activeResult.execution_summary.completed} completed · {activeResult.execution_summary.rejected} rejected before execution · {activeResult.execution_summary.failed} execution errors</p>
+              <p className="text-xs">{activeResult.execution_summary.attempted} database queries attempted · {activeResult.execution_summary.skipped} skipped by the three-query cap</p>
+              {activeResult.recorded_at && <p className="break-all text-xs text-surface-400">Recorded at {activeResult.recorded_at}</p>}
+              {activeResult.status !== 'completed' && <p className="text-xs text-warning">This hunt did not complete every generated query. Review rejected queries and execution errors before relying on the retained rows.</p>}
+            </section> : <p className="mb-3 text-xs text-surface-500">Detailed execution outcome was not recorded for this result. Historical completion labels do not prove that every query succeeded.</p>}
+            {activeResult.error && <p role="alert" className="mb-3 whitespace-pre-wrap break-words text-sm text-danger">{activeResult.error}</p>}
             {activeResult.explanation && (
               <p className="text-surface-300 text-sm mb-4">{activeResult.explanation}</p>
             )}
@@ -507,7 +515,7 @@ export function HuntLab() {
         <form onSubmit={event => { event.preventDefault(); setHistoryKeyword(historySearch.trim()); setHistoryPage(1); }} className="flex flex-wrap gap-2">
           <input aria-label="Search hunt history" maxLength={200} value={historySearch} onChange={event => setHistorySearch(event.target.value)} placeholder="Hypothesis or session ID" className="min-w-0 basis-full sm:basis-0 sm:flex-1 rounded border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100" />
           <button type="submit" className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Search hunts</button>
-          <select aria-label="Hunt history status" value={historyState} onChange={event => { setHistoryState(event.target.value); setHistoryPage(1); }} className="max-w-full rounded border border-surface-600 bg-surface-950 px-2 py-2 text-xs text-surface-200"><option value="">All statuses</option>{['running','completed','failed'].map(value => <option key={value} value={value}>{value}</option>)}</select>
+          <select aria-label="Hunt history status" value={historyState} onChange={event => { setHistoryState(event.target.value); setHistoryPage(1); }} className="max-w-full rounded border border-surface-600 bg-surface-950 px-2 py-2 text-xs text-surface-200"><option value="">All statuses</option>{['running','completed','partial','failed'].map(value => <option key={value} value={value}>{value}</option>)}</select>
           <label className="flex items-center gap-2 text-xs text-surface-300"><input type="checkbox" checked={historyFindings} onChange={event => { setHistoryFindings(event.target.checked); setHistoryPage(1); }} />With recorded findings</label>
           {(historyKeyword || historyState || historyFindings) && <button type="button" onClick={() => { setHistorySearch(''); setHistoryKeyword(''); setHistoryState(''); setHistoryFindings(false); setHistoryPage(1); }} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">Clear hunt history filters</button>}
         </form>
