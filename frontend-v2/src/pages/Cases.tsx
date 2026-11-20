@@ -13,6 +13,7 @@ import { toast } from '../components/Toast';
 import { SavedViewsMenu } from '../components/SavedViewsMenu';
 
 interface CaseViewFilters {
+  search?: string;
   severity?: string;
   status?: string;
   assigned?: string;
@@ -77,6 +78,8 @@ export function Cases() {
   const [pipelineResult, setPipelineResult] = useState<PipelineResult | null>(null);
   const [showNewCase, setShowNewCase] = useState(false);
   const [creatingCase, setCreatingCase] = useState(false);
+  const [keywordDraft, setKeywordDraft] = useState('');
+  const [keyword, setKeyword] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [severityFilter, setSeverityFilter] = useState('');
   const [assignedFilter, setAssignedFilter] = useState('');
@@ -91,7 +94,7 @@ export function Cases() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
-  const viewKey = JSON.stringify([statusFilter, severityFilter, assignedFilter, overdueOnly, sort, page]);
+  const viewKey = JSON.stringify([keyword, statusFilter, severityFilter, assignedFilter, overdueOnly, sort, page]);
   const liveViewKey = useRef(viewKey);
   useLayoutEffect(() => { liveViewKey.current = viewKey; }, [viewKey]);
   const fetchCases = useCallback(async () => {
@@ -105,6 +108,7 @@ export function Cases() {
         params: {
           page,
           size: 20,
+          ...(keyword ? { search: keyword } : {}),
           ...(statusFilter ? { status: statusFilter } : {}),
           ...(severityFilter ? { severity: severityFilter } : {}),
           ...(assignedFilter === 'watching' ? { watching: 'me' } : assignedFilter ? { assigned: assignedFilter } : {}),
@@ -123,7 +127,7 @@ export function Cases() {
     } finally {
       if (request === listRequest.current && key === liveViewKey.current) setLoading(false);
     }
-  }, [viewKey, page, statusFilter, severityFilter, assignedFilter, overdueOnly, sort]);
+  }, [keyword, viewKey, page, statusFilter, severityFilter, assignedFilter, overdueOnly, sort]);
 
   const handleCreateCase = async (title: string, summary: string, severity: string) => {
     if (creatingCase) return;
@@ -181,13 +185,14 @@ export function Cases() {
   useEffect(() => {
     setSelectedIds(new Set());
     setPendingIds(new Set());
-  }, [statusFilter, severityFilter, assignedFilter, overdueOnly, sort, page]);
+  }, [keyword, statusFilter, severityFilter, assignedFilter, overdueOnly, sort, page]);
 
   const exportCsv = async () => {
     if (exporting) return;
     setExporting(true);
     try {
       const params: Record<string, string | number | boolean> = { sort };
+      if (keyword) params.search = keyword;
       if (statusFilter) params.status = statusFilter;
       if (severityFilter) params.severity = severityFilter;
       if (assignedFilter === 'watching') params.watching = 'me';
@@ -400,6 +405,7 @@ export function Cases() {
           <SavedViewsMenu<CaseViewFilters>
             basePath="/cases/views/"
             currentFilters={{
+              ...(keyword ? { search: keyword } : {}),
               ...(statusFilter ? { status: statusFilter } : {}),
               ...(severityFilter ? { severity: severityFilter } : {}),
               ...(assignedFilter ? { assigned: assignedFilter } : {}),
@@ -407,6 +413,8 @@ export function Cases() {
               sort,
             }}
             onApply={(filters: CaseViewFilters) => {
+              setKeyword(filters.search ?? '');
+              setKeywordDraft(filters.search ?? '');
               setStatusFilter(filters.status ?? '');
               setSeverityFilter(filters.severity ?? '');
               setAssignedFilter(filters.assigned ?? '');
@@ -459,6 +467,12 @@ export function Cases() {
           </button>
         </div>
       )}
+
+      <form aria-label="Filter investigations by keyword" className="space-y-2 rounded border border-surface-700 p-3" onSubmit={event => { event.preventDefault(); setKeyword(keywordDraft.trim()); setPage(1); }}>
+        <label htmlFor="case-keyword" className="block text-xs text-surface-300">Filter all accessible investigations by keyword</label>
+        <div className="flex flex-wrap gap-2"><input id="case-keyword" type="search" maxLength={200} value={keywordDraft} onChange={event => setKeywordDraft(event.target.value)} placeholder="Title, summary or record ID" className="min-h-10 w-full min-w-0 rounded border border-surface-600 bg-surface-950 px-3 text-sm text-surface-100 sm:w-auto sm:flex-1" /><button type="submit" className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">Apply keyword filter</button>{(keyword || keywordDraft) && <button type="button" onClick={() => { setKeyword(''); setKeywordDraft(''); setPage(1); }} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">Clear keyword filter</button>}</div>
+        <p className="text-xs text-surface-400">{keyword ? `Applied keyword: ${keyword}. ` : 'No keyword filter applied. '}Literal, case-insensitive matching across the accessible investigation list. Combines with list filters, page totals, saved views and CSV export. Plain-language search below is separate.</p>
+      </form>
 
       {!error && (
         <form className="flex gap-2" onSubmit={e => { e.preventDefault(); void runSearch(); }}>

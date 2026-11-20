@@ -161,3 +161,39 @@ class TestAssignmentExportScope:
             "Assigned by another owner"
         ]
         assert {row["title"] for row in _export(client, member)} == {"My own assigned case", "My unassigned case"}
+
+
+def test_keyword_filters_list_count_export_and_saved_views(client):
+    headers = _register_and_login(client, 'keyword@example.com')
+    first = _make_case(client, headers, 'Gateway incident', severity='high')
+    second = _make_case(client, headers, 'Access review', severity='low')
+    _make_case(client, headers, 'Other investigation', severity='high')
+    with _TestingSessionLocal() as db:
+        db.get(Case, second).summary = 'Gateway retained evidence'
+        db.commit()
+    result = client.get('/api/v1/cases/', params={'search': 'GATEWAY', 'size': 1}, headers=headers).json()
+    assert result['total'] == 2
+    assert len(result['cases']) == 1
+    exported = _export(client, headers, search='gateway')
+    assert {int(row['id']) for row in exported} == {first, second}
+    filtered = client.get('/api/v1/cases/', params={'search': 'gateway', 'severity': 'high'}, headers=headers).json()
+    assert [row['id'] for row in filtered['cases']] == [first]
+    assert filtered['total'] == 1
+    assert [int(row['id']) for row in _export(client, headers, search='gateway', severity='high')] == [first]
+    saved = client.post('/api/v1/cases/views/', json={'name': 'Gateway review', 'filters': {'search': 'gateway'}}, headers=headers)
+    assert saved.status_code in (200, 201)
+    assert saved.json()['filters']['search'] == 'gateway'
+
+
+def test_keyword_is_literal_owner_scoped_and_bounded(client):
+    headers = _register_and_login(client, 'literal@example.com')
+    own = _make_case(client, headers, 'Review 10% impact')
+    foreign = _register_and_login(client, 'foreign-keyword@example.com')
+    _make_case(client, foreign, 'Review 10% foreign')
+    for query in ['%', '10%']:
+        result = client.get('/api/v1/cases/', params={'search': query}, headers=headers).json()
+        assert result['total'] == 1
+        assert result['cases'][0]['id'] == own
+        assert len(_export(client, headers, search=query)) == 1
+    assert client.get('/api/v1/cases/', params={'search': 'x' * 201}, headers=headers).status_code == 422
+    assert client.get('/api/v1/cases/export', params={'search': 'x' * 201}, headers=headers).status_code == 422
