@@ -61,6 +61,8 @@ const STATUS_STYLES: Record<string, string> = {
 export function ResponsePlans() {
   const requestId = useRef(0);
   const [plans, setPlans] = useState<ResponsePlan[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState('');
   const [executionNotice, setExecutionNotice] = useState<{ text: string; success: boolean } | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -96,18 +98,25 @@ export function ResponsePlans() {
     const request = ++requestId.current;
     setLoading(true);
     const [planResult, approvalResult] = await Promise.allSettled([
-      apiClient.get('/response-plans/', { params: statusFilter ? { status: statusFilter } : {} }),
+      apiClient.get('/response-plans/', { params: { page, size: 20, ...(statusFilter ? { status: statusFilter } : {}) } }),
       apiClient.get('/response-plans/pending-approvals'),
     ]);
     if (request !== requestId.current) return;
     const nextErrors: string[] = [];
-    if (planResult.status === 'fulfilled') setPlans(planResult.value.data.data || []);
+    if (planResult.status === 'fulfilled') {
+      const data = planResult.value.data;
+      const count = typeof data.total === 'number' ? data.total : (data.data || []).length;
+      const lastPage = Math.max(1, Math.ceil(count / 20));
+      if (page > lastPage) { setPage(lastPage); return; }
+      setPlans(data.data || []);
+      setTotal(count);
+    }
     else nextErrors.push(getApiErrorMessage(planResult.reason, 'Response plans could not be loaded.'));
     if (approvalResult.status === 'fulfilled') setPending(approvalResult.value.data.data || []);
     else nextErrors.push(getApiErrorMessage(approvalResult.reason, 'Pending approvals could not be loaded.'));
     setErrors(nextErrors);
     setLoading(false);
-  }, [statusFilter]);
+  }, [statusFilter, page]);
 
   const approvePlan = async (planId: number) => {
     if (workingPlan !== null) return;
@@ -235,7 +244,7 @@ export function ResponsePlans() {
             <select
               aria-label="Filter plans by status"
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); setSelectedPlanId(null); }}
               className="rounded-md border border-surface-600 bg-surface-950 px-2 py-1.5 text-sm text-surface-100"
             >
               <option value="">All statuses</option>
@@ -302,6 +311,14 @@ export function ResponsePlans() {
           </div>
         )}
       </div>
+
+      {!loading && errors.length === 0 && total > 0 && <nav aria-label="Response plan pages" className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <p role="status" className="text-surface-400">Showing {(page - 1) * 20 + 1}–{Math.min(page * 20, total)} of {total} matching plans · Page {page} of {Math.ceil(total / 20)}</p>
+        <div className="flex gap-2">
+          <button type="button" disabled={page === 1 || workingPlan !== null} onClick={() => { setSelectedPlanId(null); setPage(value => value - 1); }} className="rounded-md border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Previous plans</button>
+          <button type="button" disabled={page * 20 >= total || workingPlan !== null} onClick={() => { setSelectedPlanId(null); setPage(value => value + 1); }} className="rounded-md border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Next plans</button>
+        </div>
+      </nav>}
 
       {/* Plan Detail */}
       {selectedPlan && (
