@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import apiClient from '../api/client';
 import { CheckCircle, XCircle, Play, Clock, Download, Shield, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
@@ -59,6 +59,7 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 export function ResponsePlans() {
+  const requestId = useRef(0);
   const [plans, setPlans] = useState<ResponsePlan[]>([]);
   const [statusFilter, setStatusFilter] = useState('');
   const [executionNotice, setExecutionNotice] = useState<{ text: string; success: boolean } | null>(null);
@@ -92,11 +93,13 @@ export function ResponsePlans() {
   const [confirmAction, setConfirmAction] = useState<{ type: 'reject' | 'execute' | 'delete'; planId: number } | null>(null);
 
   const fetchPlans = useCallback(async () => {
+    const request = ++requestId.current;
     setLoading(true);
     const [planResult, approvalResult] = await Promise.allSettled([
       apiClient.get('/response-plans/', { params: statusFilter ? { status: statusFilter } : {} }),
       apiClient.get('/response-plans/pending-approvals'),
     ]);
+    if (request !== requestId.current) return;
     const nextErrors: string[] = [];
     if (planResult.status === 'fulfilled') setPlans(planResult.value.data.data || []);
     else nextErrors.push(getApiErrorMessage(planResult.reason, 'Response plans could not be loaded.'));
@@ -165,7 +168,10 @@ export function ResponsePlans() {
     finally { setWorkingPlan(null); }
   };
 
-  useEffect(() => { void fetchPlans(); }, [fetchPlans]);
+  useEffect(() => {
+    void fetchPlans();
+    return () => { requestId.current += 1; };
+  }, [fetchPlans]);
 
   return (
     <div className="space-y-6">

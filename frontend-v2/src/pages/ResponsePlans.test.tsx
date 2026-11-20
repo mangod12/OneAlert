@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { ResponsePlans } from './ResponsePlans';
@@ -189,5 +189,28 @@ describe('Response execution outcome feedback', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(post).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('Plan executed successfully')).toBeNull();
+  });
+});
+
+
+describe('Response plan latest-filter results', () => {
+  it.each(['success', 'failure'])('ignores a slower obsolete %s after the selected status loads', async oldResult => {
+    let resolveOld!: (value: unknown) => void;
+    let rejectOld!: (error: Error) => void;
+    get.mockImplementation((url, config) => {
+      if (url.endsWith('pending-approvals')) return Promise.resolve({ data: { data: [] } });
+      if (!(config?.params as { status?: string })?.status) return new Promise((resolve, reject) => { resolveOld = resolve; rejectOld = reject; });
+      return Promise.resolve({ data: { data: [{ ...plan, status: 'completed' }] } });
+    });
+    render(<ResponsePlans />);
+    fireEvent.change(screen.getByLabelText('Filter plans by status'), { target: { value: 'completed' } });
+    expect(await screen.findByText('completed')).toBeTruthy();
+    await act(async () => {
+      if (oldResult === 'success') resolveOld({ data: { data: [{ ...plan, status: 'approved' }] } });
+      else rejectOld(new Error('Obsolete load failed'));
+    });
+    expect(screen.getByText('completed')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Execute' })).toBeNull();
+    expect(screen.queryByText('Obsolete load failed')).toBeNull();
   });
 });
