@@ -174,7 +174,7 @@ describe('Event upload', () => {
     const file = new File(['{"event_type":"alert"}\n'], 'eve.json', { type: 'application/json' });
     fireEvent.change(screen.getByLabelText('Log file'), { target: { files: [file] } });
     fireEvent.change(screen.getByLabelText('Source type'), { target: { value: 'zeek' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Upload 1 record' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
     const [url, body, config] = mockPost.mock.calls[0];
     expect(url).toBe('/events/upload');
@@ -439,4 +439,63 @@ it('restores absolute saved-view offsets into UTC controls and keeps their exact
   expect((screen.getByLabelText('Event start time UTC') as HTMLInputElement).value).toBe('2026-11-20T10:00');
   expect(screen.queryByText(/Time draft not applied/)).toBeNull();
   expect(await screen.findByText('No events match these filters')).toBeTruthy();
+});
+
+describe('Event file review before import', () => {
+  const emptyStream = () => mockGet.mockImplementation(async (url: string) => ({ data: url === '/events/' ? { events: [], total: 0 } : url === '/events/stats' ? { data: STATS } : url === '/events/types' ? { types: [] } : [] }));
+
+  it('reviews counts locally and posts nothing until the reviewed upload is explicitly confirmed', async () => {
+    emptyStream(); render(<Events />);
+    fireEvent.click(await screen.findByRole('button', { name: /upload events/i }));
+    const file = new File(['{"event_type":"alert"}\n{"event_type":"dns"}'], 'gateway.ndjson');
+    fireEvent.change(screen.getByLabelText('Log file'), { target: { files: [file] } });
+    const review = await screen.findByLabelText('Selected event file review');
+    expect(review.textContent).toContain('2 JSON records');
+    expect(review.textContent).toContain('No records have been sent yet.');
+    expect(review.textContent).toContain('not source-parser acceptance');
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Upload 2 records' })).toBeTruthy();
+  });
+
+  it('rejects malformed lines locally and preserves the dialog without posting a partial file', async () => {
+    emptyStream(); render(<Events />);
+    fireEvent.click(await screen.findByRole('button', { name: /upload events/i }));
+    fireEvent.change(screen.getByLabelText('Log file'), { target: { files: [new File(['{}\nbroken\n{}'], 'bad.ndjson')] } });
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.getByText('Invalid JSON on line 2. No records will be imported.')).toBeTruthy();
+    expect(screen.queryByLabelText('Selected event file review')).toBeNull();
+    expect((screen.getByRole('button', { name: 'Upload' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  it('ignores an old file read finishing after a replacement file has been reviewed', async () => {
+    emptyStream(); render(<Events />);
+    fireEvent.click(await screen.findByRole('button', { name: /upload events/i }));
+    let resolveOld!: (bytes: ArrayBuffer) => void;
+    const old = new File(['{}'], 'old.json');
+    Object.defineProperty(old, 'arrayBuffer', { value: () => new Promise<ArrayBuffer>(resolve => { resolveOld = resolve; }) });
+    fireEvent.change(screen.getByLabelText('Log file'), { target: { files: [old] } });
+    const replacement = new File(['[{},{}]'], 'replacement.json');
+    fireEvent.change(screen.getByLabelText('Log file'), { target: { files: [replacement] } });
+    await screen.findByRole('button', { name: 'Upload 2 records' });
+    await act(async () => { resolveOld(new TextEncoder().encode('{}').buffer); });
+    expect(screen.getByLabelText('Selected event file review').textContent).toContain('replacement.json');
+    expect(screen.getByRole('button', { name: 'Upload 2 records' })).toBeTruthy();
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+});
+
+it('submits a reviewed file only once while its upload is pending', async () => {
+  mockGet.mockImplementation(async (url: string) => ({ data: url === '/events/' ? { events: [], total: 0 } : url === '/events/stats' ? { data: STATS } : url === '/events/types' ? { types: [] } : [] }));
+  mockPost.mockReturnValue(new Promise(() => {}));
+  render(<Events />);
+  fireEvent.click(await screen.findByRole('button', { name: /upload events/i }));
+  fireEvent.change(screen.getByLabelText('Log file'), { target: { files: [new File(['{}'], 'reviewed.json')] } });
+  const trigger = await screen.findByRole('button', { name: 'Upload 1 record' });
+  fireEvent.click(trigger); fireEvent.click(trigger);
+  await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+  expect((screen.getByLabelText('Log file') as HTMLInputElement).disabled).toBe(true);
+  expect((screen.getByLabelText('Source type') as HTMLSelectElement).disabled).toBe(true);
+  expect(screen.getByText(/Submitting this reviewed file/)).toBeTruthy();
 });
