@@ -330,3 +330,27 @@ it('retries optional validation coverage without reloading or executing runs', a
   expect(vi.mocked(apiClient.get).mock.calls.filter(([url]) => url === '/validation/runs')).toHaveLength(1);
   expect(vi.mocked(apiClient.post)).not.toHaveBeenCalled();
 });
+
+it('pages and searches saved control evidence and exports all matches without execution', async () => {
+  const steps = Array.from({ length: 23 }, (_, index) => ({ ...run.steps[0], id: index, test_name: `Retained test ${index}`, controls: [{ id: index, control_name: 'Retained guard', control_type: 'sigma', expected: true, detected: false, detection_time_ms: 0, details: index === 22 ? 'Distinct stored control evidence' : null }] }));
+  vi.mocked(apiClient.get).mockImplementation(url => Promise.resolve({ data: { data: url.endsWith('/8') ? { ...run, steps } : url.endsWith('/coverage') ? [] : [run] } }));
+  Object.defineProperty(URL, 'createObjectURL', { value: vi.fn(() => 'blob:evidence'), configurable: true });
+  Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), configurable: true });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  render(<Validation />);
+  fireEvent.click(await screen.findByRole('button', { name: 'View results for Perimeter check' }));
+  await screen.findByText('Retained test 0');
+  expect(screen.queryByText('Retained test 10')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'More evidence' }));
+  expect(screen.getByText('Retained test 10')).toBeTruthy();
+  const reads = vi.mocked(apiClient.get).mock.calls.length;
+  fireEvent.click(screen.getByRole('button', { name: 'Export filtered evidence' }));
+  expect(click).toHaveBeenCalledOnce();
+  fireEvent.change(screen.getByLabelText('Search recorded validation evidence'), { target: { value: 'distinct stored' } });
+  expect(screen.getByText('Retained test 22')).toBeTruthy();
+  expect(screen.getByText('Evidence page 1 of 1')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Detected (0)' }));
+  expect(screen.getByRole('button', { name: 'Export filtered evidence' })).toHaveProperty('disabled', true);
+  expect(vi.mocked(apiClient.get).mock.calls.length).toBe(reads);
+  expect(vi.mocked(apiClient.post)).not.toHaveBeenCalled();
+});

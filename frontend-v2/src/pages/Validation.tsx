@@ -2,6 +2,7 @@ import { useCallback, useState, useEffect, useRef } from 'react';
 import apiClient from '../api/client';
 import { Play, Plus, ShieldCheck, Target, CheckCircle, XCircle, Trash2, Download } from 'lucide-react';
 import clsx from 'clsx';
+import { validationEvidenceCsv } from '../utils/validationEvidenceCsv';
 import { toast } from '../components/Toast';
 import { getApiErrorMessage } from '../api/errors';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -88,6 +89,8 @@ export function Validation() {
   const [detailRunId, setDetailRunId] = useState<number | null>(null);
   const [selectedRun, setSelectedRun] = useState<ValidationRunDetail | null>(null);
   const [newRun, setNewRun] = useState({ name: '', description: '', techniques: [] as string[] });
+  const [evidenceSearch, setEvidenceSearch] = useState('');
+  const [evidencePage, setEvidencePage] = useState(1);
   const [resultFilter, setResultFilter] = useState<'all' | 'attention' | 'detected'>('all');
   const [runStatusFilter, setRunStatusFilter] = useState('');
   const [creating, setCreating] = useState(false);
@@ -202,7 +205,7 @@ export function Validation() {
     const request = ++detailRequestId.current;
     requestedRunId.current = runId;
     setDetailRunId(runId); setSelectedRun(null); setDetailError(''); setDetailLoading(true);
-    setResultFilter('all');
+    setResultFilter('all'); setEvidenceSearch(''); setEvidencePage(1);
     try {
       const res = await apiClient.get(`/validation/runs/${runId}`);
       if (request !== detailRequestId.current) return;
@@ -227,6 +230,19 @@ export function Validation() {
   };
 
   useEffect(() => { void fetchRuns(); return () => { listRequestId.current += 1; }; }, [fetchRuns]);
+
+  const evidenceQuery = evidenceSearch.trim().toLowerCase();
+  const matchingSteps = (selectedRun?.steps ?? []).filter(step => {
+    if (resultFilter !== 'all' && (resultFilter === 'detected' ? step.actual_result !== 'detected' : step.actual_result === 'detected')) return false;
+    const searchableValues = [
+      step.technique_id, step.technique_name, step.test_name, step.actual_result, step.status, step.test_type,
+      ...(step.controls ?? []).flatMap(control => [control.control_name, control.control_type, control.details]),
+    ];
+    return !evidenceQuery || searchableValues.some(value => value?.toLowerCase().includes(evidenceQuery));
+  });
+  const evidencePages = Math.max(1, Math.ceil(matchingSteps.length / 10));
+  const currentEvidencePage = Math.min(evidencePage, evidencePages);
+  const shownSteps = matchingSteps.slice((currentEvidencePage - 1) * 10, currentEvidencePage * 10);
 
   return (
     <div className="space-y-6">
@@ -422,14 +438,43 @@ export function Validation() {
                   { key: 'attention', label: 'Needs attention', count: selectedRun.steps.filter(step => step.actual_result !== 'detected').length },
                   { key: 'detected', label: 'Detected', count: selectedRun.steps.filter(step => step.actual_result === 'detected').length },
                 ] as const).map(filter => (
-                  <button key={filter.key} type="button" aria-pressed={resultFilter === filter.key} onClick={() => setResultFilter(filter.key)}
+                  <button key={filter.key} type="button" aria-pressed={resultFilter === filter.key} onClick={() => { setResultFilter(filter.key); setEvidencePage(1); }}
                     className={clsx('rounded-md border px-3 py-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
                       resultFilter === filter.key ? 'border-primary-500 bg-primary-500/10 text-primary-300' : 'border-surface-700 text-surface-400 hover:bg-surface-800')}>
                     {filter.label} ({filter.count})
                   </button>
                 ))}
               </div>
-              {selectedRun.steps.filter(step => resultFilter === 'all' || (resultFilter === 'detected' ? step.actual_result === 'detected' : step.actual_result !== 'detected')).map(step => (
+              <div className="flex flex-wrap gap-3">
+                <input aria-label="Search recorded validation evidence" value={evidenceSearch}
+                  onChange={event => { setEvidenceSearch(event.target.value); setEvidencePage(1); }}
+                  placeholder="Technique, test or control evidence"
+                  className="min-w-0 basis-full rounded border border-surface-600 bg-surface-800 px-3 py-2 text-sm text-surface-100 sm:flex-1 sm:basis-auto" />
+                <button type="button" disabled={!matchingSteps.length} onClick={() => {
+                  const csv = validationEvidenceCsv(selectedRun, matchingSteps, resultFilter, evidenceSearch);
+                  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+                  const link = document.createElement('a');
+                  link.href = url;
+                  link.download = `validation-${selectedRun.id}-filtered-evidence.csv`;
+                  link.click();
+                  URL.revokeObjectURL(url);
+                }} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40">
+                  Export filtered evidence
+                </button>
+              </div>
+              <p className="text-xs text-surface-400">
+                {matchingSteps.length} of {selectedRun.steps.length} loaded steps match. CSV includes all matching loaded steps and their saved controls, not just this page. No validation is executed.
+              </p>
+              <nav aria-label="Recorded evidence pages" className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs text-surface-400">Evidence page {currentEvidencePage} of {evidencePages}</span>
+                <div className="flex gap-2">
+                  <button type="button" disabled={currentEvidencePage === 1} onClick={() => setEvidencePage(currentEvidencePage - 1)}
+                    className="rounded border border-surface-600 px-3 py-1.5 text-xs text-surface-200 disabled:opacity-40">Previous evidence</button>
+                  <button type="button" disabled={currentEvidencePage === evidencePages} onClick={() => setEvidencePage(currentEvidencePage + 1)}
+                    className="rounded border border-surface-600 px-3 py-1.5 text-xs text-surface-200 disabled:opacity-40">More evidence</button>
+                </div>
+              </nav>
+              {shownSteps.map(step => (
                 <div key={step.id} className="min-w-0 rounded-lg border border-surface-800 bg-surface-900/30 p-3">
                 <div className="flex flex-wrap items-start gap-3 sm:items-center">
                   {step.actual_result === 'detected' ? <CheckCircle className="h-4 w-4 shrink-0 text-success" aria-hidden="true" /> : <XCircle className="h-4 w-4 shrink-0 text-warning" aria-hidden="true" />}
@@ -460,7 +505,7 @@ export function Validation() {
                   </details>
                 </div>
               ))}
-              {!selectedRun.steps.some(step => resultFilter === 'all' || (resultFilter === 'detected' ? step.actual_result === 'detected' : step.actual_result !== 'detected')) && (
+              {matchingSteps.length === 0 && (
                 <p className="rounded-md border border-surface-800 p-4 text-sm text-surface-400" role="status">No results match this filter.</p>
               )}
             </div>
