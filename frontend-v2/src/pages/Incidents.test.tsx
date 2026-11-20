@@ -27,6 +27,7 @@ const incident = {
 function mockGets(timeline: unknown[] = []) {
   get.mockImplementation(async (url: string, config) => {
     if (url === '/incidents') return { data: { total: 1, incidents: [incident] } };
+    if (url === '/incidents/5/escalation-preview') return { data: { asset_id: 5, asset_name: 'plc-01', title: 'Incident on plc-01', summary: 'Review the active evidence', severity: 'critical', status: 'open', due_date: null, reviewed_fingerprint: 'a'.repeat(64), alerts: incident.alerts, existing_cases: [] } };
     if (url === '/incidents/5/timeline') {
       const params = (config?.params ?? {}) as Record<string, string | number>;
       const rows = timeline as { kind: string; detail: string | null }[];
@@ -98,7 +99,7 @@ describe('Incidents', () => {
 
   it('escalates an incident to a new investigation and navigates to it', async () => {
     mockGets();
-    post.mockResolvedValue({ data: { id: 44, title: 'Incident on plc-01', severity: 'critical', alerts_linked: 3 } });
+    post.mockResolvedValue({ data: { id: 44, title: 'Incident on plc-01', severity: 'critical', alerts_linked: 2, asset_id: 5, alert_ids: [11, 12], reviewed_fingerprint: 'a'.repeat(64) } });
     render(
       <MemoryRouter initialEntries={['/incidents']}>
         <Routes>
@@ -109,8 +110,10 @@ describe('Incidents', () => {
     );
     fireEvent.click(await screen.findByText('plc-01'));
     fireEvent.click(await screen.findByText('Escalate to investigation'));
+    expect(post).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: 'Create reviewed investigation' }));
     expect(await screen.findByText('Case 44 opened')).toBeTruthy();
-    expect(post).toHaveBeenCalledWith('/incidents/5/escalate');
+    expect(post).toHaveBeenCalledWith('/incidents/5/escalate', { reviewed_fingerprint: 'a'.repeat(64) });
   });
 });
 

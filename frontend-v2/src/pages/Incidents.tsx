@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Download, Siren } from 'lucide-react';
 import { incidentCsv } from '../utils/incidentCsv';
-import { toast } from '../components/Toast';
+import { IncidentEscalationReview } from '../components/IncidentEscalationReview';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
@@ -131,17 +131,6 @@ export function Incidents() {
   const [loadedFilterKey, setLoadedFilterKey] = useState<string | null>(null);
   const filterKey = JSON.stringify([exactAssetId, ...(exactAssetId ? [] : [severityFilter, appliedAssetQuery.trim()])]);
 
-  const escalate = async (assetId: number) => {
-    if (escalating !== null) return;
-    setEscalating(assetId);
-    try {
-      const res = await apiClient.post<{ id: number }>(`/incidents/${assetId}/escalate`);
-      navigate(`/cases/${res.data.id}`);
-    } catch (err: unknown) {
-      toast(getApiErrorMessage(err, 'The incident could not be escalated.'));
-      setEscalating(null);
-    }
-  };
 
   const load = useCallback(async () => {
     const id = ++requestId.current;
@@ -190,6 +179,7 @@ export function Incidents() {
 
   return (
     <div>
+      {escalating !== null && <IncidentEscalationReview key={escalating} assetId={escalating} onClose={() => setEscalating(null)} onCreated={id => navigate(`/cases/${id}`)} />}
       <PageHeader
         actions={<button type="button" onClick={exportCsv} disabled={!exportReady}
           className="flex items-center gap-2 rounded-md border border-surface-700 px-3 py-2 text-xs text-surface-200 hover:bg-surface-800 disabled:opacity-40">
@@ -285,10 +275,10 @@ export function Incidents() {
                       <button
                         type="button"
                         disabled={escalating !== null}
-                        onClick={() => void escalate(incident.asset_id)}
+                        onClick={() => setEscalating(incident.asset_id)}
                         className="rounded-md bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-500 disabled:opacity-40"
                       >
-                        {escalating === incident.asset_id ? 'Escalating…' : 'Escalate to investigation'}
+                        Escalate to investigation
                       </button>
                     </div>
                     <ul className="mt-3 space-y-2">
