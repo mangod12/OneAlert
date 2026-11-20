@@ -29,6 +29,14 @@ interface ResponsePlan {
   created_at: string;
 }
 
+interface ExecutionOutcome {
+  plan_id: number;
+  status: string;
+  total_actions: number;
+  succeeded: number;
+  failed: number;
+}
+
 interface PendingApproval {
   id: number;
   plan_id: number;
@@ -53,6 +61,7 @@ const STATUS_STYLES: Record<string, string> = {
 export function ResponsePlans() {
   const [plans, setPlans] = useState<ResponsePlan[]>([]);
   const [statusFilter, setStatusFilter] = useState('');
+  const [executionNotice, setExecutionNotice] = useState<{ text: string; success: boolean } | null>(null);
   const [exporting, setExporting] = useState(false);
 
   const exportCsv = async () => {
@@ -123,9 +132,20 @@ export function ResponsePlans() {
   const executePlan = async (planId: number) => {
     if (workingPlan !== null) return;
     setWorkingPlan(planId);
+    setExecutionNotice(null);
     try {
-      await apiClient.post(`/response-plans/${planId}/execute`);
-      toast('Plan executed successfully', 'success');
+      const response = await apiClient.post<{ data?: ExecutionOutcome }>(`/response-plans/${planId}/execute`);
+      const outcome = response.data.data;
+      const verified = outcome?.plan_id === planId && Number.isInteger(outcome.total_actions)
+        && Number.isInteger(outcome.succeeded) && Number.isInteger(outcome.failed)
+        && outcome.total_actions > 0 && outcome.succeeded >= 0 && outcome.failed >= 0
+        && outcome.succeeded + outcome.failed === outcome.total_actions;
+      const allSucceeded = verified && outcome.status === 'completed' && outcome.failed === 0;
+      const text = verified
+        ? `Plan #${planId} reported ${outcome.succeeded} of ${outcome.total_actions} actions succeeded; ${outcome.failed} failed or skipped. Recorded status: ${outcome.status}.`
+        : `Execution request for plan #${planId} returned without a verifiable outcome. Review the refreshed plan before trying any action again.`;
+      setExecutionNotice({ text, success: !!allSucceeded });
+      toast(allSucceeded ? `Plan #${planId}: all actions succeeded.` : `Plan #${planId}: review execution outcome.`, allSucceeded ? 'success' : 'warning');
       setConfirmAction(null);
       await fetchPlans();
     } catch (err) { toast(getApiErrorMessage(err, 'Execution failed.'), 'error'); }
@@ -151,6 +171,7 @@ export function ResponsePlans() {
     <div className="space-y-6">
       <PageHeader eyebrow="Act" title="Response Plans" description="Review, approve, and execute guarded response actions with a durable human decision trail." />
 
+      {executionNotice && <p role={executionNotice.success ? 'status' : 'alert'} className={`rounded-md border p-4 text-sm ${executionNotice.success ? 'border-success/30 text-success' : 'border-warning/30 text-warning'}`}>{executionNotice.text}</p>}
       {errors.length > 0 && (plans.length > 0 || pending.length > 0)
         ? <DegradedBanner messages={errors} onRetry={() => void fetchPlans()} />
         : errors.length > 0 && <ErrorState title="Response plans unavailable" description={errors.join(' · ')} action={<RetryButton onClick={() => void fetchPlans()} />} />}
