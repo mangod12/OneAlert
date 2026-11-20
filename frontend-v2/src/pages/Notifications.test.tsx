@@ -82,12 +82,22 @@ describe('Notifications page', () => {
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/notifications/', { params: { page: 2, size: 20, unread_only: false } }));
   });
 
-  it('marks all read', async () => {
-    mockGet.mockResolvedValue(listResponse([mk(1, 'alert_created', 'New alert', false)], 1, 1) as never);
+
+  it('routes cleanup through an explicit exact-ID review instead of global actions', async () => {
+    const item = mk(1, 'alert_created', 'Reviewed alert', false);
+    mockGet.mockImplementation(async (url) => url === '/notifications/review-batch'
+      ? { data: { operation: 'mark_read', kind: null, total: 1, records: [item], fingerprint: 'a'.repeat(64) } }
+      : listResponse([item], 1, 1));
+    mockPost.mockResolvedValue({ data: { success: true, operation: 'mark_read', affected: 1, ids: [1] } });
     renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: /Mark all read/ }));
-    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/notifications/read-all'));
-    expect(await screen.findByText('All caught up')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: 'Review matching unread notifications' }));
+    await screen.findByRole('list', { name: 'Exact notification cleanup review' });
+    expect(mockPost).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm reviewed notification changes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply to 1 notifications' }));
+    await screen.findByText(/1 reviewed notifications marked read/);
+    expect(mockPost).toHaveBeenCalledWith('/notifications/review-batch', { operation: 'mark_read', kind: null, ids: [1], fingerprint: 'a'.repeat(64) });
+    expect(mockPost).not.toHaveBeenCalledWith('/notifications/read-all');
   });
 
   it('deletes a group', async () => {
@@ -100,25 +110,7 @@ describe('Notifications page', () => {
       expect(mockDelete).toHaveBeenCalledWith('/notifications/1');
     });
   });
-  it('keeps unread counts and shows an error when mark all read fails', async () => {
-    mockGet.mockResolvedValue(listResponse([mk(1, 'alert_created', 'New alert', false)], 1, 1) as never);
-    mockPost.mockRejectedValueOnce(new Error('Offline'));
-    renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: 'Mark all read' }));
-    expect(await screen.findByRole('alert')).toBeTruthy();
-    expect(screen.getByText('1 unread')).toBeTruthy();
-    expect(screen.getByText('New alert')).toBeTruthy();
-  });
 
-  it('keeps read items visible until clear succeeds and exposes failures', async () => {
-    mockGet.mockResolvedValue(listResponse([mk(1, 'case_assigned', 'Read item', true)], 1, 0) as never);
-    mockDelete.mockRejectedValueOnce(new Error('Offline'));
-    renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: 'Clear read' }));
-    expect(await screen.findByRole('alert')).toBeTruthy();
-    expect(screen.getByText('Read item')).toBeTruthy();
-    expect(mockDelete).toHaveBeenCalledWith('/notifications/read');
-  });
 
   it('removes only confirmed deletions from a partially failed group', async () => {
     mockGet.mockResolvedValue(listResponse([mk(2, 'alert_updated', 'Same alert', false), mk(1, 'alert_updated', 'Same alert', false)], 2, 2) as never);
@@ -133,19 +125,6 @@ describe('Notifications page', () => {
     expect(screen.getByRole('button', { name: 'Delete notification Same alert' })).toBeTruthy();
   });
 
-  it('guards duplicate mutations while saving', async () => {
-    let resolve!: (value: never) => void;
-    mockGet.mockResolvedValue(listResponse([mk(1, 'alert_created', 'New alert', false)], 1, 1) as never);
-    mockPost.mockImplementation(() => new Promise(r => { resolve = r; }));
-    renderPage();
-    const button = await screen.findByRole('button', { name: 'Mark all read' });
-    fireEvent.click(button);
-    fireEvent.click(button);
-    expect(mockPost).toHaveBeenCalledTimes(1);
-    expect((screen.getByLabelText('Unread only') as HTMLInputElement).disabled).toBe(true);
-    await act(async () => resolve({} as never));
-    expect(await screen.findByText('All caught up')).toBeTruthy();
-  });
 
   it('keeps load errors distinct from no results or all caught up and retries', async () => {
     mockGet.mockRejectedValueOnce(new Error('Offline'));

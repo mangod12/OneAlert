@@ -1,8 +1,8 @@
+import { NotificationBatchReview } from '../components/NotificationBatchReview';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BellOff, CheckCheck, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { BellOff, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import apiClient from '../api/client';
-import { getApiErrorMessage } from '../api/errors';
 import { groupNotifications, type NotificationGroup } from '../components/layout/notificationGroups';
 import type { AppNotification } from '../components/layout/NotificationBell';
 import { relativeTime } from '../utils/relativeTime';
@@ -87,30 +87,6 @@ export function Notifications() {
     return () => { requestId.current += 1; };
   }, [load]);
 
-  const markAllRead = async () => {
-    if (busy) return;
-    setBusy(true);
-    setActionError('');
-    try {
-      await apiClient.post('/notifications/read-all');
-      setUnread(0);
-      setItems(current => current?.map(item => ({ ...item, read_at: item.read_at ?? new Date().toISOString() })) ?? current);
-      if (unreadOnly) await load();
-    } catch (err) { setActionError(getApiErrorMessage(err, 'Notifications could not be marked read. Try again.')); }
-    finally { setBusy(false); }
-  };
-
-  const clearRead = async () => {
-    if (busy) return;
-    setBusy(true);
-    setActionError('');
-    try {
-      await apiClient.delete('/notifications/read');
-      await load();
-    } catch (err) { setActionError(getApiErrorMessage(err, 'Read notifications could not be cleared. Try again.')); }
-    finally { setBusy(false); }
-  };
-
   const markGroupRead = async (group: NotificationGroup): Promise<boolean> => {
     if (busy) return false;
     const unreadItems = group.items.filter(item => !item.read_at);
@@ -163,31 +139,10 @@ export function Notifications() {
           <h1 className="text-xl font-bold text-surface-50">Notifications</h1>
           <p className="text-sm text-surface-400">{loading ? 'Loading notifications...' : loadError ? 'Unread count unavailable' : unread > 0 ? `${unread} unread` : 'All caught up'}</p>
         </div>
-        <div className="flex items-center gap-2">
-          {items?.some(item => item.read_at) && (
-            <button
-              type="button"
-              disabled={busy || loading || loadError}
-              onClick={() => void clearRead()}
-              className="flex items-center gap-1.5 rounded-md border border-surface-700 px-3 py-1.5 text-xs font-semibold text-surface-300 hover:bg-surface-800"
-            >
-              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-              Clear read
-            </button>
-          )}
-          {unread > 0 && (
-            <button
-              type="button"
-              disabled={busy || loading || loadError}
-              onClick={() => void markAllRead()}
-              className="flex items-center gap-1.5 rounded-md bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-500"
-            >
-              <CheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
-              Mark all read
-            </button>
-          )}
-        </div>
+
       </div>
+
+      <NotificationBatchReview kind={kind} unreadOnly={unreadOnly} disabled={busy || loading || loadError} onBusyChange={setBusy} onApplied={load} />
 
       <div className="flex flex-wrap items-center gap-3">
         <label className="sr-only" htmlFor="notif-kind">Filter by type</label>
