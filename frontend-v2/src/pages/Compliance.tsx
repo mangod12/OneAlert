@@ -23,6 +23,7 @@ interface ComplianceSummary {
   non_compliant: number;
   partial: number;
   not_assessed: number;
+  not_applicable?: number;
   compliance_percentage: number;
 }
 
@@ -138,6 +139,9 @@ function EvidenceDialog({ assessment, control, onClose, onSaved }: {
 export function Compliance() {
   const [frameworks, setFrameworks] = useState<Framework[]>([]);
   const [summaries, setSummaries] = useState<ComplianceSummary[]>([]);
+  const summaryRequestId = useRef(0);
+  const [summaryError, setSummaryError] = useState('');
+  const [summaryRefreshing, setSummaryRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const controlsRequestId = useRef(0);
@@ -185,7 +189,24 @@ export function Compliance() {
     return true;
   });
 
+  const refreshSummary = async () => {
+    const request = ++summaryRequestId.current;
+    setSummaryRefreshing(true);
+    setSummaryError('');
+    try {
+      const res = await apiClient.get<ComplianceSummary[]>('/compliance/summary');
+      if (request === summaryRequestId.current) setSummaries(res.data);
+    } catch (err: unknown) {
+      if (request === summaryRequestId.current) setSummaryError(getApiErrorMessage(err, 'Updated posture could not be loaded.'));
+    } finally {
+      if (request === summaryRequestId.current) setSummaryRefreshing(false);
+    }
+  };
+
   const fetchOverview = useCallback(async () => {
+    ++summaryRequestId.current;
+    setSummaryError('');
+    setSummaryRefreshing(false);
     setLoading(true);
     setError('');
     try {
@@ -202,7 +223,7 @@ export function Compliance() {
     }
   }, []);
 
-  useEffect(() => { void fetchOverview(); return () => { controlsRequestId.current += 1; }; }, [fetchOverview]);
+  useEffect(() => { void fetchOverview(); return () => { controlsRequestId.current += 1; summaryRequestId.current += 1; }; }, [fetchOverview]);
 
   const loadControls = async (frameworkId: number) => {
     const request = ++controlsRequestId.current;
@@ -219,7 +240,7 @@ export function Compliance() {
       const latest = new Map<number, Assessment>();
       for (const assessment of assessmentsRes.data) {
         const existing = latest.get(assessment.control_id);
-        if (!existing || existing.assessed_at < assessment.assessed_at) latest.set(assessment.control_id, assessment);
+        if (!existing || (existing.assessed_at < assessment.assessed_at || (existing.assessed_at === assessment.assessed_at && existing.id < assessment.id))) latest.set(assessment.control_id, assessment);
       }
       setAssessments(latest);
     } catch (err: unknown) {
@@ -265,6 +286,7 @@ export function Compliance() {
     setAssessments(current => new Map(current).set(assessment.control_id, { ...assessment, status }));
     try {
       await apiClient.patch(`/compliance/assessments/${assessment.id}`, { status });
+      await refreshSummary();
     } catch (err: unknown) {
       if (selectedFramework.current === frameworkId) setAssessments(current => new Map(current).set(assessment.control_id, { ...assessment, status: previous }));
       toast(getApiErrorMessage(err, 'Assessment status could not be updated.'), 'error');
@@ -291,6 +313,12 @@ export function Compliance() {
         </button>
       } />
 
+      {summaryRefreshing && <p role="status" className="text-sm text-surface-400">Refreshing saved compliance posture...</p>}
+      {summaryError && <div role="alert" className="rounded border border-warning/40 p-3 text-sm text-warning">
+        Status was saved, but the cards may be out of date. {summaryError}
+        <button type="button" onClick={() => void refreshSummary()} disabled={summaryRefreshing}
+          className="ml-2 rounded border border-surface-600 px-3 py-1 text-xs disabled:opacity-40">Retry posture</button>
+      </div>}
       {frameworks.length === 0 ? (
         <div className="oa-panel p-12 text-center text-surface-500">
           <ShieldCheck className="w-10 h-10 mx-auto mb-3 opacity-50" />
@@ -327,9 +355,10 @@ export function Compliance() {
                 >
                   <div className="h-full rounded-full bg-primary-500 transition-all" style={{ width: `${pct}%` }} />
                 </div>
+                <p className="mt-2 text-xs text-surface-500">Compliant controls / all framework controls. Latest saved assessment per control.</p>
                 {summary && (
                   <p className="mt-2 text-xs text-surface-400">
-                    {summary.compliant} compliant · {summary.partial} partial · {summary.non_compliant} non-compliant · {summary.not_assessed} not assessed
+                    {summary.compliant} compliant · {summary.partial} partial · {summary.non_compliant} non-compliant · {summary.not_assessed} not assessed{summary.not_applicable ? ` · ${summary.not_applicable} not applicable` : ''}
                   </p>
                 )}
               </button>

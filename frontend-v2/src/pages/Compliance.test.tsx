@@ -298,3 +298,37 @@ it('retries controls without collapsing the selected framework', async () => {
   expect(screen.getByRole('button', { name: /NIST CSF 2.0/ }).getAttribute('aria-expanded')).toBe('true');
   expect(get.mock.calls.filter(([url]) => url === '/compliance/frameworks/1/controls').length).toBe(2);
 });
+
+it('shows not-applicable controls separately and refreshes posture after a saved status', async () => {
+  let changed = false;
+  get.mockImplementation(async url => {
+    if (url === '/compliance/frameworks') return { data: frameworks };
+    if (url === '/compliance/summary') return { data: [{ ...summaries[0], not_assessed: 0, not_applicable: 1, compliance_percentage: changed ? 50 : 60 }] };
+    if (url === '/compliance/assessments') return { data: [...assessments, { ...assessments[0], id: 6, status: 'partial' }] };
+    return { data: controls };
+  });
+  patch.mockImplementation(async () => { changed = true; return { data: {} }; });
+  render(<Compliance />);
+  fireEvent.click(await screen.findByText('NIST CSF'));
+  const select = await screen.findByLabelText('Set status for PR.AC-1');
+  expect(select).toHaveProperty('value', 'partial');
+  expect(screen.getByText(/0 not assessed · 1 not applicable/)).toBeTruthy();
+  fireEvent.change(select, { target: { value: 'non_compliant' } });
+  await waitFor(() => expect(screen.getByRole('progressbar', { name: 'NIST CSF compliance' }).getAttribute('aria-valuenow')).toBe('50'));
+});
+
+it('keeps a saved status and offers independent posture retry if the refresh fails', async () => {
+  render(<Compliance />);
+  fireEvent.click(await screen.findByText('NIST CSF'));
+  const select = await screen.findByLabelText('Set status for PR.AC-1');
+  get.mockRejectedValueOnce(new Error('posture offline'));
+  fireEvent.change(select, { target: { value: 'partial' } });
+  await screen.findByText(/cards may be out of date/);
+  expect(select).toHaveProperty('value', 'partial');
+  const reads = get.mock.calls.length;
+  fireEvent.click(screen.getByRole('button', { name: 'Retry posture' }));
+  await waitFor(() => expect(screen.queryByText(/cards may be out of date/)).toBeNull());
+  expect(get.mock.calls.slice(reads)).toEqual([['/compliance/summary']]);
+  expect(patch).toHaveBeenCalledTimes(1);
+  expect(post).not.toHaveBeenCalled();
+});

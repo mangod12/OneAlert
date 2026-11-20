@@ -15,7 +15,7 @@ import io
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -85,17 +85,7 @@ async def export_compliance(
         for f in (await db.execute(select(ComplianceFramework))).scalars().all()
     }
 
-    assessments = (await db.execute(
-        select(ComplianceAssessment).where(ComplianceAssessment.user_id == current_user.id)
-    )).scalars().all()
-    latest: dict[int, ComplianceAssessment] = {}
-    for assessment in assessments:
-        existing = latest.get(assessment.control_id)
-        if existing is None or (
-            assessment.assessed_at
-            and (not existing.assessed_at or assessment.assessed_at > existing.assessed_at)
-        ):
-            latest[assessment.control_id] = assessment
+    latest = await _latest_assessments(db, current_user.id)
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
@@ -142,39 +132,31 @@ async def compliance_summary(
     frameworks_result = await db.execute(select(ComplianceFramework))
     frameworks = frameworks_result.scalars().all()
 
+    controls = (await db.execute(select(ComplianceControl))).scalars().all()
+    latest = await _latest_assessments(db, current_user.id)
+    counts_by_framework = {fw.id: {status: 0 for status in (
+        "compliant", "non_compliant", "partial", "not_applicable", "not_assessed"
+    )} for fw in frameworks}
+    totals = {fw.id: 0 for fw in frameworks}
+    for control in controls:
+        if control.framework_id not in totals:
+            continue
+        totals[control.framework_id] += 1
+        assessment = latest.get(control.id)
+        status = assessment.status if assessment else "not_assessed"
+        counts = counts_by_framework[control.framework_id]
+        counts[status if status in counts else "not_assessed"] += 1
+
     summaries = []
     for fw in frameworks:
-        # Total controls in framework
-        total_result = await db.execute(
-            select(func.count(ComplianceControl.id)).where(
-                ComplianceControl.framework_id == fw.id
-            )
-        )
-        total_controls = total_result.scalar_one()
-
-        # Get assessment counts per status for this user and framework
-        compliant_count = await _count_by_status(db, current_user.id, fw.id, "compliant")
-        non_compliant_count = await _count_by_status(db, current_user.id, fw.id, "non_compliant")
-        partial_count = await _count_by_status(db, current_user.id, fw.id, "partial")
-
-        assessed_count = compliant_count + non_compliant_count + partial_count
-        not_assessed_count = total_controls - assessed_count
-
-        compliance_pct = (
-            round((compliant_count / total_controls) * 100, 1)
-            if total_controls > 0
-            else 0.0
-        )
-
+        counts = counts_by_framework[fw.id]
+        total = totals[fw.id]
         summaries.append(ComplianceSummary(
             framework_id=fw.id,
             framework_name=fw.name,
-            total_controls=total_controls,
-            compliant=compliant_count,
-            non_compliant=non_compliant_count,
-            partial=partial_count,
-            not_assessed=not_assessed_count,
-            compliance_percentage=compliance_pct,
+            total_controls=total,
+            **counts,
+            compliance_percentage=round(counts["compliant"] / total * 100, 1) if total else 0.0,
         ))
 
     return summaries
@@ -250,17 +232,19 @@ async def list_assessments(
     return assessments
 
 
-async def _count_by_status(
-    db: AsyncSession, user_id: int, framework_id: int, status: str
-) -> int:
-    """Count assessments by status for a user within a framework."""
+async def _latest_assessments(
+    db: AsyncSession, user_id: int
+) -> dict[int, ComplianceAssessment]:
+    """Use one deterministic latest row per control for posture and export."""
     result = await db.execute(
-        select(func.count(ComplianceAssessment.id))
-        .join(ComplianceControl, ComplianceAssessment.control_id == ComplianceControl.id)
-        .where(
-            ComplianceAssessment.user_id == user_id,
-            ComplianceControl.framework_id == framework_id,
-            ComplianceAssessment.status == status,
+        select(ComplianceAssessment)
+        .where(ComplianceAssessment.user_id == user_id)
+        .order_by(
+            ComplianceAssessment.assessed_at.desc().nulls_last(),
+            ComplianceAssessment.id.desc(),
         )
     )
-    return result.scalar_one()
+    latest: dict[int, ComplianceAssessment] = {}
+    for assessment in result.scalars():
+        latest.setdefault(assessment.control_id, assessment)
+    return latest
