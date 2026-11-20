@@ -240,7 +240,7 @@ export function OTDiscovery() {
 
   return (
     <div className="space-y-8">
-      {inspectDeviceId !== null && <DiscoveredDeviceInspector key={inspectDeviceId} deviceId={inspectDeviceId} onClose={() => setInspectDeviceId(null)} />}
+      {inspectDeviceId !== null && <DiscoveredDeviceInspector key={inspectDeviceId} deviceId={inspectDeviceId} onUpdated={() => { void fetchDevices(); }} onClose={() => setInspectDeviceId(null)} />}
       <PageHeader eyebrow="Observe" title="OT Discovery" description="Passive network device discovery, protocol visibility, and inventory correlation." />
       {errors.length > 0 && <DegradedBanner messages={errors} onRetry={() => void fetchData()} />}
 

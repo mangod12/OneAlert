@@ -242,3 +242,27 @@ def test_actual_sensor_report_still_advances_observed_last_seen(tmp_path):
             assert device.first_seen == SEEN
 
     asyncio.run(scenario())
+
+
+def test_manual_enrichment_only_changes_requested_fields_and_keeps_observation_evidence(tmp_path):
+    async def scenario():
+        async with database(tmp_path / 'enrichment.db') as db:
+            db.add(DiscoveredDevice(
+                id=1, user_id=1, ip_address='192.0.2.1', hostname='PLC-1', discovery_method='sensor_report',
+                last_seen=SEEN, first_seen=SEEN, protocols=['modbus'], ports_open=[502],
+                risk_score=72, confidence='medium', notes='Old note', tags=['line, two'],
+            ))
+            await db.commit()
+            result = await update_discovered_device(1, DiscoveredDeviceUpdate(hostname='Reviewed PLC', notes=None),
+                                                    current_user=OWNER, db=db)
+            assert result.hostname == 'Reviewed PLC' and result.notes is None
+            assert result.tags == ['line, two'] and result.confidence == 'medium'
+            assert result.risk_score == 72 and result.ports_open == [502] and result.protocols == ['modbus']
+            assert result.last_seen == SEEN and result.first_seen == SEEN
+            with pytest.raises(HTTPException) as error:
+                await update_discovered_device(1, DiscoveredDeviceUpdate(hostname='Foreign edit'),
+                                               current_user=SimpleNamespace(id=2), db=db)
+            assert error.value.status_code == 404
+            await db.refresh(result)
+            assert result.hostname == 'Reviewed PLC'
+    asyncio.run(scenario())

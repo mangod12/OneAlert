@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
+import { DeviceEnrichmentForm } from './DeviceEnrichmentForm';
 import { useDialogFocus } from './ui/useDialogFocus';
 
-interface DeviceRecord {
+export interface DeviceRecord {
   id: number;
   ip_address: string;
   hostname?: string | null;
@@ -41,16 +42,18 @@ function recordedTime(value?: string | null) {
 }
 function items(value?: (string | number)[] | null) { return value?.length ? value.join(', ') : null; }
 
-export function DiscoveredDeviceInspector({ deviceId, onClose }: { deviceId: number; onClose: () => void }) {
+export function DiscoveredDeviceInspector({ deviceId, onClose, onUpdated }: { deviceId: number; onClose: () => void; onUpdated?: () => void }) {
   const dialog = useRef<HTMLDivElement>(null);
-  useDialogFocus(dialog, onClose);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  useDialogFocus(dialog, () => { if (!saving) onClose(); });
   const [record, setRecord] = useState<DeviceRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     let active = true;
-    setLoading(true); setRecord(null); setError('');
+    setLoading(true); setRecord(null); setError(''); setEditing(false); setSaving(false);
     void apiClient.get<DeviceRecord>(`/ot/discovered-devices/${deviceId}`).then(response => {
       if (!active) return;
       if (response.data.id !== deviceId) throw new Error('The response did not match this device. Try again.');
@@ -81,13 +84,17 @@ export function DiscoveredDeviceInspector({ deviceId, onClose }: { deviceId: num
     <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="device-inspector-heading" className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-xl border border-surface-700 bg-surface-900 p-5">
       <div className="flex items-start justify-between gap-3">
         <h2 id="device-inspector-heading" className="min-w-0 break-words text-lg font-semibold text-surface-50">Discovered device #{deviceId}</h2>
-        <button type="button" onClick={onClose} className="shrink-0 rounded-md border border-surface-600 px-3 py-1.5 text-sm text-surface-200">Close details</button>
+        <button type="button" disabled={saving} onClick={onClose} className="shrink-0 rounded-md border border-surface-600 px-3 py-1.5 text-sm text-surface-200">Close details</button>
       </div>
-      <p className="mt-2 text-sm text-surface-400">Read-only discovery record. Fingerprints, ports, risk and timestamps are recorded evidence, not a live scan or connectivity check.</p>
+      <p className="mt-2 text-sm text-surface-400">Fingerprints, ports, risk and timestamps are recorded evidence, not a live scan or connectivity check. Manual enrichment changes only the selected inventory fields, not observed ports, risk, source or timestamps.</p>
       {loading && <p role="status" className="mt-5 text-sm text-surface-300">Loading recorded device details...</p>}
       {error && <div className="mt-5 space-y-3"><p role="alert" className="text-sm text-danger">{error}</p><button type="button" onClick={() => setRetry(value => value + 1)} className="rounded-md border border-surface-600 px-3 py-2 text-sm text-surface-200">Retry device details</button></div>}
       {!loading && !error && record && <div className="mt-5 space-y-5">
-        <h3 className="break-words text-base font-semibold text-surface-50">{record.hostname || record.ip_address}</h3>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="break-words text-base font-semibold text-surface-50">{record.hostname || record.ip_address}</h3>
+          {!editing && <button type="button" onClick={() => setEditing(true)} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Review manual enrichment</button>}
+        </div>
+        {editing && <DeviceEnrichmentForm key={record.id} record={record} onBusy={setSaving} onCancel={() => setEditing(false)} onSaved={updated => { setRecord(updated); setEditing(false); onUpdated?.(); }} /> }
         <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
           {fields.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs text-surface-400">{label}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-surface-100">{value || 'Not recorded'}</dd></div>)}
         </dl>
