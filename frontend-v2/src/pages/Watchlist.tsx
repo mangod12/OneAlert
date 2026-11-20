@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Bell, BriefcaseMedical } from 'lucide-react';
 import apiClient from '../api/client';
@@ -6,6 +6,7 @@ import type { Alert, AlertListResponse } from '../api/types';
 import { getApiErrorMessage } from '../api/errors';
 import { toast } from '../components/Toast';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { alertSeverityTones, alertStatusTones, caseStatusTones } from '../components/ui/tones';
@@ -55,9 +56,16 @@ export function Watchlist() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nextPage, setNextPage] = useState(2);
+  const [pagesChanged, setPagesChanged] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState('');
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [bulkConfirm, setBulkConfirm] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkNotice, setBulkNotice] = useState('');
+  const [failures, setFailures] = useState<Record<string, string>>({});
+  const pending = useRef(new Set<string>());
   const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
   const today = new Date().toISOString().slice(0, 10);
 
@@ -95,6 +103,7 @@ export function Watchlist() {
       const incoming = [...alertRows, ...caseRows];
       setHasMore(alertsRes.data.total > page * 50 || casesRes.data.total > page * 50);
       setNextPage(page + 1);
+      if (page === 1) setPagesChanged(false);
       setRows(current => {
         const unique = new Map((page === 1 ? incoming : [...current, ...incoming]).map(row => [`${row.kind}-${row.id}`, row]));
         return [...unique.values()].sort((a, b) =>
@@ -132,17 +141,54 @@ export function Watchlist() {
 
   const handleUnwatch = async (row: WatchRow) => {
     const key = `${row.kind}-${row.id}`;
-    if (pendingKeys.has(key)) return;
+    if (pending.current.has(key)) return;
+    pending.current.add(key);
     setPendingKeys(current => new Set(current).add(key));
     try {
       await apiClient.delete(row.kind === 'alert' ? `/alerts/${row.id}/watch` : `/cases/${row.id}/watch`);
       setRows(current => current.filter(r => !(r.kind === row.kind && r.id === row.id)));
+      setPagesChanged(true);
+      setSelectedKeys(current => { const next = new Set(current); next.delete(key); return next; });
       toast(`${row.kind === 'alert' ? 'Alert' : 'Investigation'} removed from your watchlist.`, 'success');
     } catch (err: unknown) {
       toast(getApiErrorMessage(err, 'The item could not be unwatched.'), 'error');
     } finally {
+      pending.current.delete(key);
       setPendingKeys(current => { const next = new Set(current); next.delete(key); return next; });
     }
+  };
+
+  const selectedRows = rows.filter(row => selectedKeys.has(`${row.kind}-${row.id}`));
+  const hiddenSelected = selectedRows.filter(row => !visible.some(item => item.kind === row.kind && item.id === row.id)).length;
+  const unwatchSelected = async () => {
+    if (pending.current.size || !selectedRows.length) return;
+    const snapshot = [...selectedRows];
+    snapshot.forEach(row => pending.current.add(`${row.kind}-${row.id}`));
+    setPendingKeys(new Set(pending.current));
+    setBulkBusy(true);
+    setBulkNotice('');
+    const removed = new Set<string>();
+    const failed: Record<string, string> = {};
+    for (let start = 0; start < snapshot.length; start += 5) {
+      await Promise.all(snapshot.slice(start, start + 5).map(async row => {
+        const key = `${row.kind}-${row.id}`;
+        try {
+          await apiClient.delete(row.kind === 'alert' ? `/alerts/${row.id}/watch` : `/cases/${row.id}/watch`);
+          removed.add(key);
+        } catch (err) {
+          failed[key] = getApiErrorMessage(err, 'This record could not be unwatched. It remains selected for retry.');
+        }
+      }));
+    }
+    if (removed.size) setPagesChanged(true);
+    setRows(current => current.filter(row => !removed.has(`${row.kind}-${row.id}`)));
+    setSelectedKeys(current => new Set([...current].filter(key => !removed.has(key))));
+    setFailures(failed);
+    setBulkNotice(`Unwatched ${removed.size} of ${snapshot.length} selected records. ${Object.keys(failed).length ? `${Object.keys(failed).length} failed records remain selected for retry.` : 'No alerts or investigations were deleted or closed.'}`);
+    snapshot.forEach(row => pending.current.delete(`${row.kind}-${row.id}`));
+    setPendingKeys(new Set(pending.current));
+    setBulkBusy(false);
+    setBulkConfirm(false);
   };
 
   return (
@@ -153,6 +199,7 @@ export function Watchlist() {
         description="Alerts and investigations you follow, ranked by severity within the loaded items. Load more to review larger watchlists."
       />
 
+      {pagesChanged && <div className="space-y-2 rounded border border-warning/40 p-3 text-xs text-surface-300"><p>Unwatching can move later pages. Reload from the first page before loading more so records are not skipped. Clear any remaining selection first.</p><button type="button" disabled={loading || bulkBusy || !!pendingKeys.size || !!selectedRows.length} onClick={() => { setBulkNotice(''); setFailures({}); void fetchWatchlist(); }} className="rounded border border-surface-600 px-3 py-2 disabled:opacity-40">Reload watched items from first page</button></div>}
       {loading && <LoadingSurface label="Loading your watchlist" />}
 
       {!loading && error && (
@@ -172,17 +219,29 @@ export function Watchlist() {
 
       {!loading && !error && rows.length > 0 && <section aria-label="Watchlist triage" className="space-y-3 rounded-lg border border-surface-700 p-4">
         <label htmlFor="watchlist-search" className="block text-sm font-medium text-surface-200">Find watched items</label>
-        <input id="watchlist-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Title, CVE, asset or record ID" className="min-h-10 w-full min-w-0 rounded-md border border-surface-600 bg-surface-950 px-3 text-sm text-surface-100" />
+        <input id="watchlist-search" type="search" value={query} onChange={event => setQuery(event.target.value)} disabled={bulkBusy} placeholder="Title, CVE, asset or record ID" className="min-h-10 w-full min-w-0 rounded-md border border-surface-600 bg-surface-950 px-3 text-sm text-surface-100" />
         <div className="flex flex-wrap gap-2">
-          <select aria-label="Watched item type" value={kind} onChange={event => setKind(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200"><option value="all">All types</option><option value="alert">Alerts</option><option value="case">Investigations</option></select>
-          <select aria-label="Watched severity" value={severity} onChange={event => setSeverity(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200"><option value="all">All severities</option>{Object.keys(SEVERITY_RANK).map(value => <option key={value} value={value}>{value}</option>)}</select>
-          <select aria-label="Watched work scope" value={scope} onChange={event => setScope(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200"><option value="all">All statuses</option><option value="open">Active records</option><option value="done">Resolved / closed / false positive</option><option value="overdue">Overdue investigations</option></select>
-          <select aria-label="Watched item order" value={order} onChange={event => setOrder(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200"><option value="severity">Severity first</option><option value="newest">Newest created first</option><option value="oldest">Oldest created first</option><option value="name">Name A to Z</option></select>
-          {activeFilters && <button type="button" onClick={clearFilters} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-200">Clear watchlist filters</button>}
+          <select disabled={bulkBusy} aria-label="Watched item type" value={kind} onChange={event => setKind(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200"><option value="all">All types</option><option value="alert">Alerts</option><option value="case">Investigations</option></select>
+          <select disabled={bulkBusy} aria-label="Watched severity" value={severity} onChange={event => setSeverity(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200"><option value="all">All severities</option>{Object.keys(SEVERITY_RANK).map(value => <option key={value} value={value}>{value}</option>)}</select>
+          <select disabled={bulkBusy} aria-label="Watched work scope" value={scope} onChange={event => setScope(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200"><option value="all">All statuses</option><option value="open">Active records</option><option value="done">Resolved / closed / false positive</option><option value="overdue">Overdue investigations</option></select>
+          <select disabled={bulkBusy} aria-label="Watched item order" value={order} onChange={event => setOrder(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200"><option value="severity">Severity first</option><option value="newest">Newest created first</option><option value="oldest">Oldest created first</option><option value="name">Name A to Z</option></select>
+          {activeFilters && <button type="button" disabled={bulkBusy} onClick={clearFilters} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-200">Clear watchlist filters</button>}
         </div>
         <p role="status" className="text-xs text-surface-300">{visible.length} of {rows.length} loaded items match. Search, filters and order apply only to loaded records, not your entire watchlist.</p>
         {scope === 'overdue' && <p className="text-xs text-surface-400">Overdue uses investigation due dates before today in UTC, excluding resolved, closed and false-positive records. Alert due dates are not included.</p>}
       </section>}
+      {!loading && !error && rows.length > 0 && <section aria-label="Watchlist selection" className="space-y-3 rounded-lg border border-surface-700 p-4">
+        <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={bulkBusy || loadingMore || !!pendingKeys.size || !visible.length} onClick={() => setSelectedKeys(current => new Set([...current, ...visible.map(row => `${row.kind}-${row.id}`)]))} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40">Select matching watched items</button>
+          <button type="button" disabled={bulkBusy || !selectedRows.length} onClick={() => setSelectedKeys(new Set())} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40">Clear watchlist selection</button>
+        </div>
+        <p className="text-xs text-surface-300">{selectedRows.length} loaded records selected; {hiddenSelected} hidden by filters. Unwatching stops following these records, without deleting or closing them.</p>
+        {!!selectedRows.length && <>
+          <ul aria-label="Selected watched items" tabIndex={0} className="max-h-48 space-y-2 overflow-y-auto text-xs text-surface-300">{selectedRows.map(row => <li key={`${row.kind}-${row.id}`} className="break-words">{row.kind === 'alert' ? 'Alert' : 'Investigation'} #{row.id}: {row.name}{failures[`${row.kind}-${row.id}`] && <p role="alert" className="mt-1 text-danger">{failures[`${row.kind}-${row.id}`]}</p>}</li>)}</ul>
+          <button type="button" disabled={bulkBusy || loadingMore || !!pendingKeys.size} onClick={() => setBulkConfirm(true)} className="rounded border border-warning/50 px-3 py-2 text-sm text-warning disabled:opacity-40">Review selected unwatch</button>
+        </>}
+      </section>}
+      {bulkNotice && <p role={Object.keys(failures).length ? 'alert' : 'status'} className="rounded border border-surface-600 p-3 text-sm text-surface-200">{bulkNotice}</p>}
       {!loading && !error && rows.length > 0 && visible.length === 0 && <p className="text-sm text-surface-400">No loaded items match. Clear filters or load more watched items to widen the review.</p>}
       {!loading && !error && <p role="status" className="text-sm text-surface-400">{rows.length} watched items loaded. {hasMore ? 'More watched records are available. Ranking applies only to loaded items.' : 'No more pages were reported by this load.'}</p>}
       {!loading && !error && visible.length > 0 && (
@@ -191,6 +250,7 @@ export function Watchlist() {
           <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-surface-700 bg-surface-800/60 text-left text-[11px] font-semibold uppercase tracking-wider text-surface-400">
+                <th className="px-4 py-3"><span className="sr-only">Select</span></th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Severity</th>
@@ -205,6 +265,7 @@ export function Watchlist() {
                   key={`${row.kind}-${row.id}`}
                   className="border-b border-surface-800 transition-colors last:border-0 hover:bg-surface-800/50"
                 >
+                  <td className="px-4 py-3"><input type="checkbox" aria-label={`Select ${row.kind} #${row.id}: ${row.name}`} checked={selectedKeys.has(`${row.kind}-${row.id}`)} disabled={bulkBusy || loadingMore || pendingKeys.has(`${row.kind}-${row.id}`)} onChange={event => setSelectedKeys(current => { const next = new Set(current); if (event.target.checked) next.add(`${row.kind}-${row.id}`); else next.delete(`${row.kind}-${row.id}`); return next; })} /></td>
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center gap-1.5 text-xs font-medium text-surface-300">
                       {row.kind === 'alert'
@@ -234,7 +295,7 @@ export function Watchlist() {
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={(e) => { e.stopPropagation(); void handleUnwatch(row); }}
-                      disabled={loadingMore || pendingKeys.has(`${row.kind}-${row.id}`)}
+                      disabled={bulkBusy || loadingMore || pendingKeys.has(`${row.kind}-${row.id}`)}
                       aria-label={`Unwatch ${row.name}`}
                       className="rounded-md border border-surface-600 px-2.5 py-1 text-xs font-medium text-surface-300 hover:border-primary-500/50 hover:text-surface-100 disabled:opacity-50"
                     >
@@ -247,9 +308,10 @@ export function Watchlist() {
           </table>
         </div>
       )}
+      {bulkConfirm && <ConfirmDialog title="Unwatch selected records" description={`Stop following ${selectedRows.length} selected loaded records, including ${hiddenSelected} hidden by filters? This does not delete or close any alert or investigation.`} confirmLabel={`Unwatch ${selectedRows.length} records`} busy={bulkBusy} onCancel={() => { if (!bulkBusy) setBulkConfirm(false); }} onConfirm={() => void unwatchSelected()} />}
       {!loading && !error && hasMore && <div className="space-y-2">
         {moreError && <p role="alert" className="text-sm text-danger">{moreError}</p>}
-        <button type="button" disabled={loadingMore || pendingKeys.size > 0} onClick={() => void fetchWatchlist(nextPage)} className="rounded-md border border-surface-600 px-3 py-2 text-sm text-surface-200 disabled:opacity-40">{loadingMore ? 'Loading more watched items...' : 'Load more watched items'}</button>
+        <button type="button" disabled={pagesChanged || loadingMore || pendingKeys.size > 0} onClick={() => void fetchWatchlist(nextPage)} className="rounded-md border border-surface-600 px-3 py-2 text-sm text-surface-200 disabled:opacity-40">{loadingMore ? 'Loading more watched items...' : 'Load more watched items'}</button>
         <p className="text-xs text-surface-500">The list is fetched in pages, not as an atomic snapshot. Records can change while you review it.</p>
       </div>}
     </div>
