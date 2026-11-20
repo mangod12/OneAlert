@@ -152,22 +152,24 @@ async def list_cases(
         "due_date_asc": [Case.due_date.asc().nulls_last(), Case.created_at.desc()],
         "due_date_desc": [Case.due_date.desc().nulls_last(), Case.created_at.desc()],
     }
-    query = query.order_by(*order_columns[sort]).offset(skip).limit(size)
+    query = query.order_by(*order_columns[sort], Case.id.desc()).offset(skip).limit(size)
     cases = (await db.execute(query)).scalars().all()
 
-    # Enrich with counts
+    # Keep enrichment bounded to the visible page, without two queries per case.
+    case_ids = [case.id for case in cases]
+    alert_counts = dict((await db.execute(
+        select(CaseAlert.case_id, func.count(CaseAlert.id))
+        .where(CaseAlert.case_id.in_(case_ids)).group_by(CaseAlert.case_id)
+    )).all()) if case_ids else {}
+    event_counts = dict((await db.execute(
+        select(CaseEvent.case_id, func.count(CaseEvent.id))
+        .where(CaseEvent.case_id.in_(case_ids)).group_by(CaseEvent.case_id)
+    )).all()) if case_ids else {}
     case_responses = []
     for case in cases:
-        alert_count = (await db.execute(
-            select(func.count(CaseAlert.id)).where(CaseAlert.case_id == case.id)
-        )).scalar_one()
-        event_count = (await db.execute(
-            select(func.count(CaseEvent.id)).where(CaseEvent.case_id == case.id)
-        )).scalar_one()
-
         resp = CaseResponse.model_validate(case)
-        resp.alert_count = alert_count
-        resp.event_count = event_count
+        resp.alert_count = alert_counts.get(case.id, 0)
+        resp.event_count = event_counts.get(case.id, 0)
         resp.assigned_to_email = case.assignee.email if case.assignee else None
         case_responses.append(resp)
 
