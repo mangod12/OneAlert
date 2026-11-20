@@ -3,6 +3,7 @@
 
 import csv
 import io
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -22,6 +23,7 @@ from backend.models.validation import (
 )
 from backend.routers.auth import get_active_user
 from backend.services.csv_export import spreadsheet_safe_row
+from backend.services.validation_coverage_evidence import coverage_evidence
 
 router = APIRouter()
 
@@ -302,3 +304,16 @@ async def detection_coverage(
         })
 
     return {"success": True, "data": coverage}
+
+
+@router.get("/coverage-evidence")
+async def recorded_coverage_evidence(
+    execution: Literal["all", "simulated", "non_simulated", "unknown"] = "all",
+    run_status: Literal["all", "completed", "failed", "running", "pending", "cancelled"] = "completed",
+    page: int = Query(1, ge=1, le=1000000),
+    size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Review stored control results separately from simulated execution metadata."""
+    return await coverage_evidence(db, current_user.id, execution, run_status, page, size)
