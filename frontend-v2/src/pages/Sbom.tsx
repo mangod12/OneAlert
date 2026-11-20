@@ -8,6 +8,7 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { toast } from '../components/Toast';
 import type { Asset, AssetListResponse } from '../api/types';
+import { inspectSbomDocument, MAX_SBOM_BYTES } from '../utils/sbomImport';
 import { SbomComparison } from '../components/SbomComparison';
 import { useDialogFocus } from '../components/ui/useDialogFocus';
 
@@ -411,26 +412,46 @@ function UploadDialog({ assets, totalAssets, uploading, onClose, onUpload }: {
     return () => { active = false; };
   }, [page, search, retry]);
   const [document, setDocument] = useState('');
-  const [parseError, setParseError] = useState('');
+  const [fileName, setFileName] = useState('');
+  const [fileError, setFileError] = useState('');
+  const [readingFile, setReadingFile] = useState(false);
+  const fileRequest = useRef(0);
+  const readerRef = useRef<FileReader | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => () => { fileRequest.current += 1; readerRef.current?.abort(); }, []);
+  const preview = useMemo(() => {
+    if (!document.trim()) return { prepared: null, error: '' };
+    try { return { prepared: inspectSbomDocument(document), error: '' }; }
+    catch (err) { return { prepared: null, error: err instanceof Error ? err.message : 'The document could not be read.' }; }
+  }, [document]);
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus(dialogRef, () => { if (!uploading) onClose(); });
 
+  const readFile = (file: File | undefined) => {
+    if (!file || uploading) return;
+    const request = ++fileRequest.current;
+    readerRef.current?.abort();
+    setDocument(''); setFileName(file.name); setFileError(''); setReadingFile(false);
+    if (file.size > MAX_SBOM_BYTES) { setFileError('Choose a JSON document no larger than 5 MiB for this importer.'); return; }
+    setReadingFile(true);
+    const reader = new FileReader();
+    readerRef.current = reader;
+    reader.onload = () => {
+      if (request !== fileRequest.current) return;
+      const text = typeof reader.result === 'string' ? reader.result : '';
+      setDocument(text); setFileError(text.trim() ? '' : 'The local file is empty. Choose a JSON document.'); setReadingFile(false);
+    };
+    reader.onerror = () => {
+      if (request !== fileRequest.current) return;
+      setFileError('The local file could not be read. Choose it again or paste its JSON.'); setReadingFile(false);
+    };
+    reader.readAsText(file);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (uploading || !selectedAsset || optionsLoading || optionsError) return;
-    setParseError('');
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(document);
-    } catch {
-      setParseError('That is not valid JSON. Paste a CycloneDX or SPDX document.');
-      return;
-    }
-    if (typeof parsed !== 'object' || parsed === null || (!('bomFormat' in parsed) && !('spdxVersion' in parsed))) {
-      setParseError('The document needs a bomFormat (CycloneDX) or spdxVersion (SPDX) key.');
-      return;
-    }
-    onUpload(Number(assetId), parsed as Record<string, unknown>);
+    if (uploading || readingFile || !selectedAsset || optionsLoading || optionsError || !preview.prepared) return;
+    onUpload(Number(assetId), preview.prepared.document);
   };
 
   return (
@@ -462,16 +483,33 @@ function UploadDialog({ assets, totalAssets, uploading, onClose, onUpload }: {
             </>}
             <p className="break-words text-xs text-surface-300">{selectedAsset ? `Selected destination: ${selectedAsset.name} (#${selectedAsset.id}). Search and page changes keep this selection until you choose another asset.` : 'Choose a destination asset before uploading.'}</p>
           </div>
+          <div className="space-y-2 rounded-md border border-surface-700 p-3">
+            <label htmlFor="sbom-local-file" className="block text-xs text-surface-200">Choose local SBOM JSON file</label>
+            <input ref={fileInputRef} id="sbom-local-file" type="file" accept=".json,application/json" disabled={uploading}
+              onChange={event => readFile(event.target.files?.[0])}
+              className="block w-full min-w-0 text-xs text-surface-300 file:mr-3 file:rounded file:border-0 file:bg-surface-700 file:px-3 file:py-2 file:text-surface-100" />
+            <p className="text-xs text-surface-400">Up to 5 MiB. The file stays in your browser until you choose Upload. You can also paste or edit JSON below.</p>
+            {readingFile && <p role="status" className="text-xs text-surface-300">Reading local file...</p>}
+            {fileName && <p className="break-all text-xs text-surface-300">Local file: {fileName}</p>}
+          </div>
           <textarea
             aria-label="SBOM JSON document"
             value={document}
-            onChange={(e) => setDocument(e.target.value)}
+            onChange={(e) => { fileRequest.current += 1; readerRef.current?.abort(); if (fileInputRef.current) fileInputRef.current.value = ''; setReadingFile(false); setFileName(''); setFileError(''); setDocument(e.target.value); }}
+            disabled={uploading}
             placeholder='{"bomFormat": "CycloneDX", "specVersion": "1.5", ...}'
             rows={10}
             required
             className="w-full rounded-lg border border-surface-600 bg-surface-800 px-3 py-2 font-mono text-xs text-surface-50 placeholder:text-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
-          {parseError && <p role="alert" className="text-xs text-danger">{parseError}</p>}
+          {(fileError || preview.error) && <p role="alert" className="text-xs text-danger">{fileError || preview.error}</p>}
+          {preview.prepared && !readingFile && <section aria-label="Document preview" className="space-y-2 rounded-md border border-primary-500/30 bg-primary-500/5 p-3">
+            <h3 className="text-sm font-semibold text-surface-100">Review before upload</h3>
+            <p className="break-words text-xs text-surface-200">{preview.prepared.format} · {preview.prepared.version}</p>
+            <p className="text-xs text-surface-200">{preview.prepared.components} recorded {preview.prepared.format === 'SPDX' ? (preview.prepared.components === 1 ? 'package' : 'packages') : `${preview.prepared.components === 1 ? 'component' : 'components'}, including nested assemblies`}</p>
+            <p className="break-words text-xs text-surface-300">Destination: {selectedAsset ? `${selectedAsset.name} (#${selectedAsset.id})` : 'Choose an asset above'}</p>
+            <p className="text-xs text-surface-400">Document preview only, not full schema validation or a vulnerability scan. Import can still reject malformed evidence.</p>
+          </section>}
           <div className="flex justify-end gap-2 pt-1">
             <button
               type="button"
@@ -483,7 +521,7 @@ function UploadDialog({ assets, totalAssets, uploading, onClose, onUpload }: {
             </button>
             <button
               type="submit"
-              disabled={uploading || !selectedAsset || optionsLoading || !!optionsError}
+              disabled={uploading || readingFile || !preview.prepared || !selectedAsset || optionsLoading || !!optionsError}
               className="rounded-md bg-primary-500 px-3.5 py-1.5 text-xs font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-40"
             >
               {uploading ? 'Uploading...' : 'Upload'}
