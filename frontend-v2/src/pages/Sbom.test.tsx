@@ -283,3 +283,56 @@ it('does not present a failed SBOM read as an empty inventory when asset names l
   expect(await screen.findByText('SBOM unavailable')).toBeTruthy();
   expect(screen.queryByText('Plant gateway')).toBeNull();
 });
+
+describe('Recorded component evidence', () => {
+  it('opens stored identifiers without another read and restores focus on Escape', async () => {
+    get.mockImplementation(async url => {
+      if (url === '/sbom/') return { data: sboms };
+      if (url === '/assets/') return { data: assets };
+      return { data: [{ ...components[0], purl: 'pkg:deb/debian/openssl@3.0.1?arch=arm64', cpe: 'cpe:2.3:a:openssl:openssl:3.0.1:*:*:*:*:*:*:*', has_known_vulnerability: 2 }] };
+    });
+    render(<Sbom />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Plant gateway' }));
+    const trigger = await screen.findByRole('button', { name: 'View evidence for openssl' });
+    trigger.focus();
+    const reads = get.mock.calls.length;
+    fireEvent.click(trigger);
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByText('pkg:deb/debian/openssl@3.0.1?arch=arm64')).toBeTruthy();
+    expect(dialog.getByText('cpe:2.3:a:openssl:openssl:3.0.1:*:*:*:*:*:*:*')).toBeTruthy();
+    expect(dialog.getByText('Plant gateway · #7')).toBeTruthy();
+    expect(dialog.getByText('2')).toBeTruthy();
+    expect(dialog.getByText(/not a live package or vulnerability scan/)).toBeTruthy();
+    expect(get.mock.calls.length).toBe(reads);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(del).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('labels absent component identifiers as not recorded and closes explicitly', async () => {
+    render(<Sbom />);
+    fireEvent.click(await screen.findByText('Plant gateway'));
+    fireEvent.click(await screen.findByRole('button', { name: 'View evidence for busybox' }));
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getAllByText('Not recorded')).toHaveLength(3);
+    expect(dialog.getByText('0')).toBeTruthy();
+    fireEvent.click(dialog.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('searches retained package identifiers and licenses', async () => {
+    const fallback = get.getMockImplementation()!;
+    get.mockImplementation((url, config) => url === '/sbom/1/components' ? Promise.resolve({ data: [{ ...components[0], purl: 'pkg:deb/debian/libssl@3', cpe: 'cpe:2.3:a:openssl' }, components[1]] }) : fallback(url, config));
+    render(<Sbom />);
+    fireEvent.click(await screen.findByText('Plant gateway'));
+    await screen.findByText('openssl');
+    const input = screen.getByLabelText('Search components');
+    for (const query of ['libssl', 'cpe:2.3:a:openssl', 'Apache-2.0']) {
+      fireEvent.change(input, { target: { value: query } });
+      expect(screen.getByText('openssl')).toBeTruthy();
+      expect(screen.queryByText('busybox')).toBeNull();
+    }
+  });
+});
