@@ -84,9 +84,9 @@ export function MitreMap() {
     ]);
     const nextErrors: string[] = [];
     if (coverageResult.status === 'fulfilled') setCoverage(coverageResult.value.data.data);
-    else nextErrors.push(getApiErrorMessage(coverageResult.reason, 'Coverage data is unavailable'));
+    else { setCoverage(null); setGapsOnly(false); nextErrors.push(getApiErrorMessage(coverageResult.reason, 'Coverage data is unavailable')); }
     if (techniquesResult.status === 'fulfilled') setTechniques(techniquesResult.value.data);
-    else nextErrors.push(getApiErrorMessage(techniquesResult.reason, 'Technique catalog is unavailable'));
+    else { setTechniques([]); nextErrors.push(getApiErrorMessage(techniquesResult.reason, 'Technique catalog is unavailable')); }
     setErrors(nextErrors);
     setLoading(false);
   };
