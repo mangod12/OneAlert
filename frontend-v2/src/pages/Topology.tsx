@@ -272,7 +272,8 @@ export function Topology() {
                   <span className="text-xs text-surface-500">{filteredEdges.length} of {edges.length} connections</span>
                 )}
               </div>
-              <table className="w-full text-sm">
+              <div role="region" aria-label="Topology connections" tabIndex={0} className="overflow-x-auto focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500">
+              <table className="w-full min-w-[760px] text-sm">
                 <thead>
                   <tr className="border-b border-surface-700 text-surface-400">
                     <th className="px-4 py-3 text-left">Source</th>
@@ -318,6 +319,7 @@ export function Topology() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </>
