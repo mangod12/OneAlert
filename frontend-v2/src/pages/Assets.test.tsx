@@ -359,6 +359,7 @@ it('opens read-only current asset context from the inventory name', async () => 
 });
 
 it('reviews only selected loaded assets and saves just criticality after confirmation', async () => {
+  get.mockImplementation(async (url: string) => url === '/assets/' ? { data: { assets: [{ ...asset, risk_score: 20, risk_level: 'high' }], total: 1 } } : { data: [] });
   put.mockResolvedValue({ data: { ...asset, criticality: 'critical' } });
   render(<MemoryRouter><Assets /></MemoryRouter>);
   await screen.findByText('Plant gateway');
@@ -372,6 +373,7 @@ it('reviews only selected loaded assets and saves just criticality after confirm
   await screen.findByText(/Confirmed criticality changes for 1 of 1/);
   expect(put).toHaveBeenCalledWith('/assets/7', { criticality: 'critical' });
   expect(screen.getByText('critical')).toBeTruthy();
+  expect(screen.queryByText('Risk: high (20)')).toBeNull();
 });
 
 it('preserves failed or unconfirmed changes for review and retry', async () => {
