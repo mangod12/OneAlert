@@ -1,7 +1,7 @@
 import { recordedEndpoint } from '../utils/topologyAddress';
 import { TopologyAddressLink } from '../components/TopologyAddressLink';
 import { Fragment, useCallback, useRef, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { EventInvestigationDialog } from '../components/EventInvestigationDialog';
 import apiClient from '../api/client';
 import { Activity, ChevronDown, ChevronRight, Download, Radio, Upload } from 'lucide-react';
 import clsx from 'clsx';
@@ -532,80 +532,7 @@ export function Events() {
           onUpload={(file, sourceType) => void handleUpload(file, sourceType)}
         />
       )}
-      {escalateEvent && <EventEscalateDialog event={escalateEvent} onCancel={() => setEscalateEvent(null)} />}
-    </div>
-  );
-}
-
-interface EventEscalateDialogProps {
-  event: SecurityEvent;
-  onCancel: () => void;
-}
-
-function EventEscalateDialog({ event, onCancel }: EventEscalateDialogProps) {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  useDialogFocus(dialogRef, onCancel);
-  const navigate = useNavigate();
-  const label = event.signature || event.event_type;
-  const [title, setTitle] = useState(`Investigate: ${label}`);
-  const [summary, setSummary] = useState('');
-  const [severity, setSeverity] = useState<string>(event.severity);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSubmit = async () => {
-    if (busy || !title.trim()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await apiClient.post('/cases/', { title: title.trim(), summary: summary.trim() || null, severity });
-      const caseId: number = res.data.id;
-      await apiClient.post(`/cases/${caseId}/events/${event.id}`);
-      navigate(`/cases/${caseId}`);
-    } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'The investigation could not be opened.'));
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-surface-950/70" aria-hidden="true" onClick={() => { if (!busy) onCancel(); }} />
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="escalate-event-dialog-title"
-        className="relative w-full max-w-md rounded-lg border border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]"
-      >
-        <h2 id="escalate-event-dialog-title" className="text-lg font-semibold text-surface-50">Open investigation</h2>
-        <p className="mt-1 text-sm text-surface-400">Create a case for {label} and link this event to it.</p>
-        <form className="mt-4 space-y-3" onSubmit={e => { e.preventDefault(); void handleSubmit(); }}>
-          <div>
-            <label htmlFor="escalate-event-title" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-surface-400">Title</label>
-            <input id="escalate-event-title" type="text" autoComplete="off" value={title} onChange={e => setTitle(e.target.value)} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
-          </div>
-          <div>
-            <label htmlFor="escalate-event-summary" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-surface-400">Summary</label>
-            <textarea id="escalate-event-summary" rows={3} value={summary} onChange={e => setSummary(e.target.value)} placeholder="Optional context for the team" className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
-          </div>
-          <div>
-            <label htmlFor="escalate-event-severity" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-surface-400">Severity</label>
-            <select id="escalate-event-severity" value={severity} onChange={e => setSeverity(e.target.value)} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100">
-              <option value="info">Info</option>
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="critical">Critical</option>
-            </select>
-          </div>
-          {error && <p role="alert" className="text-sm text-danger">{error}</p>}
-          <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={onCancel} disabled={busy} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-300 hover:bg-surface-800">Cancel</button>
-            <button type="submit" disabled={busy || !title.trim()} className="min-h-9 rounded-md bg-primary-500 px-4 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">{busy ? 'Opening…' : 'Open investigation'}</button>
-          </div>
-        </form>
-      </div>
+      {escalateEvent && <EventInvestigationDialog key={escalateEvent.id} eventId={escalateEvent.id} onCancel={() => setEscalateEvent(null)} />}
     </div>
   );
 }
