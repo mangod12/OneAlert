@@ -55,16 +55,16 @@ export function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 max-w-sm" role="status" aria-live="polite">
+    <div className="fixed bottom-4 left-4 right-4 z-[100] flex max-h-[calc(100dvh-2rem)] flex-col gap-2 overflow-y-auto sm:left-auto sm:w-96 sm:max-w-[calc(100vw-2rem)]" role="status" aria-live="polite">
       {toasts.map(t => {
         const Icon = ICONS[t.type];
         return (
           <div key={t.id}
-            className={clsx('flex items-center gap-3 px-4 py-3 rounded-lg border text-sm animate-in slide-in-from-right', STYLES[t.type])}>
+            className={clsx('flex min-w-0 shrink-0 items-start gap-3 px-4 py-3 rounded-lg border text-sm animate-in slide-in-from-right', STYLES[t.type])}>
             <Icon className="w-4 h-4 shrink-0" />
-            <span className="flex-1">{t.message}</span>
+            <span className="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{t.message}</span>
             <button onClick={() => removeToast(t.id)} aria-label="Dismiss notification"
-              className="text-current opacity-60 hover:opacity-100 transition-opacity">
+              className="shrink-0 text-current opacity-60 hover:opacity-100 transition-opacity">
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
