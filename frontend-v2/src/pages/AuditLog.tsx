@@ -83,7 +83,7 @@ export function AuditLog() {
 
   const fetchLogs = useCallback(async (targetPage: number, action: string, user: string, from: string, to: string) => {
     const request = ++logRequest.current;
-    setError('');
+    setLoading(true); setLogs([]); setTotal(0); setError('');
     try {
       const params: Record<string, string | number> = { page: targetPage, size: SIZE };
       if (action.trim()) params.action = action.trim();
@@ -122,10 +122,6 @@ export function AuditLog() {
     <div className="min-w-0 space-y-6">
       <PageHeader eyebrow="Govern" title="Audit Log" description="Immutable operator, agent, approval, and configuration activity." />
 
-      {loading ? <LoadingSurface rows={6} label="Loading audit activity" /> : error ? (
-        <ErrorState title="Audit log unavailable" description={error} action={<RetryButton onClick={() => void fetchLogs(page, search, userFilter, fromDate, toDate)} />} />
-      ) : (
-        <>
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative max-w-sm flex-1 min-w-52">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
@@ -172,6 +168,9 @@ export function AuditLog() {
           </div>
           {exportError && <p role="alert" className="text-sm text-danger-400">{exportError}</p>}
 
+      {loading ? <LoadingSurface rows={6} label="Loading audit activity" /> : error ? (
+        <ErrorState title="Audit log unavailable" description={error} action={<RetryButton onClick={() => void fetchLogs(page, search, userFilter, fromDate, toDate)} />} />
+      ) : (
           <div className="oa-panel relative overflow-x-auto rounded-md">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
@@ -233,7 +232,6 @@ export function AuditLog() {
             )}
           </div>
 
-        </>
       )}
       <section aria-label="Recorded agent activity" className="space-y-3">
         <p className="text-sm text-surface-400">Your latest 50 recorded agent runs. Inspect a run for its saved step summaries. This ledger is not a full execution transcript.</p>

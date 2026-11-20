@@ -226,3 +226,39 @@ it.each(['success', 'failure'])('ignores stale audit %s after the filter changed
   expect(screen.queryByText('999 entries')).toBeNull();
   expect(screen.queryByText('Audit log unavailable')).toBeNull();
 });
+
+it('hides prior-filter records while loading and keeps filters available to recover from failure', async () => {
+  let reject!: (reason: unknown) => void;
+  const fallback = get.getMockImplementation()!;
+  get.mockImplementation((url, config) => url === '/auth/audit-logs' && config?.params?.action === 'offline' ? new Promise((_resolve, fail) => { reject = fail; }) : fallback(url, config));
+  render(<AuditLog />);
+  await screen.findByText('case.status_changed');
+  const input = screen.getByLabelText('Search audit actions');
+  input.focus();
+  fireEvent.change(input, { target: { value: 'offline' } });
+  expect(screen.queryByText('case.status_changed')).toBeNull();
+  expect(screen.getByText('Loading audit activity')).toBeTruthy();
+  expect(document.activeElement).toBe(input);
+  expect(screen.getByRole('button', { name: 'Inspect triage run 3' })).toBeTruthy();
+  await act(async () => reject(new Error('Filtered activity offline')));
+  expect(screen.getByText('Audit log unavailable')).toBeTruthy();
+  expect(screen.queryByText('No audit log entries found')).toBeNull();
+  fireEvent.change(screen.getByLabelText('Search audit actions'), { target: { value: '' } });
+  expect(await screen.findByText('case.status_changed')).toBeTruthy();
+});
+
+it('shows loading on an explicit audit retry rather than leaving the failure visible', async () => {
+  let retry = false;
+  get.mockImplementation(url => {
+    if (url === '/cases/agents/runs') return Promise.resolve({ data: runs });
+    if (!retry) return Promise.reject(new Error('Audit store unavailable'));
+    return new Promise(() => {});
+  });
+  render(<AuditLog />);
+  await screen.findByText('Audit log unavailable');
+  retry = true;
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(screen.queryByText('Audit log unavailable')).toBeNull();
+  expect(screen.getByText('Loading audit activity')).toBeTruthy();
+  expect(screen.getByLabelText('Search audit actions')).toBeTruthy();
+});
