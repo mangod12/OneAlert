@@ -38,6 +38,8 @@ class SavedViewFilters(BaseModel):
 class CaseViewFilters(BaseModel):
     """Subset of the cases-list query parameters captured in a saved view."""
 
+    search: str | None = Field(None, max_length=200)
+
     severity: str | None = None
     status: str | None = None
     assigned: str | None = None

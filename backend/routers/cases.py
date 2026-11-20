@@ -8,8 +8,8 @@ from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy import String, cast, delete, func, or_, select
 from sqlalchemy import case as sql_case
-from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -80,10 +80,20 @@ _MENTION_RE = re.compile(r"@([A-Za-z0-9._-]+)")
 router = APIRouter()
 
 
+def _case_keyword_filter(search: str):
+    needle = search.strip().lower()
+    return or_(
+        func.lower(Case.title).contains(needle, autoescape=True),
+        func.lower(func.coalesce(Case.summary, "")).contains(needle, autoescape=True),
+        cast(Case.id, String).contains(needle, autoescape=True),
+    )
+
+
 @router.get("/", response_model=CaseListResponse)
 async def list_cases(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
+    search: str | None = Query(None, max_length=200),
     severity: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
     assigned: str | None = Query(
@@ -117,6 +127,10 @@ async def list_cases(
         query = select(Case).options(joinedload(Case.assignee)).where(Case.user_id == current_user.id)
         count_q = select(func.count(Case.id)).where(Case.user_id == current_user.id)
 
+    if search and search.strip():
+        predicate = _case_keyword_filter(search)
+        query = query.filter(predicate)
+        count_q = count_q.filter(predicate)
     if severity:
         query = query.filter(Case.severity == severity)
         count_q = count_q.filter(Case.severity == severity)
@@ -178,6 +192,7 @@ async def list_cases(
 
 @router.get("/export")
 async def export_cases(
+    search: str | None = Query(None, max_length=200),
     severity: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
     assigned: str | None = Query(None, pattern="^(me|unassigned)$"),
@@ -209,6 +224,8 @@ async def export_cases(
     else:
         query = base_query.where(Case.user_id == current_user.id)
 
+    if search and search.strip():
+        query = query.filter(_case_keyword_filter(search))
     if severity:
         query = query.filter(Case.severity == severity)
     if status_filter:
@@ -238,7 +255,7 @@ async def export_cases(
         "due_date_asc": [Case.due_date.asc().nulls_last(), Case.created_at.desc()],
         "due_date_desc": [Case.due_date.desc().nulls_last(), Case.created_at.desc()],
     }
-    query = query.order_by(*order_columns[sort]).limit(5000)
+    query = query.order_by(*order_columns[sort], Case.id.desc()).limit(5000)
     rows = (await db.execute(query)).all()
 
     buffer = io.StringIO()

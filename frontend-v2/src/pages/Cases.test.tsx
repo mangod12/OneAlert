@@ -446,3 +446,21 @@ it('replaces failed search results with a retry instead of leaving stale matches
   fireEvent.click(screen.getByRole('button', { name: 'Retry investigation search' }));
   await screen.findByText('Search-only case');
 });
+
+it('applies keyword filtering to server-side rows and CSV only after submission', async () => {
+  globalThis.URL.createObjectURL = vi.fn(() => 'blob:keyword');
+  globalThis.URL.revokeObjectURL = vi.fn();
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  renderCases();
+  await screen.findByText('Credential dumping on edge router');
+  fireEvent.change(screen.getByLabelText('Filter all accessible investigations by keyword'), { target: { value: 'gateway' } });
+  expect(mockGet.mock.calls.some(([, config]) => (config as { params?: { search?: string } })?.params?.search === 'gateway')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Apply keyword filter' }));
+  await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/', { params: expect.objectContaining({ search: 'gateway', page: 1 }) }));
+  await screen.findByRole('button', { name: 'Export CSV' });
+  fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+  await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/cases/export', { params: { search: 'gateway', sort: 'created_at_desc' }, responseType: 'blob' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Clear keyword filter' }));
+  await waitFor(() => expect(mockGet).toHaveBeenLastCalledWith('/cases/', { params: { page: 1, size: 20, sort: 'created_at_desc' } }));
+  click.mockRestore();
+});
