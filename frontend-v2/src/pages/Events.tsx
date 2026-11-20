@@ -1,3 +1,5 @@
+import { recordedEndpoint } from '../utils/topologyAddress';
+import { TopologyAddressLink } from '../components/TopologyAddressLink';
 import { Fragment, useCallback, useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/client';
@@ -460,10 +462,10 @@ export function Events() {
                     </td>
                     <td className="p-3 text-surface-300">{e.event_type}</td>
                     <td className="p-3 text-surface-300 font-mono text-xs">
-                      {e.source_ip}{e.source_port ? `:${e.source_port}` : ''}
+                      <div>{recordedEndpoint(e.source_ip, e.source_port)}</div><TopologyAddressLink address={e.source_ip} side="source" />
                     </td>
                     <td className="p-3 text-surface-300 font-mono text-xs">
-                      {e.dest_ip}{e.dest_port ? `:${e.dest_port}` : ''}
+                      <div>{recordedEndpoint(e.dest_ip, e.dest_port)}</div><TopologyAddressLink address={e.dest_ip} side="destination" />
                     </td>
                     <td className="p-3 text-surface-300 truncate max-w-xs">{e.signature || e.category || '—'}</td>
                     <td className="p-3 text-surface-500 text-xs">{e.source_type}</td>

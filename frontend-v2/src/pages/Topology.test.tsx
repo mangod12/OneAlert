@@ -1,7 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import type { ReactElement } from 'react';
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { Topology } from './Topology';
+
+const render = (ui: ReactElement) => rtlRender(<MemoryRouter>{ui}</MemoryRouter>);
 
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }));
 
