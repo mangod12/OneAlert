@@ -38,8 +38,9 @@ function kindLabel(kind: string): string {
 }
 
 function toRoutePath(link: string | null): string | null {
-  if (!link) return null;
-  return link.startsWith('/app') ? link.slice(4) || '/' : link;
+  if (!link || !link.startsWith('/') || link.startsWith('//') || link.includes('\\')) return null;
+  const path = link === '/app' ? '/' : link.startsWith('/app/') ? link.slice(4) : link;
+  return path.startsWith('//') ? null : path;
 }
 
 const PAGE_SIZE = 20;
@@ -56,6 +57,7 @@ export function Notifications() {
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [expandedGroup, setExpandedGroup] = useState<number | null>(null);
   const [actionError, setActionError] = useState('');
 
   const load = useCallback(async () => {
@@ -109,18 +111,31 @@ export function Notifications() {
     finally { setBusy(false); }
   };
 
+  const markGroupRead = async (group: NotificationGroup): Promise<boolean> => {
+    if (busy) return false;
+    const unreadItems = group.items.filter(item => !item.read_at);
+    if (!unreadItems.length) return true;
+    setBusy(true);
+    setActionError('');
+    const results = await Promise.allSettled(unreadItems.map(item => apiClient.post(`/notifications/${item.id}/read`)));
+    const saved = new Set(unreadItems.filter((_, index) => results[index].status === 'fulfilled').map(item => item.id));
+    const now = new Date().toISOString();
+    setUnread(count => Math.max(0, count - saved.size));
+    setItems(current => unreadOnly
+      ? current?.filter(entry => !saved.has(entry.id)) ?? current
+      : current?.map(entry => saved.has(entry.id) ? { ...entry, read_at: entry.read_at ?? now } : entry) ?? current);
+    if (unreadOnly) setTotal(count => Math.max(0, count - saved.size));
+    const failed = unreadItems.length - saved.size;
+    if (failed) setActionError(`${failed} notification${failed === 1 ? '' : 's'} could not be marked read. Failed items remain unread. Try again to retry only those items.`);
+    setBusy(false);
+    return failed === 0;
+  };
+
   const openGroup = async (group: NotificationGroup) => {
     if (busy) return;
-    const latest = group.items[0];
-    const unreadItems = group.items.filter(item => !item.read_at);
-    if (unreadItems.length > 0) {
-      const ids = new Set(unreadItems.map(item => item.id));
-      const now = new Date().toISOString();
-      unreadItems.forEach(item => void apiClient.post(`/notifications/${item.id}/read`).catch(() => undefined));
-      setUnread(count => Math.max(0, count - unreadItems.length));
-      setItems(current => current?.map(entry => (ids.has(entry.id) ? { ...entry, read_at: entry.read_at ?? now } : entry)) ?? current);
-    }
-    const path = toRoutePath(latest.link);
+    const saved = await markGroupRead(group);
+    if (!saved) return;
+    const path = toRoutePath(group.items[0].link);
     if (path) navigate(path);
   };
 
@@ -202,6 +217,7 @@ export function Notifications() {
       {busy && <p role="status" className="text-sm text-surface-400">Updating notifications...</p>}
       {loadError && <p className="rounded-md border border-danger-500/40 bg-danger-500/10 px-3 py-2 text-sm text-danger-300">Notifications could not be loaded. <button type="button" onClick={() => void load()} className="underline">Retry notifications</button></p>}
 
+      <p className="text-xs text-surface-400">Related consecutive items are grouped on this loaded page only. Review a group to read its full saved messages. Related activity on other pages is not included.</p>
       <ul className="divide-y divide-surface-800 overflow-hidden rounded-lg border border-surface-800 bg-surface-900">
         {loading && <li className="px-4 py-8 text-center text-sm text-surface-500">Loading…</li>}
         {!loading && !loadError && items !== null && items.length === 0 && (
@@ -240,10 +256,27 @@ export function Notifications() {
                 aria-label={group.items.length > 1 ? `Delete ${group.items.length} notifications: ${item.title}` : `Delete notification ${item.title}`}
                 disabled={busy}
                 onClick={() => void deleteGroup(group)}
-                className="absolute right-3 top-3 grid h-7 w-7 place-items-center rounded text-surface-500 opacity-0 transition-opacity hover:bg-surface-700 hover:text-surface-200 focus:opacity-100 group-hover:opacity-100"
+                className="absolute right-3 top-3 grid h-7 w-7 place-items-center rounded text-surface-500 opacity-100 transition-opacity hover:bg-surface-700 hover:text-surface-200 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
               >
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
               </button>
+              <div className="flex flex-wrap gap-2 px-4 pb-3">
+                <button type="button" aria-expanded={expandedGroup === item.id} aria-label={`Review loaded notifications: ${item.title}`}
+                  onClick={() => setExpandedGroup(current => current === item.id ? null : item.id)}
+                  className="rounded border border-surface-600 px-2.5 py-1.5 text-xs text-surface-300">{expandedGroup === item.id ? 'Hide messages' : `Review ${group.items.length} loaded message${group.items.length === 1 ? '' : 's'}`}</button>
+                {anyUnread && <button type="button" disabled={busy} aria-label={`Mark loaded group read: ${item.title}`} onClick={() => void markGroupRead(group)}
+                  className="rounded border border-surface-600 px-2.5 py-1.5 text-xs text-surface-300 disabled:opacity-40">Mark loaded group read</button>}
+              </div>
+              {expandedGroup === item.id && <section aria-label={`Saved messages: ${item.title}`} className="mx-4 mb-4 space-y-3 rounded border border-surface-700 bg-surface-950 p-3">
+                <p className="text-xs text-surface-400">{group.items.length} loaded messages. Reading this panel does not mark them read.</p>
+                {group.items.map(entry => <article key={entry.id} className="min-w-0 space-y-2 border-b border-surface-700 pb-3 last:border-0 last:pb-0">
+                  <h2 className="break-words text-sm font-semibold text-surface-100">{entry.title}</h2>
+                  <p className="text-xs text-surface-400">#{entry.id} · {entry.read_at ? 'Read' : 'Unread'} · {new Date(entry.created_at).toLocaleString()}</p>
+                  <p className="whitespace-pre-wrap break-words text-sm text-surface-300">{entry.body || 'No saved message body.'}</p>
+                  {toRoutePath(entry.link) && <button type="button" disabled={busy} onClick={() => void openGroup({ key: group.key, items: [entry] })}
+                    aria-label={`Open notification #${entry.id}`} className="rounded border border-surface-600 px-2.5 py-1.5 text-xs text-surface-300 disabled:opacity-40">Open linked record</button>}
+                </article>)}
+              </section>}
             </li>
           );
         })}

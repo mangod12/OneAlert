@@ -178,3 +178,68 @@ describe('Notifications page', () => {
   });
 
 });
+
+
+describe('Loaded notification review', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+  afterEach(cleanup);
+it('reviews every full saved message in a loaded group without reads or navigation', async () => {
+  mockPost.mockReset();
+  mockGet.mockResolvedValue(listResponse([{ ...mk(2, 'alert_updated', 'Latest update', false), body: 'Latest full evidence\nSecond retained line' }, { ...mk(1, 'alert_updated', 'Earlier update', false), body: 'Earlier full evidence' }], 42, 2) as never);
+  renderPage();
+  fireEvent.click(await screen.findByLabelText('Review loaded notifications: Latest update'));
+  expect(screen.getByRole('region', { name: 'Saved messages: Latest update' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Earlier update' })).toBeTruthy();
+  expect(screen.getByText('Earlier full evidence')).toBeTruthy();
+  expect(screen.getByText(/Reading this panel does not mark them read/)).toBeTruthy();
+  expect(mockPost).not.toHaveBeenCalled();
+  expect(screen.getByText('2 unread')).toBeTruthy();
+});
+
+it('marks only confirmed group reads and retries only failures', async () => {
+  mockPost.mockReset().mockResolvedValueOnce({} as never).mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce({} as never);
+  mockGet.mockResolvedValue(listResponse([mk(2, 'alert_updated', 'Grouped update', false), mk(1, 'alert_updated', 'Grouped update', false)], 2, 2) as never);
+  renderPage();
+  fireEvent.click(await screen.findByLabelText('Mark loaded group read: Grouped update'));
+  await screen.findByRole('alert');
+  expect(screen.getByText('1 unread')).toBeTruthy();
+  fireEvent.click(screen.getByLabelText('Mark loaded group read: Grouped update'));
+  await screen.findByText('All caught up');
+  expect(mockPost.mock.calls.map(([url]) => url)).toEqual(['/notifications/2/read', '/notifications/1/read', '/notifications/1/read']);
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+it('keeps pending group reads unread and disables competing actions until confirmation', async () => {
+  let finish!: (value: unknown) => void;
+  mockPost.mockReset().mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  mockGet.mockResolvedValue(listResponse([mk(2, 'alert_updated', 'Pending update', false)], 1, 1) as never);
+  renderPage();
+  fireEvent.click(await screen.findByLabelText('Mark loaded group read: Pending update'));
+  expect(screen.getByText('1 unread')).toBeTruthy();
+  expect(screen.getByLabelText('Mark loaded group read: Pending update')).toHaveProperty('disabled', true);
+  expect(screen.getByLabelText('Delete notification Pending update')).toHaveProperty('disabled', true);
+  await act(async () => finish({}));
+  expect(screen.getByText('All caught up')).toBeTruthy();
+});
+
+it('removes only successful group reads from unread-only results', async () => {
+  mockPost.mockReset().mockResolvedValue({} as never);
+  mockGet.mockResolvedValue(listResponse([mk(2, 'alert_updated', 'Unread group', false)], 1, 1) as never);
+  renderPage();
+  await screen.findByText('Unread group');
+  fireEvent.click(screen.getByLabelText('Unread only'));
+  await waitFor(() => expect(mockGet.mock.calls.at(-1)?.[1]).toEqual({ params: { page: 1, size: 20, unread_only: true } }));
+  await screen.findByLabelText('Mark loaded group read: Unread group');
+  fireEvent.click(screen.getByLabelText('Mark loaded group read: Unread group'));
+  await screen.findByText('No notifications match these filters');
+  expect(screen.getByText('All caught up')).toBeTruthy();
+});
+
+  it.each(['https://outside.example.test', '//outside.example.test', '/app//outside.example.test', '/app/\\outside.example.test'])('does not offer a linked-record action for unsafe destination %s', async link => {
+    mockGet.mockResolvedValue(listResponse([{ ...mk(2, 'alert_updated', 'Saved review', false), link }], 1, 1) as never);
+    renderPage();
+    fireEvent.click(await screen.findByLabelText('Review loaded notifications: Saved review'));
+    expect(screen.queryByLabelText('Open notification #2')).toBeNull();
+  });
+
+});
