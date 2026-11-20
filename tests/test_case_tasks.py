@@ -774,3 +774,69 @@ def test_reviewed_checklist_import_records_exact_created_task_provenance(client)
     assert repeat.json()["created"] == []
     final = client.get(f"/api/v1/cases/{case_id}", headers=headers).json()["timeline"]
     assert sum((row.get("metadata_json") or {}).get("kind") == "reviewed_checklist_import" for row in final) == 1
+
+
+def test_assigned_task_history_keeps_legacy_default_and_requires_explicit_scopes(client):
+    from datetime import UTC, datetime
+
+    from backend.models.case import CaseTask
+
+    headers, case_id = _setup(client)
+    uid = _user_id(client, headers)
+    with _TestingSessionLocal() as db:
+        inactive = Case(user_id=uid, title="Resolved investigation", status="resolved", severity="high")
+        db.add(inactive)
+        db.flush()
+        inactive_id = inactive.id
+        db.add_all([CaseTask(case_id=case_id, title="Open active", position=0, assignee_id=uid, done=False),
+                    CaseTask(case_id=case_id, title="Completed active", position=1, assignee_id=uid, done=True,
+                             completed_at=datetime(2026, 11, 20, 18, 0, tzinfo=UTC)),
+                    CaseTask(case_id=inactive.id, title="Open inactive", position=2, assignee_id=uid, done=False),
+                    CaseTask(case_id=inactive.id, title="Completed inactive", position=3, assignee_id=uid, done=True,
+                             due_date=date(2026, 11, 19))])
+        db.commit()
+    path = "/api/v1/cases/assigned-task-explorer"
+    default = client.get(path, headers=headers).json()
+    assert default["completion"] == "open" and default["investigations"] == "active"
+    assert [row["title"] for row in default["data"]] == ["Open active"]
+    assert [row["title"] for row in client.get("/api/v1/cases/my-tasks", headers=headers).json()] == ["Open active"]
+    completed = client.get(path, params={"completion": "completed"}, headers=headers).json()
+    assert completed["total"] == 1 and completed["data"][0]["done"] is True
+    assert completed["data"][0]["completed_at"].startswith("2026-11-20T18:00:00")
+    inactive = client.get(path, params={"completion": "all", "investigations": "inactive"}, headers=headers).json()
+    assert inactive["total"] == 2 and {row["case_id"] for row in inactive["data"]} == {inactive_id}
+    dated = client.get(path, params={"completion": "completed", "investigations": "inactive",
+                                     "due": "overdue", "today": "2026-11-21"}, headers=headers).json()
+    assert dated["total"] == 1 and dated["data"][0]["title"] == "Completed inactive"
+    assert dated["data"][0]["completed_at"] is None  # Do not invent a timestamp for older records.
+    all_tasks = client.get(path, params={"completion": "all", "investigations": "all", "size": 1, "page": 4},
+                           headers=headers).json()
+    assert all_tasks["total"] == 4 and len(all_tasks["data"]) == 1
+    assert "Not assignment history" in all_tasks["scope"]
+
+
+def test_assigned_task_history_does_not_leak_other_assignees_or_removed_assignments(client):
+    from backend.models.case import CaseTask
+
+    headers, case_id = _setup(client)
+    uid = _user_id(client, headers)
+    other = _register_and_login(client, "task-history-other@example.com")
+    other_id = _user_id(client, other)
+    with _TestingSessionLocal() as db:
+        db.add_all([CaseTask(case_id=case_id, title="Own current assignment", position=0, assignee_id=uid, done=True),
+                    CaseTask(case_id=case_id, title="Another assignee", position=1, assignee_id=other_id, done=True),
+                    CaseTask(case_id=case_id, title="Unassigned old work", position=2, assignee_id=None, done=True)])
+        db.get(Case, case_id).status = "closed"
+        db.commit()
+    path = "/api/v1/cases/assigned-task-explorer"
+    params = {"completion": "all", "investigations": "all"}
+    own_rows = client.get(path, params=params, headers=headers).json()["data"]
+    other_rows = client.get(path, params=params, headers=other).json()["data"]
+    assert [row["title"] for row in own_rows] == ["Own current assignment"]
+    assert [row["title"] for row in other_rows] == ["Another assignee"]
+
+
+@pytest.mark.parametrize("params", [{"completion": "unknown"}, {"investigations": "unknown"}])
+def test_assigned_task_history_rejects_invalid_scope(client, params):
+    headers, _ = _setup(client)
+    assert client.get("/api/v1/cases/assigned-task-explorer", params=params, headers=headers).status_code == 422

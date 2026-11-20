@@ -359,7 +359,7 @@ async def search_cases_endpoint(
     return {"success": True, "data": results, "query": q}
 
 
-def _assigned_task_query(current_user: User):
+def _assigned_task_query(current_user: User, completion: str = "open", investigations: str = "active"):
     watched = select(CaseWatcher.case_id).where(CaseWatcher.user_id == current_user.id)
     tasked = select(CaseTask.case_id).where(CaseTask.assignee_id == current_user.id)
     severity_order = sql_case(
@@ -367,13 +367,11 @@ def _assigned_task_query(current_user: User):
         (or_(Case.severity == "medium", Case.severity.is_(None), Case.severity == ""), 2),
         (Case.severity == "low", 3), (Case.severity == "info", 4), else_=5,
     )
-    return (
+    statement = (
         select(CaseTask, Case)
         .join(Case, Case.id == CaseTask.case_id)
         .where(
             CaseTask.assignee_id == current_user.id,
-            CaseTask.done == False,  # noqa: E712
-            Case.status.notin_(("resolved", "closed", "false_positive")),
             or_(
                 Case.user_id == current_user.id,
                 Case.assigned_to_id == current_user.id,
@@ -386,6 +384,13 @@ def _assigned_task_query(current_user: User):
             CaseTask.due_date.is_(None), CaseTask.due_date, CaseTask.position, CaseTask.id,
         )
     )
+
+    if completion != "all":
+        statement = statement.where(CaseTask.done == (completion == "completed"))
+    if investigations != "all":
+        inactive = Case.status.in_(("resolved", "closed", "false_positive"))
+        statement = statement.where(inactive if investigations == "inactive" else ~inactive)
+    return statement
 
 
 def _assigned_task_rows(rows):
@@ -423,10 +428,12 @@ async def explore_assigned_tasks(
     severity: Literal["all", "critical", "high", "medium", "low", "info"] = "all",
     due: Literal["all", "overdue", "today", "future", "none"] = "all",
     today: date | None = None,
+    completion: Literal["open", "completed", "all"] = "open",
+    investigations: Literal["active", "inactive", "all"] = "active",
     current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
 ):
-    """Read every visible open assigned task with filters applied before paging."""
-    statement = _assigned_task_query(current_user)
+    """Read current assigned-task records, including explicit completed/inactive scopes."""
+    statement = _assigned_task_query(current_user, completion, investigations)
     if query.strip():
         needle = query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         pattern = f"%{needle}%"
@@ -446,9 +453,12 @@ async def explore_assigned_tasks(
                                     CaseTask.due_date == today if due == "today" else CaseTask.due_date > today)
     total = (await db.execute(select(func.count()).select_from(statement.order_by(None).subquery()))).scalar_one()
     rows = (await db.execute(statement.offset((page - 1) * size).limit(size))).all()
-    return {"data": _assigned_task_rows(rows), "total": total, "page": page, "size": size,
-            "filter_date": today,
-            "scope": "Open tasks assigned to your account on currently visible active investigations."}
+    records = [dict(row.model_dump(), done=task.done, completed_at=task.completed_at)
+               for row, (task, _case) in zip(_assigned_task_rows(rows), rows, strict=True)]
+    return {"data": records, "total": total, "page": page, "size": size,
+            "filter_date": today, "completion": completion, "investigations": investigations,
+            "scope": "Current records assigned to your account on currently visible investigations. "
+                     "Not assignment history or proof of external remediation."}
 
 
 @router.get("/{case_id}", response_model=CaseDetailResponse)
