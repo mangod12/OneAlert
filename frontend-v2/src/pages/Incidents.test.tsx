@@ -56,7 +56,7 @@ describe('Incidents', () => {
     fireEvent.click(await screen.findByText('plc-01'));
     expect(await screen.findByText('Modbus coil write')).toBeTruthy();
     expect(screen.getByText('PLC compromise')).toBeTruthy();
-    expect(await screen.findByText('Alert updated')).toBeTruthy();
+    expect(await screen.findByText('Alert updated', { selector: 'span' })).toBeTruthy();
     expect(screen.getByText(/status: pending -> acknowledged/)).toBeTruthy();
     expect((screen.getByText('View these alerts in the alert list') as HTMLAnchorElement).href).toContain('/alerts?asset_id=5');
   });
@@ -175,5 +175,29 @@ it('retries failed incident evidence without collapsing the incident or reloadin
   await act(async () => resolve({ data: { events: [{ kind: 'alert_updated', alert_id: 11, title: 'Retained timeline update', detail: 'Recorded change', timestamp: null }] } }));
   expect(screen.getByText(/Retained timeline update/)).toBeTruthy();
   expect(get.mock.calls.filter(([url]) => url === '/incidents')).toHaveLength(1);
+  expect(post).not.toHaveBeenCalled();
+});
+
+it('pages and searches the loaded incident evidence window without another read', async () => {
+  mockGets(Array.from({ length: 45 }, (_, index) => ({ kind: index === 44 ? 'alert_updated' : 'alert_created', alert_id: index, title: `Recorded event ${index}`, detail: index === 44 ? 'Unique retained detail\nsecond line' : null, timestamp: null })));
+  renderPage();
+  fireEvent.click(await screen.findByText('plc-01'));
+  await screen.findByText('Recorded event 0');
+  expect(screen.getByText(/not the full history/)).toBeTruthy();
+  expect(screen.queryByText('Recorded event 20')).toBeNull();
+  expect(screen.getByText('Alert #0')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'More events' }));
+  expect(screen.getByText('Recorded event 20')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'More events' }));
+  expect(screen.getByText('Recorded event 44')).toBeTruthy();
+  expect(screen.getByText('Timeline page 3 of 3')).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Search loaded incident timeline'), { target: { value: 'unique retained' } });
+  expect(screen.getByText('Timeline page 1 of 1')).toBeTruthy();
+  expect(screen.getByText('1 of 45 loaded events match')).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Timeline event kind'), { target: { value: 'alert_created' } });
+  expect(screen.getByText('No loaded timeline events match these filters.')).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Timeline event kind'), { target: { value: '' } });
+  expect(screen.getByText('Recorded event 44')).toBeTruthy();
+  expect(get.mock.calls.filter(([url]) => url === '/incidents/5/timeline')).toHaveLength(1);
   expect(post).not.toHaveBeenCalled();
 });
