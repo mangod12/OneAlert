@@ -1,5 +1,5 @@
 import { MemoryRouter } from 'react-router-dom';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import type { Asset } from '../api/types';
@@ -248,5 +248,94 @@ describe('Assets deep link', () => {
     render(<MemoryRouter initialEntries={['/assets?search=historian']}><Assets /></MemoryRouter>);
     await waitFor(() => expect(get).toHaveBeenCalledWith('/assets/', expect.objectContaining({ params: expect.objectContaining({ search: 'historian' }) })));
     expect((screen.getByRole('textbox', { name: 'Search assets' }) as HTMLInputElement).value).toBe('historian');
+  });
+});
+
+describe('Asset inventory pagination', () => {
+  function pagedInventory(total = 31) {
+    get.mockImplementation(async (url, config) => {
+      if (url !== '/assets/') return { data: [] };
+      const page = (config?.params as { page?: number } | undefined)?.page ?? 1;
+      return { data: { assets: [{ ...asset, name: `Gateway page ${page}` }], total, page, size: 15 } };
+    });
+  }
+
+  it('reaches later pages and returns without losing the selected ordering', async () => {
+    pagedInventory();
+    render(<MemoryRouter><Assets /></MemoryRouter>);
+    await screen.findByText('Gateway page 1');
+    expect((screen.getByRole('button', { name: 'Previous assets' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Sort assets'), { target: { value: 'name_asc' } });
+    await screen.findByText('Gateway page 1');
+    fireEvent.click(screen.getByRole('button', { name: 'Next assets' }));
+    expect(await screen.findByText('Gateway page 2')).toBeTruthy();
+    expect(get).toHaveBeenLastCalledWith('/assets/', { params: { page: 2, size: 15, sort: 'name_asc' } });
+    expect(screen.getByText('Showing 16–30 of 31 matching assets · Page 2 of 3')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Next assets' }));
+    expect(await screen.findByText('Gateway page 3')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Next assets' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Previous assets' }));
+    expect(await screen.findByText('Gateway page 2')).toBeTruthy();
+  });
+
+  it('resets to the first page when a filter changes', async () => {
+    pagedInventory();
+    render(<MemoryRouter><Assets /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Next assets' }));
+    await screen.findByText('Gateway page 2');
+    fireEvent.change(screen.getByLabelText('Filter by criticality'), { target: { value: 'high' } });
+    expect(await screen.findByText('Gateway page 1')).toBeTruthy();
+    expect(get).toHaveBeenLastCalledWith('/assets/', { params: { page: 1, size: 15, criticality: 'high', sort: 'created_at_desc' } });
+  });
+
+  it('keeps a failed page load explicit and retries the same page', async () => {
+    let fail = true;
+    get.mockImplementation(async (url, config) => {
+      if (url !== '/assets/') return { data: [] };
+      const page = (config?.params as { page?: number } | undefined)?.page ?? 1;
+      if (page === 2 && fail) throw new Error('Page unavailable');
+      return { data: { assets: [{ ...asset, name: `Gateway page ${page}` }], total: 16 } };
+    });
+    render(<MemoryRouter><Assets /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Next assets' }));
+    expect(await screen.findByText('Asset inventory unavailable')).toBeTruthy();
+    expect(screen.queryByText('Gateway page 1')).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Asset inventory pages' })).toBeNull();
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    expect(await screen.findByText('Gateway page 2')).toBeTruthy();
+  });
+
+  it('returns to the last existing page when deletion empties a later page', async () => {
+    let total = 16;
+    get.mockImplementation(async (url, config) => {
+      if (url !== '/assets/') return { data: [] };
+      const page = (config?.params as { page?: number } | undefined)?.page ?? 1;
+      return { data: { assets: total === 15 && page === 2 ? [] : [{ ...asset, name: `Gateway page ${page}` }], total } };
+    });
+    remove.mockImplementation(async () => { total = 15; return { data: {} }; });
+    render(<MemoryRouter><Assets /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Next assets' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete Gateway page 2' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete asset' }));
+    expect(await screen.findByText('Gateway page 1')).toBeTruthy();
+    expect(screen.getByText('Showing 1–15 of 15 matching assets · Page 1 of 1')).toBeTruthy();
+  });
+
+  it('ignores a slower earlier filter result after a newer filter loads', async () => {
+    let resolveOld!: (value: unknown) => void;
+    get.mockImplementation((url, config) => {
+      if (url !== '/assets/') return Promise.resolve({ data: [] });
+      if ((config?.params as { search?: string } | undefined)?.search === 'old') return new Promise(resolve => { resolveOld = resolve; });
+      return Promise.resolve({ data: { assets: [{ ...asset, name: 'Current gateway' }], total: 1 } });
+    });
+    render(<MemoryRouter><Assets /></MemoryRouter>);
+    await screen.findByText('Current gateway');
+    fireEvent.change(screen.getByLabelText('Search assets'), { target: { value: 'old' } });
+    fireEvent.change(screen.getByLabelText('Search assets'), { target: { value: 'new' } });
+    await screen.findByText('Current gateway');
+    await act(async () => { resolveOld({ data: { assets: [{ ...asset, name: 'Stale gateway' }], total: 100 } }); });
+    await waitFor(() => expect(screen.queryByText('Stale gateway')).toBeNull());
+    expect(screen.getByText('Showing 1–1 of 1 matching assets · Page 1 of 1')).toBeTruthy();
   });
 });

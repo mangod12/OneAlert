@@ -21,6 +21,7 @@ function assetTypeLabel(value: string): string {
 export function Assets() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [total, setTotal] = useState(0);
+  const requestId = useRef(0);
   const [page, setPage] = useState(1);
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState(() => searchParams.get('search') ?? '');
@@ -64,6 +65,7 @@ export function Assets() {
   };
 
   const fetchAssets = useCallback(async () => {
+    const request = ++requestId.current;
     setLoading(true);
     setError(null);
     try {
@@ -75,19 +77,23 @@ export function Assets() {
       if (otFilter) params.is_ot = otFilter;
       params.sort = sort;
       const res = await apiClient.get<AssetListResponse>('/assets/', { params });
+      if (request !== requestId.current) return;
+      const lastPage = Math.max(1, Math.ceil(res.data.total / 15));
+      if (page > lastPage) { setPage(lastPage); return; }
       setAssets(res.data.assets);
       setTotal(res.data.total);
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'Asset inventory could not be loaded.'));
+      if (request === requestId.current) setError(getApiErrorMessage(err, 'Asset inventory could not be loaded.'));
     } finally {
-      setLoading(false);
+      if (request === requestId.current) setLoading(false);
     }
   }, [page, search, typeFilter, vendorFilter, criticalityFilter, otFilter, sort]);
 
   const [assetTypes, setAssetTypes] = useState<string[]>(FALLBACK_ASSET_TYPES);
 
   useEffect(() => {
-    fetchAssets();
+    void fetchAssets();
+    return () => { requestId.current += 1; };
   }, [fetchAssets]);
 
   useEffect(() => {
@@ -149,8 +155,8 @@ export function Assets() {
         </button>
       } />
 
-      <div className="flex items-center gap-3">
-        <div className="relative max-w-sm flex-1">
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
+        <div className="relative min-w-[12rem] max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
           <input
             type="text"
@@ -304,6 +310,14 @@ export function Assets() {
           ))
         )}
       </div>}
+
+      {!loading && !error && total > 0 && <nav aria-label="Asset inventory pages" className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <p role="status" className="text-surface-400">Showing {(page - 1) * 15 + 1}–{Math.min(page * 15, total)} of {total} matching assets · Page {page} of {Math.ceil(total / 15)}</p>
+        <div className="flex gap-2">
+          <button type="button" disabled={page === 1} onClick={() => setPage(value => value - 1)} className="rounded-md border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Previous assets</button>
+          <button type="button" disabled={page * 15 >= total} onClick={() => setPage(value => value + 1)} className="rounded-md border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Next assets</button>
+        </div>
+      </nav>}
 
       {pendingDelete && (
         <ConfirmDialog
