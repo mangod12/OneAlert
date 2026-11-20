@@ -2,7 +2,7 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,12 +23,20 @@ async def search_recorded_components(
     size: Annotated[int, Query(ge=1, le=100)] = 10,
     version: Annotated[str, Query(max_length=200)] = '',
     vulnerable_only: bool = False,
+    asset_id: Annotated[int | None, Query(ge=1, le=2147483647)] = None,
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Return matching saved rows, never inferred installations or live CVE coverage."""
     query, exact_version = search.strip(), version.strip()
     conditions = component_conditions(current_user.id, query, exact_version, vulnerable_only)
+    asset = None
+    if asset_id is not None:
+        asset = (await db.execute(select(Asset).where(Asset.id == asset_id,
+                                                     Asset.user_id == current_user.id))).scalar_one_or_none()
+        if asset is None:
+            raise HTTPException(status_code=404, detail='Asset not found')
+        conditions.append(Asset.id == asset_id)
     source = select(SBOMComponent).join(SBOM, SBOM.id == SBOMComponent.sbom_id).join(Asset, Asset.id == SBOM.asset_id)
     counts = (await db.execute(select(func.count(SBOMComponent.id), func.count(func.distinct(SBOM.id)),
                                      func.count(func.distinct(Asset.id)))
@@ -39,6 +47,7 @@ async def search_recorded_components(
     return {'search': query, 'version': exact_version, 'vulnerable_only': vulnerable_only, 'page': page, 'size': size,
             'total': counts[0], 'document_count': counts[1], 'asset_count': counts[2],
             'retrieved_at': datetime.now(UTC).isoformat(),
+            'scoped_asset_id': asset_id, 'scoped_asset_name': asset.name if asset else None,
             'records': [{'component': SBOMComponentResponse.model_validate(component),
                          'sbom_id': sbom.id, 'asset_id': asset.id, 'asset_name': asset.name,
                          'document_created_at': sbom.created_at, 'document_source': sbom.source,
