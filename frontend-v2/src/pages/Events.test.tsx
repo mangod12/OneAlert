@@ -499,3 +499,7 @@ it('submits a reviewed file only once while its upload is pending', async () => 
   expect((screen.getByLabelText('Source type') as HTMLSelectElement).disabled).toBe(true);
   expect(screen.getByText(/Submitting this reviewed file/)).toBeTruthy();
 });
+it('links expanded evidence to its exact event and never fills a missing byte counter with zero', async () => {
+  mockAllFulfilled([makeEvent({ bytes_in: null, bytes_out: 128 })]); render(<Events />); fireEvent.click(await screen.findByRole('button', { name: 'Show details for event 1' }));
+  expect(screen.getByText('Not recorded / 128')).toBeTruthy(); expect(screen.getByRole('link', { name: 'Open exact event record #1' }).getAttribute('href')).toBe('/app/events/1');
+});

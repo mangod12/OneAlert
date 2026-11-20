@@ -483,6 +483,7 @@ export function Events() {
                   {expandedId === e.id && (
                     <tr className="border-b border-surface-800 bg-surface-900/60">
                       <td colSpan={9} className="px-6 py-4">
+                        <a href={`/app/events/${e.id}`} className="mb-3 inline-block text-xs text-primary-300">Open exact event record #{e.id}</a>
                         <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs sm:grid-cols-4">
                           {[
                             ['Action', e.action],
@@ -492,7 +493,7 @@ export function Events() {
                             ['Domain', e.domain],
                             ['URL', e.url],
                             ['User agent', e.user_agent],
-                            ['Bytes in/out', e.bytes_in != null || e.bytes_out != null ? `${e.bytes_in ?? 0} / ${e.bytes_out ?? 0}` : null],
+                            ['Bytes in/out', e.bytes_in != null || e.bytes_out != null ? `${e.bytes_in ?? 'Not recorded'} / ${e.bytes_out ?? 'Not recorded'}` : null],
                           ].map(([label, value]) => (
                             <div key={label as string}>
                               <dt className="text-surface-500">{label}</dt>
