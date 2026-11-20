@@ -773,9 +773,18 @@ async def _get_visible_case(db: AsyncSession, case_id: int, current_user: User) 
     return case
 
 
+def _can_manage_checklist(case: Case, current_user: User) -> bool:
+    return case.user_id == current_user.id or case.assigned_to_id == current_user.id
+
+
+def _require_checklist_manager(case: Case, current_user: User):
+    if not _can_manage_checklist(case, current_user):
+        raise HTTPException(status_code=403, detail="Only the investigation owner or assignee can manage its checklist")
+
+
 async def _get_case_task(db: AsyncSession, case_id: int, task_id: int) -> CaseTask:
     task = (await db.execute(
-        select(CaseTask).where(CaseTask.id == task_id, CaseTask.case_id == case_id)
+        select(CaseTask).where(CaseTask.id == task_id, CaseTask.case_id == case_id).with_for_update()
     )).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -825,6 +834,7 @@ async def create_case_task(
 ):
     """Add a task to the end of the case checklist."""
     case = await _get_visible_case(db, case_id, current_user)
+    _require_checklist_manager(case, current_user)
     title = payload.title.strip()
     if not title:
         raise HTTPException(status_code=422, detail="Task title must not be blank")
@@ -871,6 +881,12 @@ async def update_case_task(
     """
     case = await _get_visible_case(db, case_id, current_user)
     task = await _get_case_task(db, case.id, task_id)
+    if not _can_manage_checklist(case, current_user) and (
+        task.assignee_id != current_user.id or payload.model_fields_set - {"done", "due_date"}
+    ):
+        raise HTTPException(status_code=403, detail=(
+            "You can only change completion or due dates on checklist tasks currently assigned to you"))
+
 
     if payload.title is not None:
         title = payload.title.strip()
@@ -936,6 +952,7 @@ async def delete_case_task(
 ):
     """Remove a task from the case checklist."""
     case = await _get_visible_case(db, case_id, current_user)
+    _require_checklist_manager(case, current_user)
     task = await _get_case_task(db, case.id, task_id)
     await db.delete(task)
     await db.commit()
@@ -994,6 +1011,7 @@ async def seed_case_tasks_from_plan(
     only adds its new steps.
     """
     case = await _get_visible_case(db, case_id, current_user)
+    _require_checklist_manager(case, current_user)
     # Serialize all imports on the case, including legacy bodyless requests.
     await db.execute(select(Case.id).where(Case.id == case.id).with_for_update())
     plan = (await db.execute(select(ResponsePlan).where(
