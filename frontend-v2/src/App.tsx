@@ -26,7 +26,7 @@ const AuditLog = lazy(() => import('./pages/AuditLog').then(module => ({ default
 const Compliance = lazy(() => import('./pages/Compliance').then(module => ({ default: module.Compliance })));
 const Sbom = lazy(() => import('./pages/Sbom').then(module => ({ default: module.Sbom })));
 const Topology = lazy(() => import('./pages/Topology').then(module => ({ default: module.Topology })));
-const ResponsePlans = lazy(() => import('./pages/ResponsePlans').then(module => ({ default: module.ResponsePlans })));
+const ResponsePlans = lazy(() => import('./pages/ResponsePlans').then(module => ({ default: module.ResponsePlansRoute })));
 const Validation = lazy(() => import('./pages/Validation').then(module => ({ default: module.Validation })));
 
 function App() {

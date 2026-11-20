@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom';
 import { ResponseDecisionEvidence } from '../components/ResponseDecisionEvidence';
 import { useCallback, useState, useEffect, useRef } from 'react';
 import apiClient from '../api/client';
@@ -62,7 +63,13 @@ const STATUS_STYLES: Record<string, string> = {
   partial: 'bg-warning/10 text-warning',
 };
 
-export function ResponsePlans() {
+export function ResponsePlansRoute() {
+  const [params] = useSearchParams();
+  const ids = params.getAll('plan');
+  return <ResponsePlans linkedPlanId={ids.length > 1 ? 'invalid' : ids[0] ?? null} />;
+}
+
+export function ResponsePlans({ linkedPlanId = null }: { linkedPlanId?: string | null }) {
   const requestId = useRef(0);
   const approving = useRef(false);
   const [reviewApprovalId, setReviewApprovalId] = useState<number | null>(null);
@@ -210,7 +217,7 @@ export function ResponsePlans() {
         : errors.length > 0 && <ErrorState title="Response plans unavailable" description={errors.join(' · ')} action={<RetryButton onClick={() => void fetchPlans()} />} />}
       {loading && <LoadingSurface label="Loading response plans" />}
 
-      <ResponseDecisionEvidence />
+      <ResponseDecisionEvidence linkedPlanId={linkedPlanId} />
 
       {/* Pending Approvals */}
       {pending.length > 0 && (

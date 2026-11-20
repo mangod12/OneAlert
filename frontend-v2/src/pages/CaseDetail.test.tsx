@@ -608,7 +608,7 @@ describe('Case response plans', () => {
     ]);
     renderDetail();
     expect(await screen.findByText('Response Plans')).toBeTruthy();
-    expect(screen.getByText('Plan #21')).toBeTruthy();
+    expect(screen.getByText('Plan #21').closest('a')?.getAttribute('href')).toBe('/response-plans?plan=21');
     expect(screen.getByText('pending approval')).toBeTruthy();
     expect(screen.getByText(/2 actions · L2 · agent/)).toBeTruthy();
     expect(screen.getByText('Plan #20')).toBeTruthy();

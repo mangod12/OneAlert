@@ -48,3 +48,43 @@ describe('Read-only response decision evidence', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include recorded actor identities and reviewer IDs in JSON' })); fireEvent.click(screen.getByRole('button', { name: 'Download loaded decision evidence JSON' })); body = JSON.parse(await read()); expect(body.plan.approved_by).toBe(55); expect(body.approval_records[0].requested_by).toBe('Request actor');
   });
 });
+
+it('opens only the exact linked plan automatically and exposes owner-scoped handoff links', async () => {
+  render(<ResponseDecisionEvidence linkedPlanId="7" />);
+  await screen.findByText('Plan #7 · Case #10');
+  expect(get).toHaveBeenCalledWith('/response-plans/7/decision-evidence', { params: { page: 1, size: 10 } });
+  expect(screen.getByRole('link', { name: 'Open exact plan evidence link' }).getAttribute('href')).toBe('/app/response-plans?plan=7');
+  expect(screen.getByRole('link', { name: 'Open investigation #10' }).getAttribute('href')).toBe('/app/cases/10');
+  expect(apiClient.post).not.toHaveBeenCalled();
+});
+it.each(['0', '7.0', '7e0', '-7', '', '9007199254740993', 'invalid'])('does not fetch malformed linked plan %j', linkedPlanId => {
+  render(<ResponseDecisionEvidence linkedPlanId={linkedPlanId} />);
+  expect(screen.getByRole('alert').textContent).toContain('invalid plan ID');
+  expect(get).not.toHaveBeenCalled();
+});
+it('discards an older linked request and actor opt-in when URL plan changes', async () => {
+  let finish!: (value: unknown) => void;
+  get.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const view = render(<ResponseDecisionEvidence linkedPlanId="7" />);
+  get.mockResolvedValueOnce({ data: { ...snapshot, plan: { ...snapshot.plan, id: 8 }, approval_records: [] } });
+  view.rerender(<ResponseDecisionEvidence linkedPlanId="8" />);
+  await screen.findByText('Plan #8 · Case #10');
+  await act(async () => finish({ data: snapshot }));
+  expect(screen.queryByText('Plan #7 · Case #10')).toBeNull();
+  expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
+  view.rerender(<ResponseDecisionEvidence linkedPlanId={null} />);
+  expect(screen.queryByText('Plan #8 · Case #10')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Download loaded decision evidence JSON' })).toBeNull();
+});
+it('copies only the exact plan link without actor selection or other query state', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  await load(); fireEvent.click(screen.getByRole('button', { name: 'Copy exact plan evidence link' }));
+  await screen.findByText(/Exact plan evidence link copied/);
+  expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/app/response-plans?plan=7`);
+});
+it('keeps a usable link when clipboard permission is denied', async () => {
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockRejectedValue(new Error('Denied')) } });
+  await load(); fireEvent.click(screen.getByRole('button', { name: 'Copy exact plan evidence link' }));
+  await screen.findByText(/Copy unavailable/); expect(screen.getByRole('link', { name: 'Open exact plan evidence link' })).toBeTruthy();
+});

@@ -961,7 +961,7 @@ export function CaseDetail() {
             {plans.map(plan => (
               <div key={plan.id} className="flex items-stretch gap-2">
                 <Link
-                  to="/response-plans"
+                  to={`/response-plans?plan=${plan.id}`}
                   className="flex flex-1 items-center justify-between gap-3 rounded-md border border-surface-700 bg-surface-800/50 p-3 transition-colors hover:border-primary-500/40"
                 >
                   <div className="flex min-w-0 items-center gap-3">
