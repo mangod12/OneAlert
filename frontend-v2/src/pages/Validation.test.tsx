@@ -279,3 +279,41 @@ describe('Validation run history navigation', () => {
     expect(screen.queryByText('Obsolete list failure')).toBeNull();
   });
 });
+
+
+describe('Recorded validation control evidence', () => {
+  it('shows per-control expectations, detections, timings and details without execution', async () => {
+    const detail = { ...run, steps: [{ ...run.steps[0], simulated: true, status: 'completed', test_type: 'atomic', executed_at: '2026-11-20T03:00:00Z', controls: [
+      { id: 1, control_name: 'Simulated password guard', control_type: 'sigma', expected: true, detected: false, detection_time_ms: null, details: 'Synthetic missed result.\nReview the configured control.' },
+      { id: 2, control_name: 'Synthetic telemetry check', control_type: 'manual', expected: false, detected: true, detection_time_ms: 0, details: null },
+    ] }] };
+    vi.mocked(apiClient.get).mockImplementation(async url => ({ data: { data: url.endsWith('/8') ? detail : [run] } }));
+    render(<Validation />);
+    fireEvent.click(await screen.findByRole('button', { name: 'View results for Perimeter check' }));
+    const summary = await screen.findByLabelText('Inspect recorded evidence for T1110: Missed password guessing');
+    fireEvent.click(summary);
+    expect(screen.getByText('Simulated password guard')).toBeTruthy();
+    expect(screen.getByText('Expected to detect: Yes · Recorded detection: No')).toBeTruthy();
+    expect(screen.getByText('Expected to detect: No · Recorded detection: Yes')).toBeTruthy();
+    expect(screen.getByText('Recorded detection time: 0 ms')).toBeTruthy();
+    expect(screen.getByText('Recorded detection time: Not recorded')).toBeTruthy();
+    expect(screen.getByText('No control detail recorded.')).toBeTruthy();
+    expect(screen.getByText(/Synthetic missed result/).textContent).toContain('Review the configured control.');
+    expect(screen.getByText('Simulated')).toBeTruthy();
+    expect(vi.mocked(apiClient.post)).not.toHaveBeenCalled();
+  });
+  it('labels absent control and execution records without making a live-detection claim', async () => {
+    await openResults();
+    expect(screen.getAllByText('No control results recorded for this step.').length).toBe(3);
+    expect(screen.getAllByText(/Missing records do not establish that no detection occurred/).length).toBe(3);
+    expect(screen.getAllByText('Not recorded').length).toBeGreaterThan(3);
+  });
+  it('distinguishes recorded non-simulated steps and retains unparseable times', async () => {
+    const detail = { ...run, steps: [{ ...run.steps[0], simulated: false, executed_at: 'unverified-clock' }] };
+    vi.mocked(apiClient.get).mockImplementation(async url => ({ data: { data: url.endsWith('/8') ? detail : [run] } }));
+    render(<Validation />);
+    fireEvent.click(await screen.findByRole('button', { name: 'View results for Perimeter check' }));
+    expect(await screen.findByText('Recorded as non-simulated')).toBeTruthy();
+    expect(screen.getByText('unverified-clock')).toBeTruthy();
+  });
+});
