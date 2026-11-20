@@ -46,6 +46,8 @@ interface ExecutionOutcome {
 }
 
 interface PendingApproval {
+  requested_by?: string | null;
+  plan_status?: string | null;
   review_fingerprint?: string;
   id: number;
   plan_id: number;
@@ -104,6 +106,10 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
       setExporting(false);
     }
   };
+  const [approvalDraft, setApprovalDraft] = useState(''), [approvalQuery, setApprovalQuery] = useState('');
+  const [caseDraft, setCaseDraft] = useState(''), [approvalCase, setApprovalCase] = useState('');
+  const [approvalLevel, setApprovalLevel] = useState(''), [approvalSort, setApprovalSort] = useState('newest');
+  const invalidCase = caseDraft.trim() !== '' && (!/^[1-9][0-9]*$/.test(caseDraft.trim()) || !Number.isSafeInteger(Number(caseDraft.trim())));
   const [approvalPage, setApprovalPage] = useState(1), [approvalTotal, setApprovalTotal] = useState(0);
   const [pending, setPending] = useState<PendingApproval[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
@@ -118,7 +124,7 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
     setLoading(true);
     const [planResult, approvalResult] = await Promise.allSettled([
       apiClient.get('/response-plans/', { params: { page, size: 20, ...(statusFilter ? { status: statusFilter } : {}) } }),
-      apiClient.get('/response-plans/pending-approvals', { params: { page: approvalPage, size: 10 } }),
+      apiClient.get('/response-plans/pending-approvals', { params: { page: approvalPage, size: 10, ...(approvalQuery ? { query: approvalQuery } : {}), ...(approvalCase ? { case_id: Number(approvalCase) } : {}), ...(approvalLevel ? { autonomy_level: approvalLevel } : {}), ...(approvalSort !== 'newest' ? { sort: approvalSort } : {}) } }),
     ]);
     if (request !== requestId.current) return;
     const nextErrors: string[] = [];
@@ -145,7 +151,7 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
     else { setPending([]); setApprovalTotal(0); nextErrors.push(getApiErrorMessage(approvalResult.reason, 'Pending approvals could not be loaded.')); }
     setErrors(nextErrors);
     setLoading(false);
-  }, [statusFilter, page, approvalPage]);
+  }, [statusFilter, page, approvalPage, approvalQuery, approvalCase, approvalLevel, approvalSort]);
 
   const approvePlan = async (planId: number) => {
     if (approving.current || workingPlan !== null || loading || errors.length || !pending.some(item => item.plan_id === planId && item.id === reviewApprovalId)) return;
@@ -241,21 +247,37 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
       <ResponsePlanComparison baseline={compareFrom} comparison={compareTo} />
 
       {/* Pending Approvals */}
-      {approvalTotal > 0 && (
+      {(
         <div className="bg-warning/5 border border-warning/30 rounded-md p-6">
           <h2 className="text-lg font-semibold text-warning mb-4 flex items-center gap-2">
             <Clock className="w-5 h-5" />
             Pending Approvals ({approvalTotal})
           </h2>
-          <p className="mb-3 text-xs text-surface-400">Pending request records, newest first. Approving a plan resolves all of its pending requests, including records on other pages. Review the complete saved plan before deciding.</p>
+          <p className="mb-3 text-xs text-surface-400">Pending request records matching the applied queue filters, across all pages. Approving a plan resolves all of its pending requests, including records on other pages. Review the complete saved plan before deciding.</p>
+          <form className="mb-3 flex flex-wrap gap-2" onSubmit={event => { event.preventDefault(); if (invalidCase || workingPlan !== null) return; setApprovalQuery(approvalDraft.trim()); setApprovalCase(caseDraft.trim()); setApprovalPage(1); setReviewApprovalId(null); setApprovalError(''); }}>
+            <label className="flex min-w-0 flex-1 basis-full flex-col gap-1 text-xs text-surface-400 sm:basis-0">Search all pending requests<input aria-label="Search all pending approvals" maxLength={200} value={approvalDraft} disabled={workingPlan !== null} onChange={event => setApprovalDraft(event.target.value)} placeholder="Reason, requester or record ID" className="min-w-0 rounded border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100" /></label>
+            <label className="flex min-w-0 flex-col gap-1 text-xs text-surface-400">Exact investigation ID<input aria-label="Approval investigation ID" inputMode="numeric" maxLength={16} value={caseDraft} disabled={workingPlan !== null} onChange={event => setCaseDraft(event.target.value)} placeholder="Any investigation" className="min-w-0 max-w-full rounded border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100" /></label>
+            <button type="submit" disabled={workingPlan !== null || invalidCase} className="self-end rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40">Search approval queue</button>
+          </form>
+          {invalidCase && <p role="alert" className="mb-3 text-xs text-warning">Use one positive whole-number investigation ID. This draft has not been applied.</p>}
+          {(approvalDraft.trim() !== approvalQuery || caseDraft.trim() !== approvalCase) && <p className="mb-3 text-xs text-warning">Queue search draft not applied. Current results use keyword {approvalQuery ? `"${approvalQuery}"` : 'any'} and investigation {approvalCase ? `#${approvalCase}` : 'any'}.</p>}
+          <div className="mb-3 flex flex-wrap gap-2">
+            <label className="flex flex-col gap-1 text-xs text-surface-400">Saved autonomy level<select aria-label="Approval autonomy level" disabled={workingPlan !== null} value={approvalLevel} onChange={event => { setApprovalLevel(event.target.value); setApprovalPage(1); setReviewApprovalId(null); }} className="max-w-full rounded border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-200"><option value="">All levels</option>{['L0','L1','L2','L3','L4'].map(level => <option key={level} value={level}>{level}</option>)}</select></label>
+            <label className="flex flex-col gap-1 text-xs text-surface-400">Request order<select aria-label="Approval request order" disabled={workingPlan !== null} value={approvalSort} onChange={event => { setApprovalSort(event.target.value); setApprovalPage(1); setReviewApprovalId(null); }} className="max-w-full rounded border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-200"><option value="newest">Newest requested first</option><option value="oldest">Oldest requested first</option></select></label>
+            <button type="button" disabled={workingPlan !== null} onClick={() => { setApprovalDraft(''); setApprovalQuery(''); setCaseDraft(''); setApprovalCase(''); setApprovalLevel(''); setApprovalSort('newest'); setApprovalPage(1); setReviewApprovalId(null); }} className="self-end rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40">Clear approval queue filters</button>
+            <button type="button" disabled={loading || workingPlan !== null} onClick={() => { setReviewApprovalId(null); setApprovalError(''); void fetchPlans(); }} className="self-end rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40">Refresh approval queue</button>
+          </div>
+          {!loading && !errors.length && !pending.length && <p role="status" className="mb-3 text-sm text-surface-300">No pending approval requests match the applied queue filters. This is not a count of executable plans or evidence of external action.</p>}
+          <p className="mb-3 text-xs text-surface-400">Search covers saved request reasons, requesters and approval/plan/investigation IDs, not action contents. Dates are request timestamps. Counts and pages can change between reads. Queue filters do not restrict the plan-wide effects of an approval.</p>
           <div className="space-y-3">
             {pending.map(a => (
               <div key={a.id} className="min-w-0 rounded-lg bg-surface-900/50 p-4">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-surface-50 font-medium">Plan #{a.plan_id} — Case #{a.case_id}</p>
-                  <p className="text-xs text-surface-400 mt-1">{a.reason}</p>
+                  <p className="mt-1 break-words text-xs text-surface-400">{a.reason?.trim() ? a.reason : 'Reason not recorded'}</p>
+                  <p className="mt-1 break-words text-xs text-surface-500">Request #{a.id} · Requester: {a.requested_by ?? 'Not recorded'} · Saved plan state: {a.plan_status ?? 'Not returned'} · Requested: {a.created_at ? new Date(a.created_at).toLocaleString() : 'Not recorded'}</p>
                   <p className="text-xs text-surface-500 mt-1">
-                    {a.actions?.length || 0} actions · Level {a.autonomy_level}
+                    {a.actions?.length || 0} {a.actions?.length === 1 ? 'action' : 'actions'} · Autonomy {a.autonomy_level}
                   </p>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">

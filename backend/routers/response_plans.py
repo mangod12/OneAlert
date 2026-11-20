@@ -4,10 +4,11 @@ import csv
 import io
 import secrets
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import delete, func, select
+from sqlalchemy import String, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -107,26 +108,32 @@ async def export_response_plans(
 async def list_pending_approvals(
     page: int = Query(1, ge=1),
     size: int = Query(10, ge=1, le=100),
+    query: str = Query("", max_length=200),
+    case_id: int | None = Query(None, ge=1),
+    autonomy_level: Literal["L0", "L1", "L2", "L3", "L4"] | None = None,
+    sort: Literal["newest", "oldest"] = "newest",
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """List all pending approval requests for the current user's plans."""
-    total = (await db.execute(
-        select(func.count(ApprovalRequest.id))
-        .join(ResponsePlan, ApprovalRequest.plan_id == ResponsePlan.id)
-        .where(ResponsePlan.user_id == current_user.id, ApprovalRequest.status == "pending")
-    )).scalar_one()
-    result = await db.execute(
-        select(ApprovalRequest, ResponsePlan)
-        .join(ResponsePlan, ApprovalRequest.plan_id == ResponsePlan.id)
-        .where(
-            ResponsePlan.user_id == current_user.id,
-            ApprovalRequest.status == "pending",
-        )
-        .order_by(ApprovalRequest.created_at.desc(), ApprovalRequest.id.desc())
-        .offset((page - 1) * size).limit(size)
-    )
-    rows = result.all()
+    """Search all pending requests for the caller's plans, not just a loaded page."""
+    statement = (select(ApprovalRequest, ResponsePlan)
+                 .join(ResponsePlan, ApprovalRequest.plan_id == ResponsePlan.id)
+                 .where(ResponsePlan.user_id == current_user.id, ApprovalRequest.status == "pending"))
+    if query.strip():
+        needle = query.strip().lower()
+        statement = statement.where(or_(*[
+            func.lower(func.coalesce(cast(column, String), "")).contains(needle, autoescape=True)
+            for column in (ApprovalRequest.reason, ApprovalRequest.requested_by,
+                           ApprovalRequest.id, ResponsePlan.id, ResponsePlan.case_id)
+        ]))
+    if case_id is not None:
+        statement = statement.where(ResponsePlan.case_id == case_id)
+    if autonomy_level is not None:
+        statement = statement.where(ResponsePlan.autonomy_level == autonomy_level)
+    total = (await db.execute(select(func.count()).select_from(statement.subquery()))).scalar_one()
+    order = [ApprovalRequest.created_at.asc(), ApprovalRequest.id.asc()] if sort == "oldest" else [
+        ApprovalRequest.created_at.desc(), ApprovalRequest.id.desc()]
+    rows = (await db.execute(statement.order_by(*order).offset((page - 1) * size).limit(size))).all()
 
     approvals = []
     for approval, plan in rows:
@@ -137,6 +144,7 @@ async def list_pending_approvals(
             "status": approval.status,
             "reason": approval.reason,
             "requested_by": approval.requested_by,
+            "plan_status": plan.status,
             "actions": plan.actions,
             "review_fingerprint": review_fingerprint(plan),
             "autonomy_level": plan.autonomy_level,
