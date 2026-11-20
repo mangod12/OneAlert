@@ -2,6 +2,7 @@ import { useCallback, useState, useEffect, useRef } from 'react';
 import apiClient from '../api/client';
 import { CheckCircle, XCircle, Play, Clock, Download, Shield, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
+import { responseActionCsv } from '../utils/responseActionCsv';
 import { toast } from '../components/Toast';
 import { getApiErrorMessage } from '../api/errors';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton, DegradedBanner } from '../components/ui/AsyncState';
@@ -327,6 +328,10 @@ export function ResponsePlans() {
             <Shield className="w-5 h-5 text-primary-400" />
             Plan #{selectedPlan.id} Actions
           </h2>
+          <button type="button" disabled={!selectedPlan.actions?.length || loading || errors.length > 0} onClick={() => {
+            const url = URL.createObjectURL(new Blob([responseActionCsv(selectedPlan)], { type: 'text/csv;charset=utf-8' }));
+            const link = document.createElement('a'); link.href = url; link.download = `response-plan-${selectedPlan.id}-action-evidence.csv`; link.click(); URL.revokeObjectURL(url);
+          }} className="mb-3 flex items-center gap-2 rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40"><Download className="h-4 w-4" aria-hidden="true" />Export recorded action evidence</button>
           <p className="mb-4 text-sm text-surface-400">Saved action results from this plan. Missing results do not establish whether an action ran. Review recorded details before deciding on any follow-up.</p>
           <div className="space-y-2">
             {selectedPlan.actions?.map((action, i) => (
