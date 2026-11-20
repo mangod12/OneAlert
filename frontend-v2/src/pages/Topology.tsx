@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
-import { Network, Lock, LockOpen, Plus, Trash2 } from 'lucide-react';
+import { Network, Lock, LockOpen, Plus, Trash2, Download } from 'lucide-react';
 import { getApiErrorMessage } from '../api/errors';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { toast } from '../components/Toast';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { topologyCsv } from '../utils/topologyCsv';
 
 interface TopologyNode {
   id: string;
@@ -161,9 +162,28 @@ export function Topology() {
     && (!selectedNodeId || e.source === selectedNodeId || e.target === selectedNodeId),
   );
 
+  const exportConnections = () => {
+    if (!filteredEdges.length) return;
+    try {
+      const content = topologyCsv(filteredEdges, nodes, { protocol: protocolFilter, cleartextOnly, nodeId: selectedNodeId });
+      const url = URL.createObjectURL(new Blob([content], { type: 'text/csv;charset=utf-8' }));
+      try {
+        const link = document.createElement('a');
+        link.href = url; link.download = 'topology-connections.csv'; link.click();
+      } finally { URL.revokeObjectURL(url); }
+    } catch (err: unknown) {
+      toast(getApiErrorMessage(err, 'The connection snapshot could not be downloaded.'), 'error');
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Observe" title="Network Topology" description="Observed devices, zones and connections, with encryption exposure." />
+      <PageHeader eyebrow="Observe" title="Network Topology" description="Observed devices, zones and connections, with encryption exposure." actions={
+        <button type="button" onClick={exportConnections} disabled={filteredEdges.length === 0} className="flex items-center gap-2 rounded-md border border-surface-700 px-3 py-2 text-xs text-surface-200 hover:bg-surface-800 disabled:opacity-40">
+          <Download className="h-4 w-4" aria-hidden="true" /> Export filtered connections
+        </button>
+      } />
+      <p className="text-xs text-surface-400">CSV includes only the loaded connection rows matching the current protocol, cleartext and node filters. It is a recorded snapshot, not a live connectivity check.</p>
       {statsError && <DegradedBanner messages={[statsError]} onRetry={() => void fetchTopology()} />}
 
       {nodes.length === 0 && edges.length === 0 ? (
