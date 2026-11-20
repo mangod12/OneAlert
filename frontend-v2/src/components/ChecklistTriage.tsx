@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { defaultChecklistFilters, filterChecklist, validTaskDate, type ChecklistTask } from '../utils/checklistTriage';
 const control = 'max-w-full rounded border border-surface-700 bg-surface-950 px-2 py-2 text-xs text-surface-300';
-export function ChecklistTriage<T extends ChecklistTask>({ tasks, today, currentUserId, members, children, linkedTaskId = null }: { linkedTaskId?: number | null; tasks: T[]; today: string; currentUserId: number | null; members: { id: number; full_name: string | null; email: string }[]; children: (task: T) => ReactNode }) {
+export function ChecklistTriage<T extends ChecklistTask>({ tasks, today, currentUserId, members, children, linkedTaskId = null, onSelectMatching, selectionBusy = false }: { onSelectMatching?: (ids: number[]) => void; selectionBusy?: boolean; linkedTaskId?: number | null; tasks: T[]; today: string; currentUserId: number | null; members: { id: number; full_name: string | null; email: string }[]; children: (task: T) => ReactNode }) {
   const linkedIndex = filterChecklist(tasks, defaultChecklistFilters, today, currentUserId).findIndex(task => task.id === linkedTaskId);
   const [filters, setFilters] = useState({ ...defaultChecklistFilters }), [page, setPage] = useState(() => linkedIndex < 0 ? 1 : Math.floor(linkedIndex / 20) + 1);
   const [reveal, setReveal] = useState(0), revealed = useRef('');
@@ -29,6 +29,7 @@ export function ChecklistTriage<T extends ChecklistTask>({ tasks, today, current
       {active && <button type="button" className={control} onClick={() => { setFilters({ ...defaultChecklistFilters }); setPage(1); }}>Clear task filters</button>}
     </div>
     <p className="text-xs text-surface-500">Due filters use your device's local date{today ? ` (${today})` : ''}. Overdue, today and later include open tasks only. Filters and sorting change the view, never saved task order or state.</p>
+    {onSelectMatching && <button type="button" className={control} disabled={selectionBusy || !filtered.length} onClick={() => onSelectMatching(filtered.map(task => task.id))}>Select matching checklist tasks (up to 100)</button>}
     {!filtered.length && <p role="status" className="text-sm text-surface-400">No tasks match these filters. Clear task filters to see the whole checklist.</p>}
     <ul className="space-y-1.5">{filtered.slice((currentPage - 1) * 20, currentPage * 20).map(children)}</ul>
     <nav aria-label="Checklist task pages" className="flex flex-wrap items-center gap-2 text-xs text-surface-300"><button type="button" className={control} disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous task page</button><span>{filtered.length ? (currentPage - 1) * 20 + 1 : 0}–{Math.min(currentPage * 20, filtered.length)} of {filtered.length} matching tasks · Page {currentPage} of {totalPages}</span><button type="button" className={control} disabled={currentPage >= totalPages} onClick={() => setPage(currentPage + 1)}>Next task page</button></nav>
