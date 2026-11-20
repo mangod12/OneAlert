@@ -440,3 +440,63 @@ class TestCaseUnlinking:
         detail = client.get(f"/api/v1/cases/{case_id}", headers=owner)
         assert detail.json()["alert_count"] == 1
         assert detail.json()["event_count"] == 1
+
+
+def test_list_batches_page_counts_without_join_multiplication(client):
+    from datetime import datetime
+
+    from sqlalchemy import event
+
+    from backend.models.alert import Alert
+    from backend.models.asset import Asset
+    from backend.models.case import Case, CaseAlert, CaseEvent
+    from backend.models.security_event import SecurityEvent
+    from backend.models.user import User
+
+    headers = register_and_login(client, 'page-counts@example.com')
+    with _TestingSessionLocal() as db:
+        user = db.query(User).filter_by(email='page-counts@example.com').one()
+        asset = Asset(user_id=user.id, name='Gateway', asset_type='hardware')
+        db.add(asset)
+        db.flush()
+        cases = [Case(user_id=user.id, title=f'Page case {i}', severity='high',
+                      status='open', created_at=datetime(2026, 11, 20, tzinfo=UTC)) for i in range(4)]
+        db.add_all(cases)
+        db.flush()
+        ids = [case.id for case in cases]
+        for i in range(2):
+            alert = Alert(user_id=user.id, asset_id=asset.id, title=f'Alert {i}',
+                          description='Counted', severity='high', status='pending')
+            db.add(alert)
+            db.flush()
+            db.add(CaseAlert(case_id=ids[3], alert_id=alert.id))
+        for i in range(3):
+            record = SecurityEvent(user_id=user.id, timestamp=datetime(2026, 11, 20, tzinfo=UTC),
+                                   event_type='alert', severity='high')
+            db.add(record)
+            db.flush()
+            db.add(CaseEvent(case_id=ids[3], event_id=record.id))
+        db.commit()
+    queries = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        queries.append(statement)
+
+    event.listen(_async_engine_test.sync_engine, 'before_cursor_execute', capture)
+    try:
+        response = client.get('/api/v1/cases/?size=4&sort=severity_desc', headers=headers)
+    finally:
+        event.remove(_async_engine_test.sync_engine, 'before_cursor_execute', capture)
+    assert response.status_code == 200
+    rows = response.json()['cases']
+    assert [row['id'] for row in rows] == list(reversed(ids))
+    assert rows[0]['alert_count'] == 2
+    assert rows[0]['event_count'] == 3
+    assert all(row['alert_count'] == row['event_count'] == 0 for row in rows[1:])
+    enrichments = [query for query in queries if 'count(' in query.lower()
+                   and ('case_alerts' in query or 'case_events' in query)]
+    assert len(enrichments) == 2
+    assert all('GROUP BY' in query for query in enrichments)
+    first = client.get('/api/v1/cases/?size=2&page=1&sort=severity_desc', headers=headers).json()['cases']
+    second = client.get('/api/v1/cases/?size=2&page=2&sort=severity_desc', headers=headers).json()['cases']
+    assert [row['id'] for row in first + second] == list(reversed(ids))
