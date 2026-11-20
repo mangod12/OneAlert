@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { DeviceRecordLink } from './DeviceRecordLink';
 import { useDialogFocus } from './ui/useDialogFocus';
 
 export interface RecordedTopologyEdge {
@@ -25,10 +26,10 @@ export function TopologyConnectionEvidence({ edge, receivedAt, sourceLabel, targ
     <div className="absolute inset-0 bg-surface-950/75 backdrop-blur-sm" onClick={onClose} />
     <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="connection-evidence-title" className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-surface-700 bg-surface-900 p-5 shadow-[var(--oa-shadow-float)]">
       <div className="flex flex-wrap items-start justify-between gap-3"><h2 id="connection-evidence-title" className="text-lg font-semibold text-surface-100">Recorded connection evidence</h2><button type="button" onClick={onClose} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">Close connection evidence</button></div>
-      <p className="my-3 text-xs text-surface-400">This is a loaded connection record, not a live reachability test, verified encryption or traffic capture. Recorded first/last-seen times may reflect manual entry. Direction is the stored label, not an independently verified flow direction.</p>
+      <p className="my-3 text-xs text-surface-400">This is a loaded connection record, not a live reachability test, verified encryption or traffic capture. Recorded first/last-seen times may reflect manual entry. Direction is the stored label, not an independently verified flow direction. Inventory links use explicit recorded device references, not IP matches, and do not grant access.</p>
       <button type="button" onClick={download} className="mb-3 rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Download connection evidence JSON</button>
       {error && <p role="alert" className="mb-3 text-xs text-danger">{error}</p>}
-      <dl className="divide-y divide-surface-700">{fields.map(([label, value]) => <div key={label} className="grid gap-1 py-2.5 sm:grid-cols-[12rem_minmax(0,1fr)]"><dt className="text-xs text-surface-400">{label}</dt><dd className="min-w-0 whitespace-pre-wrap break-words text-sm text-surface-100 [overflow-wrap:anywhere]">{value === undefined || value === null || value === '' ? 'Not recorded' : String(value)}</dd></div>)}</dl>
+      <dl className="divide-y divide-surface-700">{fields.map(([label, value]) => <div key={label} className="grid gap-1 py-2.5 sm:grid-cols-[12rem_minmax(0,1fr)]"><dt className="text-xs text-surface-400">{label}</dt><dd className="min-w-0 whitespace-pre-wrap break-words text-sm text-surface-100 [overflow-wrap:anywhere]">{value === undefined || value === null || value === '' ? 'Not recorded' : String(value)}{(label === 'Source device record ID' || label === 'Target device record ID') && typeof value === 'number' && <div className="mt-2"><DeviceRecordLink deviceId={value} /></div>}</dd></div>)}</dl>
     </div>
   </div>;
 }
