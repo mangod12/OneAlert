@@ -6,8 +6,10 @@ enabling graph-based topology visualization and anomaly detection.
 """
 
 from datetime import datetime
+from ipaddress import ip_address
+from typing import Annotated, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, StrictBool, StrictInt, field_validator
 from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.sql import func
 
@@ -38,12 +40,24 @@ class ConnectionCreate(BaseModel):
     source_ip: str
     target_ip: str
     protocol: str
-    port: int | None = None
-    direction: str = "bidirectional"
-    is_encrypted: bool = False
-    bytes_transferred: int = 0
-    source_device_id: int | None = None
-    target_device_id: int | None = None
+    port: Annotated[StrictInt, Field(ge=0, le=65535)] | None = None
+    direction: Literal["inbound", "outbound", "bidirectional"] = "bidirectional"
+    is_encrypted: StrictBool = False
+    bytes_transferred: Annotated[StrictInt, Field(ge=0, le=9223372036854775807)] = 0
+    source_device_id: Annotated[StrictInt, Field(ge=1)] | None = None
+    target_device_id: Annotated[StrictInt, Field(ge=1)] | None = None
+
+    @field_validator("source_ip", "target_ip")
+    @classmethod
+    def valid_endpoint(cls, value: str) -> str:
+        return str(ip_address(value.strip()))
+
+    @field_validator("protocol")
+    @classmethod
+    def named_protocol(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Protocol must not be blank")
+        return value.strip()
     model_config = {"from_attributes": True}
 
 

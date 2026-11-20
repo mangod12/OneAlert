@@ -7,6 +7,7 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { toast } from '../components/Toast';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { TopologyConnectionEvidence, type RecordedTopologyEdge } from '../components/TopologyConnectionEvidence';
 import { topologyCsv } from '../utils/topologyCsv';
 
 interface TopologyNode {
@@ -17,14 +18,7 @@ interface TopologyNode {
   risk_score: number;
 }
 
-interface TopologyEdge {
-  id: number | null;
-  source: string;
-  target: string;
-  protocol: string;
-  is_encrypted: boolean;
-  port: number | null;
-}
+type TopologyEdge = RecordedTopologyEdge;
 
 interface TopologyStats {
   total_connections: number;
@@ -55,10 +49,12 @@ export function Topology() {
   const [protocolFilter, setProtocolFilter] = useState('');
   const [cleartextOnly, setCleartextOnly] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedConnection, setSelectedConnection] = useState<TopologyEdge | null>(null);
+  const [graphReceivedAt, setGraphReceivedAt] = useState<string | null>(null);
 
   const fetchTopology = useCallback(async () => {
     const request = ++requestId.current;
-    setLoading(true); setError(''); setStatsError('');
+    setLoading(true); setError(''); setStatsError(''); setSelectedConnection(null); setGraphReceivedAt(null);
     const [graphResult, statsResult] = await Promise.allSettled([
       apiClient.get<{ nodes: TopologyNode[]; edges: TopologyEdge[] }>('/topology/graph'),
       apiClient.get<TopologyStats>('/topology/stats'),
@@ -67,6 +63,7 @@ export function Topology() {
     if (graphResult.status === 'fulfilled') {
       setNodes(graphResult.value.data.nodes);
       setEdges(graphResult.value.data.edges);
+      setGraphReceivedAt(new Date().toISOString());
     } else {
       setNodes([]); setEdges([]);
       setError(getApiErrorMessage(graphResult.reason, 'Network topology could not be loaded.'));
@@ -165,7 +162,7 @@ export function Topology() {
   const exportConnections = () => {
     if (!filteredEdges.length) return;
     try {
-      const content = topologyCsv(filteredEdges, nodes, { protocol: protocolFilter, cleartextOnly, nodeId: selectedNodeId });
+      const content = topologyCsv(filteredEdges, nodes, { protocol: protocolFilter, cleartextOnly, nodeId: selectedNodeId, receivedAt: graphReceivedAt });
       const url = URL.createObjectURL(new Blob([content], { type: 'text/csv;charset=utf-8' }));
       try {
         const link = document.createElement('a');
@@ -178,6 +175,7 @@ export function Topology() {
 
   return (
     <div className="space-y-6">
+      {selectedConnection && <TopologyConnectionEvidence edge={selectedConnection} receivedAt={graphReceivedAt} sourceLabel={nodeLabel(selectedConnection.source)} targetLabel={nodeLabel(selectedConnection.target)} onClose={() => setSelectedConnection(null)} />}
       <PageHeader eyebrow="Observe" title="Network Topology" description="Observed devices, zones and connections, with encryption exposure." actions={
         <button type="button" onClick={exportConnections} disabled={filteredEdges.length === 0} className="flex items-center gap-2 rounded-md border border-surface-700 px-3 py-2 text-xs text-surface-200 hover:bg-surface-800 disabled:opacity-40">
           <Download className="h-4 w-4" aria-hidden="true" /> Export filtered connections
@@ -324,6 +322,7 @@ export function Topology() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
+                        <button type="button" aria-label={`View connection ${edge.id ?? i + 1} evidence`} onClick={() => setSelectedConnection(edge)} className="mr-2 mb-1 whitespace-nowrap rounded border border-surface-600 px-2.5 py-2 text-xs text-primary-300">View evidence</button>
                         {edge.id != null && (
                           <button
                             type="button"
