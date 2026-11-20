@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HuntLab } from './HuntLab';
 
@@ -47,7 +47,7 @@ afterEach(cleanup);
 describe('Hunt session reopening', () => {
   it('reloads a past session\'s results when its history row is activated', async () => {
     mockGet.mockImplementation(url => Promise.resolve({
-      data: url.endsWith('/5') ? sessionDetail : url.endsWith('/detections') ? [] : [session],
+      data: url.endsWith('/5') ? sessionDetail : url.endsWith('/detections') ? [] : { sessions: [session], total: 1 },
     }));
     render(<HuntLab />);
     fireEvent.click(await screen.findByRole('button', { name: /reopen hunt: dns tunneling/i }));
@@ -59,7 +59,7 @@ describe('Hunt session reopening', () => {
 
   it('restores the hypothesis text into the hunt input', async () => {
     mockGet.mockImplementation(url => Promise.resolve({
-      data: url.endsWith('/5') ? sessionDetail : url.endsWith('/detections') ? [] : [session],
+      data: url.endsWith('/5') ? sessionDetail : url.endsWith('/detections') ? [] : { sessions: [session], total: 1 },
     }));
     render(<HuntLab />);
     fireEvent.click(await screen.findByRole('button', { name: /reopen hunt: dns tunneling/i }));
@@ -71,7 +71,7 @@ describe('Hunt session reopening', () => {
   it('reports a failed load without clearing existing results', async () => {
     mockGet.mockImplementation(url => {
       if (url.endsWith('/5')) return Promise.reject(new Error('Not found'));
-      return Promise.resolve({ data: url.endsWith('/detections') ? [] : [session] });
+      return Promise.resolve({ data: url.endsWith('/detections') ? [] : { sessions: [session], total: 1 } });
     });
     mockPost.mockResolvedValue({ data: { data: { explanation: 'Fresh hunt result' } } });
     render(<HuntLab />);
@@ -88,7 +88,7 @@ describe('Hunt session reopening', () => {
 describe('Hunt session deletion', () => {
   function mockWithSession() {
     mockGet.mockImplementation(url => Promise.resolve({
-      data: url.endsWith('/detections') ? [] : [session],
+      data: url.endsWith('/detections') ? [] : { sessions: mockDelete.mock.calls.length ? [] : [session], total: mockDelete.mock.calls.length ? 0 : 1 },
     }));
   }
 
@@ -120,7 +120,7 @@ describe('Detection rules', () => {
 
   function mockWithRules() {
     mockGet.mockImplementation(url => Promise.resolve({
-      data: url.endsWith('/5') ? sessionDetail : url.endsWith('/detections') ? rules : [session],
+      data: url.endsWith('/5') ? sessionDetail : url.endsWith('/detections') ? rules : { sessions: [session], total: 1 },
     }));
   }
 
@@ -226,7 +226,7 @@ describe('Detection rules', () => {
 
 describe('Detection rule loading truth', () => {
   it('does not claim no rules exist while the request is pending', async () => {
-    mockGet.mockImplementation(url => url.endsWith('/detections') ? new Promise(() => {}) : Promise.resolve({ data: [] }));
+    mockGet.mockImplementation(url => url.endsWith('/detections') ? new Promise(() => {}) : Promise.resolve({ data: { sessions: [], total: 0 } }));
     render(<HuntLab />);
     expect(screen.getByLabelText('Loading detection rules')).toBeTruthy();
     expect(screen.queryByText(/No detection rules saved yet/)).toBeNull();
@@ -236,7 +236,7 @@ describe('Detection rule loading truth', () => {
     let fail = true;
     mockGet.mockImplementation(url => {
       if (url.endsWith('/detections')) return fail ? Promise.reject(new Error('Rule store unavailable')) : Promise.resolve({ data: [] });
-      return Promise.resolve({ data: [session] });
+      return Promise.resolve({ data: { sessions: [session], total: 1 } });
     });
     render(<HuntLab />);
     expect(await screen.findByText('Detection rules unavailable')).toBeTruthy();
@@ -251,7 +251,7 @@ describe('Detection rule loading truth', () => {
 it('reopens query evidence stored in the historical list format', async () => {
   mockGet.mockImplementation(url => Promise.resolve({
     data: url.endsWith('/5') ? { ...sessionDetail, result_data: sessionDetail.result_data.query_results }
-      : url.endsWith('/detections') ? [] : [session],
+      : url.endsWith('/detections') ? [] : { sessions: [session], total: 1 },
   }));
   render(<HuntLab />);
   fireEvent.click(await screen.findByRole('button', { name: /reopen hunt: dns tunneling/i }));
@@ -264,7 +264,7 @@ it('reopens query evidence stored in the historical list format', async () => {
 it('pages retained query evidence beyond twenty rows and resets paging on a reopened session', async () => {
   mockGet.mockImplementation(url => Promise.resolve({ data: url.endsWith('/5') ? {
     ...sessionDetail, result_data: { query_results: [{ row_count: 60, rows: Array.from({ length: 25 }, (_, index) => ({ host: `recorded-${index + 1}` })) }] },
-  } : url.endsWith('/detections') ? [] : [session] }));
+  } : url.endsWith('/detections') ? [] : { sessions: [session], total: 1 } }));
   render(<HuntLab />);
   fireEvent.click(await screen.findByRole('button', { name: /reopen hunt: dns tunneling/i }));
   await screen.findByText('recorded-1');
@@ -278,7 +278,7 @@ it('pages retained query evidence beyond twenty rows and resets paging on a reop
 });
 
 it('does not launch duplicate hunts when Enter repeats during an in-flight hunt', async () => {
-  mockGet.mockImplementation(url => Promise.resolve({ data: url.endsWith('/detections') ? [] : [session] }));
+  mockGet.mockImplementation(url => Promise.resolve({ data: url.endsWith('/detections') ? [] : { sessions: [session], total: 1 } }));
   mockPost.mockReturnValue(new Promise(() => {}));
   render(<HuntLab />);
   const input = await screen.findByLabelText('Hunting Hypothesis');
@@ -292,7 +292,7 @@ it('does not launch duplicate hunts when Enter repeats during an in-flight hunt'
 
 it('does not start a hunt while a historical session is loading', async () => {
   mockGet.mockImplementation(url => url.endsWith('/5') ? new Promise(() => {})
-    : Promise.resolve({ data: url.endsWith('/detections') ? [] : [session] }));
+    : Promise.resolve({ data: url.endsWith('/detections') ? [] : { sessions: [session], total: 1 } }));
   render(<HuntLab />);
   const input = await screen.findByLabelText('Hunting Hypothesis');
   fireEvent.change(input, { target: { value: 'Check DNS records' } });
@@ -303,7 +303,7 @@ it('does not start a hunt while a historical session is loading', async () => {
 });
 
 it('allows another hunt after a failed request', async () => {
-  mockGet.mockImplementation(url => Promise.resolve({ data: url.endsWith('/detections') ? [] : [session] }));
+  mockGet.mockImplementation(url => Promise.resolve({ data: url.endsWith('/detections') ? [] : { sessions: [session], total: 1 } }));
   mockPost.mockRejectedValueOnce(new Error('Hunt unavailable')).mockResolvedValueOnce({ data: { data: { explanation: 'Retry completed' } } });
   render(<HuntLab />);
   fireEvent.change(await screen.findByLabelText('Hunting Hypothesis'), { target: { value: 'Check DNS records' } });
@@ -317,7 +317,7 @@ it('allows another hunt after a failed request', async () => {
 
 it('inspects and clones immutable rule content into an untested disabled draft without changing the original', async () => {
   const original = { id: 7, name: 'Retained guard', description: 'Full retained rule description', rule_type: 'sigma', rule_content: 'title: Retained guard\ndetection:\n  condition: selection', mitre_techniques: ['T1110'], confidence: 'high', tested: true, enabled: true, created_by: 'human', created_at: '2026-11-20T08:00:00Z' };
-  mockGet.mockImplementation(async url => ({ data: url.endsWith('/detections') ? [original] : [] }));
+  mockGet.mockImplementation(async url => ({ data: url.endsWith('/detections') ? [original] : { sessions: [], total: 0 } }));
   mockPost.mockResolvedValue({ data: { ...original, id: 8, enabled: false, tested: false } });
   render(<HuntLab />);
   fireEvent.click(await screen.findByLabelText('Inspect saved rule Retained guard'));
@@ -336,7 +336,7 @@ it('inspects and clones immutable rule content into an untested disabled draft w
 
 it('pages and searches loaded rule content locally and resets the page when scope changes', async () => {
   const rules = Array.from({ length: 23 }, (_, index) => ({ id: index, name: `Saved rule ${index}`, description: null, rule_type: 'sigma', rule_content: index === 22 ? 'Distinct retained selector' : 'saved selector', mitre_techniques: [], confidence: 'medium', tested: false, enabled: index % 2 === 0, created_by: 'human', created_at: '2026-11-20T08:00:00Z' }));
-  mockGet.mockImplementation(async url => ({ data: url.endsWith('/detections') ? rules : [] }));
+  mockGet.mockImplementation(async url => ({ data: url.endsWith('/detections') ? rules : { sessions: [], total: 0 } }));
   render(<HuntLab />);
   await screen.findByText('Saved rule 0');
   expect(screen.queryByText('Saved rule 10')).toBeNull();
@@ -354,7 +354,7 @@ it('pages and searches loaded rule content locally and resets the page when scop
 });
 
 it('retains a failed rule draft and only enables it when explicitly selected', async () => {
-  mockGet.mockResolvedValue({ data: [] });
+  mockGet.mockImplementation(async url => ({ data: url.endsWith('/detections') ? [] : { sessions: [], total: 0 } }));
   mockPost.mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce({ data: {} });
   render(<HuntLab />);
   fireEvent.click(await screen.findByRole('button', { name: 'New rule' }));
@@ -367,4 +367,72 @@ it('retains a failed rule draft and only enables it when explicitly selected', a
   expect(screen.getByLabelText('Enable rule after saving')).toHaveProperty('checked', true);
   fireEvent.click(screen.getByRole('button', { name: 'Save rule' }));
   await waitFor(() => expect(mockPost).toHaveBeenLastCalledWith('/hunt/detections', expect.objectContaining({ enabled: true })));
+});
+
+it('searches complete hunt history with explicit draft apply, server filters and paging', async () => {
+  mockGet.mockImplementation(async (url, config) => {
+    if (url.endsWith('/detections')) return { data: [] };
+    const params = (config?.params ?? {}) as Record<string, string | number | boolean>;
+    return { data: { total: params.search ? 1 : 66, sessions: [{ ...session, hypothesis: params.search ? 'Older matching hunt' : params.page === 2 ? 'Second history page' : 'First history page' }] } };
+  });
+  render(<HuntLab />);
+  await screen.findByRole('button', { name: 'Reopen hunt: First history page' });
+  fireEvent.click(screen.getByRole('button', { name: 'More hunts' }));
+  await screen.findByRole('button', { name: 'Reopen hunt: Second history page' });
+  fireEvent.change(screen.getByLabelText('Search hunt history'), { target: { value: 'older retained' } });
+  expect(screen.getByText(/History search draft not applied/)).toBeTruthy();
+  expect(mockGet.mock.calls.filter(([url]) => url === '/hunt/history')).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Search hunts' }));
+  await screen.findByRole('button', { name: 'Reopen hunt: Older matching hunt' });
+  expect(mockGet).toHaveBeenLastCalledWith('/hunt/history', { params: { page: 1, size: 20, search: 'older retained' } });
+  fireEvent.change(screen.getByLabelText('Hunt history status'), { target: { value: 'completed' } });
+  fireEvent.click(screen.getByLabelText('With recorded findings'));
+  await waitFor(() => expect(mockGet).toHaveBeenLastCalledWith('/hunt/history', { params: { page: 1, size: 20, search: 'older retained', state: 'completed', with_findings: true } }));
+  fireEvent.click(screen.getByRole('button', { name: 'Clear hunt history filters' }));
+  await screen.findByRole('button', { name: 'Reopen hunt: First history page' });
+  expect(mockPost).not.toHaveBeenCalled();
+});
+
+it('discards a late history page after filters change and keeps controls available for recovery', async () => {
+  let resolveOld!: (value: unknown) => void;
+  let fail = false;
+  mockGet.mockImplementation((url, config) => {
+    if (url.endsWith('/detections')) return Promise.resolve({ data: [] });
+    const params = (config?.params ?? {}) as Record<string, string | number>;
+    if (params.page === 2) return new Promise(resolve => { resolveOld = resolve; });
+    if (fail && params.search) return Promise.reject(new Error('History temporarily unavailable'));
+    return Promise.resolve({ data: { total: params.search ? 1 : 40, sessions: [{ ...session, hypothesis: params.search ? 'Filtered saved hunt' : 'Original hunt' }] } });
+  });
+  render(<HuntLab />);
+  await screen.findByRole('button', { name: 'Reopen hunt: Original hunt' });
+  fireEvent.click(screen.getByRole('button', { name: 'More hunts' }));
+  fireEvent.change(screen.getByLabelText('Search hunt history'), { target: { value: 'filtered' } });
+  fail = true;
+  fireEvent.click(screen.getByRole('button', { name: 'Search hunts' }));
+  await screen.findByText('Hunt history unavailable');
+  expect(screen.queryByRole('button', { name: 'Reopen hunt: Original hunt' })).toBeNull();
+  fail = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await screen.findByRole('button', { name: 'Reopen hunt: Filtered saved hunt' });
+  await act(async () => resolveOld({ data: { total: 40, sessions: [{ ...session, hypothesis: 'Stale hunt' }] } }));
+  expect(screen.queryByRole('button', { name: 'Reopen hunt: Stale hunt' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Reopen hunt: Filtered saved hunt' })).toBeTruthy();
+});
+
+it('refreshes the current history filters when a new hunt finishes after the view changed', async () => {
+  let finishHunt!: (value: unknown) => void;
+  mockPost.mockImplementation(() => new Promise(resolve => { finishHunt = resolve; }));
+  mockGet.mockImplementation(async url => ({ data: url.endsWith('/detections') ? [] : { sessions: [session], total: 1 } }));
+  render(<HuntLab />);
+  await screen.findByRole('button', { name: /reopen hunt:/i });
+  fireEvent.change(screen.getByLabelText('Hunting Hypothesis'), { target: { value: 'new hypothesis' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Hunt' }));
+  fireEvent.change(screen.getByLabelText('Search hunt history'), { target: { value: 'current keyword' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Search hunts' }));
+  await waitFor(() => expect(mockGet).toHaveBeenLastCalledWith('/hunt/history', { params: { page: 1, size: 20, search: 'current keyword' } }));
+  const reads = mockGet.mock.calls.filter(([url]) => url === '/hunt/history').length;
+  await act(async () => finishHunt({ data: { data: { explanation: 'New saved hunt evidence' } } }));
+  await screen.findByText('New saved hunt evidence');
+  await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/hunt/history')).toHaveLength(reads + 1));
+  expect(mockGet).toHaveBeenLastCalledWith('/hunt/history', { params: { page: 1, size: 20, search: 'current keyword' } });
 });

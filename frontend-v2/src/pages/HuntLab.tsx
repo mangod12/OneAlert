@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import apiClient from '../api/client';
 import { Play, FileCode, Clock, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
@@ -16,7 +16,6 @@ interface HuntSession {
   status: string;
   queries_run: number;
   findings_count: number;
-  sigma_rule: string | null;
   created_at: string;
 }
 
@@ -76,15 +75,36 @@ export function HuntLab() {
   const [deletingRuleBusy, setDeletingRuleBusy] = useState(false);
   const [deletingSession, setDeletingSession] = useState<HuntSession | null>(null);
   const [deletingSessionBusy, setDeletingSessionBusy] = useState(false);
-  const fetchSessions = async () => {
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyKeyword, setHistoryKeyword] = useState('');
+  const [historyState, setHistoryState] = useState('');
+  const [historyFindings, setHistoryFindings] = useState(false);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyRefresh, setHistoryRefresh] = useState(0);
+  const historyRequest = useRef(0);
+  const historyKey = JSON.stringify([historyKeyword, historyState, historyFindings, historyPage, historyRefresh]);
+  const currentHistoryKey = useRef(historyKey);
+  useLayoutEffect(() => { currentHistoryKey.current = historyKey; }, [historyKey]);
+  const fetchSessions = useCallback(async () => {
+    if (currentHistoryKey.current !== historyKey) return;
+    const request = ++historyRequest.current;
+    let redirected = false;
+    setLoading(true); setError('');
     try {
-      const res = await apiClient.get('/hunt/');
-      setSessions(res.data);
-      setError('');
+      const res = await apiClient.get<{ sessions: HuntSession[]; total: number }>('/hunt/history', { params: {
+        page: historyPage, size: 20, ...(historyKeyword ? { search: historyKeyword } : {}),
+        ...(historyState ? { state: historyState } : {}), ...(historyFindings ? { with_findings: true } : {}),
+      } });
+      if (request !== historyRequest.current || currentHistoryKey.current !== historyKey) return;
+      const lastPage = Math.max(1, Math.ceil(res.data.total / 20));
+      if (historyPage > lastPage) { redirected = true; setHistoryPage(lastPage); return; }
+      setSessions(res.data.sessions); setHistoryTotal(res.data.total);
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Hunt history could not be loaded.'));
-    } finally { setLoading(false); }
-  };
+      if (request === historyRequest.current && currentHistoryKey.current === historyKey) setError(getApiErrorMessage(err, 'Hunt history could not be loaded.'));
+    } finally { if (!redirected && request === historyRequest.current) setLoading(false); }
+  }, [historyPage, historyKeyword, historyState, historyFindings, historyKey]);
+  useEffect(() => { void fetchSessions(); return () => { historyRequest.current += 1; }; }, [fetchSessions]);
 
   const startHunt = async () => {
     if (huntInFlight.current || loadingSessionId !== null || !hypothesis.trim()) return;
@@ -95,7 +115,7 @@ export function HuntLab() {
       const res = await apiClient.post('/hunt/', { hypothesis });
       setResultVersion(value => value + 1);
       setActiveResult(res.data.data);
-      await fetchSessions();
+      setHistoryRefresh(value => value + 1);
     } catch (err) {
       toast(getApiErrorMessage(err, 'The hunt could not be completed.'), 'error');
     } finally {
@@ -142,7 +162,7 @@ export function HuntLab() {
   };
 
   useEffect(() => {
-    fetchSessions(); void fetchDetections();
+    void fetchDetections();
     return () => { detectionsRequest.current += 1; };
   }, []);
 
@@ -180,7 +200,7 @@ export function HuntLab() {
     setDeletingSessionBusy(true);
     try {
       await apiClient.delete(`/hunt/${deletingSession.id}`);
-      setSessions(prev => prev.filter(s => s.id !== deletingSession.id));
+      setHistoryRefresh(value => value + 1);
       toast('Hunt session deleted.', 'success');
       setDeletingSession(null);
     } catch (err) {
@@ -481,26 +501,35 @@ export function HuntLab() {
       </div>
 
       {/* Past Sessions */}
-      {loading ? <LoadingSurface label="Loading hunt history" /> : error ? (
-        <ErrorState title="Hunt history unavailable" description={error} action={<RetryButton onClick={fetchSessions} />} />
-      ) : <div className="oa-panel p-6">
-        <h2 className="text-lg font-semibold text-surface-50 mb-4">Hunt History</h2>
+      <section aria-label="Hunt history workspace" className="oa-panel min-w-0 space-y-4 p-4 sm:p-6">
+        <h2 className="text-lg font-semibold text-surface-50">Hunt History</h2>
+        <p className="text-xs text-surface-400">Search all your recorded hunt hypotheses and session IDs, including sessions beyond the latest 50. Findings counts describe saved query output, not confirmed threats. Reopening reads stored evidence and does not run a new hunt.</p>
+        <form onSubmit={event => { event.preventDefault(); setHistoryKeyword(historySearch.trim()); setHistoryPage(1); }} className="flex flex-wrap gap-2">
+          <input aria-label="Search hunt history" maxLength={200} value={historySearch} onChange={event => setHistorySearch(event.target.value)} placeholder="Hypothesis or session ID" className="min-w-0 basis-full sm:basis-0 sm:flex-1 rounded border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100" />
+          <button type="submit" className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Search hunts</button>
+          <select aria-label="Hunt history status" value={historyState} onChange={event => { setHistoryState(event.target.value); setHistoryPage(1); }} className="max-w-full rounded border border-surface-600 bg-surface-950 px-2 py-2 text-xs text-surface-200"><option value="">All statuses</option>{['running','completed','failed'].map(value => <option key={value} value={value}>{value}</option>)}</select>
+          <label className="flex items-center gap-2 text-xs text-surface-300"><input type="checkbox" checked={historyFindings} onChange={event => { setHistoryFindings(event.target.checked); setHistoryPage(1); }} />With recorded findings</label>
+          {(historyKeyword || historyState || historyFindings) && <button type="button" onClick={() => { setHistorySearch(''); setHistoryKeyword(''); setHistoryState(''); setHistoryFindings(false); setHistoryPage(1); }} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">Clear hunt history filters</button>}
+        </form>
+        {historySearch.trim() !== historyKeyword && <p className="text-xs text-warning-300">History search draft not applied. Results still use the applied keyword.</p>}
+        {loading ? <LoadingSurface label="Loading hunt history" /> : error ? <ErrorState title="Hunt history unavailable" description={error} action={<RetryButton onClick={() => void fetchSessions()} />} /> : <>
+        <p className="text-xs text-surface-400">{historyTotal} matching sessions. History page {historyPage} of {Math.max(1, Math.ceil(historyTotal / 20))}.</p>
         {sessions.length === 0 ? (
-          <EmptyState title="No hunts yet" description="Enter a hypothesis above to start the first investigation." />
+          <EmptyState title={historyKeyword || historyState || historyFindings ? "No hunts match these filters" : "No hunts yet"} description="Adjust the history filters, or enter a hypothesis above to start a new hunt." />
         ) : (
           <div className="space-y-2">
             {sessions.map(s => (
-              <div key={s.id} className="flex items-center gap-2">
+              <div key={s.id} className="flex items-start gap-2">
                 <button
                   type="button"
                   disabled={loadingSessionId !== null || hunting}
                   onClick={() => void viewSession(s.id)}
                   aria-label={`Reopen hunt: ${s.hypothesis}`}
-                  className="flex flex-1 min-w-0 items-center gap-4 rounded-lg bg-surface-900/50 p-3 text-left transition-colors hover:bg-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex flex-1 min-w-0 flex-wrap items-start gap-2 rounded-lg bg-surface-900/50 p-3 text-left transition-colors hover:bg-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Clock className="w-4 h-4 text-surface-500 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-surface-50 truncate">{s.hypothesis}</p>
+                  <div className="flex-1 min-w-0 basis-40">
+                    <p className="break-words text-sm text-surface-50 [overflow-wrap:anywhere]">#{s.id}: {s.hypothesis}</p>
                     <p className="text-xs text-surface-500">
                       {s.queries_run} queries · {s.findings_count} findings · {new Date(s.created_at).toLocaleDateString()}
                     </p>
@@ -523,7 +552,9 @@ export function HuntLab() {
             ))}
           </div>
         )}
-      </div>}
+        <nav aria-label="Hunt history pages" className="mt-4 flex flex-wrap justify-between gap-2"><button type="button" disabled={historyPage === 1} onClick={() => setHistoryPage(value => value - 1)} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40">Previous hunts</button><button type="button" disabled={historyPage * 20 >= historyTotal} onClick={() => setHistoryPage(value => value + 1)} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40">More hunts</button></nav>
+        </>}
+      </section>
 
       {deletingSession && (
         <ConfirmDialog

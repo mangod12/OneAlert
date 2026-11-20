@@ -159,3 +159,36 @@ def test_new_hunt_preserves_explanation_and_query_evidence_on_reopen(client, mon
     assert reopened.json()['findings_count'] == 1
     stranger = _register_and_login(client, 'other-hunter@example.com')
     assert client.get(f'/api/v1/hunt/{session_id}', headers=stranger).status_code == 404
+
+
+def test_hunt_history_pages_all_owned_metadata_and_literal_search(client):
+    from datetime import datetime
+
+    headers = _register_and_login(client, 'history@example.com')
+    _register_and_login(client, 'other-history@example.com')
+    with _TestingSessionLocal() as db:
+        uid = db.execute(select(User.id).where(User.email == 'history@example.com')).scalar_one()
+        other_uid = db.execute(select(User.id).where(User.email == 'other-history@example.com')).scalar_one()
+        db.add_all([HuntSession(user_id=uid, hypothesis=f'Hypothesis {i}', status='completed',
+                                findings_count=1, created_at=datetime(2026, 1, 1),
+                                result_data={'private_rows': [i]}) for i in range(65)])
+        db.add(HuntSession(user_id=uid, hypothesis='Old 100%_literal retained', status='failed', findings_count=0, created_at=datetime(2020, 1, 1)))
+        db.add(HuntSession(user_id=other_uid, hypothesis='Hidden foreign hypothesis', status='completed', findings_count=9))
+        db.commit()
+    seen = []
+    for page in range(1, 5):
+        response = client.get('/api/v1/hunt/history', params={'page': page}, headers=headers)
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data['total'] == 66
+        assert all('result_data' not in row for row in data['sessions'])
+        seen.extend(row['id'] for row in data['sessions'])
+    assert len(seen) == len(set(seen)) == 66
+    assert len(client.get('/api/v1/hunt/', headers=headers).json()) == 50
+    result = client.get('/api/v1/hunt/history', params={'search': '100%_LITERAL', 'state': 'failed'}, headers=headers).json()
+    assert result['total'] == 1
+    assert result['sessions'][0]['hypothesis'] == 'Old 100%_literal retained'
+    assert client.get('/api/v1/hunt/history', params={'with_findings': True}, headers=headers).json()['total'] == 65
+    assert client.get('/api/v1/hunt/history', params={'search': 'Hidden'}, headers=headers).json()['total'] == 0
+    for params in ({'page': 0}, {'size': 101}, {'state': 'unknown'}, {'search': 'x' * 201}):
+        assert client.get('/api/v1/hunt/history', params=params, headers=headers).status_code == 422
