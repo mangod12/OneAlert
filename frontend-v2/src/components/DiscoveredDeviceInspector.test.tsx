@@ -68,3 +68,14 @@ describe('Recorded discovery evidence inspector', () => {
     expect(close).toHaveBeenCalledOnce();
   });
 });
+
+it('opens explicit enrichment review and cancels without changing the displayed evidence', async () => {
+  render(view());
+  fireEvent.click(await screen.findByRole('button', { name: 'Review manual enrichment' }));
+  expect(screen.getByRole('form', { name: 'Manual device enrichment' })).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Enrichment Firmware version'), { target: { value: '5.2' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel enrichment' }));
+  expect(screen.queryByRole('form', { name: 'Manual device enrichment' })).toBeNull();
+  expect(screen.getByText('4.2')).toBeTruthy();
+  expect(screen.queryByText('5.2')).toBeNull();
+});
