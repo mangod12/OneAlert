@@ -1,6 +1,12 @@
 """Incident correlation: groups active alerts on shared assets into incidents."""
 
+import hashlib
+import json
+import secrets
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import String, cast, func, literal, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -158,15 +164,55 @@ async def list_incidents(
     return {"total": len(incidents), "incidents": incidents}
 
 
+class ReviewedIncidentEscalation(BaseModel):
+    reviewed_fingerprint: str = Field(pattern="^[a-f0-9]{64}$")
+    model_config = {"extra": "forbid"}
+
+
+async def _escalation_preview(db, user, asset, alerts):
+    alerts = sorted(alerts, key=lambda alert: alert.id)
+    severity = _max_severity(alerts)
+    cves = sorted({a.cve_id for a in alerts if a.cve_id})
+    summary = (f"Incident escalated from {len(alerts)} active alerts on {asset.name}. "
+               f"Highest severity: {severity}." + (f" CVEs: {', '.join(cves)}." if cves else ""))[:2000]
+    cases = (await db.execute(select(Case).join(CaseAlert, CaseAlert.case_id == Case.id).where(
+        Case.user_id == user.id, CaseAlert.alert_id.in_([alert.id for alert in alerts])
+    ).distinct().order_by(Case.id))).scalars().all()
+    due = sla_due_date(user, severity)
+    proposal = {"asset_id": asset.id, "asset_name": asset.name, "title": f"Incident on {asset.name}",
+                "summary": summary, "severity": severity, "status": "open",
+                "due_date": due.isoformat() if due else None,
+                "alerts": [_alert_dict(alert) for alert in alerts],
+                "existing_cases": [{"id": case.id, "title": case.title, "status": case.status} for case in cases]}
+    fingerprint = hashlib.sha256(json.dumps(proposal, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return dict(proposal, reviewed_fingerprint=fingerprint)
+
+
+@router.get("/{asset_id}/escalation-preview")
+async def preview_incident_escalation(
+    asset_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_async_db),
+):
+    """Read the exact current evidence and proposed investigation without creating anything."""
+    groups = await _active_alerts_by_asset(db, current_user.id, asset_id)
+    if asset_id not in groups:
+        owned = (await db.execute(select(Asset.id).where(
+            Asset.id == asset_id, Asset.user_id == current_user.id))).scalar_one_or_none()
+        raise HTTPException(status_code=400 if owned else 404,
+                            detail="No active alerts on this asset" if owned else "Asset not found")
+    asset, alerts = groups[asset_id]
+    return await _escalation_preview(db, current_user, asset, alerts)
+
+
 @router.post("/{asset_id}/escalate", status_code=201)
 async def escalate_incident(
     asset_id: int,
+    payload: ReviewedIncidentEscalation | None = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Open an investigation case from an incident, linking all its active alerts."""
     asset = (await db.execute(
-        select(Asset).where(Asset.id == asset_id, Asset.user_id == current_user.id)
+        select(Asset).where(Asset.id == asset_id, Asset.user_id == current_user.id).with_for_update()
     )).scalar_one_or_none()
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -176,25 +222,27 @@ async def escalate_incident(
             Alert.asset_id == asset_id,
             Alert.user_id == current_user.id,
             Alert.status.in_(_ACTIVE_STATUSES),
-        )
+        ).with_for_update()
     )).scalars().all()
     if not alerts:
         raise HTTPException(status_code=400, detail="No active alerts on this asset")
 
-    max_severity = _max_severity(alerts)
-    cves = sorted({a.cve_id for a in alerts if a.cve_id})
-    summary = (
-        f"Incident escalated from {len(alerts)} active alerts on {asset.name}. "
-        f"Highest severity: {max_severity}."
-        + (f" CVEs: {', '.join(cves)}." if cves else "")
-    )
+    preview = await _escalation_preview(db, current_user, asset, alerts)
+    if payload is not None and not secrets.compare_digest(
+        payload.reviewed_fingerprint, preview["reviewed_fingerprint"]
+    ):
+        raise HTTPException(status_code=409, detail=(
+            "The incident evidence, proposal or linked investigations changed. "
+            "Refresh the escalation preview and review again."))
+    max_severity = preview["severity"]
+    summary = preview["summary"]
     case = Case(
         user_id=current_user.id,
-        title=f"Incident on {asset.name}",
-        summary=summary[:2000],
+        title=preview["title"],
+        summary=summary,
         severity=max_severity,
         status="open",
-        due_date=sla_due_date(current_user, max_severity),
+        due_date=date.fromisoformat(preview["due_date"]) if preview["due_date"] else None,
     )
     db.add(case)
     await db.flush()
@@ -214,6 +262,8 @@ async def escalate_incident(
         "title": case.title,
         "severity": max_severity,
         "alerts_linked": len(alerts),
+        **({"reviewed_fingerprint": preview["reviewed_fingerprint"],
+            "asset_id": asset_id, "alert_ids": [alert["id"] for alert in preview["alerts"]]} if payload else {}),
     }
 
 
