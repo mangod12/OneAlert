@@ -11,6 +11,7 @@ import clsx from 'clsx';
 const navigation = [
   { label: 'Command', items: [
     { to: '/', icon: LayoutDashboard, label: 'Overview' },
+    { to: '/my-tasks', icon: ClipboardList, label: 'My tasks' },
     { to: '/watchlist', icon: Eye, label: 'Watchlist' },
     { to: '/cases', icon: BriefcaseMedical, label: 'Investigations' },
     { to: '/incidents', icon: Siren, label: 'Incidents' },

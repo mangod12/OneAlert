@@ -1,0 +1,87 @@
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import apiClient from '../api/client';
+import { getApiErrorMessage } from '../api/errors';
+import { PageHeader } from '../components/ui/PageHeader';
+import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
+import { StatusBadge } from '../components/ui/StatusBadge';
+import { alertSeverityTones } from '../components/ui/tones';
+
+export interface AssignedTask {
+  task_id: number;
+  case_id: number;
+  case_title: string;
+  case_severity: string;
+  case_status: string;
+  case_due_date: string | null;
+  title: string;
+  due_date: string | null;
+  created_at: string;
+}
+
+export function MyTasks() {
+  const [tasks, setTasks] = useState<AssignedTask[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [refresh, setRefresh] = useState(0);
+  const [loadedAt, setLoadedAt] = useState('');
+  const [query, setQuery] = useState('');
+  const [due, setDue] = useState('all');
+  const [severity, setSeverity] = useState('all');
+  const [order, setOrder] = useState('recorded');
+  const today = new Date().toISOString().slice(0, 10);
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError('');
+    void apiClient.get<AssignedTask[]>('/cases/my-tasks').then(response => {
+      if (active) { setTasks(response.data); setLoadedAt(new Date().toLocaleString()); }
+    }).catch(err => { if (active) setError(getApiErrorMessage(err, 'Assigned tasks could not be loaded.')); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [refresh]);
+  const needle = query.trim().toLowerCase();
+  const visible = tasks.filter(task => (!needle || [task.title, task.case_title, String(task.case_id), String(task.task_id)].some(value => value.toLowerCase().includes(needle)))
+    && (severity === 'all' || task.case_severity === severity)
+    && (due === 'all' || (due === 'overdue' ? !!task.due_date && task.due_date < today : due === 'today' ? task.due_date === today : due === 'future' ? !!task.due_date && task.due_date > today : !task.due_date)));
+  if (order !== 'recorded') visible.sort((a, b) => {
+    if (order === 'title') return a.title.localeCompare(b.title) || a.task_id - b.task_id;
+    if (order === 'case') return a.case_title.localeCompare(b.case_title) || a.case_id - b.case_id || a.task_id - b.task_id;
+    return (a.due_date || '9999-12-31').localeCompare(b.due_date || '9999-12-31') || a.task_id - b.task_id;
+  });
+  const filtered = !!query || due !== 'all' || severity !== 'all' || order !== 'recorded';
+  return <div className="min-w-0 space-y-5">
+    <PageHeader eyebrow="Command" title="My tasks" description="Review open checklist tasks assigned to you across active investigations. Open an investigation to update its checklist."
+      actions={<button type="button" disabled={loading} onClick={() => setRefresh(value => value + 1)} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-200 disabled:opacity-40">Refresh tasks</button>} />
+    <p className="text-sm text-surface-400">This view returns up to 200 assigned tasks, not a complete workload count. Completed tasks and resolved, closed or false-positive investigations are excluded. Filters and order apply only to returned records.</p>
+    {loading ? <LoadingSurface label="Loading assigned tasks" /> : error ? <ErrorState title="Assigned tasks unavailable" description={error} action={<RetryButton onClick={() => setRefresh(value => value + 1)} />} /> : <>
+      <div className="rounded-lg border border-surface-700 bg-surface-900 p-4">
+        <p className="text-xs text-surface-400">Snapshot loaded {loadedAt}. Task due dates use UTC today: {today}. Investigation due dates are shown separately.</p>
+        {tasks.length >= 200 && <p role="status" className="mt-2 text-sm text-warning">The 200-task return limit was reached. Other assigned tasks may be missing. Open investigations to review work outside this returned set.</p>}
+        <dl className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">{[
+          ['Returned tasks', tasks.length], ['Investigations represented', new Set(tasks.map(task => task.case_id)).size],
+          ['Overdue tasks', tasks.filter(task => task.due_date && task.due_date < today).length], ['Without task due date', tasks.filter(task => !task.due_date).length],
+        ].map(([label, value]) => <div key={label}><dt className="text-xs text-surface-400">{label}</dt><dd className="mt-1 text-xl font-semibold text-surface-100">{value}</dd></div>)}</dl>
+      </div>
+      {tasks.length === 0 ? <EmptyState title="No assigned tasks returned" description="No open checklist tasks were returned for your account on active investigations." /> : <>
+        <section aria-label="Assigned task filters" className="space-y-3 rounded-lg border border-surface-700 p-4">
+          <label htmlFor="assigned-task-search" className="block text-sm text-surface-200">Find assigned work</label>
+          <input id="assigned-task-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Task, investigation or record ID" className="min-h-10 w-full min-w-0 rounded-md border border-surface-600 bg-surface-950 px-3 text-sm text-surface-100" />
+          <div className="flex flex-wrap gap-2">
+            <select aria-label="Task due scope" value={due} onChange={event => setDue(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200"><option value="all">All task due dates</option><option value="overdue">Overdue</option><option value="today">Due today</option><option value="future">Due later</option><option value="none">No task due date</option></select>
+            <select aria-label="Investigation severity" value={severity} onChange={event => setSeverity(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200"><option value="all">All severities</option>{['critical', 'high', 'medium', 'low', 'info'].map(value => <option key={value} value={value}>{value}</option>)}</select>
+            <select aria-label="Assigned task order" value={order} onChange={event => setOrder(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-200"><option value="recorded">Returned order</option><option value="due">Task due date first</option><option value="case">Investigation A to Z</option><option value="title">Task title A to Z</option></select>
+            {filtered && <button type="button" onClick={() => { setQuery(''); setDue('all'); setSeverity('all'); setOrder('recorded'); }} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-200">Clear task filters</button>}
+          </div>
+          <p role="status" className="text-xs text-surface-300">{visible.length} of {tasks.length} returned tasks match. Summary counts above describe the returned set, not just these matches.</p>
+        </section>
+        {visible.length ? <ul aria-label="Assigned tasks" className="space-y-3">{visible.map(task => <li key={task.task_id} className="min-w-0 rounded-lg border border-surface-700 bg-surface-900 p-4">
+          <div className="flex flex-wrap items-center gap-2"><StatusBadge tone={alertSeverityTones[task.case_severity] ?? 'neutral'}>{task.case_severity}</StatusBadge><span className="text-xs text-surface-400">Investigation {task.case_status.replaceAll('_', ' ')}</span>{task.due_date && task.due_date < today && <span className="text-xs font-semibold text-danger">Task overdue</span>}</div>
+          <h2 className="mt-3 break-words text-base font-semibold text-surface-100">{task.title}</h2>
+          <Link to={`/cases/${task.case_id}`} className="mt-2 inline-block max-w-full break-words text-sm text-primary-300 underline-offset-4 hover:underline">{task.case_title} · Investigation #{task.case_id}</Link>
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-surface-400"><span>Task #{task.task_id} due: {task.due_date || 'Not set'}</span><span>Investigation due: {task.case_due_date || 'Not set'}</span></div>
+        </li>)}</ul> : <EmptyState title="No returned tasks match" description="Clear filters to see the returned task set. This does not mean you have no assigned work." />}
+      </>}
+    </>}
+  </div>;
+}
