@@ -275,7 +275,7 @@ async def get_device_connection_evidence(
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Owner-scoped recorded references and IP matches, not verified device traffic."""
+    """Owner-scoped recorded references and exact stored IP matches, not verified device traffic."""
     return await device_connection_evidence(db, current_user.id, device_id, page, size, match, encryption)
 
 
