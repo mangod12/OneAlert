@@ -168,3 +168,26 @@ describe('Response plan CSV export', () => {
     expect(revokeUrl).toHaveBeenCalled();
   });
 });
+
+
+describe('Response execution outcome feedback', () => {
+  it.each([
+    [{ plan_id: 12, status: 'completed', total_actions: 2, succeeded: 2, failed: 0 }, '2 of 2 actions succeeded; 0 failed or skipped', 'status'],
+    [{ plan_id: 12, status: 'partial', total_actions: 2, succeeded: 1, failed: 1 }, '1 of 2 actions succeeded; 1 failed or skipped', 'alert'],
+    [{ plan_id: 12, status: 'partial', total_actions: 2, succeeded: 0, failed: 2 }, '0 of 2 actions succeeded; 2 failed or skipped', 'alert'],
+    [{ plan_id: 999, status: 'completed', total_actions: 1, succeeded: 1, failed: 0 }, 'without a verifiable outcome', 'alert'],
+    [{ plan_id: 12, status: 'completed', total_actions: 2, succeeded: 2, failed: 1 }, 'without a verifiable outcome', 'alert'],
+    [undefined, 'without a verifiable outcome', 'alert'],
+  ])('shows the returned outcome without assuming HTTP success means execution success', async (outcome, message, role) => {
+    get.mockImplementation(url => Promise.resolve({ data: { data: url.endsWith('pending-approvals') ? [] : [plan] } }));
+    post.mockResolvedValue({ data: { data: outcome } });
+    render(<ResponsePlans />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Execute' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Execute now' }));
+    const notice = await screen.findByText(new RegExp(message));
+    expect(notice.getAttribute('role')).toBe(role);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Plan executed successfully')).toBeNull();
+  });
+});
