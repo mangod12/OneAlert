@@ -2,7 +2,7 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -281,3 +281,48 @@ class TestIncidentFilters:
         _seed_two_incidents(uid)
         resp = client.get("/api/v1/incidents", params={"severity": "high", "asset": "hmi"}, headers=headers).json()
         assert resp["total"] == 0  # the hmi incident is only medium
+
+
+def test_incident_context_queries_are_batched_and_keep_owner_scope(client):
+    owner = _register_and_login(client, 'batchowner@example.com')
+    other = _register_and_login(client, 'batchother@example.com')
+    uid = client.get('/api/v1/auth/me', headers=owner).json()['id']
+    other_uid = client.get('/api/v1/auth/me', headers=other).json()['id']
+    with _TestingSessionLocal() as db:
+        for index in range(4):
+            asset = Asset(user_id=uid, name=f'plant-{index}', asset_type='hardware', last_known_ip='10.0.0.5')
+            db.add(asset)
+            db.flush()
+            alerts = [Alert(user_id=uid, asset_id=asset.id, title=f'Issue {n}', severity='high', status='pending', cve_id='CVE-2026-1001') for n in range(2)]
+            db.add_all(alerts)
+            case = Case(user_id=uid, title=f'Owned case {index}', status='open', severity='high')
+            foreign = Case(user_id=other_uid, title='Foreign case', status='open', severity='high')
+            db.add_all([case, foreign])
+            db.flush()
+            for alert in alerts:
+                db.add(CaseAlert(case_id=case.id, alert_id=alert.id))
+            db.add(CaseAlert(case_id=foreign.id, alert_id=alerts[0].id))
+        # A loop touching both ends counts once, as does each observed row.
+        db.add_all([
+            NetworkConnection(user_id=uid, source_ip='10.0.0.5', target_ip='10.0.0.5', protocol='ssh'),
+            NetworkConnection(user_id=uid, source_ip='10.0.0.8', target_ip='10.0.0.5', protocol='modbus'),
+            NetworkConnection(user_id=other_uid, source_ip='10.0.0.5', target_ip='10.0.0.9', protocol='ssh'),
+        ])
+        db.commit()
+    statements = []
+    def record(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement.lower())
+    event.listen(_async_engine_test.sync_engine, 'before_cursor_execute', record)
+    try:
+        response = client.get('/api/v1/incidents', headers=owner)
+    finally:
+        event.remove(_async_engine_test.sync_engine, 'before_cursor_execute', record)
+    assert response.status_code == 200, response.text
+    incidents = response.json()['incidents']
+    assert len(incidents) == 4
+    for incident in incidents:
+        assert incident['blast_radius'] == 2
+        assert len(incident['linked_cases']) == 1
+        assert incident['linked_cases'][0]['title'].startswith('Owned case')
+    enrichments = [statement for statement in statements if 'network_connections' in statement or 'join case_alerts' in statement]
+    assert len(enrichments) == 2, enrichments
