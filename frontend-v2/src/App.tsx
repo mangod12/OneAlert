@@ -5,6 +5,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './components/layout/AppLayout';
 import { ToastContainer } from './components/Toast';
 
+const SearchWorkspace = lazy(() => import('./pages/SearchWorkspace').then(module => ({ default: module.SearchWorkspace })));
 const Login = lazy(() => import('./pages/Login').then(module => ({ default: module.Login })));
 const Register = lazy(() => import('./pages/Register').then(module => ({ default: module.Register })));
 const Dashboard = lazy(() => import('./pages/Dashboard').then(module => ({ default: module.Dashboard })));
@@ -62,6 +63,7 @@ function App() {
           <Route path="/my-tasks" element={<MyTasks />} />
           <Route path="/watchlist" element={<Watchlist />} />
           <Route path="/incidents" element={<Incidents />} />
+          <Route path="/search" element={<SearchWorkspace />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/cases/:caseId/evidence" element={<CaseLinkedEvidence />} />
           <Route path="/cases/:caseId" element={<CaseDetail />} />

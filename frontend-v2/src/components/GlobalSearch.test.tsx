@@ -153,3 +153,15 @@ it('does not display or navigate results echoed for another query', async () => 
   get.mockResolvedValue({ data: { data: { ...results, query: 'other query' } } }); renderPalette(); fireEvent.change(screen.getByRole('combobox'), { target: { value: 'ransomware' } });
   await screen.findByRole('alert'); expect(screen.queryByRole('option')).toBeNull(); fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' }); expect(screen.getByTestId('location').textContent).toBe('/');
 });
+
+it('offers encoded complete-search navigation after a successful bounded preview', async () => {
+  get.mockResolvedValue({ data: { data: { ...results, totals: { alerts: 42, cases: 7, assets: 11, incidents: 6, events: 29 } } } });
+  const close = renderPalette();
+  await typeQuery('pump & 100%_');
+  const link = screen.getByRole('link', { name: 'Explore all matching records' });
+  expect(link.getAttribute('href')).toBe('/search?q=pump%20%26%20100%25_');
+  expect(screen.getByText(/Full matching counts: alerts: 42/)).toBeTruthy();
+  fireEvent.click(link);
+  expect(close).toHaveBeenCalled();
+  expect(screen.getByTestId('location').textContent).toBe('/search?q=pump%20%26%20100%25_');
+});

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Activity, AlertTriangle, Briefcase, Search, Server, Siren } from 'lucide-react';
 import clsx from 'clsx';
 import apiClient from '../api/client';
@@ -12,6 +12,7 @@ interface AssetHit { id: number; name: string; vendor: string | null; asset_type
 interface IncidentHit { asset_id: number; asset_name: string; alert_count: number; max_severity: string }
 
 interface SearchResults {
+  totals?: Record<string, number>;
   alerts: AlertHit[];
   cases: CaseHit[];
   assets: AssetHit[];
@@ -212,6 +213,7 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
             })
           )}
         </div>
+        {!searching && !error && resultQuery === query.trim() && query.trim().length >= 2 && <div className="space-y-2 border-t border-surface-700 px-4 py-3">{results?.totals && Object.values(results.totals).every(value => Number.isSafeInteger(value) && value >= 0) && <p className="text-xs text-surface-400">Full matching counts: {Object.entries(results.totals).map(([kind, count]) => `${kind}: ${count}`).join(' · ')}.</p>}<Link to={`/search?q=${encodeURIComponent(query.trim())}`} onClick={onClose} className="inline-block text-sm text-primary-300 underline">Explore all matching records</Link></div>}
         <p className="px-4 py-2 text-[10px] text-surface-400">Up to 5 matches per record type from records owned by your account. Not a complete workspace search. Incident matches use the matching assets' current active alerts. Saved event matches use normalized signatures, IDs, hostnames, addresses, categories and types, not raw payload text or live activity.</p>
         <div className="flex items-center gap-3 border-t border-surface-700 px-4 py-2 text-[10px] text-surface-500">
           <span><kbd className="rounded border border-surface-700 px-1">↑↓</kbd> move</span>
