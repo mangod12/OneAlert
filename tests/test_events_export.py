@@ -207,3 +207,32 @@ def test_event_window_rejects_missing_timezone_invalid_or_reversed_bounds(client
     headers = _register_and_login(client, 'badwindow@example.com')
     for endpoint in ('/api/v1/events/', '/api/v1/events/export'):
         assert client.get(endpoint, params=params, headers=headers).status_code == 422
+
+
+def test_exact_export_limit_complete_then_overflow_refused_after_owner_filters(client):
+    from backend.models.user import User
+    headers = _register_and_login(client, 'event-limit@example.com')
+    foreign_headers = _register_and_login(client, 'event-foreign-limit@example.com')
+    stamp = datetime(2026, 11, 21, 10, tzinfo=UTC)
+    with _TestingSessionLocal() as db:
+        owner = db.query(User).filter_by(email='event-limit@example.com').one()
+        other = db.query(User).filter_by(email='event-foreign-limit@example.com').one()
+        owner_id = owner.id
+        db.add_all([SecurityEvent(user_id=owner_id, timestamp=stamp, event_type='dns', severity='high',
+                                  signature=f'Boundary {index}') for index in range(10000)])
+        db.add(SecurityEvent(user_id=other.id, timestamp=stamp, event_type='dns', severity='high',
+                             signature='Foreign record'))
+        db.commit()
+    rows = _read_csv(client.get('/api/v1/events/export', headers=headers))
+    assert len(rows) == len({row['id'] for row in rows}) == 10000
+    assert [int(row['id']) for row in rows] == sorted([int(row['id']) for row in rows], reverse=True)
+    with _TestingSessionLocal() as db:
+        db.add(SecurityEvent(user_id=owner_id, timestamp=stamp, event_type='dns', severity='low',
+                             signature='Narrow target'))
+        db.commit()
+    refused = client.get('/api/v1/events/export', headers=headers)
+    assert refused.status_code == 422 and 'No partial CSV' in refused.text
+    assert 'content-disposition' not in refused.headers
+    narrowed = _read_csv(client.get('/api/v1/events/export', params={'severity': 'low'}, headers=headers))
+    assert len(narrowed) == 1 and narrowed[0]['signature'] == 'Narrow target'
+    assert len(_read_csv(client.get('/api/v1/events/export', headers=foreign_headers))) == 1

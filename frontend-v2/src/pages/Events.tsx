@@ -5,7 +5,7 @@ import { EventInvestigationDialog } from '../components/EventInvestigationDialog
 import apiClient from '../api/client';
 import { Activity, ChevronDown, ChevronRight, Download, Radio, Upload } from 'lucide-react';
 import clsx from 'clsx';
-import { getApiErrorMessage } from '../api/errors';
+import { getApiErrorMessage, getDownloadErrorMessage } from '../api/errors';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
 import { toast } from '../components/Toast';
@@ -137,7 +137,7 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
       link.click();
       URL.revokeObjectURL(url);
     } catch (err: unknown) {
-      toast(getApiErrorMessage(err, 'The export could not be downloaded.'), 'error');
+      toast(await getDownloadErrorMessage(err, 'The export could not be downloaded.'), 'error');
     } finally {
       setExporting(false);
     }

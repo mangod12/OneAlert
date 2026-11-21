@@ -218,7 +218,7 @@ async def export_events(
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Export the filtered event list as CSV (same filters as the list, max 10000 rows)."""
+    """Export every filtered event as CSV, or refuse above 10,000 matches."""
     query = select(SecurityEvent).where(SecurityEvent.user_id == current_user.id)
 
     if severity:
@@ -242,8 +242,13 @@ async def export_events(
         query = query.filter(SecurityEvent.signature.ilike(f"%{signature}%"))
 
     query = query.where(*_event_time_predicates(started_at, ended_before))
-    query = query.order_by(SecurityEvent.timestamp.desc(), SecurityEvent.id.desc()).limit(10000)
+    query = query.order_by(SecurityEvent.timestamp.desc(), SecurityEvent.id.desc()).limit(10001)
     rows = (await db.execute(query)).scalars().all()
+    if len(rows) > 10000:
+        raise HTTPException(status_code=422, detail=(
+            "The filtered events export exceeds 10,000 records. Narrow the applied filters and retry. "
+            "No partial CSV was created."
+        ))
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
