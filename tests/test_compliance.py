@@ -561,16 +561,15 @@ def test_automation_keeps_manual_history_and_remains_idempotent(client, auth_hea
     assert client.post('/api/v1/compliance/assess', headers=auth_headers).status_code == 200
     assert client.post('/api/v1/compliance/assess', headers=auth_headers).status_code == 200
     records = [row for row in client.get('/api/v1/compliance/assessments', headers=auth_headers).json() if row['control_id'] == control_id]
-    assert len(records) == 3
+    assert len(records) == 2
     for original in [first, second]:
         stored = next(row for row in records if row['id'] == original['id'])
         assert stored == original
-    automatic = next(row for row in records if row['assessed_by'] == 'system')
-    assert automatic['evidence_type'] == 'automated'
+    assert all(row['assessed_by'] != 'system' for row in records)
     exported = client.get('/api/v1/compliance/export', headers=auth_headers)
     row = next(row for row in csv.DictReader(io.StringIO(exported.text)) if row['control_id'] == 'FR1-SR1.1')
-    assert row['evidence_type'] == 'automated'
-    assert row['evidence_detail'] == automatic['evidence_detail']
+    assert row['evidence_type'] == 'document'
+    assert row['evidence_detail'] == second['evidence_detail']
 
 
 def test_filtered_export_uses_latest_owned_status_literal_search_and_complete_limit(client, auth_headers, monkeypatch):
@@ -625,3 +624,102 @@ def test_filtered_export_not_assessed_includes_missing_and_explicit_status(clien
     assert len(list(csv.DictReader(io.StringIO(response.text))))==count-1
     response=client.get('/api/v1/compliance/export',params={'framework_id':1,'status':'not_applicable'},headers=auth_headers)
     assert len(list(csv.DictReader(io.StringIO(response.text))))==1
+
+
+def test_metadata_preview_is_read_only_conservative_and_authenticated(client, auth_headers):
+    client.cookies.clear()
+    assert client.get('/api/v1/compliance/assess/preview').status_code == 401
+    preview = client.get('/api/v1/compliance/assess/preview', headers=auth_headers).json()
+    assert preview['total'] == 6
+    assert preview['measurement_mode'] == 'metadata_review_leads'
+    assert all(row['status'] == 'not_assessed' for row in preview['assessments'])
+    assert client.get('/api/v1/compliance/assessments', headers=auth_headers).json() == []
+    assert 'legacy' in ' '.join(preview['limitations'])
+    saved = client.post('/api/v1/compliance/assess', headers=auth_headers).json()['data']['assessments']
+    assert all(row['outcome'] == 'created' and row['assessment_id'] > 0 for row in saved)
+    again = client.post('/api/v1/compliance/assess', headers=auth_headers).json()['data']['assessments']
+    assert all(row['outcome'] == 'unchanged' for row in again)
+
+
+def test_metadata_preview_counts_owned_nonblank_zones_and_recent_enabled_sensors(client, auth_headers):
+    from datetime import UTC, datetime, timedelta
+    from backend.models.asset import Asset
+    from backend.models.discovered_device import NetworkSensor
+    now = datetime.now(UTC)
+    with TestingSessionLocal() as db:
+        user = db.query(User).filter_by(email='compliance_test@example.com').one()
+        other = User(email='counts-other@example.test', hashed_password='unused', is_active=True)
+        db.add(other)
+        db.flush()
+        for owner, zone in [(user.id, ' '), (user.id, ''), (user.id, None), (user.id, ' DMZ '), (other.id, 'OT')]:
+            db.add(Asset(user_id=owner, name='Asset record', asset_type='hardware', network_zone=zone))
+        for owner, enabled, heartbeat in [(user.id, True, now), (user.id, False, now),
+                                          (user.id, True, now - timedelta(days=2)), (user.id, True, None),
+                                          (user.id, True, now + timedelta(days=1)), (other.id, True, now)]:
+            db.add(NetworkSensor(user_id=owner, name='Sensor record', sensor_type='zeek',
+                                 enabled=enabled, last_heartbeat=heartbeat))
+        db.commit()
+    preview = client.get('/api/v1/compliance/assess/preview', headers=auth_headers).json()
+    leads = {row['control_id']: row for row in preview['assessments']}
+    assert '1/4 asset records' in leads['FR5-SR5.1']['evidence']
+    assert '1/5 sensor records' in leads['DE.CM-1']['evidence']
+    assert leads['DE.CM-1']['status'] == 'partial'
+    assert leads['FR1-SR1.1']['status'] == 'not_assessed'
+    assert leads['RS.AN-1']['status'] == 'not_assessed'
+    assert all(row['status'] not in ('compliant', 'non_compliant') for row in leads.values())
+
+
+def test_changed_automated_evidence_appends_without_rewriting_history(client, auth_headers):
+    from backend.models.asset import Asset
+    first = client.post('/api/v1/compliance/assess', headers=auth_headers).json()['data']['assessments']
+    before = client.get('/api/v1/compliance/assessments', headers=auth_headers).json()
+    with TestingSessionLocal() as db:
+        owner = db.query(User).filter_by(email='compliance_test@example.com').one()
+        db.add(Asset(user_id=owner.id, name='New inventory record', asset_type='hardware'))
+        db.commit()
+    second = client.post('/api/v1/compliance/assess', headers=auth_headers).json()['data']['assessments']
+    after = client.get('/api/v1/compliance/assessments', headers=auth_headers).json()
+    for old in before:
+        assert next(row for row in after if row['id'] == old['id']) == old
+    assert next(row for row in second if row['control_id'] == 'ID.AM-1')['outcome'] == 'created'
+    assert next(row for row in first if row['control_id'] == 'ID.AM-1')['status'] == 'not_assessed'
+    assert next(row for row in second if row['control_id'] == 'ID.AM-1')['status'] == 'partial'
+
+
+def test_metadata_mapping_does_not_cross_framework_identity(client, auth_headers):
+    with TestingSessionLocal() as db:
+        framework = ComplianceFramework(name='Unrelated catalog', version='2.0')
+        db.add(framework)
+        db.flush()
+        db.add(ComplianceControl(framework_id=framework.id, control_id='ID.AM-1', title='Different requirement'))
+        db.commit()
+    result = client.get('/api/v1/compliance/assess/preview', headers=auth_headers)
+    assert result.status_code == 200 and result.json()['total'] == 6
+
+
+def test_automated_assessment_rolls_back_partial_writes(client, auth_headers, monkeypatch):
+    from sqlalchemy.ext.asyncio import AsyncSession
+    original = AsyncSession.flush
+    calls = 0
+    async def fail_second_flush(session, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError('simulated write failure')
+        return await original(session, *args, **kwargs)
+    monkeypatch.setattr(AsyncSession, 'flush', fail_second_flush)
+    with pytest.raises(RuntimeError, match='simulated write failure'):
+        client.post('/api/v1/compliance/assess', headers=auth_headers)
+    monkeypatch.setattr(AsyncSession, 'flush', original)
+    assert client.get('/api/v1/compliance/assessments', headers=auth_headers).json() == []
+
+
+def test_metadata_preview_refuses_oversized_catalog_without_partial_save(client, auth_headers):
+    with TestingSessionLocal() as db:
+        framework = db.query(ComplianceFramework).filter_by(name='IEC 62443').one()
+        db.add_all([ComplianceControl(framework_id=framework.id, control_id='FR5-SR5.1', title='Duplicate')
+                    for _ in range(100)])
+        db.commit()
+    assert client.get('/api/v1/compliance/assess/preview', headers=auth_headers).status_code == 422
+    assert client.post('/api/v1/compliance/assess', headers=auth_headers).status_code == 422
+    assert client.get('/api/v1/compliance/assessments', headers=auth_headers).json() == []

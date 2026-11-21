@@ -37,7 +37,11 @@ from backend.models.compliance import (
 )
 from backend.models.user import User
 from backend.routers.auth import get_active_user
-from backend.services.compliance_engine import run_automated_assessment
+from backend.services.compliance_engine import (
+    lock_assessment_owner,
+    preview_automated_assessment,
+    run_automated_assessment,
+)
 
 router = APIRouter()
 
@@ -192,6 +196,15 @@ async def compliance_summary(
     return summaries
 
 
+@router.get("/assess/preview")
+async def preview_assessment(
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Read platform review leads without creating or changing an assessment."""
+    return await preview_automated_assessment(current_user.id, db)
+
+
 @router.post("/assess")
 async def run_assessment(
     current_user: User = Depends(get_active_user),
@@ -215,6 +228,7 @@ async def create_manual_assessment(
     db: AsyncSession = Depends(get_async_db),
 ):
     """Record a manual review without running automated checks or altering history."""
+    await lock_assessment_owner(current_user.id, db)
     control = await db.get(ComplianceControl, control_id)
     if control is None:
         raise HTTPException(status_code=404, detail="Control not found")
@@ -243,6 +257,7 @@ async def update_assessment(
     db: AsyncSession = Depends(get_async_db),
 ):
     """Manually update an assessment status."""
+    await lock_assessment_owner(current_user.id, db)
     assessment = (await db.execute(select(ComplianceAssessment).where(
         ComplianceAssessment.id == assessment_id,
     ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
