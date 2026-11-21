@@ -1,3 +1,4 @@
+import { AgentRunLibrary } from '../components/AgentRunLibrary';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { Bot, Download, Search } from 'lucide-react';
@@ -251,6 +252,7 @@ export function AuditLog() {
 
       )}
       {selectedRecord && <AuditRecordDialog record={selectedRecord} onClose={() => setSelectedRecord(null)} />}
+      <AgentRunLibrary />
       <section aria-label="Recorded agent activity" className="space-y-3">
         <p className="text-sm text-surface-400">Your latest 50 recorded agent runs. Inspect a run for its saved step summaries. This ledger is not a full execution transcript.</p>
         {agentLoading && <p role="status" className="text-sm text-surface-400">Loading recorded agent activity...</p>}
