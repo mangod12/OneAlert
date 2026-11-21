@@ -27,6 +27,7 @@ const assessments = [
 
 function mockOverview() {
   get.mockImplementation(async (url: string) => {
+    if (url === '/compliance/assess/preview') return { data: { observed_at: '2026-11-21T18:00:00Z', measurement_mode: 'metadata_review_leads', limitations: ['Counts are not proof.'], total: 1, assessments: [{ control_record_id: 12, control_id: 'DE.CM-1', framework: 'NIST CSF', framework_version: '2.0', title: 'Monitoring', evidence: 'No coverage proof.', status: 'not_assessed', preserve_manual_review: false }] } };
     if (url === '/compliance/frameworks') return { data: frameworks };
     if (url === '/compliance/summary') return { data: summaries };
     if (url === '/compliance/frameworks/1/controls') return { data: controls };
@@ -41,22 +42,42 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe('Automated assessment', () => {
   it('runs the automated assessment and refreshes the overview', async () => {
-    post.mockResolvedValue({ data: { data: { total: 11 } } });
+    post.mockResolvedValue({ data: { success: true, data: { total: 1, assessments: [{ control_record_id: 12, assessment_id: 6, outcome: 'created' }] } } });
     render(<Compliance />);
     await screen.findByText('NIST CSF');
     get.mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Run automated assessment' }));
+    await screen.findByText('No coverage proof.');
+    expect(post).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('checkbox', { name: /I understand these are review leads/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save fresh review leads' }));
     await waitFor(() => expect(post).toHaveBeenCalledWith('/compliance/assess'));
     await waitFor(() => expect(get).toHaveBeenCalledWith('/compliance/summary'));
   });
 
+  it('does not claim success from an unverifiable save receipt', async () => {
+    post.mockResolvedValue({ data: { success: true, data: { total: 99 } } });
+    render(<Compliance />);
+    await screen.findByText('NIST CSF');
+    fireEvent.click(screen.getByRole('button', { name: 'Run automated assessment' }));
+    await screen.findByText('No coverage proof.');
+    fireEvent.click(screen.getByRole('checkbox', { name: /I understand these are review leads/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save fresh review leads' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Review automated evidence' })).toBeNull());
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
   it('reloads the open framework controls after an assessment', async () => {
-    post.mockResolvedValue({ data: { data: { total: 11 } } });
+    post.mockResolvedValue({ data: { success: true, data: { total: 1, assessments: [{ control_record_id: 12, assessment_id: 6, outcome: 'created' }] } } });
     render(<Compliance />);
     fireEvent.click(await screen.findByText('NIST CSF'));
     await screen.findByText('PR.AC-1');
     get.mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Run automated assessment' }));
+    await screen.findByText('No coverage proof.');
+    expect(post).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('checkbox', { name: /I understand these are review leads/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save fresh review leads' }));
     await waitFor(() => expect(get).toHaveBeenCalledWith('/compliance/frameworks/1/controls'));
     await waitFor(() => expect(get).toHaveBeenCalledWith('/compliance/assessments'));
   });

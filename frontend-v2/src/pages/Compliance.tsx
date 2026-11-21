@@ -1,3 +1,4 @@
+import { ComplianceEvidencePreview } from '../components/ComplianceEvidencePreview';
 import { AssessmentHistoryExplorer } from '../components/AssessmentHistoryExplorer';
 import { ComplianceAssessmentReview } from '../components/ComplianceAssessmentReview';
 import { AssessmentComparison } from '../components/AssessmentComparison';
@@ -202,6 +203,8 @@ export function Compliance() {
   const [exportError, setExportError] = useState('');
   useEffect(() => { exportRequest.current += 1; exportBusy.current = false; setExporting(false); setExportError(''); return () => { exportRequest.current += 1; }; }, [selected, controlSearch, statusFilter]);
   const [assessing, setAssessing] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const assessBusy = useRef(false);
 
   const exportCsv = async () => {
     if (exportBusy.current || selected == null) return;
@@ -317,18 +320,31 @@ export function Compliance() {
   };
 
   const runAssessment = async () => {
-    if (assessing) return;
+    if (assessBusy.current) return;
+    assessBusy.current = true;
     setAssessing(true);
     try {
-      const res = await apiClient.post<{ data?: { total?: number } }>('/compliance/assess');
-      const total = res.data?.data?.total;
-      toast(total != null ? `Automated assessment updated ${total} controls.` : 'Automated assessment completed.', 'success');
+      const res = await apiClient.post<{ success: boolean; data: { total: number; assessments: { control_record_id: number; assessment_id: number; outcome: string }[] } }>('/compliance/assess');
+      const receipt = res.data?.data;
+      if (res.data?.success !== true || !receipt || !Number.isSafeInteger(receipt.total) || receipt.total < 0 || receipt.total > 100
+        || !Array.isArray(receipt.assessments) || receipt.assessments.length !== receipt.total
+        || new Set(receipt.assessments.map(row => row?.control_record_id)).size !== receipt.total
+        || !receipt.assessments.every(row => row && Number.isSafeInteger(row.control_record_id) && row.control_record_id > 0
+          && Number.isSafeInteger(row.assessment_id) && row.assessment_id > 0
+          && ['manual_preserved', 'unchanged', 'created'].includes(row.outcome))) {
+        throw new Error('The save receipt could not be verified. Reload saved assessments before retrying.');
+      }
+      const count = (outcome: string) => receipt.assessments.filter(row => row.outcome === outcome).length;
+      setPreviewing(false);
+      toast(`Evidence review: ${count('created')} new, ${count('unchanged')} unchanged, ${count('manual_preserved')} manual reviews preserved.`, 'success');
       await fetchOverview();
       if (selectedFramework.current != null) await loadControls(selectedFramework.current);
     } catch (err: unknown) {
-      toast(getApiErrorMessage(err, 'The automated assessment could not be run.'), 'error');
+      setPreviewing(false);
+      toast(getApiErrorMessage(err, 'Saving could not be confirmed. Reload saved assessments before retrying.'), 'error');
     } finally {
       setAssessing(false);
+      assessBusy.current = false;
     }
   };
 
@@ -347,14 +363,17 @@ export function Compliance() {
       <PageHeader eyebrow="Govern" title="Compliance" description="Control coverage and assessment posture across your frameworks." actions={
         <button
           type="button"
-          onClick={() => void runAssessment()}
+          onClick={() => setPreviewing(true)}
           disabled={assessing}
           className="flex min-h-9 items-center gap-2 rounded-md bg-primary-500 px-3.5 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50"
         >
-          {assessing ? 'Running assessment…' : 'Run automated assessment'}
+          {assessing ? 'Saving review leads...' : 'Run automated assessment'}
         </button>
       } />
 
+      {previewing && <ComplianceEvidencePreview onClose={() => setPreviewing(false)} onSave={runAssessment} saving={assessing} />}
+
+      <p className="text-xs text-surface-400">Automated checks collect metadata review leads only. Historical automated verdicts are not verified control tests. Review the evidence before relying on saved posture.</p>
       {summaryRefreshing && <p role="status" className="text-sm text-surface-400">Refreshing saved compliance posture...</p>}
       {summaryError && <div role="alert" className="rounded border border-warning/40 p-3 text-sm text-warning">
         Assessment was saved, but the cards may be out of date. {summaryError}
