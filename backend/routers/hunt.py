@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 class HuntRequest(BaseModel):
-    hypothesis: str
+    hypothesis: str = Field(..., min_length=1, max_length=4000)
 
 
 class DetectionRuleCreate(BaseModel):
@@ -45,6 +45,9 @@ async def start_hunt(
     """Start a threat hunting session with a natural-language hypothesis."""
     from backend.services.agents.hunt import HuntAgent
 
+    if not req.hypothesis.strip():
+        raise HTTPException(status_code=422, detail='A nonempty hunting hypothesis is required')
+
     # Create session record
     session = HuntSession(
         user_id=current_user.id,
@@ -55,7 +58,17 @@ async def start_hunt(
 
     # Run hunt agent
     agent = HuntAgent(db=db, user_id=current_user.id)
-    result = await agent.execute(hypothesis=req.hypothesis)
+    try:
+        result = await agent.execute(hypothesis=req.hypothesis)
+    except Exception:
+        # BaseAgent already saved the failed run. Do not strand its separately
+        # committed hunt session as running or invent successful/empty queries.
+        result = {'status': 'failed', 'recorded_at': datetime.now(UTC).isoformat(),
+                  'summary': 'Hunt interrupted before a complete session result was saved.',
+                  'error': 'Hunt execution did not complete. Inspect the recorded run before retrying. '
+                           'No complete query results are retained in this session; this is not a zero-finding result.'}
+    if agent._run is not None:
+        result = {**result, 'agent_run_id': agent._run.id}
 
     # Update session
     session.status = result.get("status", "completed")
@@ -146,13 +159,25 @@ async def get_hunt(
     if not session:
         raise HTTPException(status_code=404, detail="Hunt session not found")
 
+    # New receipts name their exact run. Never infer links for historical data,
+    # and never turn a malformed/foreign stored ID into another account's link.
+    from backend.models.case import AgentRun
+    data = session.result_data
+    run_id = data.get('agent_run_id') if isinstance(data, dict) else None
+    if type(run_id) is not int or run_id < 1 or (await db.execute(select(AgentRun.id).where(
+        AgentRun.id == run_id, AgentRun.user_id == current_user.id, AgentRun.agent_type == 'hunt',
+    ))).scalar_one_or_none() is None:
+        run_id = None
+    if isinstance(data, dict) and 'agent_run_id' in data:
+        data = {**data, 'agent_run_id': run_id}
+
     return {
         "id": session.id,
         "hypothesis": session.hypothesis,
         "status": session.status,
         "queries_run": session.queries_run,
         "findings_count": session.findings_count,
-        "result_data": session.result_data,
+        "result_data": data,
         "sigma_rule": session.sigma_rule,
         "created_at": session.created_at,
     }

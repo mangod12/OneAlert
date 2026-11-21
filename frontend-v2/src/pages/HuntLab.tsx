@@ -1,3 +1,4 @@
+import { HuntRunLink } from '../components/HuntRunLink';
 import { useSearchParams } from 'react-router-dom';
 import { DetectionRuleInspector } from '../components/DetectionRuleInspector';
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
@@ -330,6 +331,7 @@ export function HuntLab() {
               <button type="button" onClick={() => saveHuntDownload(huntEvidenceJson(activeResult, new Date().toISOString()), `hunt-${activeResult.session_id ?? 'unsaved'}-evidence.json`, 'application/json')} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Export recorded evidence JSON</button>
             </div>
             <p className="mb-3 text-xs text-surface-400">Exports contain the currently retained evidence, including errors and applied metadata where recorded. They do not run a hunt or fetch additional rows. Exports may contain sensitive telemetry and parameters.</p>
+            <HuntRunLink runId={activeResult.agent_run_id} />
             {activeResult.execution_summary ? <section aria-label="Recorded hunt execution summary" className="mb-4 space-y-2 rounded border border-surface-700 p-3 text-sm text-surface-300">
               <p className="font-semibold text-surface-100">Recorded outcome: {activeResult.status ?? 'not recorded'}</p>
               <p>{activeResult.execution_summary.completed} completed · {activeResult.execution_summary.rejected} rejected before execution · {activeResult.execution_summary.failed} execution errors</p>

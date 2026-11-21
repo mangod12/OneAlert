@@ -485,3 +485,21 @@ describe('Recorded hunt completion and handoff', () => {
     expect(screen.getByRole('button', { name: 'Export recorded evidence JSON' })).toBeTruthy();
   });
 });
+
+describe('Exact hunt run continuity', () => {
+  it('opens the saved exact run without executing or inferring a latest run', async () => {
+    mockGet.mockImplementation(url => Promise.resolve({ data: url.endsWith('/5') ? { ...sessionDetail, result_data: { ...sessionDetail.result_data, agent_run_id: 81 } } : url.endsWith('/detections') ? [] : { sessions: [session], total: 1 } }));
+    render(<HuntLab />); fireEvent.click(await screen.findByRole('button', { name: /reopen hunt: dns tunneling/i }));
+    expect((await screen.findByRole('link', { name: 'Inspect recorded hunt run #81' })).getAttribute('href')).toBe('/app/audit-log?run=81'); expect(mockPost).not.toHaveBeenCalled(); expect(screen.getByText(/not the latest hunt run/)).toBeTruthy();
+  });
+  it.each([undefined, null, -1, '81', 1.5])('does not invent a run link from missing or invalid metadata %s', async runId => {
+    mockGet.mockImplementation(url => Promise.resolve({ data: url.endsWith('/5') ? { ...sessionDetail, result_data: { ...sessionDetail.result_data, agent_run_id: runId } } : url.endsWith('/detections') ? [] : { sessions: [session], total: 1 } }));
+    render(<HuntLab />); fireEvent.click(await screen.findByRole('button', { name: /reopen hunt: dns tunneling/i })); await screen.findByText(/No verified run link/); expect(screen.queryByRole('link', { name: /Inspect recorded hunt run/ })).toBeNull(); expect(mockPost).not.toHaveBeenCalled();
+  });
+  it('keeps interrupted hunt failure distinct from zero findings and links the failed run', async () => {
+    mockGet.mockImplementation(url => Promise.resolve({ data: url.endsWith('/detections') ? [] : { sessions: [], total: 0 } }));
+    mockPost.mockResolvedValue({ data: { data: { session_id: 20, agent_run_id: 81, status: 'failed', error: 'No complete query results are retained. This is not a zero-finding result.' } } });
+    render(<HuntLab />); fireEvent.change(await screen.findByLabelText('Hunting Hypothesis'), { target: { value: 'Review gateway' } }); fireEvent.click(screen.getByRole('button', { name: 'Hunt' }));
+    await screen.findByRole('link', { name: 'Inspect recorded hunt run #81' }); expect(screen.getByRole('alert').textContent).toContain('not a zero-finding result'); expect(screen.queryByRole('region', { name: 'Recorded hunt execution summary' })).toBeNull(); expect(mockPost).toHaveBeenCalledOnce();
+  });
+});

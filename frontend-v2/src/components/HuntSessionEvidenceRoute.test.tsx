@@ -42,3 +42,8 @@ it('exports full original saved record and handles download failure without drop
 it('preserves original array and full result data in downloadable record, including null versus empty Sigma output', () => {
   const parsed = savedHuntEvidence({ ...session, result_data: [result], sigma_rule: '' }, 99); expect(parsed.session.result_data).toEqual([result]); expect(parsed.session.sigma_rule).toBe(''); expect(parsed.evidence.query_results).toEqual([result]); expect(parsed.evidence.sigma_rule).toBe('');
 });
+
+it('shows the verified exact hunt run from a saved-session link without running another hunt', async () => {
+  get.mockResolvedValueOnce({ data: { ...session, result_data: { ...session.result_data, agent_run_id: 81 } } }); show();
+  expect((await screen.findByRole('link', { name: 'Inspect recorded hunt run #81' })).getAttribute('href')).toBe('/app/audit-log?run=81'); expect(apiClient.post).not.toHaveBeenCalled();
+});
