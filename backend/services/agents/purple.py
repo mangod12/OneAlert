@@ -1,13 +1,12 @@
 """Purple-Team Agent — runs simulated ATT&CK technique validations against detection controls."""
 
 import logging
-import random
 import time
 from datetime import UTC, datetime
 
 from sqlalchemy import select
 
-from backend.models.validation import ControlResult, ValidationRun, ValidationStep
+from backend.models.validation import ValidationRun, ValidationStep
 from backend.services.agents.base import BaseAgent
 
 logger = logging.getLogger(__name__)
@@ -82,142 +81,69 @@ ATOMIC_TESTS = {
 }
 
 
+def simulation_techniques(values):
+    """Validate a bounded supported plan. Unknown entries are not successful tests."""
+    if not isinstance(values, list) or not 1 <= len(values) <= 100 or any(
+            not isinstance(value, str) or value not in ATOMIC_TESTS for value in values):
+        raise ValueError('Choose 1 to 100 supported ATT&CK technique IDs for a simulation plan')
+    return list(dict.fromkeys(values))
+
+
 class PurpleAgent(BaseAgent):
-    """Runs purple-team validation exercises against detection controls."""
+    """Prepare simulation steps, never fabricate observations of detection controls."""
 
     agent_type = "purple"
 
     async def run(self, **kwargs) -> dict:
-        run_id = kwargs.get("run_id")
-        techniques = kwargs.get("techniques", [])
-        mode = kwargs.get("mode", "dry_run")
-
-        if not run_id:
-            return {"error": "run_id required"}
-
-        # Get validation run
-        vrun = (await self.db.execute(
-            select(ValidationRun).where(
-                ValidationRun.id == run_id,
-                ValidationRun.user_id == self.user_id,
-            )
-        )).scalar_one_or_none()
-
+        run_id = kwargs.get('run_id')
+        vrun = (await self.db.execute(select(ValidationRun).where(
+            ValidationRun.id == run_id, ValidationRun.user_id == self.user_id).with_for_update())).scalar_one_or_none()
         if not vrun:
-            return {"error": "Validation run not found"}
-
-        # Production mode requires explicit approval
-        if mode == "production" and not vrun.approved_by:
-            return {"error": "Production mode requires human approval before execution"}
-
-        vrun.status = "running"
+            return {'error': 'Validation run not found'}
+        if vrun.mode not in ('dry_run', 'lab'):
+            return {'error': 'Live execution is unavailable. Only dry-run or lab simulation plans are supported.'}
+        if vrun.status not in ('pending', 'failed'):
+            return {'error': 'This validation run cannot be prepared again'}
+        existing = (await self.db.execute(select(ValidationStep.id).where(
+            ValidationStep.run_id == run_id).limit(1))).scalar_one_or_none()
+        if existing is not None or vrun.results_summary is not None:
+            return {'error': 'Saved evidence already exists. Create a new run to preserve prior evidence.'}
+        techniques = simulation_techniques(vrun.mitre_techniques)
+        vrun.status = 'running'
         vrun.started_at = datetime.now(UTC)
-        await self.db.flush()
-
-        await self.log_step("start_validation", f"Run {run_id}: {len(techniques)} techniques, mode={mode}")
-
-        tested = 0
-        detected = 0
-        missed = 0
-        step_num = 0
-
-        for tech_id in techniques:
-            atomic = ATOMIC_TESTS.get(tech_id)
-            if not atomic:
-                continue
-
-            for test in atomic["tests"]:
-                step_num += 1
-                start = time.time()
-
-                # Create validation step
-                step = ValidationStep(
-                    run_id=run_id,
-                    step_number=step_num,
-                    technique_id=tech_id,
-                    technique_name=atomic["name"],
-                    test_name=test["test_name"],
-                    test_type="atomic",
-                    simulated=(mode == "dry_run"),
-                    command=test["command"] if mode != "dry_run" else f"[SIMULATED] {test['command']}",
-                    expected_detection=test["expected_detection"],
-                )
-
-                # Simulate execution
-                result = self._simulate_test(tech_id, mode)
-                step.status = "completed"
-                step.actual_result = result
-                step.duration_ms = int((time.time() - start) * 1000) + random.randint(50, 500)
-                step.executed_at = datetime.now(UTC)
-
-                self.db.add(step)
+        try:
+            async with self.db.begin_nested():
+                await self.log_step('start_simulation_plan', output_summary=(
+                    f'Run {run_id}: metadata-only simulation for {len(techniques)} supported techniques. '
+                    'No command execution, network probing or detection measurement. Lab mode is also simulated.'))
+                count = 0
+                for tech_id in techniques:
+                    atomic = ATOMIC_TESTS[tech_id]
+                    for test in atomic['tests']:
+                        count += 1
+                        start = time.monotonic()
+                        step = ValidationStep(
+                            run_id=run_id, step_number=count, technique_id=tech_id, technique_name=atomic['name'],
+                            test_name=test['test_name'], test_type='simulation_plan', simulated=True,
+                            command=f"[NOT EXECUTED, SIMULATION PLAN] {test['command']}",
+                            expected_detection=test['expected_detection'], status='completed',
+                            actual_result='simulated_unmeasured', executed_at=None,
+                            evidence={'kind': 'simulation_only', 'command_executed': False,
+                                      'detection_measured': False},
+                            duration_ms=max(0, int((time.monotonic() - start) * 1000)))
+                        self.db.add(step)
+                        await self.log_step('prepare_simulation_step', f"{tech_id}: {test['test_name']}",
+                                            'Plan recorded; command not executed and detection not measured.')
+                vrun.status = 'completed'
+                vrun.completed_at = datetime.now(UTC)
+                vrun.results_summary = {'measurement_mode': 'simulation_only', 'simulated_tests': count,
+                    'tested': 0, 'detected': 0, 'missed': 0, 'detection_rate': None,
+                    'agent_run_id': self._run.id}
+                summary = f'Simulation steps prepared: {count}; no commands executed and detection was not measured.'
+                await self.log_step('complete_simulation_plan', output_summary=summary)
                 await self.db.flush()
-
-                # Create control result
-                was_detected = result == "detected"
-                control = ControlResult(
-                    step_id=step.id,
-                    control_name=test["expected_detection"],
-                    control_type=test["expected_detection"].split(":")[0].strip().lower(),
-                    expected=True,
-                    detected=was_detected,
-                    detection_time_ms=random.randint(10, 200) if was_detected else None,
-                    details=(
-                        f"{'Detection fired' if was_detected else 'No detection triggered'} "
-                        f"for {test['test_name']}"
-                    ),
-                )
-                self.db.add(control)
-
-                tested += 1
-                if was_detected:
-                    detected += 1
-                else:
-                    missed += 1
-
-                await self.log_step("execute_test", f"{tech_id}: {test['test_name']}", f"Result: {result}")
-
-        # Finalize run
-        vrun.status = "completed"
-        vrun.completed_at = datetime.now(UTC)
-        vrun.results_summary = {
-            "tested": tested,
-            "detected": detected,
-            "missed": missed,
-            "detection_rate": round(detected / tested * 100, 1) if tested > 0 else 0,
-        }
-
-        await self.db.commit()
-
-        summary = (
-            f"Validated {tested} tests: {detected} detected, {missed} missed "
-            f"({vrun.results_summary['detection_rate']}% rate)"
-        )
-        await self.log_step("complete_validation", output_summary=summary)
-
-        return {
-            "run_id": run_id,
-            "status": "completed",
-            "results": vrun.results_summary,
-            "summary": summary,
-        }
-
-    def _simulate_test(self, technique_id: str, mode: str) -> str:
-        """Simulate test execution and detection.
-
-        In dry_run mode, uses realistic detection rates.
-        In lab/production mode, would actually execute and check.
-        """
-        # Simulate realistic detection rates per technique category
-        detection_rates = {
-            "T1059": 0.85,  # Command execution — well-detected
-            "T1071": 0.70,  # C2 protocols — moderate detection
-            "T1110": 0.90,  # Brute force — easy to detect
-            "T1190": 0.75,  # Exploit attempts — depends on signatures
-            "T1078": 0.60,  # Valid accounts — hard to detect
-            "T1021": 0.65,  # Remote services — moderate
-            "T1046": 0.95,  # Port scans — very detectable
-            "T1486": 0.50,  # Ransomware — varies widely
-        }
-        rate = detection_rates.get(technique_id, 0.70)
-        return "detected" if random.random() < rate else "missed"
+        except Exception:
+            vrun.status = 'failed'
+            vrun.completed_at = datetime.now(UTC)
+            raise
+        return {'run_id': run_id, 'status': 'completed', 'results': vrun.results_summary, 'summary': summary}

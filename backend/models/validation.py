@@ -1,6 +1,7 @@
 """Purple-team validation models — test runs, steps, and control results."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
@@ -96,6 +97,7 @@ class ValidationStepResponse(BaseModel):
     status: str
     simulated: bool
     actual_result: str | None = None
+    expected_detection: str | None = None
     duration_ms: int | None = None
     executed_at: datetime | None = None
     model_config = {"from_attributes": True}
@@ -104,7 +106,7 @@ class ValidationStepResponse(BaseModel):
 class ValidationRunCreate(BaseModel):
     name: str
     description: str | None = None
-    mode: str = "dry_run"
+    mode: Literal["dry_run", "lab", "production"] = "dry_run"
     scope: dict | None = None
     mitre_techniques: list[str] = []
 

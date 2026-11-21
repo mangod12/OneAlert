@@ -22,6 +22,7 @@ from backend.models.validation import (
     ValidationStepResponse,
 )
 from backend.routers.auth import get_active_user
+from backend.services.agents.purple import simulation_techniques
 from backend.services.csv_export import spreadsheet_safe_row
 from backend.services.validation_coverage_evidence import coverage_evidence, coverage_source_steps
 
@@ -77,7 +78,7 @@ async def create_validation_run(
     if run_data.mode == "production":
         raise HTTPException(
             status_code=403,
-            detail="Production mode requires admin approval. Use 'dry_run' or 'lab' mode.",
+            detail="Production execution is unavailable. Use dry-run or lab simulation plans.",
         )
 
     vrun = ValidationRun(
@@ -176,7 +177,7 @@ async def export_validation_run(
     writer.writerow([
         "run", "mode", "run_status", "step_number", "technique_id",
         "technique_name", "test_name", "test_type", "step_status",
-        "actual_result", "duration_ms", "controls", "executed_at",
+        "actual_result", "duration_ms", "controls", "executed_at", "simulated", "measurement_mode",
     ])
     controls_by_step = await _controls_by_step(db, steps)
     for step in steps:
@@ -199,6 +200,8 @@ async def export_validation_run(
             step.duration_ms if step.duration_ms is not None else "",
             control_summary,
             step.executed_at.isoformat() if step.executed_at else "",
+            step.simulated,
+            (vrun.results_summary or {}).get('measurement_mode', 'legacy_or_external_record'),
         ]))
     buffer.seek(0)
     return StreamingResponse(
@@ -247,7 +250,7 @@ async def execute_validation_run(
         select(ValidationRun).where(
             ValidationRun.id == run_id,
             ValidationRun.user_id == current_user.id,
-        )
+        ).with_for_update()
     )).scalar_one_or_none()
 
     if not vrun:
@@ -256,9 +259,19 @@ async def execute_validation_run(
     if vrun.status not in ("pending", "failed"):
         raise HTTPException(status_code=400, detail=f"Run status is '{vrun.status}', cannot execute")
 
+    if vrun.mode not in ('dry_run', 'lab'):
+        raise HTTPException(status_code=403, detail='Live execution is unavailable. Use a simulation plan.')
+    try:
+        simulation_techniques(vrun.mitre_techniques)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    existing = (await db.execute(select(ValidationStep.id).where(
+        ValidationStep.run_id == run_id).limit(1))).scalar_one_or_none()
+    if existing is not None or vrun.results_summary is not None:
+        raise HTTPException(status_code=409, detail='Saved evidence exists. Create a new run to preserve it.')
     from backend.services.agents.purple import PurpleAgent
     agent = PurpleAgent(db=db, user_id=current_user.id)
-    await agent.execute(
+    result = await agent.execute(
         run_id=run_id,
         techniques=vrun.mitre_techniques or [],
         mode=vrun.mode,
@@ -271,7 +284,7 @@ async def execute_validation_run(
             "run_id": run_id,
             "status": vrun.status,
             "results": vrun.results_summary or {},
-            "summary": "Validation run completed",
+            "summary": result.get("summary", "No simulation summary returned"),
         },
     }
 
