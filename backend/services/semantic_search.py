@@ -74,9 +74,15 @@ def _cosine_similarity(vec_a: dict[str, float], vec_b: dict[str, float]) -> floa
 def _case_to_text(case) -> str:
     """Convert a case to searchable text."""
     def _to_str_list(items):
-        if not items:
+        if not isinstance(items, list):
             return []
-        return [str(i) if not isinstance(i, dict) else i.get("id", i.get("name", str(i))) for i in items]
+        values = []
+        for item in items:
+            if isinstance(item, str):
+                values.append(item)
+            elif isinstance(item, dict):
+                values.extend(item[field] for field in ('id', 'name') if isinstance(item.get(field), str))
+        return values
 
     parts = [
         case.title or "",
@@ -87,6 +93,14 @@ def _case_to_text(case) -> str:
         case.severity or "",
     ]
     return " ".join(parts)
+
+
+def _recorded_technique_ids(items) -> set[str]:
+    """Only explicit exact ATT&CK IDs count as shared technique evidence."""
+    if not isinstance(items, list):
+        return set()
+    values = [item.get('id') if isinstance(item, dict) else item for item in items]
+    return {value for value in values if isinstance(value, str) and re.fullmatch(r'T[0-9]{4}(?:\.[0-9]{3})?', value)}
 
 
 async def find_similar_cases(
@@ -136,15 +150,15 @@ async def find_similar_cases(
     target_vec = _tfidf_vector(target_tokens, idf)
 
     similarities = []
-    target_techniques = set(target.mitre_techniques or [])
+    target_techniques = _recorded_technique_ids(target.mitre_techniques)
 
     for case, tokens in zip(others, other_tokens, strict=True):
         vec = _tfidf_vector(tokens, idf)
         sim = _cosine_similarity(target_vec, vec)
 
         if sim >= min_similarity:
-            case_techniques = set(case.mitre_techniques or [])
-            shared = list(target_techniques & case_techniques)
+            case_techniques = _recorded_technique_ids(case.mitre_techniques)
+            shared = sorted(target_techniques & case_techniques)
             similarities.append({
                 "case_id": case.id,
                 "title": case.title,
@@ -155,7 +169,7 @@ async def find_similar_cases(
             })
 
     # Sort by similarity descending
-    similarities.sort(key=lambda x: x["similarity"], reverse=True)
+    similarities.sort(key=lambda x: (-x["similarity"], x["case_id"]))
     return similarities[:max_results]
 
 
