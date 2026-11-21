@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Events } from './Events';
+import { ToastContainer } from '../components/Toast';
 
 vi.mock('../api/client', () => ({
   default: {
@@ -498,4 +499,19 @@ it('submits a reviewed file only once while its upload is pending', async () => 
 it('links expanded evidence to its exact event and never fills a missing byte counter with zero', async () => {
   mockAllFulfilled([makeEvent({ bytes_in: null, bytes_out: 128 })]); render(<Events />); fireEvent.click(await screen.findByRole('button', { name: 'Show details for event 1' }));
   expect(screen.getByText('Not recorded / 128')).toBeTruthy(); expect(screen.getByRole('link', { name: 'Open exact event record #1' }).getAttribute('href')).toBe('/app/events/1');
+});
+
+
+it('shows bounded JSON Blob refusal guidance instead of downloading a partial event export', async () => {
+  const createUrl = vi.fn(); URL.createObjectURL = createUrl;
+  mockAllFulfilled();
+  const normal = mockGet.getMockImplementation()!;
+  const text = JSON.stringify({ error: { message: 'Narrow the applied event filters. No partial CSV was created.' } });
+  const blob = new Blob([text], { type: 'application/json' });
+  Object.defineProperty(blob, 'text', { value: async () => text });
+  mockGet.mockImplementation((url, config) => url === '/events/export' ? Promise.reject({ isAxiosError: true, response: { data: blob, status: 422 } }) : normal(url, config));
+  render(<><Events /><ToastContainer /></>); await screen.findByRole('button', { name: /export csv/i });
+  fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
+  await screen.findByText('Narrow the applied event filters. No partial CSV was created.');
+  expect(createUrl).not.toHaveBeenCalled();
 });
