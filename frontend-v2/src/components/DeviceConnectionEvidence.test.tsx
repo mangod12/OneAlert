@@ -50,7 +50,7 @@ describe('Recorded device connection matches', () => {
   });
   it('does not turn a missing encryption flag into a cleartext claim', async () => {
     get.mockResolvedValueOnce({ data: { ...snapshot, connections: [{ ...row, is_encrypted: null, bytes_transferred_exact: null }] } }); await open();
-    expect(screen.getByText(/Encryption flag not recorded/)).toBeTruthy();
+    expect(screen.getByText(/modbus, port 0 · Encryption flag not recorded/)).toBeTruthy();
     expect(screen.queryByText(/modbus, port 0 · Recorded cleartext/)).toBeNull();
   });
   it('downloads only the loaded page with filter, timestamp and match metadata', async () => {
@@ -58,4 +58,12 @@ describe('Recorded device connection matches', () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {}); await open(); fireEvent.click(screen.getByRole('button', { name: 'Download loaded connection page JSON' }));
     await waitFor(() => expect(create).toHaveBeenCalledOnce()); expect(click).toHaveBeenCalledOnce(); expect(create.mock.calls[0][0].type).toBe('application/json');
   });
+});
+it('shows the full matching overlapping-reference summary independently of loaded rows and filters unknown encryption',async()=>{
+  get.mockResolvedValueOnce({data:{...snapshot,total:201,summary:{total:201,record_references:100,ip_matches:121,both_matches:20,encrypted:50,cleartext:100,unknown_encryption:51}}});await open();
+  const summary=screen.getByRole('region',{name:'Full matching connection summary'});expect(summary.textContent).toContain('Matching records201');expect(summary.textContent).toContain('Both reference and IP20');
+  get.mockResolvedValueOnce({data:{...snapshot,encryption:'unknown',connections:[{...row,is_encrypted:null}],summary:{total:1,record_references:0,ip_matches:1,both_matches:0,encrypted:0,cleartext:0,unknown_encryption:1}}});fireEvent.change(screen.getByLabelText('Connection encryption filter'),{target:{value:'unknown'}});await screen.findByText(/modbus, port 0 · Encryption flag not recorded/);expect(get).toHaveBeenLastCalledWith('/ot/discovered-devices/7/connections',{params:{page:1,size:20,match:'all',encryption:'unknown'}});
+});
+it.each([{total:1,record_references:1,ip_matches:1,both_matches:0,encrypted:0,cleartext:1,unknown_encryption:0},{total:1,record_references:0,ip_matches:1,both_matches:0,encrypted:0,cleartext:1,unknown_encryption:1}])('does not invent totals for an inconsistent summary %j',async summary=>{
+  get.mockResolvedValueOnce({data:{...snapshot,summary}});await open();expect(screen.getByText(/Full matching connection summary unavailable/)).toBeTruthy();expect(screen.getByText(/#12:/)).toBeTruthy();
 });

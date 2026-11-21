@@ -4,7 +4,8 @@ import { DeviceRecordLink } from './DeviceRecordLink';
 import { getApiErrorMessage } from '../api/errors';
 import type { RecordedTopologyEdge } from './TopologyConnectionEvidence';
 interface Connection extends Omit<RecordedTopologyEdge, 'is_encrypted'> { id: number; is_encrypted: boolean | null; record_reference_match: boolean; ip_address_match: boolean; }
-interface Snapshot { device_id: number; ip_address: string; page: number; size: number; total: number; match: string; encryption: string; retrieved_at: string; connections: Connection[]; }
+interface Summary { total: number; record_references: number; ip_matches: number; both_matches: number; encrypted: number; cleartext: number; unknown_encryption: number; }
+interface Snapshot { summary?: Summary | null; device_id: number; ip_address: string; page: number; size: number; total: number; match: string; encryption: string; retrieved_at: string; connections: Connection[]; }
 const control = 'rounded border border-surface-600 bg-surface-950 px-3 py-2 text-xs text-surface-200 disabled:opacity-40';
 export function DeviceConnectionEvidence({ deviceId }: { deviceId: number }) {
   const [opened, setOpened] = useState(false);
@@ -28,7 +29,14 @@ export function DeviceConnectionEvidence({ deviceId }: { deviceId: number }) {
       if (value.device_id !== deviceId || value.match !== match || value.encryption !== encryption || value.page !== page || value.size !== 20) throw new Error('Connection evidence did not match the requested device and filters. Try again.');
       const lastPage = Math.max(1, Math.ceil(value.total / 20));
       if (page > lastPage) { setPage(lastPage); return; }
-      setSnapshot(value);
+      const s = value.summary;
+      const summaryValid = s && [s.total, s.record_references, s.ip_matches, s.both_matches, s.encrypted, s.cleartext, s.unknown_encryption].every(n => Number.isSafeInteger(n) && n >= 0)
+        && s.total === value.total && s.record_references + s.ip_matches - s.both_matches === s.total
+        && s.both_matches <= Math.min(s.record_references, s.ip_matches) && s.record_references <= s.total && s.ip_matches <= s.total
+        && s.encrypted + s.cleartext + s.unknown_encryption === s.total
+        && (match !== 'record' || s.record_references === s.total) && (match !== 'ip' || s.ip_matches === s.total)
+        && (encryption === 'all' || (encryption === 'unknown' ? s.unknown_encryption : encryption === 'encrypted' ? s.encrypted : s.cleartext) === s.total);
+      setSnapshot({ ...value, summary: summaryValid ? s : null });
     }).catch(err => { if (request === requestId.current) setError(getApiErrorMessage(err, 'Device connection evidence could not be loaded.')); })
       .finally(() => { if (request === requestId.current) setLoading(false); });
     return () => { requestId.current += 1; };
@@ -37,7 +45,7 @@ export function DeviceConnectionEvidence({ deviceId }: { deviceId: number }) {
     if (!snapshot || loading || error) return;
     setDownloadError('');
     try {
-      const body = { schema_version: 1, evidence_type: 'recorded_device_connection_page', exported_at: new Date().toISOString(), scope: 'Only this loaded, filtered page of owner-visible connection records. A device-record reference and an IP address match are separate recorded facts. Neither proves physical identity or live traffic. Encryption and direction are stored labels, not verified flow properties.', ...snapshot };
+      const body = { schema_version: 1, evidence_type: 'recorded_device_connection_page', exported_at: new Date().toISOString(), scope: 'Only this loaded, filtered page of owner-visible connection records, plus the full matching aggregate summary when available. Other connection rows are not included. A device-record reference and an IP address match are separate recorded facts. Neither proves physical identity or live traffic. Encryption and direction are stored labels, not verified flow properties.', ...snapshot };
       const url = URL.createObjectURL(new Blob([JSON.stringify(body, null, 2)], { type: 'application/json' }));
       const link = document.createElement('a'); link.href = url; link.download = `device-${deviceId}-connection-evidence-page-${snapshot.page}.json`; document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch { setDownloadError('Connection evidence could not be downloaded. The loaded records remain available.'); }
@@ -46,11 +54,21 @@ export function DeviceConnectionEvidence({ deviceId }: { deviceId: number }) {
     <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold text-surface-100">Recorded connection matches</h3><button type="button" aria-expanded={opened} onClick={() => setOpened(!opened)} className={control}>{opened ? 'Hide connection matches' : 'Review connection matches'}</button></div>
     <p className="text-xs text-surface-400">Connections may reference this device record, exactly match its recorded IP address text, or both. Shared or changed IPs do not prove physical identity. These records are not a live scan or traffic capture. Direction and encryption are stored labels, not verified flow properties.</p>
     {opened && <>
-      <div className="flex flex-wrap gap-2"><label className="min-w-0 text-xs text-surface-300">Match basis<select aria-label="Connection match basis" value={match} onChange={event => { setMatch(event.target.value); setPage(1); }} className={`${control} mt-1 block w-full`}><option value="all">Record reference or IP match</option><option value="record">Device record reference</option><option value="ip">Exact recorded IP match</option></select></label><label className="min-w-0 text-xs text-surface-300">Recorded encryption<select aria-label="Connection encryption filter" value={encryption} onChange={event => { setEncryption(event.target.value); setPage(1); }} className={`${control} mt-1 block w-full`}><option value="all">All recorded flags</option><option value="cleartext">Recorded cleartext</option><option value="encrypted">Recorded encrypted</option></select></label><button type="button" onClick={() => setRetry(retry + 1)} disabled={loading} className={`${control} self-end`}>Refresh connection matches</button></div>
+      <div className="flex flex-wrap gap-2"><label className="min-w-0 text-xs text-surface-300">Match basis<select aria-label="Connection match basis" value={match} onChange={event => { setMatch(event.target.value); setPage(1); }} className={`${control} mt-1 block w-full`}><option value="all">Record reference or IP match</option><option value="record">Device record reference</option><option value="ip">Exact recorded IP match</option></select></label><label className="min-w-0 text-xs text-surface-300">Recorded encryption<select aria-label="Connection encryption filter" value={encryption} onChange={event => { setEncryption(event.target.value); setPage(1); }} className={`${control} mt-1 block w-full`}><option value="all">All recorded flags</option><option value="cleartext">Recorded cleartext</option><option value="encrypted">Recorded encrypted</option><option value="unknown">Encryption flag not recorded</option></select></label><button type="button" onClick={() => setRetry(retry + 1)} disabled={loading} className={`${control} self-end`}>Refresh connection matches</button></div>
       {loading && <p role="status" className="text-xs text-surface-300">Loading recorded connection matches...</p>}
       {error && <div className="space-y-2"><p role="alert" className="text-xs text-danger">{error}</p><button type="button" onClick={() => setRetry(retry + 1)} className={control}>Retry connection matches</button></div>}
       {!loading && !error && snapshot && <>
         <p className="break-words text-xs text-surface-400">Device #{snapshot.device_id}, current IP {snapshot.ip_address}. {snapshot.total} matching records. Page {snapshot.page} of {Math.max(1, Math.ceil(snapshot.total / snapshot.size))}. Received {snapshot.retrieved_at}.</p>
+        <section role="region" aria-label="Full matching connection summary" className="space-y-2 rounded border border-surface-700 p-3">
+          <h4 className="font-semibold text-surface-100">Full matching recorded connections</h4>
+          <p className="text-xs text-surface-400">Counts cover all matching records before paging. Reference and IP counts overlap; both-match records are counted once in the total. Stored encryption flags do not verify live encryption. Missing flags are not cleartext.</p>
+          {snapshot.summary ? <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">{[
+            ['Matching records', snapshot.summary.total], ['Device record references', snapshot.summary.record_references],
+            ['Exact IP matches', snapshot.summary.ip_matches], ['Both reference and IP', snapshot.summary.both_matches],
+            ['Recorded encrypted', snapshot.summary.encrypted], ['Recorded cleartext', snapshot.summary.cleartext],
+            ['Encryption flag not recorded', snapshot.summary.unknown_encryption],
+          ].map(([label, count]) => <div key={label}><dt className="text-surface-400">{label}</dt><dd className="mt-1 font-semibold text-surface-100">{count}</dd></div>)}</dl> : <p role="status" className="text-xs text-warning">Full matching connection summary unavailable. Counts are not inferred from this loaded page.</p>}
+        </section>
         <button type="button" onClick={download} disabled={snapshot.connections.length === 0} className={control}>Download loaded connection page JSON</button>
         {downloadError && <p role="alert" className="text-xs text-danger">{downloadError}</p>}
         {snapshot.connections.length === 0 ? <p className="text-xs text-surface-300">No recorded connections match these filters. This does not establish that the device has no network activity.</p> : <ol className="space-y-2">{snapshot.connections.map(row => <li key={row.id} className="min-w-0 rounded border border-surface-700 p-3 text-xs text-surface-300">

@@ -109,7 +109,7 @@ def test_missing_and_foreign_device_are_indistinguishable(client, device):
 
 @pytest.mark.parametrize('params', [
     {'size': 0}, {'size': 101}, {'page': 0}, {'page': 1000001},
-    {'match': 'guessed'}, {'encryption': 'unknown'},
+    {'match': 'guessed'}, {'encryption': 'guessed'},
 ])
 def test_invalid_filters_are_rejected(client, params):
     assert client.get('/api/v1/ot/discovered-devices/1/connections', params=params).status_code == 422
@@ -122,3 +122,16 @@ def test_topology_rollups_do_not_count_missing_encryption_as_cleartext(client):
     assert stats['encrypted'] + stats['unencrypted'] + stats['encryption_unknown'] == stats['total_connections']
     graph = client.get('/api/v1/topology/graph').json()
     assert next(row for row in graph['edges'] if row['id'] == 7)['is_encrypted'] is None
+
+
+def test_matching_summary_counts_full_cohort_with_overlap_and_unknown_separate(client):
+    expected = {'total':5,'record_references':3,'ip_matches':3,'both_matches':1,
+                'encrypted':2,'cleartext':2,'unknown_encryption':1}
+    assert read(client,size=1)['summary'] == expected
+    assert read(client,size=1,page=2)['summary'] == expected
+    unknown = read(client,encryption='unknown',match='record',size=1)
+    assert unknown['total'] == 1 and unknown['connections'][0]['id'] == 7
+    assert unknown['summary'] == {'total':1,'record_references':1,'ip_matches':0,'both_matches':0,
+                                  'encrypted':0,'cleartext':0,'unknown_encryption':1}
+    assert read(client,encryption='unknown',match='ip')['total'] == 0
+    assert all(n == 0 for n in read(client,device=3,match='record')['summary'].values())

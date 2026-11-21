@@ -12,7 +12,7 @@ from backend.models.network_connection import NetworkConnection
 
 async def device_connection_evidence(
     db: AsyncSession, user_id: int, device_id: int, page: int, size: int,
-    match: Literal['all', 'record', 'ip'], encryption: Literal['all', 'encrypted', 'cleartext'],
+    match: Literal['all', 'record', 'ip'], encryption: Literal['all', 'encrypted', 'cleartext', 'unknown'],
 ) -> dict:
     device = (await db.execute(select(DiscoveredDevice).where(
         DiscoveredDevice.id == device_id, DiscoveredDevice.user_id == user_id,
@@ -23,9 +23,20 @@ async def device_connection_evidence(
     ip_match = or_(NetworkConnection.source_ip == device.ip_address, NetworkConnection.target_ip == device.ip_address)
     predicates = [NetworkConnection.user_id == user_id,
                   record_match if match == 'record' else ip_match if match == 'ip' else or_(record_match, ip_match)]
-    if encryption != 'all':
+    if encryption == 'unknown':
+        predicates.append(NetworkConnection.is_encrypted.is_(None))
+    elif encryption != 'all':
         predicates.append(NetworkConnection.is_encrypted.is_(encryption == 'encrypted'))
-    total = (await db.execute(select(func.count()).select_from(NetworkConnection).where(*predicates))).scalar_one()
+    counts = (await db.execute(select(
+        func.count().label('total'),
+        func.count().filter(record_match).label('record_references'),
+        func.count().filter(ip_match).label('ip_matches'),
+        func.count().filter(record_match, ip_match).label('both_matches'),
+        func.count().filter(NetworkConnection.is_encrypted.is_(True)).label('encrypted'),
+        func.count().filter(NetworkConnection.is_encrypted.is_(False)).label('cleartext'),
+        func.count().filter(NetworkConnection.is_encrypted.is_(None)).label('unknown_encryption'),
+    ).select_from(NetworkConnection).where(*predicates))).mappings().one()
+    total = counts['total']
     rows = (await db.execute(select(NetworkConnection).where(*predicates)
                             .order_by(NetworkConnection.last_seen.desc().nullslast(), NetworkConnection.id.desc())
                             .offset((page - 1) * size).limit(size))).scalars().all()
@@ -43,5 +54,5 @@ async def device_connection_evidence(
             'record_reference_match': linked, 'ip_address_match': ip_matched,
         })
     return {'device_id': device.id, 'ip_address': device.ip_address, 'page': page, 'size': size,
-            'total': total, 'match': match, 'encryption': encryption,
+            'total': total, 'summary': dict(counts), 'match': match, 'encryption': encryption,
             'retrieved_at': datetime.now(UTC), 'connections': connections}
