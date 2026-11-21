@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom';
 import { AgentRunLibrary } from '../components/AgentRunLibrary';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
@@ -38,7 +39,16 @@ const runStatusTones: Record<string, 'success' | 'danger' | 'warning' | 'neutral
   running: 'neutral',
 };
 
-export function AuditLog() {
+export function AuditLogRoute() {
+  const [params, setParams] = useSearchParams();
+  const values = params.getAll('run'), raw = values.length === 1 ? values[0] : '';
+  const runId = /^[1-9][0-9]*$/.test(raw) && Number.isSafeInteger(Number(raw)) ? Number(raw) : null;
+  const invalid = values.length > 0 && runId === null;
+  const clear = () => setParams(current => { const next = new URLSearchParams(current); next.delete('run'); return next; }, { replace: true });
+  return <>{invalid && <p role="alert" className="mb-4 text-sm text-danger">Invalid recorded run link. Use one positive whole-number run ID. No run was opened from this link. <button type="button" className="text-primary-300" onClick={clear}>Clear invalid recorded run link</button></p>}<AuditLog linkedRunId={runId} onCloseLinkedRun={clear} /></>;
+}
+
+export function AuditLog({ linkedRunId = null, onCloseLinkedRun }: { linkedRunId?: number | null; onCloseLinkedRun?: () => void } = {}) {
   const logRequest = useRef(0), exportRequest = useRef(0), exportBusy = useRef(false);
   const [selectedRecord, setSelectedRecord] = useState<AuditEntry | null>(null);
   const [logs, setLogs] = useState<AuditEntry[]>([]);
@@ -49,7 +59,8 @@ export function AuditLog() {
   const [agentLoading, setAgentLoading] = useState(true);
   const [agentError, setAgentError] = useState('');
   const [agentRetry, setAgentRetry] = useState(0);
-  const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<number | null>(linkedRunId);
+  useEffect(() => { setSelectedRunId(linkedRunId); }, [linkedRunId]);
   const [search, setSearch] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -301,7 +312,7 @@ export function AuditLog() {
             </div>
           )}
       </section>
-      {selectedRunId !== null && <AgentRunInspector key={selectedRunId} runId={selectedRunId} onClose={() => setSelectedRunId(null)} />}
+      {selectedRunId !== null && <AgentRunInspector key={selectedRunId} runId={selectedRunId} onClose={() => { setSelectedRunId(null); onCloseLinkedRun?.(); }} />}
     </div>
   );
 }

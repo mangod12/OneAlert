@@ -40,6 +40,16 @@ export function AgentRunInspector({ runId, onClose }: { runId: number; onClose: 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
+  const copyRequest = useRef(0);
+  const [copied, setCopied] = useState(false), [copyError, setCopyError] = useState('');
+  const copyLink = async () => {
+    const request = ++copyRequest.current; setCopied(false); setCopyError('');
+    try {
+      const url = new URL('/app/audit-log', window.location.origin); url.searchParams.set('run', String(runId));
+      await navigator.clipboard.writeText(url.toString()); if (request === copyRequest.current) setCopied(true);
+    } catch { if (request === copyRequest.current) setCopyError('The recorded run link could not be copied. Try again.'); }
+  };
+  useEffect(() => { setCopied(false); setCopyError(''); copyRequest.current += 1; return () => { copyRequest.current += 1; }; }, [runId]);
 
   useEffect(() => {
     let active = true;
@@ -48,7 +58,7 @@ export function AgentRunInspector({ runId, onClose }: { runId: number; onClose: 
     setError('');
     void apiClient.get<RunDetail>(`/cases/agents/runs/${runId}`).then(response => {
       if (!active) return;
-      if (response.data.id !== runId) throw new Error('The response did not match this run. Try again.');
+      if (response.data.id !== runId || !Array.isArray(response.data.steps)) throw new Error('The response did not match this run. Try again.');
       setDetail(response.data);
     }).catch(err => {
       if (active) setError(getApiErrorMessage(err, 'This recorded run could not be loaded.'));
@@ -66,6 +76,7 @@ export function AgentRunInspector({ runId, onClose }: { runId: number; onClose: 
       {loading && <p role="status" className="mt-5 text-sm text-surface-300">Loading recorded run...</p>}
       {error && <div className="mt-5 space-y-3"><p role="alert" className="text-sm text-danger">{error}</p><button type="button" onClick={() => setRetry(value => value + 1)} className="rounded-md border border-surface-600 px-3 py-2 text-sm text-surface-200">Retry run</button></div>}
       {!loading && !error && detail && <div className="mt-5 space-y-5">
+        <div className="space-y-2"><button type="button" onClick={() => void copyLink()} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Copy exact recorded run link</button><p className="text-xs text-surface-400">Opens this current saved run by ID, even outside the latest 50 runs. Not a frozen snapshot or a full transcript. The link does not grant access, start an agent or retry a failed action. Recipients need their own permission. Audit search drafts, date filters and URL fragments are not included.</p>{copied && <p role="status" className="text-xs text-primary-300">Recorded run link copied.</p>}{copyError && <p role="alert" className="text-xs text-danger">{copyError}</p>}</div>
         <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
           {[
             ['Agent', detail.agent_type], ['Recorded status', detail.status],
