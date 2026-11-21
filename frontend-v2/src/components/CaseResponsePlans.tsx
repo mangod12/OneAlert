@@ -1,3 +1,4 @@
+import { ResponseDraftCreator } from './ResponseDraftCreator';
 import { ChecklistImportPreview, type ChecklistSelection } from './ChecklistImportPreview';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -7,9 +8,9 @@ import { getApiErrorMessage } from '../api/errors';
 import { StatusBadge } from './ui/StatusBadge';
 interface Plan { id: number; case_id: number; status: string; autonomy_level: string; created_by: string; created_at: string; actions: unknown[]; }
 const button = 'rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40';
-interface Props { caseId: number; onSeed: (id: number, payload: ChecklistSelection) => Promise<boolean> | void; seedBusy: boolean; tasksUnavailable: boolean; }
+interface Props { canDraft?: boolean; caseId: number; onSeed: (id: number, payload: ChecklistSelection) => Promise<boolean> | void; seedBusy: boolean; tasksUnavailable: boolean; }
 export function CaseResponsePlans(props: Props) { return <PlanExplorer key={props.caseId} {...props} />; }
-function PlanExplorer({ caseId, onSeed, seedBusy, tasksUnavailable }: Props) {
+function PlanExplorer({ canDraft = false, caseId, onSeed, seedBusy, tasksUnavailable }: Props) {
   const [page, setPage] = useState(1), [retry, setRetry] = useState(0), [status, setStatus] = useState('');
   const [snapshot, setSnapshot] = useState<{ caseId: number; page: number; plans: Plan[]; total: number } | null>(null);
   const [loading, setLoading] = useState(true), [error, setError] = useState('');
@@ -33,6 +34,7 @@ function PlanExplorer({ caseId, onSeed, seedBusy, tasksUnavailable }: Props) {
   return <section aria-label="Investigation response plan explorer" className="oa-panel space-y-4 p-4 sm:p-6">
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="flex items-center gap-2 text-lg font-semibold text-surface-50"><Shield className="h-5 w-5 text-primary-400" />Response Plans</h2><label className="text-xs text-surface-300">Plan status<select aria-label="Filter investigation response plans by status" value={status} className={`${button} ml-2 bg-surface-950`} onChange={event => { setSnapshot(null); setStatus(event.target.value); setPage(1); }}><option value="">All statuses</option>{['draft', 'pending_approval', 'approved', 'executing', 'completed', 'partial', 'rejected'].map(value => <option key={value} value={value}>{value.replace('_', ' ')}</option>)}</select></label></div>
     <p className="text-xs text-surface-400">Plans visible to your account for this investigation. Open an exact plan's read-only decision evidence. Adding actions to a checklist does not approve or execute the plan.</p>
+    {canDraft && <ResponseDraftCreator caseId={caseId} onCreated={() => { setPage(1); setStatus(''); setRetry(value => value + 1); }} />}
     <div className="flex flex-wrap items-center gap-2 rounded border border-surface-700 p-3 text-xs text-surface-300"><span>Compare saved plans: {comparison.length ? comparison.map(id => `#${id}`).join(' → ') : 'Select a baseline, then a comparison plan.'}</span>{comparison.length === 2 && <Link className={`${button} text-primary-300`} to={`/response-plans?compare_from=${comparison[0]}&compare_to=${comparison[1]}`}>Open selected plan comparison</Link>}{comparison.length > 0 && <button type="button" className={button} onClick={() => setComparison([])}>Clear comparison selection</button>}<p className="w-full text-surface-400">Selection order defines the two sides, not chronology. You can select across pages and filters. The comparison reloads both current saved records.</p></div>
     {loading && <p role="status" className="text-sm text-surface-300">Loading investigation response plans...</p>}
     {error && <div className="space-y-2"><p role="alert" className="text-sm text-danger">{error}</p><button type="button" className={button} onClick={() => setRetry(retry + 1)}>Retry investigation response plans</button></div>}

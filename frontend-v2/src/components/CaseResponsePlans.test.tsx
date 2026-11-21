@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import apiClient from '../api/client';
 import { CaseResponsePlans } from './CaseResponsePlans';
-vi.mock('../api/client', () => ({ default: { get: vi.fn() } }));
+vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 const get = vi.mocked(apiClient.get);
 const plan = { id: 21, case_id: 7, status: 'partial', autonomy_level: 'L1', created_by: 'agent', created_at: '2026-11-20T00:00:00Z', actions: [{ action_type: 'notify' }] };
 const props = { caseId: 7, onSeed: vi.fn(), seedBusy: false, tasksUnavailable: false };
@@ -78,4 +78,9 @@ it('clears comparison selections when the visible investigation changes', async 
   get.mockResolvedValue({ data: { data: [{ ...plan, case_id: 8, id: 30 }], total: 1 } });
   view.rerender(<MemoryRouter><CaseResponsePlans {...props} caseId={8} /></MemoryRouter>);
   await screen.findByText('Plan #30'); expect(screen.getByText('Compare saved plans: Select a baseline, then a comparison plan.')).toBeTruthy();
+});
+
+it('only offers draft generation when its caller confirms case ownership', async () => {
+  const view = render(<MemoryRouter><CaseResponsePlans {...props} /></MemoryRouter>); expect(screen.queryByRole('button', { name: 'Review draft generation' })).toBeNull();
+  view.rerender(<MemoryRouter><CaseResponsePlans {...props} canDraft /></MemoryRouter>); expect(screen.getByRole('button', { name: 'Review draft generation' })).toBeTruthy();
 });

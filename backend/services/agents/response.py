@@ -59,6 +59,7 @@ class ResponseAgent(BaseAgent):
     async def run(self, **kwargs) -> dict:
         case_id = kwargs.get("case_id")
         autonomy_level = kwargs.get("autonomy_level", "L1")
+        draft_only = kwargs.get("draft_only", False)
 
         if not case_id:
             return {"error": "case_id required"}
@@ -76,14 +77,21 @@ class ResponseAgent(BaseAgent):
             select(Alert, Asset).select_from(CaseAlert)
             .outerjoin(Alert, and_(CaseAlert.alert_id == Alert.id, Alert.user_id == self.user_id))
             .outerjoin(Asset, and_(Alert.asset_id == Asset.id, Asset.user_id == self.user_id))
-            .where(CaseAlert.case_id == case_id)
+            .where(CaseAlert.case_id == case_id).order_by(CaseAlert.id.asc())
         )
         alert_assets = alert_rows.all()
 
         # Step 1: Generate plan via LLM (or fallback)
         start = time.time()
+        context = self._build_context(case, alert_assets)
+        await self.log_step('planning_scope', output_summary=(
+            'Planned AI context: case title (500 chars), summary/tactics (2000 chars each); '
+            f'first {min(20, len(alert_assets))} '
+            f'of {len(alert_assets)} linked alert/asset records in saved link-ID order; '
+            'text fields shortened at 500 chars. Events, raw payloads, notes, tasks and chronology not supplied. '
+            'Policy checks still assess all linked asset contexts. These are inputs, not confirmed facts.'
+        ))
         try:
-            context = self._build_context(case, alert_assets)
             provider = get_ai_provider(TASK_TRIAGE)
             response = await provider.complete_json([
                 AIMessage(role="system", content=RESPONSE_SYSTEM_PROMPT),
@@ -114,6 +122,10 @@ class ResponseAgent(BaseAgent):
             if "execution_result" in action:
                 raise ValueError(f"Generated response action {position} cannot include preexisting execution results")
 
+        rationale = response.get('rationale', '')
+        if not isinstance(rationale, str):
+            raise ValueError('Generated response rationale must be text')
+
         # Step 2: Policy check each action
         checked_actions = []
         needs_approval = False
@@ -130,7 +142,7 @@ class ResponseAgent(BaseAgent):
             checked_actions.append(action)
 
         # Step 3: Create response plan
-        plan_status = "pending_approval" if needs_approval else "approved"
+        plan_status = "draft" if draft_only else "pending_approval" if needs_approval else "approved"
         plan = ResponsePlan(
             case_id=case_id,
             user_id=self.user_id,
@@ -139,55 +151,67 @@ class ResponseAgent(BaseAgent):
             autonomy_level=autonomy_level,
             created_by="agent",
         )
-        self.db.add(plan)
-        await self.db.flush()
+        async def save_plan():
+            self.db.add(plan)
+            await self.db.flush()
+            # Draft creation grants no approval and opens no approval request.
+            # The existing exact-plan review is required before approval.
+            if needs_approval and not draft_only:
+                self.db.add(ApprovalRequest(
+                    plan_id=plan.id, requested_by="response_agent",
+                    reason=response.get("rationale", "Actions require human review"),
+                ))
+            if not draft_only:
+                await self.db.commit()
+            await self.log_step("create_plan",
+                                output_summary=f"Plan {plan.id}: {len(actions)} actions, status={plan_status}")
 
-        # Create approval request if needed
-        if needs_approval:
-            approval = ApprovalRequest(
-                plan_id=plan.id,
-                requested_by="response_agent",
-                reason=response.get("rationale", "Actions require human review"),
-            )
-            self.db.add(approval)
-
-        await self.db.commit()
-
-        await self.log_step("create_plan",
-                            output_summary=f"Plan {plan.id}: {len(actions)} actions, status={plan_status}")
+        if draft_only:
+            # Keep the draft and its creation step atomic. BaseAgent commits the
+            # successful run, or a failure ledger after this savepoint rolls back.
+            async with self.db.begin_nested():
+                await save_plan()
+        else:
+            await save_plan()
 
         return {
             "plan_id": plan.id,
             "status": plan_status,
             "actions": checked_actions,
             "rationale": response.get("rationale", ""),
-            "needs_approval": needs_approval,
+            "needs_approval": needs_approval or draft_only,
             "summary": (
                 f"Generated response plan with {len(actions)} actions "
-                f"(approval: {'required' if needs_approval else 'auto'})"
+                f"(approval: {'required' if needs_approval or draft_only else 'auto'})"
             ),
         }
 
     def _build_context(self, case, alert_assets) -> str:
         parts = [
-            f"Case: {case.title}",
+            f"Case: {str(case.title)[:500]}",
             f"Severity: {case.severity}",
-            f"Summary: {case.summary or 'N/A'}",
-            f"MITRE Tactics: {case.mitre_tactics or []}",
+            f"Summary: {str(case.summary or 'N/A')[:2000]}",
+            f"MITRE Tactics: {str(case.mitre_tactics or [])[:2000]}",
             "",
+            f"Selected alert/asset context: first {min(20, len(alert_assets))} of {len(alert_assets)} saved links.",
+            "Text fields may be shortened. These summary fields are not full records or verified facts.",
+            "Linked events, raw payloads, notes, tasks and chronology are not supplied. "
+            "Do not claim they were reviewed.",
+            "Do not invent target identities or claim a suggested action has already been approved or performed.",
             "Affected Assets:",
         ]
-        for alert, asset in alert_assets:
+        for alert, asset in alert_assets[:20]:
             if alert is None:
                 parts.append("- Linked evidence unavailable; no alert or asset identity inferred.")
                 continue
             if asset is None:
-                parts.append(f"- [{alert.severity}] {alert.title} (asset context unavailable; OT/zone unknown)")
+                parts.append(f"- [{alert.severity}] {str(alert.title)[:500]} "
+                             "(asset context unavailable; OT/zone unknown)")
                 continue
             parts.append(
-                f"- [{alert.severity}] {alert.title} on {asset.name} "
-                f"(type={asset.asset_type}, zone={asset.network_zone or 'unknown'}, "
-                f"OT={asset.is_ot_asset}, protocol={asset.primary_protocol or 'N/A'})"
+                f"- [{alert.severity}] {str(alert.title)[:500]} on {str(asset.name)[:500]} "
+                f"(type={str(asset.asset_type)[:500]}, zone={str(asset.network_zone or 'unknown')[:500]}, "
+                f"OT={asset.is_ot_asset}, protocol={str(asset.primary_protocol or 'N/A')[:500]})"
             )
         return "\n".join(parts)
 

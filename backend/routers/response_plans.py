@@ -476,3 +476,27 @@ async def get_response_decision_evidence(
             "reviewed_at": row.reviewed_at, "created_at": row.created_at,
         } for row in approvals],
     }
+
+
+@router.post('/draft-from-case/{case_id}')
+async def create_response_draft(
+    case_id: int, current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    """Generate an unapproved L1 proposal for a caller-owned case, never execute it."""
+    from backend.models.case import Case
+    from backend.services.agents.response import ResponseAgent
+    case = (await db.execute(select(Case).where(
+        Case.id == case_id, Case.user_id == current_user.id,
+    ).with_for_update())).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail='Investigation not found')
+    agent = ResponseAgent(db, current_user.id)
+    try:
+        result = await agent.execute(case_id=case.id, autonomy_level='L1', draft_only=True)
+    except Exception:
+        raise HTTPException(status_code=502, detail=(
+            'Response draft generation did not complete. Check the investigation plan list and recorded runs '
+            'before trying again. No approval or simulation was requested.')) from None
+    return {'plan_id': result['plan_id'], 'case_id': case_id, 'status': result['status'],
+            'autonomy_level': 'L1', 'run_id': agent._run.id, 'action_count': len(result['actions']),
+            'approved': False, 'execution_requested': False}
