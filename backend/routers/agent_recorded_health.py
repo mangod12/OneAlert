@@ -13,21 +13,26 @@ from backend.routers.auth import get_active_user
 router = APIRouter()
 
 
-@router.get('/agents/recorded-health')
-async def recorded_agent_health(
-    from_date: date | None = None, before_date: date | None = None,
-    agent_type: str = Query('', max_length=100),
-    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
-):
+def health_scope(user_id, from_date, before_date, agent_type):
     if from_date is not None and before_date is not None and from_date >= before_date:
         raise HTTPException(status_code=422, detail='The exclusive before date must follow the from date.')
-    filters = [AgentRun.user_id == current_user.id]
+    filters = [AgentRun.user_id == user_id]
     if from_date is not None:
         filters.append(AgentRun.started_at >= datetime.combine(from_date, time.min, UTC))
     if before_date is not None:
         filters.append(AgentRun.started_at < datetime.combine(before_date, time.min, UTC))
     if agent_type:
         filters.append(AgentRun.agent_type == agent_type)
+    return filters
+
+
+@router.get('/agents/recorded-health')
+async def recorded_agent_health(
+    from_date: date | None = None, before_date: date | None = None,
+    agent_type: str = Query('', max_length=100),
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    filters = health_scope(current_user.id, from_date, before_date, agent_type)
     rows = (await db.execute(select(
         AgentRun.agent_type, AgentRun.status, func.count(AgentRun.id),
         func.min(AgentRun.started_at), func.max(AgentRun.started_at),
@@ -51,3 +56,28 @@ async def recorded_agent_health(
                      'bounded read of at most five records. Records can change between queries, not an atomic '
                      'snapshot or immutable history. No token, spend, provider availability or task quality '
                      'assessment is made. No agent is started, retried, cancelled or changed.'}
+
+
+@router.get('/agents/recorded-health/runs')
+async def recorded_health_runs(
+    agent_type: str = Query(..., max_length=100), run_status: str = Query(..., max_length=100),
+    from_date: date | None = None, before_date: date | None = None,
+    page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100),
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    # Agent/status are required exact group identities, including empty strings.
+    filters = health_scope(current_user.id, from_date, before_date, '')
+    filters.extend([AgentRun.agent_type == agent_type, AgentRun.status == run_status])
+    total = (await db.execute(select(func.count(AgentRun.id)).where(*filters))).scalar_one()
+    runs = (await db.execute(select(AgentRun).where(*filters).order_by(
+        AgentRun.started_at.desc().nulls_last(), AgentRun.id.desc())
+        .offset((page - 1) * size).limit(size))).scalars().all()
+    return {'agent_type': agent_type, 'run_status': run_status, 'from_date': from_date, 'before_date': before_date,
+            'page': page, 'size': size, 'total': total, 'retrieved_at': datetime.now(UTC),
+            'records': [{'id': row.id, 'agent_type': row.agent_type, 'status': row.status,
+                         'started_at': row.started_at, 'completed_at': row.completed_at,
+                         'model_used': row.model_used} for row in runs],
+            'scope': 'Fresh owned-run records in this exact recorded agent/status group and UTC start window. '
+                     'From is inclusive and before exclusive. Newest recorded start then ID. Not the saved '
+                     'health report or an atomic snapshot; counts can change between reads. A recorded status '
+                     'does not verify an external action or worker liveness. No retry, cancellation or execution.'}

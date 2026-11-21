@@ -47,3 +47,12 @@ it('pages all groups locally and preserves empty or reserved statuses exactly', 
   expect(screen.getByRole('list', { name: 'Recorded health groups' }).children).toHaveLength(20); fireEvent.click(screen.getByRole('button', { name: 'More health groups' })); expect(screen.getByText(/Page 2 of 2/)).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Health group status'), { target: { value: JSON.stringify('') } }); expect(screen.getByText('agent-0 · (empty status)')).toBeInTheDocument(); expect(screen.getByText(/1 matching groups/)).toBeInTheDocument(); expect(get).toHaveBeenCalledTimes(1);
 });
+
+it('drills into the applied group scope, refuses dirty drafts, and removes the drilldown on health refresh', async () => {
+  await open(); await read(); const browse = screen.getByRole('button', { name: 'Browse exact run group: hunt / failed' });
+  fireEvent.change(screen.getByLabelText('Health exact agent type'), { target: { value: 'new draft' } }); expect(browse).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Health exact agent type'), { target: { value: '' } });
+  get.mockResolvedValueOnce({ data: { agent_type: 'hunt', run_status: 'failed', from_date: null, before_date: null, page: 1, size: 10, total: 0, records: [], retrieved_at: '2026-11-22T01:00:00Z', scope: 'Exact current group' } });
+  fireEvent.click(browse); await screen.findByText(/0 current group records/); expect(get).toHaveBeenLastCalledWith('/cases/agents/recorded-health/runs', { params: { agent_type: 'hunt', run_status: 'failed', page: 1, size: 10 } });
+  await read(); expect(screen.queryByRole('region', { name: 'Exact recorded health group runs' })).not.toBeInTheDocument();
+});
