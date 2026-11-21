@@ -633,6 +633,9 @@ async def get_audit_logs(
     }
 
 
+AUDIT_EXPORT_LIMIT = 5000
+
+
 @router.get("/audit-logs/export")
 async def export_audit_logs(
     action: str | None = Query(None, max_length=100),
@@ -662,10 +665,14 @@ async def export_audit_logs(
         select(AuditLog, User.email)
         .join(User, AuditLog.user_id == User.id)
         .where(scope)
-        .order_by(AuditLog.timestamp.desc())
-        .limit(5000)
+        .order_by(AuditLog.timestamp.desc(), AuditLog.id.desc())
+        .limit(AUDIT_EXPORT_LIMIT + 1)
     )
     rows = result.all()
+    if len(rows) > AUDIT_EXPORT_LIMIT:
+        raise HTTPException(status_code=422, detail=(
+            f'The audit export exceeds {AUDIT_EXPORT_LIMIT} matching entries. '
+            'Narrow the action, user or date filters. No partial CSV was created.'))
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)

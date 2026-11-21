@@ -38,7 +38,7 @@ const runStatusTones: Record<string, 'success' | 'danger' | 'warning' | 'neutral
 };
 
 export function AuditLog() {
-  const logRequest = useRef(0);
+  const logRequest = useRef(0), exportRequest = useRef(0), exportBusy = useRef(false);
   const [selectedRecord, setSelectedRecord] = useState<AuditEntry | null>(null);
   const [logs, setLogs] = useState<AuditEntry[]>([]);
   const [total, setTotal] = useState(0);
@@ -58,7 +58,8 @@ export function AuditLog() {
   const [exportError, setExportError] = useState('');
 
   const exportCsv = async () => {
-    if (exporting) return;
+    if (exportBusy.current) return;
+    const read = ++exportRequest.current; exportBusy.current = true;
     setExporting(true);
     setExportError('');
     try {
@@ -68,18 +69,29 @@ export function AuditLog() {
       if (fromDate) params.from_date = `${fromDate}T00:00:00`;
       if (toDate) params.to_date = `${toDate}T23:59:59`;
       const res = await apiClient.get('/auth/audit-logs/export', { params, responseType: 'blob' });
-      const url = URL.createObjectURL(res.data as Blob);
+      if (read !== exportRequest.current) return;
+      if (!(res.data instanceof Blob) || !res.data.type.startsWith('text/csv')) throw new Error('The server did not return an audit CSV. No file was downloaded.');
+      const url = URL.createObjectURL(res.data);
       const link = document.createElement('a');
       link.href = url;
       link.download = 'audit-logs.csv';
-      link.click();
-      URL.revokeObjectURL(url);
+      document.body.appendChild(link);
+      try { link.click(); } finally { link.remove(); URL.revokeObjectURL(url); }
     } catch (err: unknown) {
-      setExportError(getApiErrorMessage(err, 'The export could not be downloaded.'));
+      if (read !== exportRequest.current) return;
+      const response = (err as { response?: { data?: unknown } } | null)?.response;
+      if (response?.data instanceof Blob) {
+        try { response.data = JSON.parse(await response.data.text()); } catch { /* Use the normal fallback. */ }
+      }
+      if (read === exportRequest.current) setExportError(getApiErrorMessage(err, 'The export could not be downloaded. No file was downloaded.'));
     } finally {
-      setExporting(false);
+      if (read === exportRequest.current) { exportBusy.current = false; setExporting(false); }
     }
   };
+  useEffect(() => {
+    exportRequest.current += 1; exportBusy.current = false; setExporting(false); setExportError('');
+    return () => { exportRequest.current += 1; };
+  }, [search, userFilter, fromDate, toDate]);
   const SIZE = 50;
   const pages = Math.max(1, Math.ceil(total / SIZE));
 
@@ -168,6 +180,7 @@ export function AuditLog() {
               {exporting ? 'Exporting...' : 'Export CSV'}
             </button>
           </div>
+          <p className="text-xs text-surface-400">CSV includes every matching entry across audit pages, up to 5,000 entries. Larger exports are refused without a partial file. Narrow the action, user or date filters if needed. Changing filters cancels a pending download. The export is a new current read, not a frozen copy of this page.</p>
           {exportError && <p role="alert" className="text-sm text-danger-400">{exportError}</p>}
 
       {loading ? <LoadingSurface rows={6} label="Loading audit activity" /> : error ? (
