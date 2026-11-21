@@ -1,4 +1,5 @@
 import { recordedValueText } from '../utils/recordedValueText';
+import { ResponseDraftApproval } from '../components/ResponseDraftApproval';
 import { useSearchParams } from 'react-router-dom';
 import { ResponseDecisionEvidence } from '../components/ResponseDecisionEvidence';
 import { isAxiosError } from 'axios';
@@ -76,6 +77,7 @@ export function ResponsePlansRoute() {
 }
 
 export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compareTo = null }: { linkedPlanId?: string | null; compareFrom?: string | null; compareTo?: string | null }) {
+  const [evidenceVersion, setEvidenceVersion] = useState(0);
   const requestId = useRef(0);
   const approving = useRef(false);
   const [reviewApprovalId, setReviewApprovalId] = useState<number | null>(null);
@@ -257,7 +259,8 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
         : errors.length > 0 && <ErrorState title="Response plans unavailable" description={errors.join(' · ')} action={<RetryButton onClick={() => void fetchPlans()} />} />}
       {loading && <LoadingSurface label="Loading response plans" />}
 
-      <ResponseDecisionEvidence linkedPlanId={linkedPlanId} />
+      <ResponseDecisionEvidence key={evidenceVersion} linkedPlanId={linkedPlanId} />
+      {linkedPlanId && /^[1-9][0-9]*$/.test(linkedPlanId) && Number.isSafeInteger(Number(linkedPlanId)) && <ResponseDraftApproval planId={Number(linkedPlanId)} onApproved={() => { setEvidenceVersion(value => value + 1); void fetchPlans(); }} />}
       <ResponsePlanComparison baseline={compareFrom} comparison={compareTo} />
 
       {/* Pending Approvals */}
@@ -394,6 +397,7 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
                     </td>
                     <td className="p-3 text-surface-500 text-xs">{new Date(p.created_at).toLocaleString()}</td>
                     <td className="p-3">
+                      {p.status === 'draft' && <a className="inline-block rounded border border-surface-600 px-2 py-1 text-xs text-primary-300" onClick={event => event.stopPropagation()} href={`/app/response-plans?plan=${p.id}`}>Review draft #{p.id}</a>}
                       {p.status === 'approved' && (
                         <button disabled={workingPlan !== null || loading || errors.length > 0} onClick={e => { e.stopPropagation(); setConfirmAction({ type: 'execute', planId: p.id }); }}
                           className="flex items-center gap-1 px-2 py-1 bg-primary-500 hover:bg-primary-400 text-surface-950 rounded text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40">

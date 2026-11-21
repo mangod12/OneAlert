@@ -78,6 +78,14 @@ def test_explicit_generation_saves_unapproved_l1_draft_and_ledger_without_execut
     asyncio.run(verify())
     saved = client.get(f"/api/v1/response-plans/{data['plan_id']}/approval-review")
     assert saved.status_code == 200 and saved.json()['plan']['status'] == 'draft'
+    assert client.post(f"/api/v1/response-plans/{data['plan_id']}/approve",
+                       json={'reviewed_fingerprint': '0' * 64}).status_code == 409
+    approved = client.post(f"/api/v1/response-plans/{data['plan_id']}/approve",
+                           json={'reviewed_fingerprint': saved.json()['review_fingerprint']})
+    assert approved.status_code == 200 and approved.json()['plan_status'] == 'approved'
+    execute.assert_not_awaited()
+    assert all('execution_result' not in action for action in client.get(
+        f"/api/v1/response-plans/{data['plan_id']}").json()['actions'])
 
 
 @pytest.mark.parametrize('case_id', [9, 999])
