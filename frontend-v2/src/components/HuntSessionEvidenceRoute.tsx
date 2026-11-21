@@ -1,3 +1,4 @@
+import { SavedHuntComparison } from './SavedHuntComparison';
 import { HuntRunLink } from './HuntRunLink';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -51,6 +52,7 @@ function Inspector({ sessionId, onClose }: { sessionId: number; onClose: () => v
       <div className="flex flex-wrap gap-2"><button type="button" className={control} onClick={() => setRetry(retry + 1)}>Refresh saved hunt evidence</button><button type="button" className={control} onClick={() => void copy()}>Copy exact saved hunt link</button><button type="button" className={control} onClick={download}>Download exact saved hunt JSON</button></div>
       <p className="text-xs text-surface-400">The link includes only this session ID, no query text, search filters or drafts. Recipients need their own access. Downloads contain the full saved record, including retained telemetry and query parameters. Review before sharing.</p>
       {copied && <p role="status" className="text-xs text-primary-300">Saved hunt link copied.</p>}{copyError && <p role="alert" className="text-xs text-danger">{copyError}</p>}{downloadError && <p role="alert" className="text-xs text-danger">{downloadError}</p>}
+      <SavedHuntComparison key={`${sessionId}:${record.readAt}`} session={record.session} evidence={record.evidence} />
       <HuntRunLink runId={record.evidence.agent_run_id} />
       {record.evidence.execution_summary ? <p className="text-xs text-surface-300">Recorded execution summary: {record.evidence.execution_summary.completed} completed · {record.evidence.execution_summary.rejected} rejected · {record.evidence.execution_summary.failed} failed · {record.evidence.execution_summary.attempted} attempted · {record.evidence.execution_summary.skipped} skipped.</p> : <p className="text-xs text-warning">Detailed execution outcome was not recorded. A historical completion label does not prove that every query succeeded.</p>}
       {record.evidence.explanation && <p className="whitespace-pre-wrap break-words text-sm text-surface-300">{record.evidence.explanation}</p>}
