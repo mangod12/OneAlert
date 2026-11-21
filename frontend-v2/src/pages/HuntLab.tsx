@@ -1,3 +1,5 @@
+import { useSearchParams } from 'react-router-dom';
+import { DetectionRuleInspector } from '../components/DetectionRuleInspector';
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import apiClient from '../api/client';
 import { Play, FileCode, Clock, Plus, ShieldCheck, Trash2 } from 'lucide-react';
@@ -47,6 +49,18 @@ interface RuleFormState {
 }
 
 const emptyRuleForm: RuleFormState = { name: '', description: '', rule_type: 'sigma', rule_content: '', confidence: 'medium', enabled: false, techniques: '' };
+
+export function HuntLabRoute() {
+  const [params, setParams] = useSearchParams();
+  const values = params.getAll('rule'), raw = values.length === 1 ? values[0] : '';
+  const id = /^[1-9][0-9]*$/.test(raw) && Number.isSafeInteger(Number(raw)) ? Number(raw) : null;
+  const clear = () => setParams(current => { const next = new URLSearchParams(current); next.delete('rule'); return next; }, { replace: true });
+  return <>
+    {values.length > 0 && id === null && <p role="alert" className="mb-4 text-sm text-danger">This saved rule link needs exactly one positive whole-number rule ID. No rule was opened. <button type="button" className="text-primary-300" onClick={clear}>Clear invalid rule link</button></p>}
+    {id !== null && <DetectionRuleInspector key={id} ruleId={id} onClose={clear} />}
+    <HuntLab />
+  </>;
+}
 
 export function HuntLab() {
   const [hypothesis, setHypothesis] = useState('');
@@ -449,7 +463,7 @@ export function HuntLab() {
               <li key={rule.id} className="min-w-0 space-y-3 py-3">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-surface-100">{rule.name}</p>
+                  <p className="truncate text-sm font-medium text-surface-100">{rule.name}</p><a href={`/app/hunt?rule=${rule.id}`} className="text-xs text-primary-300">Open exact saved rule #{rule.id}</a>
                   {rule.description && <p className="mt-0.5 truncate text-xs text-surface-500">{rule.description}</p>}
                   <div className="mt-1.5 flex flex-wrap items-center gap-2">
                     <StatusBadge tone="info">{rule.rule_type}</StatusBadge>

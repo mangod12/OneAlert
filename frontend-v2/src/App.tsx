@@ -22,7 +22,7 @@ const Events = lazy(() => import('./pages/EventSourceRoute').then(module => ({ d
 const Assets = lazy(() => import('./pages/Assets').then(module => ({ default: module.Assets })));
 const OTDiscovery = lazy(() => import('./pages/OTDiscovery').then(module => ({ default: module.OTDiscovery })));
 const MitreMap = lazy(() => import('./pages/MitreMap').then(module => ({ default: module.MitreMap })));
-const HuntLab = lazy(() => import('./pages/HuntLab').then(module => ({ default: module.HuntLab })));
+const HuntLab = lazy(() => import('./pages/HuntLab').then(module => ({ default: module.HuntLabRoute })));
 const Notifications = lazy(() => import('./pages/Notifications').then(module => ({ default: module.Notifications })));
 const Settings = lazy(() => import('./pages/Settings').then(module => ({ default: module.Settings })));
 const AuditLog = lazy(() => import('./pages/AuditLog').then(module => ({ default: module.AuditLogRoute })));
