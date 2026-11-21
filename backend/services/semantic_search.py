@@ -164,6 +164,12 @@ async def find_similar_cases(
                 "title": case.title,
                 "severity": case.severity,
                 "similarity": round(sim, 3),
+                "ranking_method": "lexical_tfidf_cosine",
+                "shared_terms": [term for term, contribution in sorted(
+                    ((term, target_vec[term] * vec[term]) for term in target_vec.keys() & vec.keys()
+                     if target_vec[term] * vec[term] > 0),
+                    key=lambda item: (-item[1], item[0]),
+                )[:8]],
                 "shared_techniques": shared,
                 "status": case.status,
             })
