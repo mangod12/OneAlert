@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
+import { RecordedRunComparison } from './RecordedRunComparison';
 import { AgentRunInspector } from './AgentRunInspector';
 interface Run { id: number; agent_type: string; status: string; started_at: string; completed_at: string | null; model_used: string | null; prompt_tokens: number; completion_tokens: number; result_summary: string | null; }
 interface Filters { query: string; agent_type: string; run_status: string; model: string; }
@@ -9,6 +10,7 @@ const initial = { query: '', agent_type: '', run_status: '', model: '' };
 const control = 'min-h-10 max-w-full rounded border border-surface-600 bg-surface-950 px-3 py-2 text-xs text-surface-200 disabled:opacity-40';
 const count = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0;
 export function AgentRunLibrary() {
+  const [comparisonSelection, setComparisonSelection] = useState({ baseline: '', candidate: '' });
   const [open, setOpen] = useState(false), [draft, setDraft] = useState(initial), [filters, setFilters] = useState(initial);
   const [page, setPage] = useState(1), [retry, setRetry] = useState(0), [selected, setSelected] = useState<number | null>(null);
   const [result, setResult] = useState<Result | null>(null), [loading, setLoading] = useState(false), [error, setError] = useState('');
@@ -35,6 +37,7 @@ export function AgentRunLibrary() {
   return <section aria-label="Complete recorded agent run library" className="oa-panel space-y-4 p-4 sm:p-6">
     <button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)} className="text-sm font-semibold text-primary-300">Explore all recorded agent runs beyond the latest 50</button>
     {open && <>
+      <RecordedRunComparison selection={comparisonSelection} onSelection={setComparisonSelection} />
       <p className="text-xs text-surface-400">Search all current ledger runs owned by your account by ID, agent, status, model or saved result summary. Literal search applies before server paging. Step bodies and error messages are not searched. Saved summaries may be shortened; recorded status is not proof of successful external action, a full transcript or an immutable audit history.</p>
       <form onSubmit={event => { event.preventDefault(); setFilters({ ...draft, query: draft.query.trim() }); setDraft(value => ({ ...value, query: value.query.trim() })); setPage(1); }} className="flex flex-wrap items-end gap-3">
         <label className="flex min-w-0 basis-full flex-1 flex-col gap-1 text-xs text-surface-400 sm:basis-64">Search full run library<input type="search" aria-label="Search full run library" maxLength={200} value={draft.query} onChange={event => setDraft(value => ({ ...value, query: event.target.value }))} className={control} /></label>
@@ -53,7 +56,7 @@ export function AgentRunLibrary() {
           <p className="break-words text-xs text-surface-400">Started {row.started_at} · Completed {row.completed_at || 'not recorded'} · Model {row.model_used || 'not recorded'}</p>
           <p className="text-xs text-surface-400">Recorded tokens: {row.prompt_tokens} prompt / {row.completion_tokens} completion. Token counts are not a price or spend total.</p>
           <p className="whitespace-pre-wrap break-words text-sm text-surface-300">{row.result_summary || 'No result summary recorded.'}</p>
-          <button type="button" onClick={() => setSelected(row.id)} className={control}>Inspect library run #{row.id}</button>
+          <div className="flex flex-wrap gap-2"><button type="button" onClick={() => setSelected(row.id)} className={control}>Inspect library run #{row.id}</button><button type="button" onClick={() => setComparisonSelection(value => ({ ...value, baseline: String(row.id) }))} className={control}>Use run #{row.id} as baseline</button><button type="button" onClick={() => setComparisonSelection(value => ({ ...value, candidate: String(row.id) }))} className={control}>Use run #{row.id} as candidate</button></div>
         </li>)}</ul>
         <nav aria-label="Run library pages" className="flex flex-wrap gap-2"><button type="button" disabled={dirty || page === 1} onClick={() => setPage(value => value - 1)} className={control}>Previous run page</button><button type="button" disabled={dirty || page * 20 >= result.total} onClick={() => setPage(value => value + 1)} className={control}>Next run page</button>{page > 1 && <button type="button" disabled={dirty} onClick={() => setPage(1)} className={control}>First run page</button>}<button type="button" onClick={() => setRetry(value => value + 1)} className={control}>Refresh run library page</button></nav>
       </>}
