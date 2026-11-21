@@ -88,7 +88,10 @@ class TriageAgent(BaseAgent):
 
         for group in groups:
             try:
-                case = await self._analyze_and_create_case(group)
+                # One failed group must not leave a staged case, consumed event
+                # or poisoned transaction behind for the remaining groups.
+                async with self.db.begin_nested():
+                    case = await self._analyze_and_create_case(group)
                 if case:
                     cases_created += 1
                     total_alerts += len(group["alerts"])
@@ -98,6 +101,12 @@ class TriageAgent(BaseAgent):
             except Exception as e:
                 groups_failed += 1
                 logger.error(f"Triage group analysis failed: {e}")
+                await self.log_step(
+                    "group_failed", output_summary=(
+                        "Correlation group failed; its case, evidence links and processed-state "
+                        "writes were rolled back."
+                    ),
+                )
 
         status = "completed" if groups_failed == 0 else "failed" if groups_failed == len(groups) else "partial"
         summary = f"Created {cases_created} cases from {total_alerts} alerts and {total_events} events"
