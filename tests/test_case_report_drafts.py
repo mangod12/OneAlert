@@ -197,3 +197,23 @@ def test_report_validator_rejects_unbounded_or_uncited_output(field, value):
     payload[field] = value
     with pytest.raises(ValueError):
         module.validate_report(payload, {'case:1'})
+
+
+@pytest.mark.asyncio
+async def test_input_preview_matches_shared_collector_without_ai_ledger_or_timeline_writes(report_db, monkeypatch):
+    from backend.routers.case_reports import preview_briefing_inputs
+    provider = AsyncMock()
+    monkeypatch.setattr(module, 'get_ai_provider', provider)
+    preview = await preview_briefing_inputs(1, SimpleNamespace(id=1), report_db)
+    expected = await module.collect_briefing_inputs(report_db, 1, 1)
+    assert preview['format'] == 'onealert-briefing-inputs' and preview['version'] == 1
+    assert preview['case_id'] == 1 and datetime.fromisoformat(preview['retrieved_at'])
+    for key, value in expected.items():
+        assert preview[key] == value
+    provider.assert_not_called()
+    for model in [AgentRun, AgentStep, CaseTimeline]:
+        assert (await report_db.execute(select(func.count()).select_from(model))).scalar_one() == 0
+    for case_id in [2, 999]:
+        with pytest.raises(HTTPException) as denied:
+            await preview_briefing_inputs(case_id, SimpleNamespace(id=1), report_db)
+        assert denied.value.status_code == 404

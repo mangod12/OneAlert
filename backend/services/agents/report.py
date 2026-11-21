@@ -50,39 +50,46 @@ def validate_report(value, keys):
     return result
 
 
+async def collect_briefing_inputs(db, case_id, user_id):
+    case = (await db.execute(select(Case).where(
+        Case.id == case_id, Case.user_id == user_id))).scalar_one_or_none()
+    if case is None:
+        raise ValueError('Owned case not found')
+    records = [{'key': f'case:{case.id}', 'kind': 'case', 'id': case.id,
+                'title': case.title[:500], 'summary': (case.summary or '')[:2000],
+                'status': case.status, 'severity': case.severity}]
+    scope = {}
+    for kind, model, link, column, limit in [
+        ('alert', Alert, CaseAlert, CaseAlert.alert_id, 20),
+        ('event', SecurityEvent, CaseEvent, CaseEvent.event_id, 50),
+    ]:
+        linked = (await db.execute(select(func.count()).select_from(link).where(
+            link.case_id == case_id))).scalar_one()
+        query = select(model).join(link, column == model.id).where(
+            link.case_id == case_id, model.user_id == user_id)
+        available = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar_one()
+        rows = (await db.execute(query.order_by(link.id).limit(limit))).scalars().all()
+        scope[kind] = {'linked': linked, 'available': available, 'included': len(rows),
+                       'omitted': available - len(rows), 'unavailable': linked - available, 'limit': limit}
+        records.extend({'key': f'{kind}:{row.id}', 'kind': kind, 'id': row.id,
+                            'label': ((row.title if kind == 'alert' else row.signature) or '')[:400],
+                            'severity': row.severity,
+                            'recorded_at': str(row.created_at if kind == 'alert' else row.timestamp)}
+                       for row in rows)
+    context = {'source_records': records, 'scope': scope,
+               'excluded': 'Raw payloads, source URLs, asset details, notes, tasks, plans and chronology.'}
+    return context
+
+
 class ReportAgent(BaseAgent):
     agent_type = 'report'
 
     async def run(self, *, case_id):
-        case = (await self.db.execute(select(Case).where(
-            Case.id == case_id, Case.user_id == self.user_id))).scalar_one_or_none()
-        if case is None:
-            raise ValueError('Owned case not found')
-        records = [{'key': f'case:{case.id}', 'kind': 'case', 'id': case.id,
-                    'title': case.title[:500], 'summary': (case.summary or '')[:2000],
-                    'status': case.status, 'severity': case.severity}]
-        scope = {}
-        for kind, model, link, column, limit in [
-            ('alert', Alert, CaseAlert, CaseAlert.alert_id, 20),
-            ('event', SecurityEvent, CaseEvent, CaseEvent.event_id, 50),
-        ]:
-            linked = (await self.db.execute(select(func.count()).select_from(link).where(
-                link.case_id == case_id))).scalar_one()
-            query = select(model).join(link, column == model.id).where(
-                link.case_id == case_id, model.user_id == self.user_id)
-            available = (await self.db.execute(select(func.count()).select_from(query.subquery()))).scalar_one()
-            rows = (await self.db.execute(query.order_by(link.id).limit(limit))).scalars().all()
-            scope[kind] = {'linked': linked, 'available': available, 'included': len(rows),
-                           'omitted': available - len(rows), 'unavailable': linked - available, 'limit': limit}
-            records.extend({'key': f'{kind}:{row.id}', 'kind': kind, 'id': row.id,
-                                'label': ((row.title if kind == 'alert' else row.signature) or '')[:400],
-                                'severity': row.severity,
-                                'recorded_at': str(row.created_at if kind == 'alert' else row.timestamp)}
-                           for row in rows)
-        context = {'source_records': records, 'scope': scope,
-                   'excluded': 'Raw payloads, source URLs, asset details, notes, tasks, plans and chronology.'}
+        context = await collect_briefing_inputs(self.db, case_id, self.user_id)
+        records, scope = context['source_records'], context['scope']
+        case = records[0]
         await self.log_step('report_scope', output_summary=(
-            f'Case #{case.id}: metadata-only briefing, first 20 alert and 50 event links in link-ID order. '
+            f"Case #{case['id']}: metadata-only briefing, first 20 alert and 50 event links in link-ID order. "
             'Case title capped500, summary2000, evidence labels400 characters. '
             'Raw payloads, URLs, assets, notes, tasks, plans and chronology excluded. Not incident proof.'))
         mode = 'ai_draft'
@@ -96,23 +103,23 @@ class ReportAgent(BaseAgent):
             report = validate_report(raw, {row['key'] for row in records})
         except Exception:
             mode = 'recorded_metadata_fallback'
-            report = {'observations': [{'text': 'Recorded case title: ' + case.title[:350],
-                                         'sources': [f'case:{case.id}']}],
+            report = {'observations': [{'text': 'Recorded case title: ' + case['title'][:350],
+                                         'sources': [f"case:{case['id']}"]}],
                       'gaps': ['AI briefing unavailable or invalid. This fallback repeats recorded metadata only.'],
                       'review_questions': ['Review linked records before making an incident or response decision.']}
         captured = datetime.now(UTC).isoformat()
-        receipt = {'format': 'onealert-case-briefing', 'version': 1, 'case_id': case.id,
+        receipt = {'format': 'onealert-case-briefing', 'version': 1, 'case_id': case['id'],
                    'run_id': self._run.id, 'mode': mode, 'captured_at': captured,
                    'scope': scope, 'sources': records, **report}
         # The report is a case-visible draft. It never changes case state, plans or tasks.
         async with self.db.begin_nested():
-            timeline = CaseTimeline(case_id=case.id, entry_type='ai_analysis', source='agent',
+            timeline = CaseTimeline(case_id=case['id'], entry_type='ai_analysis', source='agent',
                 content=f'Analyst briefing draft ({mode}). Review sources; not a verified conclusion.',
                 user_id=self.user_id, metadata_json=receipt)
             self.db.add(timeline)
             await self.db.flush()
             await self.log_step('saved_report_draft', output_summary=json.dumps({
-                'case_id': case.id, 'timeline_id': timeline.id, 'mode': mode}))
+                'case_id': case['id'], 'timeline_id': timeline.id, 'mode': mode}))
         return {'status': 'completed' if mode == 'ai_draft' else 'partial',
-                'summary': f'Saved {mode} briefing for case #{case.id}; human review required.',
+                'summary': f"Saved {mode} briefing for case #{case['id']}; human review required.",
                 'timeline_id': timeline.id, 'briefing': receipt}
