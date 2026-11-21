@@ -1,3 +1,4 @@
+import { RecordedRunLinks } from '../components/RecordedRunLinks';
 import { TriageCorrelationPreview } from '../components/TriageCorrelationPreview';
 import { DetectionCoveragePreview } from '../components/DetectionCoveragePreview';
 import { TriageIntakePreview } from '../components/TriageIntakePreview';
@@ -55,6 +56,8 @@ interface PipelineStageResult {
 }
 
 interface PipelineResult {
+  run_ids?: { detect?: number | null; triage?: number | null };
+  hours_back?: number;
   detect: PipelineStageResult | null;
   triage: PipelineStageResult | null;
   total_duration_ms: number;
@@ -68,7 +71,7 @@ export function Cases() {
   const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [triaging, setTriaging] = useState(false);
-  const [triageResult, setTriageResult] = useState<{ status: string; summary: string } | null>(null);
+  const [triageResult, setTriageResult] = useState<{ status: string; summary: string; run_id?: number } | null>(null);
   const [intakeVersion, setIntakeVersion] = useState(0);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -171,7 +174,7 @@ export function Cases() {
     try {
       const response = await apiClient.post('/cases/auto-triage', null, { params: { hours_back: 72 } });
       const result = response.data?.data;
-      if (result && typeof result.summary === 'string') setTriageResult({ status: typeof result.status === 'string' ? result.status : 'unknown', summary: result.summary });
+      if (result && typeof result.summary === 'string') setTriageResult({ status: typeof result.status === 'string' ? result.status : 'unknown', summary: result.summary, run_id: result.run_id });
       setIntakeVersion(version => version + 1);
       await fetchCases();
     } catch (err: unknown) {
@@ -400,7 +403,7 @@ export function Cases() {
       <TriageIntakePreview key={intakeVersion} />
       <TriageCorrelationPreview key={`correlation-${intakeVersion}`} />
 
-      {triageResult && <section aria-label="Automatic triage result" className="oa-panel space-y-2 p-4"><h2 className="text-sm font-semibold text-surface-100">Automatic triage outcome: {triageResult.status}</h2><p className="text-sm text-surface-300">{triageResult.summary}</p>{triageResult.status !== 'completed' && <p className="text-xs text-warning">This run did not establish complete triage. Review the agent run evidence before retrying; do not assume zero created cases means no incident.</p>}<button type="button" className="text-xs text-primary-300" onClick={() => setTriageResult(null)}>Dismiss triage result</button></section>}
+      {triageResult && <section aria-label="Automatic triage result" className="oa-panel space-y-2 p-4"><h2 className="text-sm font-semibold text-surface-100">Automatic triage outcome: {triageResult.status}</h2><p className="text-sm text-surface-300">{triageResult.summary}</p><RecordedRunLinks runs={[{ label: 'Triage', id: triageResult.run_id }]} />{triageResult.status !== 'completed' && <p className="text-xs text-warning">This run did not establish complete triage. Review the agent run evidence before retrying; do not assume zero created cases means no incident.</p>}<button type="button" className="text-xs text-primary-300" onClick={() => setTriageResult(null)}>Dismiss triage result</button></section>}
 
       {pipelineResult && (
         <div role="status" className="rounded-md border border-surface-700 bg-surface-900/60 px-4 py-3">
@@ -408,6 +411,8 @@ export function Cases() {
             <div className="space-y-1 text-sm">
               <p className="font-semibold text-surface-100">Pipeline outcome: {pipelineResult.pipeline_status} · {(pipelineResult.total_duration_ms / 1000).toFixed(1)}s</p>
               {pipelineResult.pipeline_status !== 'completed' && <p className="text-warning">At least one stage did not complete successfully. Review the stage results; this is not an all-clear.</p>}
+              <RecordedRunLinks runs={[{ label: 'Detect', id: pipelineResult.run_ids?.detect }, { label: 'Triage', id: pipelineResult.run_ids?.triage }]} />
+              <p className="text-xs text-surface-400">Detection findings are returned as review leads. They are not automatically saved as alerts or passed to triage. Triage separately reads eligible saved alerts and events, with its own batch and AI-input limits. These stages are sequential reads, not one frozen evidence snapshot.</p>
               <p className="text-surface-300">Detect: {pipelineResult.detect?.summary ?? pipelineResult.detect?.error ?? 'No detect stage result.'}</p>
               <p className="text-surface-300">Triage: {pipelineResult.triage?.summary ?? pipelineResult.triage?.error ?? 'No triage stage result.'}</p>
             </div>

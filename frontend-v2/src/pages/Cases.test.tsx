@@ -483,3 +483,17 @@ it('does not label partial pipeline results completed', async () => {
   await screen.findByText('Pipeline outcome: partial · 0.3s');
   expect(screen.getByText(/this is not an all-clear/)).toBeTruthy();
 });
+
+it('preserves exact pipeline stage run links including failed stage evidence', async () => {
+  mockPost.mockResolvedValueOnce({ data: { data: { pipeline_status: 'partial', total_duration_ms: 300,
+    run_ids: { detect: 81, triage: 82 }, detect: { summary: 'Detection completed' }, triage: { status: 'failed', summary: 'Two groups failed' } } } });
+  render(<MemoryRouter><Cases /></MemoryRouter>); await screen.findByText('Credential dumping on edge router'); fireEvent.click(screen.getByRole('button', { name: /run pipeline/i }));
+  expect((await screen.findByRole('link', { name: 'Inspect detect run #81' })).getAttribute('href')).toBe('/app/audit-log?run=81');
+  expect(screen.getByRole('link', { name: 'Inspect triage run #82' }).getAttribute('href')).toBe('/app/audit-log?run=82');
+  expect(screen.getByText(/not automatically saved as alerts or passed to triage/)).toBeTruthy();
+});
+it('keeps the automatic triage receipt linked to its invocation run', async () => {
+  mockPost.mockResolvedValueOnce({ data: { data: { status: 'partial', summary: 'One group failed', run_id: 83 } } });
+  render(<MemoryRouter><Cases /></MemoryRouter>); await screen.findByText('Credential dumping on edge router'); fireEvent.click(screen.getByRole('button', { name: /run ai triage/i }));
+  expect((await screen.findByRole('link', { name: 'Inspect triage run #83' })).getAttribute('href')).toBe('/app/audit-log?run=83');
+});

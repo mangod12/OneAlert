@@ -25,8 +25,8 @@ async def run_pipeline(db: AsyncSession, user_id: int, hours_back: int = 24) -> 
     }
 
     # Stage 1: Detect Agent
+    detect_agent = DetectAgent(db=db, user_id=user_id)
     try:
-        detect_agent = DetectAgent(db=db, user_id=user_id)
         results["detect"] = await detect_agent.execute(hours_back=hours_back)
         logger.info(f"Detect agent: {results['detect'].get('summary', '')}")
     except Exception as e:
@@ -34,14 +34,19 @@ async def run_pipeline(db: AsyncSession, user_id: int, hours_back: int = 24) -> 
         results["detect"] = {"error": str(e)}
 
     # Stage 2: Triage Agent
+    triage_agent = TriageAgent(db=db, user_id=user_id)
     try:
-        triage_agent = TriageAgent(db=db, user_id=user_id)
         results["triage"] = await triage_agent.execute(hours_back=hours_back)
         logger.info(f"Triage agent: {results['triage'].get('summary', '')}")
     except Exception as e:
         logger.error(f"Triage agent failed: {e}")
         results["triage"] = {"error": str(e)}
 
+    results['run_ids'] = {
+        name: agent._run.id if agent._run is not None else None
+        for name, agent in [('detect', detect_agent), ('triage', triage_agent)]
+    }
+    results['hours_back'] = hours_back
     results["total_duration_ms"] = int((time.time() - start) * 1000)
     stages = [results["detect"], results["triage"]]
     failed = sum(bool(stage.get("error")) or stage.get("status") == "failed" for stage in stages)
