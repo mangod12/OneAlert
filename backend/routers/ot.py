@@ -274,7 +274,7 @@ async def get_device_connection_evidence(
     page: int = Query(1, ge=1, le=1000000),
     size: int = Query(20, ge=1, le=100),
     match: Literal["all", "record", "ip"] = "all",
-    encryption: Literal["all", "encrypted", "cleartext"] = "all",
+    encryption: Literal["all", "encrypted", "cleartext", "unknown"] = "all",
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
