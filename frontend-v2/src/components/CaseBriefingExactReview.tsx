@@ -1,3 +1,4 @@
+import { CaseBriefingCurrentSources } from './CaseBriefingCurrentSources';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import apiClient from '../api/client';
@@ -59,6 +60,7 @@ export function CaseBriefingExactReview({ caseId, canOpen }: { caseId: number; c
       <div className="flex flex-wrap gap-2"><button type="button" onClick={() => void copy()} className="rounded border border-surface-600 p-2 text-xs text-primary-300">Copy exact briefing link</button><button type="button" onClick={download} className="rounded border border-surface-600 p-2 text-xs text-primary-300">Download displayed briefing evidence (JSON)</button></div>
       {copied && <p role="status" className="text-xs text-primary-300">Exact briefing link copied. It does not grant access.</p>}{downloaded && <p role="status" className="text-xs text-primary-300">Briefing evidence download prepared. This does not confirm where your browser saved it.</p>}{actionError && <p role="alert" className="text-xs text-danger">{actionError}</p>}
       <BriefingDraftView row={currentRow} offerOpen={false} />
+      <CaseBriefingCurrentSources key={`${caseId}:${currentRow.timeline_id}`} row={currentRow} />
     </>}
   </section>;
 }
