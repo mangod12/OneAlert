@@ -14,6 +14,7 @@ from backend.services.agents.base import BaseAgent
 from backend.services.ai.provider import AIMessage
 from backend.services.ai.router import TASK_TRIAGE, get_ai_provider
 from backend.services.triage_intake import ALERT_BATCH_LIMIT, EVENT_BATCH_LIMIT, triage_predicates
+from backend.services.triage_output import validate_triage_output
 
 logger = logging.getLogger(__name__)
 
@@ -196,7 +197,9 @@ class TriageAgent(BaseAgent):
                 duration_ms=int((time.time() - start) * 1000),
             )
 
-        if not response.get("is_incident", True):
+        # Reject malformed evidence before staging a case, link or processed-state change.
+        response = validate_triage_output(response)
+        if not response["is_incident"]:
             await self.log_step("skip_group", "LLM determined events are not an incident")
             return None
 
@@ -229,7 +232,7 @@ class TriageAgent(BaseAgent):
         self.db.add(CaseTimeline(
             case_id=case.id,
             entry_type="ai_analysis",
-            content=response.get("attack_narrative", response.get("summary", "")),
+            content=response.get("attack_narrative") or response.get("summary") or "No narrative was recorded.",
             source="agent",
             metadata_json={"confidence": response.get("confidence"), "model": getattr(self, '_last_model', 'unknown')},
         ))
