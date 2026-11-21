@@ -1,29 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
-import { verifySavedBriefing, type Source } from '../utils/caseBriefingEvidence';
-type Scope = { linked: number; available: number; included: number; omitted: number; unavailable: number; limit: number };
-interface Inputs { format: string; version: number; case_id: number; retrieved_at: string; source_records: Source[]; scope: { alert: Scope; event: Scope }; excluded: string }
-function valid(value: Inputs, caseId: number) {
-  if (!value || value.format !== 'onealert-briefing-inputs' || value.version !== 1 || value.case_id !== caseId
-    || typeof value.excluded !== 'string' || !Array.isArray(value.source_records)
-    || value.scope?.alert?.limit !== 20 || value.scope?.event?.limit !== 50
-    || new Set(value.source_records.map(s => s?.key)).size !== value.source_records.length) return false;
-  return verifySavedBriefing({ timeline_id: 1, briefing: { format: 'onealert-case-briefing', version: 1, case_id: caseId,
-    run_id: 1, mode: 'ai_draft', captured_at: value.retrieved_at, scope: value.scope, sources: value.source_records,
-    observations: [{ text: 'Input preview only, no draft generated.', sources: [`case:${caseId}`] }], gaps: [], review_questions: [] } }, caseId);
-}
+import { verifyBriefingInputs, type BriefingInputs } from '../utils/briefingInputs';
 export function CaseBriefingInputPreview({ caseId }: { caseId: number }) {
-  const [data, setData] = useState<Inputs | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(false);
+  const [data, setData] = useState<BriefingInputs | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(false);
   const revision = useRef(0), busy = useRef(false);
   useEffect(() => { revision.current++; busy.current = false; setData(null); setError(''); setLoading(false); const invalidate = () => { revision.current += 1; }; return invalidate; }, [caseId]);
   const read = async () => {
     if (busy.current) return;
     busy.current = true; const request = ++revision.current; setLoading(true); setData(null); setError('');
     try {
-      const { data: value } = await apiClient.get<Inputs>(`/cases/${caseId}/briefing-inputs`);
+      const { data: value } = await apiClient.get<BriefingInputs>(`/cases/${caseId}/briefing-inputs`);
       if (request !== revision.current) return;
-      if (!valid(value, caseId)) throw new Error('The input preview did not match this case or its bounded source counts.');
+      if (!verifyBriefingInputs(value, caseId)) throw new Error('The input preview did not match this case or its bounded source counts.');
       setData(value);
     } catch (err) { if (request === revision.current) setError(getApiErrorMessage(err, 'Input excerpts could not be loaded. No AI call or saved draft was made.')); }
     finally { if (request === revision.current) { busy.current = false; setLoading(false); } }
