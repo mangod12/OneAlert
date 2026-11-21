@@ -181,3 +181,41 @@ async def get_coverage(
     detected.discard("")
     coverage = compute_coverage(detected)
     return {"success": True, "data": coverage}
+
+
+@router.get('/coverage-basis')
+async def get_coverage_basis(
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    """Explain configured/associated coverage over the embedded catalog, never tested efficacy."""
+    basis = {tid: {'technique_id': tid, 'name': info['name'], 'tactics': info['tactics'],
+                   'case_count': 0, 'enabled_rule_count': 0, 'disabled_rule_count': 0,
+                   'unknown_rule_state_count': 0} for tid, info in TECHNIQUES.items()}
+
+    def exact_ids(value):
+        if not isinstance(value, list):
+            return set()
+        return {tid for item in value if isinstance(tid := item.get('id') if isinstance(item, dict) else item, str)
+                and tid in TECHNIQUES}
+
+    case_values = (await db.execute(select(Case.mitre_techniques).where(
+        Case.user_id == current_user.id, Case.mitre_techniques.isnot(None)))).scalars().all()
+    for value in case_values:
+        for tid in exact_ids(value):
+            basis[tid]['case_count'] += 1
+    rule_values = (await db.execute(select(DetectionRule.enabled, DetectionRule.mitre_techniques).where(
+        DetectionRule.user_id == current_user.id, DetectionRule.mitre_techniques.isnot(None)))).all()
+    for enabled, value in rule_values:
+        key = ('enabled_rule_count' if enabled is True else 'disabled_rule_count' if enabled is False
+               else 'unknown_rule_state_count')
+        for tid in exact_ids(value):
+            basis[tid][key] += 1
+    for entry in basis.values():
+        cases, rules = entry['case_count'] > 0, entry['enabled_rule_count'] > 0
+        entry['basis'] = ('both' if cases and rules else 'case_only' if cases else 'rule_only' if rules else 'unmapped')
+    return {'catalog_scope': 'Embedded OneAlert catalog subset, not the full MITRE ATT&CK matrix.',
+            'retrieved_at': datetime.now(UTC), 'total_techniques': len(basis),
+            'tactics': [{'id': tid, 'name': info['name']} for tid, info in TACTICS.items()],
+            'counts': {key: sum(row['basis'] == key for row in basis.values())
+                       for key in ('both', 'case_only', 'rule_only', 'unmapped')},
+            'records': [basis[tid] for tid in sorted(basis)]}

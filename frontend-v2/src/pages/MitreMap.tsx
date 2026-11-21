@@ -1,3 +1,4 @@
+import { MitreCoverageBasis } from '../components/MitreCoverageBasis';
 import { MitreReferenceExplorer } from '../components/MitreReferenceExplorer';
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
@@ -33,6 +34,9 @@ interface TechniqueReferences {
 
 export function MitreMap() {
   const refsRequest = useRef(0);
+  const [basisTechnique, setBasisTechnique] = useState('');
+  const basisReferences = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (basisTechnique) basisReferences.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' }); }, [basisTechnique]);
   useEffect(() => () => { refsRequest.current += 1; }, []);
   const [coverage, setCoverage] = useState<{
     total_techniques: number;
@@ -118,11 +122,12 @@ export function MitreMap() {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Analyze" title="MITRE ATT&CK Coverage" description="Detection coverage mapped to enterprise and industrial ATT&CK techniques." actions={<button type="button" disabled={filteredTechniques.length === 0} onClick={exportFiltered} className="flex items-center gap-2 rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40"><Download className="h-4 w-4" aria-hidden="true" />Export filtered techniques</button>} />
+      <PageHeader eyebrow="Analyze" title="MITRE ATT&CK Coverage" description="Recorded associations across the embedded Enterprise and ICS technique catalog subset, not tested detection efficacy." actions={<button type="button" disabled={filteredTechniques.length === 0} onClick={exportFiltered} className="flex items-center gap-2 rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40"><Download className="h-4 w-4" aria-hidden="true" />Export filtered techniques</button>} />
       <p className="text-xs text-surface-400">{filteredTechniques.length} of {techniques.length} loaded techniques shown. CSV matches these filters and available coverage. Missing coverage is unknown, not a gap. Download stays on your device.</p>
       {errors.length > 0 && <DegradedBanner messages={errors} onRetry={() => void fetchData()} />}
 
-      <MitreReferenceExplorer />
+      <MitreCoverageBasis onSelectTechnique={setBasisTechnique} />
+      <div ref={basisReferences}><MitreReferenceExplorer key={basisTechnique} initialTechnique={basisTechnique} /></div>
 
       {/* Overall Coverage */}
       {coverage && (
@@ -145,7 +150,7 @@ export function MitreMap() {
             />
           </div>
           <p className="text-sm text-surface-400 mt-2">
-            {coverage.covered_techniques} of {coverage.total_techniques} techniques detected
+            {coverage.covered_techniques} of {coverage.total_techniques} techniques with case or enabled-rule mappings
           </p>
         </div>
       )}

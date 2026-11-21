@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
 interface Evidence { technique_id: string; technique_name: string; kind: string; query: string; rule_state: string; page: number; size: number; total: number; counts: { cases: number; detection_rules: number; enabled_rules: number; disabled_rules: number }; records: { id: number; title?: string; status?: string; name?: string; enabled?: boolean }[]; retrieved_at: string }
-export function MitreReferenceExplorer() {
-  const [draft, setDraft] = useState(''), [technique, setTechnique] = useState('');
+export function MitreReferenceExplorer({ initialTechnique = '' }: { initialTechnique?: string } = {}) {
+  const [draft, setDraft] = useState(initialTechnique), [technique, setTechnique] = useState(initialTechnique);
   const [queryDraft, setQueryDraft] = useState(''), [query, setQuery] = useState('');
   const [kind, setKind] = useState('cases'), [state, setState] = useState('all'), [page, setPage] = useState(1), [retry, setRetry] = useState(0);
   const [data, setData] = useState<Evidence | null>(null), [loading, setLoading] = useState(false), [error, setError] = useState('');
