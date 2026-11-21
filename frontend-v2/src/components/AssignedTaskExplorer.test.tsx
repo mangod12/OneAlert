@@ -93,3 +93,15 @@ it('does not open an editor while the separate snapshot is saving or has drafts'
   render(<MemoryRouter><AssignedTaskExplorer editingBlocked /></MemoryRouter>); fireEvent.click(screen.getByRole('button', { name: 'Explore all assigned tasks beyond the editing snapshot' })); await screen.findByText(/201 matching/);
   expect(screen.getByRole('button', { name: 'Edit assigned task #209' })).toHaveProperty('disabled', true); expect(screen.queryByRole('dialog')).toBeNull();
 });
+
+it('shows full matching summary rather than counting the loaded page and preserves it during draft edits', async () => {
+  get.mockImplementation(async (_url, config) => ({ data: { ...result(), filter_date: (config?.params as { today: string }).today,
+    summary: { total: 201, investigations: 8, open: 201, completed: 0, without_due_date: 41, completed_without_timestamp: 0 } } }));
+  show(); await screen.findByText('201 matching assigned task records', { exact: false });
+  const summary = screen.getByRole('region', { name: 'Matching assigned workload summary' });
+  expect(summary.textContent).toContain('Investigations represented8'); expect(summary.textContent).toContain('Without task due date41');
+  fireEvent.change(screen.getByLabelText('Search full assigned workload'), { target: { value: 'unapplied' } }); expect(summary.textContent).toContain('Without task due date41'); expect(get).toHaveBeenCalledTimes(1);
+});
+it.each([undefined, {total:201,investigations:1,open:200,completed:0,without_due_date:0,completed_without_timestamp:0}, {total:201,investigations:1,open:200,completed:1,without_due_date:0,completed_without_timestamp:0}, {total:201,investigations:1,open:201,completed:0,without_due_date:202,completed_without_timestamp:0}])('keeps page evidence separate from missing or invalid summary %j', async summary => {
+  get.mockImplementation(async (_url, config) => ({ data: { ...result(), filter_date: (config?.params as { today: string }).today, summary } })); show(); await screen.findByText(/Full matching summary unavailable/); expect(screen.getByRole('link', {name:/Gateway investigation/})).toBeTruthy();
+});

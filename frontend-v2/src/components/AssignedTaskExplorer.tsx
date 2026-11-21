@@ -4,6 +4,16 @@ import { AssignedTaskEditor } from './AssignedTaskEditor';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
 interface Task { done: boolean; completed_at: string | null; task_id: number; case_id: number; title: string; case_title: string; case_severity: string; case_status: string; due_date: string | null; case_due_date: string | null; }
+interface Summary { total: number; investigations: number; open: number; completed: number; without_due_date: number; completed_without_timestamp: number; }
+function summaryFrom(value: unknown, total: number, completion: string): Summary | null {
+  if (!value || typeof value !== 'object') return null;
+  const s = value as Summary;
+  if (![s.total, s.investigations, s.open, s.completed, s.without_due_date, s.completed_without_timestamp].every(n => Number.isSafeInteger(n) && n >= 0)
+    || s.total !== total || s.open + s.completed !== total || s.investigations > total || (total > 0 && !s.investigations)
+    || s.without_due_date > total || s.completed_without_timestamp > s.completed
+    || (completion === 'open' && s.completed !== 0) || (completion === 'completed' && s.open !== 0)) return null;
+  return s;
+}
 const control = 'max-w-full rounded border border-surface-600 bg-surface-950 px-3 py-2 text-xs text-surface-200 disabled:opacity-40';
 function localDate() { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; }
 export function AssignedTaskExplorer({ onEdited, editingBlocked = false }: { onEdited?: () => void; editingBlocked?: boolean }) {
@@ -12,7 +22,7 @@ export function AssignedTaskExplorer({ onEdited, editingBlocked = false }: { onE
   const [completion, setCompletion] = useState('open'), [investigations, setInvestigations] = useState('active');
   const [filters, setFilters] = useState({ query: '', severity: 'all', due: 'all', today: localDate(), completion: 'open', investigations: 'active' });
   const [page, setPage] = useState(1), [retry, setRetry] = useState(0), [loading, setLoading] = useState(false), [error, setError] = useState('');
-  const [snapshot, setSnapshot] = useState<{ tasks: Task[]; total: number; loadedAt: string } | null>(null);
+  const [snapshot, setSnapshot] = useState<{ tasks: Task[]; total: number; summary: Summary | null; loadedAt: string } | null>(null);
   const requestId = useRef(0);
   useEffect(() => {
     const request = ++requestId.current; setSnapshot(null); setError('');
@@ -23,7 +33,7 @@ export function AssignedTaskExplorer({ onEdited, editingBlocked = false }: { onE
       const value = response.data;
       if (value.completion !== filters.completion || value.investigations !== filters.investigations || !Array.isArray(value.data) || !Number.isSafeInteger(value.total) || value.total < 0 || value.page !== page || value.size !== 25 || value.data.length > 25 || new Set(value.data.map((task: Task) => task?.task_id)).size !== value.data.length || value.filter_date !== filters.today || value.data.some((task: Task) => !task || typeof task.done !== 'boolean' || (task.completed_at !== null && typeof task.completed_at !== 'string') || (filters.completion !== 'all' && task.done !== (filters.completion === 'completed')) || (filters.investigations !== 'all' && ['resolved', 'closed', 'false_positive'].includes(task.case_status) !== (filters.investigations === 'inactive')) || !Number.isSafeInteger(task.task_id) || task.task_id < 1 || !Number.isSafeInteger(task.case_id) || task.case_id < 1 || typeof task.title !== 'string' || typeof task.case_title !== 'string' || typeof task.case_status !== 'string' || typeof task.case_severity !== 'string' || (task.due_date !== null && typeof task.due_date !== 'string') || (task.case_due_date !== null && typeof task.case_due_date !== 'string'))) throw new Error('Assigned task evidence did not match the requested page. Retry before relying on it.');
       const last = Math.max(1, Math.ceil(value.total / 25)); if (page > last) { setPage(last); return; }
-      setSnapshot({ tasks: value.data, total: value.total, loadedAt: new Date().toLocaleString() }); setMustRefresh(false);
+      setSnapshot({ tasks: value.data, total: value.total, summary: summaryFrom(value.summary, value.total, filters.completion), loadedAt: new Date().toLocaleString() }); setMustRefresh(false);
     }).catch(err => { if (requestId.current === request) setError(getApiErrorMessage(err, 'Assigned task exploration unavailable.')); }).finally(() => { if (requestId.current === request) setLoading(false); });
     return () => { requestId.current += 1; };
   }, [open, filters, page, retry]);
@@ -48,6 +58,15 @@ export function AssignedTaskExplorer({ onEdited, editingBlocked = false }: { onE
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
       {!loading && !error && snapshot && <>
         <p className="break-words text-xs text-surface-400">{snapshot.total} matching assigned {snapshot.total === 1 ? 'task record' : 'task records'} · Page {page} of {Math.max(1, Math.ceil(snapshot.total / 25))}. Loaded {snapshot.loadedAt}. Applied search: {filters.query || '(none)'}; severity: {filters.severity}; due: {filters.due}; completion: {filters.completion}; investigations: {filters.investigations}; calendar date: {filters.today}. Current records can change between page reads. Order: investigation severity, investigation due date, task due date, then checklist position and task ID.</p>
+        <section role="region" aria-label="Matching assigned workload summary" className="space-y-3 rounded border border-surface-700 p-3">
+          <h3 className="text-sm font-semibold text-surface-100">Full matching assigned workload</h3>
+          <p className="text-xs text-surface-400">Counts cover every task matching the applied filters before paging. They are current assigned records, not past assignment history. Completed work without a timestamp cannot establish when it was finished. No timeliness score is inferred.</p>
+          {snapshot.summary ? <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">{[
+            ['Matching tasks', snapshot.summary.total], ['Investigations represented', snapshot.summary.investigations],
+            ['Open tasks', snapshot.summary.open], ['Completed tasks', snapshot.summary.completed],
+            ['Without task due date', snapshot.summary.without_due_date], ['Completed without timestamp', snapshot.summary.completed_without_timestamp],
+          ].map(([label, count]) => <div key={label}><dt className="text-surface-400">{label}</dt><dd className="mt-1 text-lg font-semibold text-surface-100">{count}</dd></div>)}</dl> : <p role="status" className="text-xs text-warning">Full matching summary unavailable. Page records are still shown; totals are not inferred from this page.</p>}
+        </section>
         {!snapshot.tasks.length && <p className="text-sm text-surface-400">No assigned tasks match these applied filters.</p>}
         <ul aria-label="Full workload task results" className="space-y-2">{snapshot.tasks.map(task => <li key={task.task_id} className="space-y-2 rounded border border-surface-700 p-3 text-xs text-surface-300"><p className="break-words font-semibold text-surface-100">Task #{task.task_id}: {task.title}</p><Link className="inline-block max-w-full break-words text-primary-300" to={`/cases/${task.case_id}?task=${task.task_id}`}>{task.case_title} · Investigation #{task.case_id}</Link><p className="break-words font-medium">{task.done ? 'Completed checklist task' : 'Open checklist task'} · Recorded completion: {task.completed_at || 'Not recorded'}</p><button type="button" className={control} disabled={editingBlocked || mustRefresh} onClick={() => setEditing(task)}>Edit assigned task #{task.task_id}</button><p className="break-words">{task.case_severity} · {task.case_status.replaceAll('_', ' ')} · Task due: {task.due_date || 'Not set'} · Investigation due: {task.case_due_date || 'Not set'}</p></li>)}</ul>
       </>}

@@ -840,3 +840,31 @@ def test_assigned_task_history_does_not_leak_other_assignees_or_removed_assignme
 def test_assigned_task_history_rejects_invalid_scope(client, params):
     headers, _ = _setup(client)
     assert client.get("/api/v1/cases/assigned-task-explorer", params=params, headers=headers).status_code == 422
+
+
+def test_assigned_task_summary_counts_all_matches_before_paging_and_uses_applied_filters(client):
+    from backend.models.case import CaseTask
+    headers, case_id = _setup(client)
+    uid = _user_id(client, headers)
+    with _TestingSessionLocal() as db:
+        db.add_all([CaseTask(case_id=case_id, title=f'Summary record {i}', position=i, assignee_id=uid,
+                            due_date=None if i < 20 else date(2026, 11, 20), done=i >= 25)
+                    for i in range(30)])
+        db.commit()
+    path = '/api/v1/cases/assigned-task-explorer'
+    params = {'completion': 'all', 'today': '2026-11-21', 'size': 1}
+    response = client.get(path, params=params, headers=headers)
+    assert response.status_code == 200, response.text
+    expected = {'total': 30, 'investigations': 1, 'open': 25, 'completed': 5,
+                'without_due_date': 20, 'completed_without_timestamp': 5}
+    assert response.json()['summary'] == expected
+    assert len(response.json()['data']) == 1
+    assert client.get(path, params={**params, 'page': 2}, headers=headers).json()['summary'] == expected
+    completed = client.get(path, params={**params, 'completion': 'completed'}, headers=headers).json()['summary']
+    assert completed == {**expected, 'total': 5, 'open': 0, 'without_due_date': 0}
+    missing_due = client.get(path, params={**params, 'due': 'none'}, headers=headers).json()['summary']
+    assert missing_due == {**expected, 'total': 20, 'open': 20, 'completed': 0, 'completed_without_timestamp': 0}
+    empty = client.get(path, params={**params, 'query': 'No record matches this'}, headers=headers).json()['summary']
+    assert all(value == 0 for value in empty.values())
+    outsider = _register_and_login(client, 'task-summary-outsider@example.com')
+    assert all(value == 0 for value in client.get(path, params=params, headers=outsider).json()['summary'].values())
