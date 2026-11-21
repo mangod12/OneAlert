@@ -1,3 +1,4 @@
+import { CaseBriefingComparison } from './CaseBriefingComparison';
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
@@ -31,8 +32,9 @@ export function CaseBriefingDrafts({ caseId }: { caseId: number }) {
   const [records, setRecords] = useState<SavedBriefing[]>([]), [cursor, setCursor] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false), [loading, setLoading] = useState(false), [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [selected, setSelected] = useState<number[]>([]);
   const revision = useRef(0), generationBusy = useRef(false), historyBusy = useRef(false);
-  useEffect(() => { revision.current++; setRecords([]); setCursor(null); setLoaded(false); setReviewing(false);
+  useEffect(() => { revision.current++; setSelected([]); setRecords([]); setCursor(null); setLoaded(false); setReviewing(false);
     setAck(false); setError(''); setBusy(false); setLoading(false); generationBusy.current = false; historyBusy.current = false;
     const invalidate = () => { revision.current += 1; }; return invalidate;
   }, [caseId]);
@@ -70,7 +72,8 @@ export function CaseBriefingDrafts({ caseId }: { caseId: number }) {
     {loading && <p role="status" className="text-xs text-surface-300">Loading saved briefing drafts...</p>}
     {error && <p role="alert" className="break-words text-xs text-danger">{error}</p>}
     {loaded && !records.length && <p className="text-xs text-surface-400">No saved briefing drafts on this page. This does not establish that no investigation work occurred.</p>}
-    {records.map(row => <BriefingDraftView key={row.timeline_id} row={row} />)}
+    {loaded && <div className="space-y-3"><p className="text-xs text-surface-400">Compare selection: {selected.length ? selected.map((id, i) => `${i === 0 ? 'A' : 'B'} #${id}`).join(' · ') : 'None'}. Select at most two saved draft IDs.</p>{selected.length > 0 && <button type="button" onClick={() => setSelected([])} className="rounded border border-surface-600 p-2 text-xs text-primary-300">Clear briefing comparison</button>}<CaseBriefingComparison caseId={caseId} ids={selected} /></div>}
+    {records.map(row => <div key={row.timeline_id} className="space-y-2"><label className="flex items-center gap-2 text-xs text-surface-300"><input type="checkbox" checked={selected.includes(row.timeline_id)} disabled={!selected.includes(row.timeline_id) && selected.length >= 2} onChange={e => setSelected(ids => e.target.checked ? [...ids, row.timeline_id] : ids.filter(id => id !== row.timeline_id))} />Select draft #{row.timeline_id} for comparison</label><BriefingDraftView row={row} /></div>)}
     {cursor !== null && <button type="button" disabled={busy || loading} onClick={() => void history(cursor)} className="rounded border border-surface-600 p-2 text-xs text-primary-300">Load older briefing drafts</button>}
   </section>;
 }
