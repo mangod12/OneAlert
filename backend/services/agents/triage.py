@@ -54,12 +54,13 @@ class TriageAgent(BaseAgent):
         Returns: {"cases_created": N, "alerts_triaged": N, "events_triaged": N}
         """
         hours_back = kwargs.get("hours_back", 24)
-        cutoff = datetime.now(UTC) - timedelta(hours=hours_back)
+        until = datetime.now(UTC)
+        cutoff = until - timedelta(hours=hours_back)
 
         # Step 1: Gather unprocessed alerts
         start = time.time()
-        alerts = await self._get_untriaged_alerts(cutoff)
-        events = await self._get_untriaged_events(cutoff)
+        alerts = await self._get_untriaged_alerts(cutoff, until=until)
+        events = await self._get_untriaged_events(cutoff, until=until)
         await self.log_step(
             "gather_data",
             f"Found {len(alerts)} alerts, {len(events)} events",
@@ -124,19 +125,19 @@ class TriageAgent(BaseAgent):
             "summary": summary,
         }
 
-    async def _get_untriaged_alerts(self, cutoff: datetime) -> list:
+    async def _get_untriaged_alerts(self, cutoff: datetime, until: datetime | None = None) -> list:
         result = await self.db.execute(
             select(Alert)
-            .where(*triage_predicates(self.user_id, cutoff, 'alert'))
+            .where(*triage_predicates(self.user_id, cutoff, 'alert', until=until))
             .order_by(Alert.created_at.desc(), Alert.id.desc())
             .limit(ALERT_BATCH_LIMIT)
         )
         return result.scalars().all()
 
-    async def _get_untriaged_events(self, cutoff: datetime) -> list:
+    async def _get_untriaged_events(self, cutoff: datetime, until: datetime | None = None) -> list:
         result = await self.db.execute(
             select(SecurityEvent)
-            .where(*triage_predicates(self.user_id, cutoff, 'event'))
+            .where(*triage_predicates(self.user_id, cutoff, 'event', until=until))
             .order_by(SecurityEvent.timestamp.desc(), SecurityEvent.id.desc())
             .limit(EVENT_BATCH_LIMIT)
         )
