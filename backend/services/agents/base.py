@@ -37,7 +37,10 @@ class BaseAgent(ABC):
         try:
             result = await self.run(**kwargs)
             outcome = result.get("status")
-            self._run.status = outcome if outcome in ("partial", "failed") else "completed"
+            self._run.status = ("failed" if result.get("error")
+                                else outcome if outcome in ("partial", "failed", "cancelled") else "completed")
+            if result.get("error"):
+                self._run.error_message = str(result["error"])[:500]
             self._run.completed_at = datetime.now(UTC)
             self._run.result_summary = str(result.get("summary", ""))[:500]
             self._run.prompt_tokens = self._total_prompt_tokens
