@@ -1,0 +1,50 @@
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import apiClient from '../api/client';
+import { Validation } from './Validation';
+vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }));
+const get = vi.mocked(apiClient.get);
+const run = { id: 8, name: 'Gateway validation', description: 'Plant 100%_safe', mode: 'lab', status: 'completed', mitre_techniques: ['T1110'], results_summary: null, created_at: '2026-11-20T12:00:00Z' };
+beforeEach(() => { vi.resetAllMocks(); get.mockImplementation(async url => ({ data: { data: url === '/validation/runs' ? [run] : [], total: url === '/validation/runs' ? 41 : 0 } })); });
+afterEach(cleanup);
+describe('Validation run history discovery', () => {
+  it('keeps drafts unapplied, searches all pages with combined mode/status/order and clears the scope', async () => {
+    render(<Validation />); await screen.findByText('Gateway validation');
+    fireEvent.change(screen.getByLabelText('Search validation runs'), { target: { value: '  100%_safe  ' } });
+    expect(screen.getByText(/Run history search draft not applied/)).toBeTruthy();
+    expect(get.mock.calls.filter(([url]) => url === '/validation/runs')).toHaveLength(1);
+    fireEvent.submit(screen.getByRole('form', { name: 'Search validation run history' }));
+    fireEvent.change(screen.getByLabelText('Filter validation runs by mode'), { target: { value: 'lab' } });
+    fireEvent.change(screen.getByLabelText('Filter runs by status'), { target: { value: 'completed' } });
+    fireEvent.change(screen.getByLabelText('Order validation run history'), { target: { value: 'oldest' } });
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/validation/runs', { params: { page: 1, size: 20, status: 'completed', query: '100%_safe', mode: 'lab', sort: 'oldest' } }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Next runs' }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/validation/runs', { params: { page: 2, size: 20, status: 'completed', query: '100%_safe', mode: 'lab', sort: 'oldest' } }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear run history filters' }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/validation/runs', { params: { page: 1, size: 20 } }));
+    expect((screen.getByLabelText('Search validation runs') as HTMLInputElement).value).toBe('');
+    expect(apiClient.post).not.toHaveBeenCalled(); expect(apiClient.delete).not.toHaveBeenCalled();
+  });
+  it('explains that mode search and filtered history do not change coverage or production authority', async () => {
+    render(<Validation />); await screen.findByText('Gateway validation');
+    fireEvent.change(screen.getByLabelText('Filter validation runs by mode'), { target: { value: 'production' } });
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/validation/runs', { params: { page: 1, size: 20, mode: 'production' } }));
+    expect(screen.getByText(/Coverage summaries above remain across all runs/)).toBeTruthy();
+    expect(screen.getByText(/does not enable production execution/)).toBeTruthy();
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+  it('shows a filter-aware empty state and ignores an obsolete search response', async () => {
+    let finish!: (value: unknown) => void;
+    const original = get.getMockImplementation()!;
+    render(<Validation />); await screen.findByText('Gateway validation');
+    get.mockImplementation((url, config) => url === '/validation/runs' ? new Promise(resolve => { finish = resolve; }) : original(url, config));
+    fireEvent.change(screen.getByLabelText('Search validation runs'), { target: { value: 'old query' } });
+    fireEvent.submit(screen.getByRole('form', { name: 'Search validation run history' }));
+    get.mockImplementation(async (url, config) => url === '/validation/runs' ? { data: { data: [], total: 0 } } : original(url, config));
+    fireEvent.change(screen.getByLabelText('Search validation runs'), { target: { value: 'absent' } });
+    fireEvent.submit(screen.getByRole('form', { name: 'Search validation run history' }));
+    expect(await screen.findByText('No saved run matches the applied filters. Clear filters to review all runs.')).toBeTruthy();
+    await act(async () => finish({ data: { data: [run], total: 1 } }));
+    expect(screen.queryByText('Gateway validation')).toBeNull();
+  });
+});

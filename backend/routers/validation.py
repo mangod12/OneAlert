@@ -7,7 +7,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import Integer, delete, func, select
+from sqlalchemy import Integer, String, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -33,22 +33,29 @@ async def list_validation_runs(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     status_filter: str | None = Query(None, alias="status"),
+    query: str = Query("", max_length=200),
+    mode: Literal["dry_run", "lab", "production"] | None = None,
+    sort: Literal["newest", "oldest"] = "newest",
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
     """List purple-team validation runs."""
     skip = (page - 1) * size
-    query = select(ValidationRun).where(ValidationRun.user_id == current_user.id)
-    count_q = select(func.count(ValidationRun.id)).where(ValidationRun.user_id == current_user.id)
-
+    filters = [ValidationRun.user_id == current_user.id]
     if status_filter:
-        query = query.filter(ValidationRun.status == status_filter)
-        count_q = count_q.filter(ValidationRun.status == status_filter)
-
-    total = (await db.execute(count_q)).scalar_one()
-    runs = (await db.execute(
-        query.order_by(ValidationRun.created_at.desc()).offset(skip).limit(size)
-    )).scalars().all()
+        filters.append(ValidationRun.status == status_filter)
+    if mode is not None:
+        filters.append(ValidationRun.mode == mode)
+    if query.strip():
+        filters.append(or_(*[
+            func.lower(func.coalesce(cast(column, String), "")).contains(query.strip().lower(), autoescape=True)
+            for column in (ValidationRun.id, ValidationRun.name, ValidationRun.description)
+        ]))
+    total = (await db.execute(select(func.count(ValidationRun.id)).where(*filters))).scalar_one()
+    order = ([ValidationRun.created_at.asc(), ValidationRun.id.asc()] if sort == "oldest" else
+             [ValidationRun.created_at.desc(), ValidationRun.id.desc()])
+    runs = (await db.execute(select(ValidationRun).where(*filters)
+                            .order_by(*order).offset(skip).limit(size))).scalars().all()
 
     return {
         "success": True,
