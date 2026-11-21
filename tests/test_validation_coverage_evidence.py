@@ -114,3 +114,60 @@ def test_group_names_are_distinct_and_paging_is_stable(client):
 ])
 def test_invalid_scope_is_rejected(client, params):
     assert client.get('/api/v1/validation/coverage-evidence', params=params).status_code == 422
+
+
+def sources(client, **params):
+    response = client.get('/api/v1/validation/coverage-evidence/steps', params={
+        'technique_id': 'T1059', 'technique_name': 'Command', **params,
+    })
+    assert response.status_code == 200
+    return response.json()
+
+
+def test_source_steps_reconcile_group_without_duplicate_steps_or_foreign_records(client):
+    result = sources(client)
+    assert result['total'] == 3
+    assert [row['step_id'] for row in result['records']] == [1, 2, 3]
+    assert all(row['run_id'] == 1 for row in result['records'])
+    group = next(row for row in read(client)['techniques'] if row['technique_name'] == 'Command')
+    for key in ['control_result_count', 'recorded_detected', 'recorded_not_detected', 'unknown_outcomes']:
+        assert sum(row[key] for row in result['records']) == group[key]
+    assert result['records'][0]['control_result_count'] == 2
+    assert result['records'][2]['simulated'] is None
+    assert result['records'][2]['unknown_outcomes'] == 1
+    assert result['technique_name'] == 'Command' and result['retrieved_at']
+    assert 'not proof' in result['scope']
+
+
+def test_source_steps_exact_groups_empty_controls_and_execution_status_filters(client):
+    assert [row['step_id'] for row in sources(client, technique_name='Renamed command')['records']] == [7]
+    assert sources(client, technique_name='Foreign')['records'] == []
+    assert sources(client, technique_name='command')['records'] == []
+    assert sources(client, technique_name="Command' OR 1=1 --")['total'] == 0
+    assert [row['step_id'] for row in sources(client, execution='simulated')['records']] == [1]
+    assert [row['step_id'] for row in sources(client, execution='non_simulated')['records']] == [2]
+    assert [row['step_id'] for row in sources(client, execution='unknown')['records']] == [3]
+    failed = sources(client, run_status='failed')['records']
+    assert [row['step_id'] for row in failed] == [5] and failed[0]['run_status'] == 'failed'
+    assert sources(client, run_status='all')['total'] == 4
+    assert sources(client, run_status='pending')['total'] == 0
+    row = sources(client, technique_id='T1046', technique_name='No controls')['records'][0]
+    assert row['control_result_count'] == row['unknown_outcomes'] == 0
+    assert row['actual_result'] is None and row['executed_at'] is None
+
+
+def test_source_steps_database_pages_are_stable_and_empty_beyond_end(client):
+    assert [sources(client, size=1, page=page)['records'][0]['step_id'] for page in (1, 2, 3)] == [1, 2, 3]
+    assert sources(client, size=1, page=4)['records'] == []
+    assert sources(client, size=1)['total'] == 3
+
+
+@pytest.mark.parametrize('params', [
+    {'size': 0}, {'size': 101}, {'page': 0}, {'page': 1000001},
+    {'execution': 'live'}, {'run_status': 'invented'}, {'technique_id': ''},
+    {'technique_id': 'X' * 201}, {'technique_name': 'X' * 1001},
+])
+def test_source_steps_validate_parameters(client, params):
+    assert client.get('/api/v1/validation/coverage-evidence/steps', params={
+        'technique_id': 'T1059', 'technique_name': 'Command', **params,
+    }).status_code == 422
