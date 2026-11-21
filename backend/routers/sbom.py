@@ -206,6 +206,7 @@ async def browse_sbom_component_evidence(
     size: Annotated[int, Query(ge=1, le=100)] = 10,
     search: Annotated[str, Query(max_length=200)] = "",
     vulnerable_only: bool = False,
+    component_id: Annotated[int | None, Query(ge=1, le=2147483647)] = None,
     gap: Literal["", "version", "supplier", "license", "identifiers", "hash"] = "",
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
@@ -217,6 +218,12 @@ async def browse_sbom_component_evidence(
     if sbom is None:
         raise HTTPException(status_code=404, detail="SBOM not found")
     predicates = [SBOMComponent.sbom_id == sbom_id]
+    if component_id is not None:
+        exists = (await db.execute(select(SBOMComponent.id).where(
+            SBOMComponent.id == component_id, SBOMComponent.sbom_id == sbom_id))).scalar_one_or_none()
+        if exists is None:
+            raise HTTPException(status_code=404, detail="Component not found in this SBOM")
+        predicates.append(SBOMComponent.id == component_id)
     query = search.strip()
     if query:
         needle = '%' + query.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
@@ -239,7 +246,7 @@ async def browse_sbom_component_evidence(
                             .offset((page - 1) * size).limit(size))).scalars().all()
     return {"sbom": SBOMResponse.model_validate(sbom), "page": page, "size": size, "search": query,
             "vulnerable_only": vulnerable_only, "gap": gap, "total": total, "document_total": document_total,
-            "retrieved_at": datetime.now(UTC).isoformat(),
+            "retrieved_at": datetime.now(UTC).isoformat(), "component_id": component_id,
             "components": [SBOMComponentResponse.model_validate(row) for row in rows]}
 
 

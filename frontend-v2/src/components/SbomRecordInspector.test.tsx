@@ -43,3 +43,11 @@ it('recovers from a disappeared page and closes with Escape', async () => {
   await waitFor(() => expect(get).toHaveBeenCalledTimes(3)); expect(screen.getByRole('button', { name: 'Previous evidence components' })).toHaveProperty('disabled', true);
   fireEvent.keyDown(document, { key: 'Escape' }); expect(close).toHaveBeenCalledTimes(1);
 });
+it('opens exactly one component with its document provenance and no broad search controls', async () => {
+  get.mockResolvedValueOnce({ data: { ...snapshot, component_id: 209, total: 1 } }); const browse = vi.fn(); render(<SbomRecordInspector sbomId={99} componentId={209} onBrowseDocument={browse} onClose={close} />); await screen.findByText('Component #209: Saved component');
+  expect(get).toHaveBeenCalledExactlyOnceWith('/sbom/99/component-evidence', { params: { page: 1, size: 10, search: '', vulnerable_only: false, gap: '', component_id: 209 } }); expect(screen.queryByLabelText('Exact SBOM component search')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Browse all components in this SBOM' })); expect(browse).toHaveBeenCalledOnce();
+});
+it.each([{ ...snapshot, component_id: 208, total: 1 }, { ...snapshot, component_id: 209, total: 0, components: [] }, { ...snapshot, component_id: 209, total: 1, components: [{ ...snapshot.components[0], id: 208 }] }])('does not substitute other component evidence for an exact record %#', async data => {
+  get.mockResolvedValueOnce({ data }); render(<SbomRecordInspector sbomId={99} componentId={209} onClose={close} />); await screen.findByRole('alert'); expect(screen.queryByText('Component #209: Saved component')).toBeNull();
+});
