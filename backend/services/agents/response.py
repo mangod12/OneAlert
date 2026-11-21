@@ -3,7 +3,7 @@
 import logging
 import time
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 
 from backend.models.alert import Alert
 from backend.models.asset import Asset
@@ -73,9 +73,9 @@ class ResponseAgent(BaseAgent):
 
         # Get linked alerts with assets
         alert_rows = await self.db.execute(
-            select(Alert, Asset)
-            .join(CaseAlert, CaseAlert.alert_id == Alert.id)
-            .join(Asset, Alert.asset_id == Asset.id)
+            select(Alert, Asset).select_from(CaseAlert)
+            .outerjoin(Alert, and_(CaseAlert.alert_id == Alert.id, Alert.user_id == self.user_id))
+            .outerjoin(Asset, and_(Alert.asset_id == Asset.id, Asset.user_id == self.user_id))
             .where(CaseAlert.case_id == case_id)
         )
         alert_assets = alert_rows.all()
@@ -121,7 +121,8 @@ class ResponseAgent(BaseAgent):
         for action in actions:
             policy = check_action_approval_for_context(
                 action_type=action["action_type"], autonomy_level=autonomy_level,
-                asset_contexts=[(asset.network_zone, asset.is_ot_asset) for _, asset in alert_assets],
+                asset_contexts=[(asset.network_zone, asset.is_ot_asset) if asset is not None else (None, None)
+                                for _, asset in alert_assets],
             )
             action["policy_check"] = policy
             if policy["requires_human"]:
@@ -177,6 +178,12 @@ class ResponseAgent(BaseAgent):
             "Affected Assets:",
         ]
         for alert, asset in alert_assets:
+            if alert is None:
+                parts.append("- Linked evidence unavailable; no alert or asset identity inferred.")
+                continue
+            if asset is None:
+                parts.append(f"- [{alert.severity}] {alert.title} (asset context unavailable; OT/zone unknown)")
+                continue
             parts.append(
                 f"- [{alert.severity}] {alert.title} on {asset.name} "
                 f"(type={asset.asset_type}, zone={asset.network_zone or 'unknown'}, "
