@@ -232,8 +232,12 @@ async def set_on_call_rotation(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Rotation members must be active members of your organization",
             )
+    unchanged = member_ids == list(org.on_call_member_ids or [])
     org.on_call_member_ids = member_ids or None
-    org.on_call_anchor_date = datetime.now(UTC).date() if member_ids else None
+    if not member_ids:
+        org.on_call_anchor_date = None
+    elif not unchanged or org.on_call_anchor_date is None:
+        org.on_call_anchor_date = datetime.now(UTC).date()
     db.add(org)
     await db.commit()
     await db.refresh(org)
