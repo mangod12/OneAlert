@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
@@ -6,13 +7,41 @@ type Relation = 'shared' | 'source_only' | 'other_only';
 interface Comparison { relation: Relation; total: number; case_id: number; case_title: string; other_case_id: number; other_case_title: string; kind: 'alert' | 'event'; source_count: number; other_count: number; shared_count: number; source_only_count: number; other_only_count: number; page: number; size: number; records: Evidence[]; retrieved_at: string; scope: string }
 const control = 'max-w-full rounded border border-surface-600 bg-surface-950 px-3 py-2 text-xs text-surface-200 disabled:opacity-40';
 export function CaseEvidenceOverlap({ caseId }: { caseId: number }) {
+  const [params] = useSearchParams();
+  const routeKey = JSON.stringify(['compare_case', 'compare_kind', 'compare_set'].map(key => params.getAll(key)));
+  const routeIdentity = `${caseId}:${routeKey}`;
+  const [appliedRoute, setAppliedRoute] = useState('');
+  const [routeError, setRouteError] = useState(''), [copied, setCopied] = useState(false), [copyError, setCopyError] = useState('');
   const [draft, setDraft] = useState(''), [other, setOther] = useState<number | null>(null), [kind, setKind] = useState<'alert' | 'event'>('alert'), [page, setPage] = useState(1), [retry, setRetry] = useState(0);
   const [data, setData] = useState<Comparison | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(false);
   const [relation, setRelation] = useState<Relation>('shared');
   const reads = useRef(0);
+  const copyVersion = useRef(0);
   useEffect(() => {
-    const request = ++reads.current; setData(null); setError('');
-    if (other === null) { setLoading(false); return; }
+    reads.current++; copyVersion.current++; setCopied(false); setCopyError(''); setData(null); setError(''); setLoading(false); setPage(1); setOther(null); setDraft(''); setRouteError('');
+    setAppliedRoute(routeIdentity);
+    const values = JSON.parse(routeKey) as string[][];
+    if (!values.some(items => items.length)) return;
+    const [ids, kinds, sets] = values;
+    const id = ids.length === 1 && /^[1-9][0-9]*$/.test(ids[0]) ? Number(ids[0]) : null;
+    if (id === null || !Number.isSafeInteger(id) || id > 2147483647 || id === caseId || kinds.length !== 1 || !['alert', 'event'].includes(kinds[0]) || sets.length !== 1 || !['shared', 'source_only', 'other_only'].includes(sets[0])) {
+      setRouteError('Invalid evidence comparison link. Use one different positive investigation ID, evidence kind and record set. No comparison was loaded from this link.'); return;
+    }
+    setDraft(String(id)); setOther(id); setKind(kinds[0] as 'alert' | 'event'); setRelation(sets[0] as Relation);
+  }, [routeKey, caseId, routeIdentity]);
+  useEffect(() => { copyVersion.current++; setCopied(false); setCopyError(''); const invalidate = () => { copyVersion.current++; }; return invalidate; }, [caseId, other, kind, relation, draft]);
+  const copyLink = async () => {
+    if (!data || data.case_id !== caseId || data.other_case_id !== other || data.kind !== kind || data.relation !== relation || loading || error || Number(draft) !== other) return;
+    const version = ++copyVersion.current; setCopied(false); setCopyError('');
+    try {
+      const url = new URL(`/app/cases/${caseId}`, window.location.origin);
+      url.searchParams.set('compare_case', String(other)); url.searchParams.set('compare_kind', kind); url.searchParams.set('compare_set', relation);
+      await navigator.clipboard.writeText(url.toString()); if (version === copyVersion.current) setCopied(true);
+    } catch { if (version === copyVersion.current) setCopyError('The comparison link could not be copied.'); }
+  };
+  useEffect(() => {
+    const request = ++reads.current; copyVersion.current++; setCopied(false); setCopyError(''); setData(null); setError('');
+    if (other === null || appliedRoute !== routeIdentity) { setLoading(false); return; }
     setLoading(true);
     void apiClient.get<Comparison>(`/cases/${caseId}/evidence-overlap`, { params: { other_case_id: other, kind, relation, page, size: 10 } }).then(({ data: value }) => {
       if (request !== reads.current) return;
@@ -23,10 +52,10 @@ export function CaseEvidenceOverlap({ caseId }: { caseId: number }) {
       setData(value);
     }).catch(err => { if (request === reads.current) setError(getApiErrorMessage(err, 'Investigation evidence comparison could not be loaded.')); }).finally(() => { if (request === reads.current) setLoading(false); });
     return () => { reads.current += 1; };
-  }, [caseId, other, kind, relation, page, retry]);
+  }, [caseId, other, kind, relation, page, retry, appliedRoute, routeIdentity]);
   const compare = () => {
     if (!/^[1-9][0-9]*$/.test(draft.trim()) || !Number.isSafeInteger(Number(draft)) || Number(draft) > 2147483647 || Number(draft) === caseId) { reads.current += 1; setOther(null); setData(null); setLoading(false); setError('Enter a different positive investigation record ID.'); return; }
-    setOther(Number(draft)); setPage(1); setRetry(value => value + 1);
+    setRouteError(''); setOther(Number(draft)); setPage(1); setRetry(value => value + 1);
   };
   return <section aria-label="Exact investigation evidence overlap" className="oa-panel space-y-4 p-4 sm:p-6">
     <h2 className="text-lg font-semibold text-surface-100">Compare exact linked evidence</h2>
@@ -37,9 +66,14 @@ export function CaseEvidenceOverlap({ caseId }: { caseId: number }) {
       <label className="text-xs text-surface-300">Record set<select className={`${control} mt-1 block w-full`} value={relation} onChange={event => { reads.current += 1; setData(null); setRelation(event.target.value as Relation); setPage(1); }}><option value="shared">Shared record IDs</option><option value="source_only">Only in this investigation</option><option value="other_only">Only in the other investigation</option></select></label>
       <button type="submit" className={control}>Compare linked record IDs</button>
     </form>
+    {routeError && <p role="alert" className="text-sm text-danger">{routeError}</p>}
+    {copyError && <p role="alert" className="text-sm text-danger">{copyError}</p>}
+    {copied && <p role="status" className="text-xs text-primary-300">Comparison link copied. It opens a fresh read and does not grant access.</p>}
     {loading && <p role="status" className="text-sm text-surface-300">Comparing currently retrievable linked evidence...</p>}
     {error && <div className="space-y-2"><p role="alert" className="text-sm text-danger">{error}</p>{other !== null && <button type="button" className={control} onClick={() => setRetry(value => value + 1)}>Retry evidence comparison</button>}</div>}
-    {!loading && !error && data && <>
+    {!loading && !error && data && data.case_id === caseId && data.other_case_id === other && data.kind === kind && data.relation === relation && <>
+      <button type="button" className={control} onClick={() => void copyLink()}>Copy current evidence comparison link</button>
+      <p className="text-xs text-surface-400">The link keeps these investigation IDs, evidence kind and record set, not the current page or a historical snapshot. Reopening reads current records with the viewer's own permissions. Copying sends nothing to another person.</p>
       <div className="space-y-2 text-sm text-surface-300"><p className="break-words">#{data.case_id}: {data.case_title}</p><p className="break-words"><a href={`/app/cases/${data.other_case_id}`} className="text-primary-300 underline">#{data.other_case_id}: {data.other_case_title}</a></p><p className="break-all text-xs text-surface-400">Read {data.retrieved_at}. Current linked records, not a frozen historical snapshot.</p></div>
       <dl className="grid grid-cols-1 gap-2 sm:grid-cols-3">{[[`${data.shared_count}`, 'Exact shared IDs'], [`${data.source_only_count}`, `Only in #${caseId}`], [`${data.other_only_count}`, `Only in #${data.other_case_id}`]].map(([count, label]) => <div key={label} className="rounded border border-surface-700 p-3"><dt className="text-xs text-surface-400">{label}</dt><dd className="text-xl font-semibold text-surface-100">{count}</dd></div>)}</dl>
       <p className="text-xs text-surface-400">Retrievable {data.kind}s: {data.source_count} in #{caseId}, {data.other_count} in #{data.other_case_id}. Selected details: {relation === 'shared' ? 'shared record IDs' : relation === 'source_only' ? `only in #${caseId}` : `only in #${data.other_case_id}`}. Missing from one retrievable set does not prove the underlying evidence was deleted. Similar text, IPs or techniques are not counted as shared IDs.</p>
