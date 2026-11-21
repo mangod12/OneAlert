@@ -3,6 +3,7 @@ Integrations router for managing SIEM/SOAR integration configurations.
 Provides CRUD endpoints for integration configs plus connection testing.
 """
 import re
+from copy import deepcopy
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -27,21 +28,24 @@ from backend.services.integrations.splunk import SplunkIntegration
 router = APIRouter()
 
 SECRET_KEY_PATTERN = re.compile(
-    r"token|secret|password|api[-_]?key|credential|routing[-_]?key|private",
+    r"token|secret|password|api[-_]?key|credential|routing[-_]?key|shared[-_]?key|private|authorization|cookie",
     re.IGNORECASE,
 )
 MASKED_VALUE = "********"
 
 
+def _masked_value(value):
+    if isinstance(value, dict):
+        return {key: MASKED_VALUE if SECRET_KEY_PATTERN.search(key) and item not in (None, '')
+                else _masked_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_masked_value(item) for item in value]
+    return value
+
+
 def mask_integration_config(config: dict) -> dict:
-    """Return a copy of an integration config with secret-looking values masked."""
-    masked = {}
-    for key, value in (config or {}).items():
-        if isinstance(value, str) and value and SECRET_KEY_PATTERN.search(key):
-            masked[key] = MASKED_VALUE
-        else:
-            masked[key] = value
-    return masked
+    """Mask secret-named fields at every JSON depth, including non-string values."""
+    return _masked_value(config or {})
 
 
 def _public_config(config: IntegrationConfig) -> dict:
@@ -51,18 +55,40 @@ def _public_config(config: IntegrationConfig) -> dict:
     return data
 
 
+def _contains_mask(value) -> bool:
+    if isinstance(value, dict):
+        return any(_contains_mask(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_mask(item) for item in value)
+    return value == MASKED_VALUE
+
+
+def _restore_config_value(stored, incoming, key: str):
+    if incoming == MASKED_VALUE and SECRET_KEY_PATTERN.search(key):
+        if stored is None:
+            raise ValueError('A masked secret cannot create a new configuration value')
+        return deepcopy(stored)
+    if isinstance(incoming, dict):
+        previous = stored if isinstance(stored, dict) else {}
+        return {child: _restore_config_value(previous.get(child), value, child)
+                for child, value in incoming.items()}
+    if isinstance(incoming, list):
+        # A list has no stable field identity. Never restore a masked credential
+        # by index after a reorder, insertion or edit that could change its target.
+        if isinstance(stored, list) and incoming == _masked_value(stored):
+            return deepcopy(stored)
+        if _contains_mask(incoming):
+            raise ValueError('A changed configuration list cannot contain masked values')
+    return deepcopy(incoming)
+
+
 def _merge_config_update(stored: dict, incoming: dict) -> dict:
-    """Merge a config update, keeping stored secrets when the mask is echoed back."""
-    merged = dict(stored or {})
+    """Restore masks only at stable named paths; preserve untouched top-level fields."""
+    merged = deepcopy(stored or {})
     for key, value in (incoming or {}).items():
-        if (
-            value == MASKED_VALUE
-            and SECRET_KEY_PATTERN.search(key)
-            and key in merged
-        ):
-            continue
-        merged[key] = value
+        merged[key] = _restore_config_value(merged.get(key), value, key)
     return merged
+
 
 AVAILABLE_TYPES = [
     {"type": "splunk", "name": "Splunk", "description": "Splunk HTTP Event Collector"},
@@ -188,7 +214,13 @@ async def update_integration(
 
     update_data = payload.model_dump(exclude_unset=True)
     if "config" in update_data:
-        merged_config = _merge_config_update(config.config, update_data["config"])
+        try:
+            merged_config = _merge_config_update(config.config, update_data["config"])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=(
+                "Masked configuration values cannot be matched safely. Keep credential-bearing lists "
+                "unchanged, omit those lists, or provide complete replacement values."
+            )) from exc
         await _require_safe_integration_config(
             config.integration_type, merged_config
         )

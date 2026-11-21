@@ -450,3 +450,63 @@ class TestIntegrationSecretMasking:
         with TestingSessionLocal() as db:
             stored = db.get(IntegrationConfig, integration_id)
             assert stored.config["routing_key"] == "new-key"
+
+
+class TestNestedIntegrationSecretMasking:
+    def test_nested_create_list_and_patch_masks_never_disclose_or_replace_stored_values(self, client, auth_headers):
+        saved = {'auth': {'token': 'nested-token-value', 'label': 'first'},
+                 'targets': [{'name': 'one', 'password': 'nested-password-value'}],
+                 'private_key': {'value': 'structured-secret-value'}}
+        response = client.post('/api/v1/integrations/', headers=auth_headers, json={
+            'integration_type': 'pagerduty', 'name': 'Nested config', 'config': saved})
+        assert response.status_code == 201
+        integration_id = response.json()['data']['id']
+        public = response.json()['data']['config']
+        assert public['auth']['token'] == '********'
+        assert public['targets'][0]['password'] == '********'
+        assert public['private_key'] == '********'
+        listed = client.get('/api/v1/integrations/', headers=auth_headers).json()
+        for secret in ['nested-token-value', 'nested-password-value', 'structured-secret-value']:
+            assert secret not in str(listed)
+        public['auth']['label'] = 'updated'
+        updated = client.patch(f'/api/v1/integrations/{integration_id}', headers=auth_headers,
+                               json={'config': public})
+        assert updated.status_code == 200
+        from backend.models.integration_config import IntegrationConfig
+        with TestingSessionLocal() as db:
+            stored = db.get(IntegrationConfig, integration_id).config
+            assert stored['auth'] == {'token': 'nested-token-value', 'label': 'updated'}
+            assert stored['targets'] == saved['targets'] and stored['private_key'] == saved['private_key']
+
+    def test_changed_masked_list_returns_safe_error_without_persisting_partial_update(self, client, auth_headers):
+        from backend.models.integration_config import IntegrationConfig
+        saved = {'targets': [{'name': 'one', 'password': 'first-value'},
+                             {'name': 'two', 'password': 'second-value'}]}
+        created = client.post('/api/v1/integrations/', headers=auth_headers, json={
+            'integration_type': 'pagerduty', 'name': 'Original', 'config': saved}).json()['data']
+        changed = created['config']['targets'][::-1]
+        response = client.patch(f"/api/v1/integrations/{created['id']}", headers=auth_headers,
+                                json={'name': 'Not persisted', 'config': {'targets': changed}})
+        assert response.status_code == 400
+        assert 'first-value' not in response.text and 'second-value' not in response.text
+        with TestingSessionLocal() as db:
+            stored = db.get(IntegrationConfig, created['id'])
+            assert stored.config == saved and stored.name == 'Original'
+
+
+    def test_sentinel_shared_signing_key_is_masked_and_preserved(self, client, auth_headers):
+        from backend.models.integration_config import IntegrationConfig
+        response = client.post('/api/v1/integrations/', headers=auth_headers, json={
+            'integration_type': 'sentinel', 'name': 'Sentinel signing key',
+            'config': {'workspace_id': 'owned-workspace', 'shared_key': 'synthetic-signing-value'}})
+        assert response.status_code == 201
+        record = response.json()['data']
+        assert record['config']['shared_key'] == '********'
+        assert record['config']['workspace_id'] == 'owned-workspace'
+        updated = client.patch(f"/api/v1/integrations/{record['id']}", headers=auth_headers,
+                               json={'config': record['config']})
+        assert updated.status_code == 200
+        assert 'synthetic-signing-value' not in str(client.get(
+            '/api/v1/integrations/', headers=auth_headers).json())
+        with TestingSessionLocal() as db:
+            assert db.get(IntegrationConfig, record['id']).config['shared_key'] == 'synthetic-signing-value'
