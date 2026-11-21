@@ -188,6 +188,33 @@ async def get_response_plan(
     return plan
 
 
+@router.get("/{plan_id}/simulation-preflight")
+async def read_simulation_preflight(
+    plan_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Inspect saved action shapes and local simulation handlers without running them."""
+    from backend.services.response_preflight import simulation_preflight
+    plan = (await db.execute(select(ResponsePlan).where(
+        ResponsePlan.id == plan_id, ResponsePlan.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Response plan not found")
+    if isinstance(plan.actions, list) and len(plan.actions) > 5000:
+        raise HTTPException(status_code=422, detail="This saved plan exceeds the 5,000-action preflight limit. "
+                            "No partial preflight was created.")
+    return {"plan_id": plan.id, "case_id": plan.case_id, "status": plan.status,
+            "execution_mode": "simulated", "retrieved_at": datetime.now(UTC).isoformat(),
+            **simulation_preflight(plan),
+            "limitations": ["Read-only review of the saved plan and current local handler registry.",
+                            "No handler, network request, approval or execution was performed.",
+                            "A supported handler is a simulation, not a configured live integration.",
+                            "Recorded policy flags are not a fresh policy check or permission.",
+                            "This does not validate target ownership, safety, reachability or rollback readiness.",
+                            "Order is shown only for well-formed actions with finite numeric priorities."]}
+
+
 @router.get("/{plan_id}/approval-review")
 async def get_approval_review(
     plan_id: int,
