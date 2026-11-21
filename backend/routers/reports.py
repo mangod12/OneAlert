@@ -583,3 +583,55 @@ async def get_alert_trend_report(
             "resolved": resolved_by_day.get(day, 0),
         })
     return {"success": True, "days": days, "generated_at": datetime.now(UTC).isoformat(), "series": series}
+
+
+@router.get('/posture/alert-records')
+async def posture_alert_records(
+    metric: Literal['opened', 'acknowledged', 'resolved'] = 'opened',
+    days: int = Query(30, ge=1, le=90),
+    query: str = Query('', max_length=200),
+    offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_async_db),
+):
+    """Read the current owned source records behind one posture alert metric."""
+    now = datetime.now(UTC)
+    start = (now - timedelta(days=days)).replace(tzinfo=None)
+    timestamp = {'opened': Alert.created_at, 'acknowledged': Alert.acknowledged_at,
+                 'resolved': Alert.resolved_at}[metric]
+    scope = [Alert.user_id == current_user.id, timestamp >= start]
+    timings = (await db.execute(select(Alert.created_at, timestamp).where(*scope))).all()
+    usable = []
+    if metric != 'opened':
+        for created, ended in timings:
+            duration = _mean_delta_seconds([(created, ended)])
+            if duration is not None:
+                usable.append(duration)
+    filtered = list(scope)
+    text = query.strip()
+    if text:
+        escaped = text.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        pattern = f'%{escaped}%'
+        filtered.append(or_(Alert.title.ilike(pattern, escape='\\'),
+                            Alert.status.ilike(pattern, escape='\\'),
+                            Alert.severity.ilike(pattern, escape='\\'),
+                            cast(Alert.id, String).ilike(pattern, escape='\\')))
+    total = (await db.execute(select(func.count(Alert.id)).where(*filtered))).scalar_one()
+    rows = (await db.execute(select(Alert).where(*filtered).order_by(timestamp.desc(), Alert.id.desc())
+                            .offset(offset).limit(limit))).scalars().all()
+    records = []
+    for row in rows:
+        ended = getattr(row, {'opened': 'created_at', 'acknowledged': 'acknowledged_at',
+                              'resolved': 'resolved_at'}[metric])
+        duration = None if metric == 'opened' else _mean_delta_seconds([(row.created_at, ended)])
+        reason = ('Not a response-time metric.' if metric == 'opened' else
+                  'Included in the mean response time.' if duration is not None else
+                  'Excluded from the mean: missing or negative recorded elapsed time.')
+        records.append({'id': row.id, 'title': row.title, 'severity': _severity_value(row),
+                        'status': _status_value(row), 'created_at': row.created_at,
+                        'metric_at': ended, 'duration_seconds': duration, 'timing_reason': reason})
+    return {'metric': metric, 'days': days, 'query': query, 'offset': offset, 'limit': limit,
+            'window_start': start.replace(tzinfo=UTC), 'generated_at': now, 'total': total,
+            'source_count': len(timings),
+            'timing_count': len(usable) if metric != 'opened' else None,
+            'excluded_timing_count': len(timings) - len(usable) if metric != 'opened' else None,
+            'mean_seconds': sum(usable) / len(usable) if usable else None, 'records': records}

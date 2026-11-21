@@ -1,3 +1,4 @@
+import { PostureAlertEvidence } from '../components/PostureAlertEvidence';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BriefcaseMedical, Clock, Download, ShieldAlert, ShieldCheck, Siren, Timer, Users } from 'lucide-react';
@@ -102,6 +103,7 @@ const SEVERITIES: Array<'critical' | 'high' | 'medium' | 'low'> = ['critical', '
 export function Reports() {
   const requestId = useRef(0);
   const [days, setDays] = useState(30);
+  const [showAlertEvidence, setShowAlertEvidence] = useState(false);
   const [report, setReport] = useState<PostureReport | null>(null);
   const [evidenceKind, setEvidenceKind] = useState<'alerts' | 'cases' | null>(null);
   const [sla, setSla] = useState<SlaReport | null>(null);
@@ -207,6 +209,9 @@ export function Reports() {
             <KPICard title="Mean time to resolve" value={formatDuration(report.alerts.mttr_seconds)} icon={Timer} color="success" detail={`${report.alerts.resolved} resolved · ${report.days}d`} />
             <KPICard title="Active incidents" value={report.incidents.active} icon={Siren} color="danger" detail={`${report.incidents.critical} at critical severity`} />
           </div>
+
+          <div><button type="button" aria-expanded={showAlertEvidence} onClick={() => setShowAlertEvidence(value => !value)} className="rounded border border-surface-600 px-3 py-2 text-sm text-primary-300">{showAlertEvidence ? 'Hide alert metric records' : 'Review alert metric records'}</button></div>
+          {showAlertEvidence && <PostureAlertEvidence key={days} days={days} />}
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <Panel title="Alert volume by severity" description={`Alerts opened in the last ${report.days} days.`}>
