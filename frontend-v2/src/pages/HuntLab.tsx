@@ -1,3 +1,4 @@
+import { CaseHuntDraft } from '../components/CaseHuntDraft';
 import { HuntRunLink } from '../components/HuntRunLink';
 import { useSearchParams } from 'react-router-dom';
 import { DetectionRuleInspector } from '../components/DetectionRuleInspector';
@@ -56,14 +57,19 @@ export function HuntLabRoute() {
   const values = params.getAll('rule'), raw = values.length === 1 ? values[0] : '';
   const id = /^[1-9][0-9]*$/.test(raw) && Number.isSafeInteger(Number(raw)) ? Number(raw) : null;
   const clear = () => setParams(current => { const next = new URLSearchParams(current); next.delete('rule'); return next; }, { replace: true });
+  const sources = params.getAll('source_case'), sourceRaw = sources.length === 1 ? sources[0] : '';
+  const sourceId = /^[1-9][0-9]*$/.test(sourceRaw) && Number.isSafeInteger(Number(sourceRaw)) && Number(sourceRaw) <= 2147483647 ? Number(sourceRaw) : null;
+  const clearSource = () => setParams(current => { const next = new URLSearchParams(current); next.delete('source_case'); return next; }, { replace: true });
   return <>
     {values.length > 0 && id === null && <p role="alert" className="mb-4 text-sm text-danger">This saved rule link needs exactly one positive whole-number rule ID. No rule was opened. <button type="button" className="text-primary-300" onClick={clear}>Clear invalid rule link</button></p>}
     {id !== null && <DetectionRuleInspector key={id} ruleId={id} onClose={clear} />}
-    <HuntLab />
+    {sources.length > 0 && sourceId === null && <p role="alert" className="mb-4 text-sm text-danger">Invalid source investigation link. Use one positive whole-number case ID. No case was read and your hypothesis is unchanged. <button type="button" className="text-primary-300" onClick={clearSource}>Clear invalid case handoff</button></p>}
+    {sourceId !== null && <button type="button" className="mb-3 text-xs text-primary-300 underline" onClick={clearSource}>Close case-to-hunt handoff</button>}
+    <HuntLab sourceCaseId={sourceId} />
   </>;
 }
 
-export function HuntLab() {
+export function HuntLab({ sourceCaseId = null }: { sourceCaseId?: number | null } = {}) {
   const [hypothesis, setHypothesis] = useState('');
   const [sessions, setSessions] = useState<HuntSession[]>([]);
   const [resultVersion, setResultVersion] = useState(0);
@@ -285,6 +291,8 @@ export function HuntLab() {
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="Analyze" title="Threat Hunt Lab" description="Turn an investigation hypothesis into reviewable queries, evidence, and detection content." />
+
+      {sourceCaseId !== null && <CaseHuntDraft key={sourceCaseId} caseId={sourceCaseId} hasDraft={!!hypothesis.trim()} busy={hunting || loadingSessionId !== null} onApply={setHypothesis} />}
 
       {/* Hunt Input */}
       <div className="oa-panel p-6">

@@ -1152,3 +1152,8 @@ it('explains lexical ranking separately from recorded shared technique evidence'
   expect(screen.getByText('Shared techniques: T1059')).toBeTruthy();
   expect(screen.getByRole('link', { name: /Prior gateway case/ }).getAttribute('href')).toBe('/cases/4');
 });
+
+ it('offers an ID-only router-relative hunt handoff without leaking case text or starting a hunt', async () => {
+  mockLoad(); renderDetail(); const link = await screen.findByRole('link', { name: 'Prepare a hunt hypothesis from this investigation' });
+  expect(link.getAttribute('href')).toBe('/hunt?source_case=7'); expect(mockPost).not.toHaveBeenCalled();
+ });
