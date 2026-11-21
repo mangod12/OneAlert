@@ -204,26 +204,36 @@ export function Compliance() {
   const [statusFilter, setStatusFilter] = useState('');
   const [evidenceTarget, setEvidenceTarget] = useState<{ assessment: Assessment | null; control: Control; initialStatus?: string } | null>(null);
   const [exporting, setExporting] = useState(false);
+  const exportRequest = useRef(0), exportBusy = useRef(false);
+  const [exportError, setExportError] = useState('');
+  useEffect(() => { exportRequest.current += 1; exportBusy.current = false; setExporting(false); setExportError(''); return () => { exportRequest.current += 1; }; }, [selected, controlSearch, statusFilter]);
   const [assessing, setAssessing] = useState(false);
 
   const exportCsv = async () => {
-    if (exporting || selected == null) return;
+    if (exportBusy.current || selected == null) return;
+    exportBusy.current = true; const request = ++exportRequest.current;
+    setExportError('');
     setExporting(true);
     try {
       const res = await apiClient.get('/compliance/export', {
-        params: { framework_id: String(selected) },
+        params: { framework_id: String(selected), ...(controlSearch.trim() ? { query: controlSearch.trim() } : {}), ...(statusFilter ? { status: statusFilter } : {}) },
         responseType: 'blob',
       });
-      const url = URL.createObjectURL(res.data as Blob);
+      if (request !== exportRequest.current) return;
+      if (!(res.data instanceof Blob) || !res.data.type.startsWith('text/csv')) throw new Error('The server did not return compliance CSV. No file was downloaded.');
+      const url = URL.createObjectURL(res.data);
       const link = document.createElement('a');
       link.href = url;
       link.download = `compliance-${selected}.csv`;
-      link.click();
-      URL.revokeObjectURL(url);
+      document.body.appendChild(link);
+      try { link.click(); } finally { link.remove(); URL.revokeObjectURL(url); }
     } catch (err: unknown) {
-      toast(getApiErrorMessage(err, 'The export could not be downloaded.'), 'error');
+      if (request !== exportRequest.current) return;
+      const response = (err as {response?: {data?: unknown}} | null)?.response;
+      if (response?.data instanceof Blob) { try { response.data = JSON.parse(await response.data.text()); } catch { /* Use the standard fallback. */ } }
+      if (request === exportRequest.current) setExportError(getApiErrorMessage(err, 'Compliance export unavailable. No file was downloaded.'));
     } finally {
-      setExporting(false);
+      if (request === exportRequest.current) { exportBusy.current = false; setExporting(false); }
     }
   };
 
@@ -417,6 +427,7 @@ export function Compliance() {
               <input
                 type="text"
                 aria-label="Search controls"
+                maxLength={200}
                 placeholder="Search by ID or title"
                 value={controlSearch}
                 onChange={(e) => setControlSearch(e.target.value)}
@@ -444,6 +455,8 @@ export function Compliance() {
                 {exporting ? 'Exporting...' : 'Export CSV'}
               </button>
             </div>
+            <p className="px-4 pb-3 text-xs text-surface-400">CSV includes all controls matching this framework, title/control-ID search and latest assessment status, up to 5,000 controls. Larger requests are refused without a partial file. Evidence and assessor names are included. This is a new current read of your assessments, not a frozen copy or audit history. Keep the file within an appropriate audience. Changing filters cancels a pending download.</p>
+            {exportError && <p role="alert" className="px-4 pb-3 text-sm text-danger">{exportError}</p>}
             <div role="region" aria-label="Framework controls" tabIndex={0} className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">
             <table className="w-full min-w-[760px] text-sm">
               <thead>

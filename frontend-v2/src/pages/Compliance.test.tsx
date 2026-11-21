@@ -173,7 +173,7 @@ describe('Compliance CSV export', () => {
       return el;
     });
     get.mockImplementation(async (url: string, config?: unknown) => {
-      if (url === '/compliance/export') return { data: new Blob(['csv']) , config };
+      if (url === '/compliance/export') return { data: new Blob(['csv'], {type:'text/csv'}) , config };
       if (url === '/compliance/frameworks') return { data: frameworks };
       if (url === '/compliance/summary') return { data: summaries };
       if (url === '/compliance/frameworks/1/controls') return { data: controls };
@@ -379,4 +379,21 @@ it('selects exact assessment records across history pages and reloads them for c
   await screen.findByText(/1 of 5 recorded fields differ/);
   expect(get.mock.calls.slice(reads).map(call => call[0])).toEqual(['/compliance/assessments/23', '/compliance/assessments/13']);
   expect(post).not.toHaveBeenCalled(); expect(patch).not.toHaveBeenCalled();
+});
+
+it('exports the selected search and latest status, rejecting a stale result after framework change', async()=>{
+  let finish!: (value:unknown)=>void;
+  get.mockImplementation((url:string)=>{if(url==='/compliance/export')return new Promise(resolve=>{finish=resolve;});if(url==='/compliance/frameworks')return Promise.resolve({data:frameworks});if(url==='/compliance/summary')return Promise.resolve({data:summaries});if(url==='/compliance/assessments')return Promise.resolve({data:assessments});return Promise.resolve({data:controls});});
+  URL.createObjectURL=vi.fn();render(<Compliance/>);fireEvent.click(await screen.findByText('NIST CSF'));await screen.findByText('PR.AC-1');
+  fireEvent.change(screen.getByLabelText('Search controls'),{target:{value:' 100%_match '}});fireEvent.change(screen.getByLabelText('Filter controls by status'),{target:{value:'partial'}});fireEvent.click(screen.getByRole('button',{name:'Export CSV'}));
+  expect(get).toHaveBeenCalledWith('/compliance/export',{params:{framework_id:'1',query:'100%_match',status:'partial'},responseType:'blob'});
+  fireEvent.click(screen.getByText('IEC 62443'));await act(async()=>finish({data:new Blob(['csv'],{type:'text/csv'})}));expect(URL.createObjectURL).not.toHaveBeenCalled();
+});
+it('does not save non-CSV compliance output and presents an export failure inline',async()=>{
+  URL.createObjectURL=vi.fn();mockOverview();render(<Compliance/>);fireEvent.click(await screen.findByText('NIST CSF'));await screen.findByText('PR.AC-1');get.mockResolvedValue({data:new Blob(['{}'],{type:'application/json'})});fireEvent.click(screen.getByRole('button',{name:'Export CSV'}));await screen.findByRole('alert');expect(URL.createObjectURL).not.toHaveBeenCalled();
+});
+it('decodes blob limit refusals and cancels an export on unmount',async()=>{
+  let finish!: (value:unknown)=>void;URL.createObjectURL=vi.fn();mockOverview();const view=render(<Compliance/>);fireEvent.click(await screen.findByText('NIST CSF'));await screen.findByText('PR.AC-1');
+  const failure=new Blob(['error'],{type:'application/json'});Object.defineProperty(failure,'text',{value:async()=>JSON.stringify({detail:'No partial CSV was created. Narrow controls.'})});get.mockRejectedValueOnce({isAxiosError:true,response:{data:failure}});fireEvent.click(screen.getByRole('button',{name:'Export CSV'}));await screen.findByText('No partial CSV was created. Narrow controls.');
+  get.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));fireEvent.click(screen.getByRole('button',{name:'Export CSV'}));view.unmount();await act(async()=>finish({data:new Blob(['csv'],{type:'text/csv'})}));expect(URL.createObjectURL).not.toHaveBeenCalled();
 });

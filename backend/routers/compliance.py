@@ -16,10 +16,11 @@ import hmac
 import io
 import json
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import String, cast, or_, select
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy import update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,9 +72,14 @@ async def list_controls(
     return controls
 
 
+COMPLIANCE_EXPORT_LIMIT = 5000
+
+
 @router.get("/export")
 async def export_compliance(
     framework_id: int | None = Query(None, description="Limit the export to one framework"),
+    query: str = Query("", max_length=200),
+    status: Literal["", "compliant", "non_compliant", "partial", "not_applicable", "not_assessed"] = "",
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -81,9 +87,28 @@ async def export_compliance(
     controls_q = select(ComplianceControl)
     if framework_id is not None:
         controls_q = controls_q.where(ComplianceControl.framework_id == framework_id)
+    if query.strip():
+        needle = query.strip().lower()
+        controls_q = controls_q.where(or_(
+            func.lower(ComplianceControl.control_id).contains(needle, autoescape=True),
+            func.lower(ComplianceControl.title).contains(needle, autoescape=True),
+        ))
+    if status:
+        ranked = select(
+            ComplianceAssessment.control_id, ComplianceAssessment.status,
+            func.row_number().over(partition_by=ComplianceAssessment.control_id, order_by=(
+                ComplianceAssessment.assessed_at.desc().nulls_last(), ComplianceAssessment.id.desc()
+            )).label("rank"),
+        ).where(ComplianceAssessment.user_id == current_user.id).subquery()
+        current = select(ranked.c.control_id, ranked.c.status).where(ranked.c.rank == 1).subquery()
+        controls_q = controls_q.outerjoin(current, current.c.control_id == ComplianceControl.id).where(
+            func.coalesce(current.c.status, "not_assessed") == status)
     controls = (await db.execute(
-        controls_q.order_by(ComplianceControl.id).limit(5000)
+        controls_q.order_by(ComplianceControl.id).limit(COMPLIANCE_EXPORT_LIMIT + 1)
     )).scalars().all()
+    if len(controls) > COMPLIANCE_EXPORT_LIMIT:
+        raise HTTPException(status_code=422, detail=f"More than {COMPLIANCE_EXPORT_LIMIT} controls match. "
+                            "Narrow the framework, search or status. No partial CSV was created.")
 
     frameworks = {
         f.id: f
