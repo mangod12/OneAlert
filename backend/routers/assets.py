@@ -112,6 +112,22 @@ def _asset_order_columns():
     }
 
 
+def _asset_filters(user_id, asset_type, vendor, criticality, is_ot, search):
+    """One owner-bound literal scope for both inventory and its CSV."""
+    filters = [Asset.user_id == user_id]
+    for column, value in [(Asset.asset_type, asset_type), (Asset.vendor, vendor), (Asset.criticality, criticality)]:
+        if value:
+            filters.append(column == value)
+    if is_ot is not None:
+        filters.append(Asset.is_ot_asset == is_ot)
+    if search and search.strip():
+        text = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        filters.append(Asset.name.ilike(f"%{text}%", escape="\\") |
+                       Asset.vendor.ilike(f"%{text}%", escape="\\") |
+                       Asset.product.ilike(f"%{text}%", escape="\\"))
+    return filters
+
+
 @router.get("/", response_model=AssetListResponse)
 async def list_assets(
     page: int = Query(1, ge=1, description="Page number"),
@@ -130,31 +146,9 @@ async def list_assets(
     db: AsyncSession = Depends(get_async_db)
 ):
     """List user's assets with pagination and filtering."""
-    # Build query
-    query = select(Asset).where(Asset.user_id == current_user.id)
-    count_query = select(func.count()).select_from(Asset).where(Asset.user_id == current_user.id)  # Base count query
-
-    # Apply filters
-    if vendor:
-        query = query.filter(Asset.vendor == vendor)
-        count_query = count_query.filter(Asset.vendor == vendor) # Apply to count_query as well
-    if criticality:
-        query = query.filter(Asset.criticality == criticality)
-        count_query = count_query.filter(Asset.criticality == criticality) # Apply to count_query as well
-    if asset_type:
-        query = query.filter(Asset.asset_type == asset_type)
-        count_query = count_query.filter(Asset.asset_type == asset_type) # Apply to count_query as well
-    if is_ot is not None:
-        query = query.filter(Asset.is_ot_asset == is_ot)
-        count_query = count_query.filter(Asset.is_ot_asset == is_ot) # Apply to count_query as well
-    if search:
-        search_filter = (
-            Asset.name.ilike(f"%{search}%") |
-            Asset.vendor.ilike(f"%{search}%") |
-            Asset.product.ilike(f"%{search}%")
-        )
-        query = query.where(search_filter)
-        count_query = count_query.where(search_filter)  # Apply search filter to count_query as well
+    filters = _asset_filters(current_user.id, asset_type, vendor, criticality, is_ot, search)
+    query = select(Asset).where(*filters)
+    count_query = select(func.count()).select_from(Asset).where(*filters)
 
     # Get total count
     # Ensure count_query also has user_id filter if needed and is properly formed.
@@ -225,32 +219,29 @@ async def export_assets(
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
 ):
-    """Export the filtered asset inventory as CSV (same filters as the list, max 5000 rows)."""
-    query = select(Asset).where(Asset.user_id == current_user.id)
-
-    if vendor:
-        query = query.filter(Asset.vendor == vendor)
-    if criticality:
-        query = query.filter(Asset.criticality == criticality)
-    if asset_type:
-        query = query.filter(Asset.asset_type == asset_type)
-    if is_ot is not None:
-        query = query.filter(Asset.is_ot_asset == is_ot)
-    if search:
-        query = query.where(
-            Asset.name.ilike(f"%{search}%")
-            | Asset.vendor.ilike(f"%{search}%")
-            | Asset.product.ilike(f"%{search}%")
+    """Export every matching row, or refuse without returning a partial CSV."""
+    filters = _asset_filters(current_user.id, asset_type, vendor, criticality, is_ot, search)
+    query = select(Asset).where(*filters)
+    total = (await db.execute(select(func.count()).select_from(Asset).where(*filters))).scalar_one()
+    if total > 5000:
+        raise HTTPException(
+            status_code=422,
+            detail="Asset export exceeds 5,000 matching assets. Narrow your filters. No partial file was generated.",
         )
 
     if sort == "risk_desc":
         rows = (await db.execute(query)).scalars().all()
         bases = await _risk_base_scores(db, current_user.id, [asset.id for asset in rows])
         rows.sort(key=lambda asset: (-_risk_score(asset, bases.get(asset.id, 0)), asset.name.lower(), asset.id))
-        rows = rows[:5000]
     else:
-        query = query.order_by(*_asset_order_columns()[sort], Asset.id.asc()).limit(5000)
+        query = query.order_by(*_asset_order_columns()[sort], Asset.id.asc()).limit(5001)
         rows = (await db.execute(query)).scalars().all()
+
+    if len(rows) > 5000:
+        raise HTTPException(
+            status_code=422,
+            detail="More than 5,000 matching assets now. Narrow filters and retry. No partial file was generated.",
+        )
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)

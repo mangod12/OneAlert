@@ -222,6 +222,8 @@ describe('Asset type options', () => {
 
 describe('Assets CSV export', () => {
   it('downloads the CSV with the active filters', async () => {
+    const original = get.getMockImplementation()!;
+    get.mockImplementation(async (url, config) => url === '/assets/export' ? { data: new Blob(['id,name\n7,Plant gateway'], { type: 'text/csv' }) } : original(url, config));
     URL.createObjectURL = vi.fn(() => 'blob:assets');
     URL.revokeObjectURL = vi.fn();
     const clicks: string[] = [];
@@ -433,4 +435,44 @@ it('keeps comparison choices across inventory pages and filters, then reads exac
   await screen.findByText(/2 of 23 shown inventory fields differ/);
   expect(get.mock.calls.slice(before).map(call => call[0])).toEqual(['/assets/7', '/assets/29']);
   expect(put).not.toHaveBeenCalled(); expect(remove).not.toHaveBeenCalled(); expect(apiClient.post).not.toHaveBeenCalled();
+});
+
+
+describe('Complete asset CSV safety', () => {
+  it('ignores an old scope after filters change and permits a fresh export', async () => {
+    URL.createObjectURL = vi.fn(() => 'blob:assets'); URL.revokeObjectURL = vi.fn();
+    let finish!: (value: unknown) => void;
+    const original = get.getMockImplementation()!;
+    get.mockImplementation((url, config) => url === '/assets/export' ? new Promise(resolve => { finish = resolve; }) as ReturnType<typeof get> : original(url, config));
+    render(<MemoryRouter><Assets /></MemoryRouter>);
+    await screen.findByText('Plant gateway');
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    expect(screen.getByRole('button', { name: 'Exporting...' })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Search assets'), { target: { value: 'new scope' } });
+    await screen.findByRole('button', { name: 'Export CSV' });
+    await act(async () => finish({ data: new Blob(['id,name'], { type: 'text/csv' }) }));
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    expect(get).toHaveBeenCalledWith('/assets/export', { params: { search: 'new scope', sort: 'created_at_desc' }, responseType: 'blob' });
+  });
+
+  it('rejects a non-CSV response without creating a download', async () => {
+    URL.createObjectURL = vi.fn();
+    const original = get.getMockImplementation()!;
+    get.mockImplementation(async (url, config) => url === '/assets/export' ? { data: new Blob(['error'], { type: 'application/json' }) } : original(url, config));
+    render(<MemoryRouter><Assets /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Export CSV' }));
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'The server did not return asset CSV. No file was downloaded.');
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it('shows a JSON error received as a blob and keeps retry available', async () => {
+    const blob = new Blob(); Object.defineProperty(blob, 'text', { value: async () => JSON.stringify({ detail: 'Too many matching assets. Narrow your filters.' }) });
+    const original = get.getMockImplementation()!;
+    get.mockImplementation(async (url, config) => { if (url === '/assets/export') throw { isAxiosError: true, response: { data: blob, status: 422 } }; return original(url, config); });
+    render(<MemoryRouter><Assets /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Export CSV' }));
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Too many matching assets. Narrow your filters.');
+    expect((screen.getByRole('button', { name: 'Export CSV' }) as HTMLButtonElement).disabled).toBe(false);
+  });
 });
