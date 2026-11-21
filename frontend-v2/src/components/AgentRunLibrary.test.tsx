@@ -57,3 +57,13 @@ it('ignores an old read after applying a newer filter', async () => {
   resolve({ data: { ...data({ query: '', page: 1, size: 20, agent_type: '', run_status: '', model: '' }), records: [{ ...row, result_summary: 'Obsolete read' }] } });
   await waitFor(() => expect(screen.queryByText('Obsolete read')).not.toBeInTheDocument());
 });
+
+it('selects comparison roles across pages without implicit detail reads', async () => {
+  await show(); fireEvent.click(screen.getByRole('button', { name: 'Use run #81 as baseline' }));
+  expect(screen.getByLabelText('Baseline run ID')).toHaveValue('81');
+  fireEvent.click(screen.getByRole('button', { name: 'Next run page' })); await screen.findByText(/Page 2 of 4/);
+  fireEvent.click(screen.getByRole('button', { name: 'Use run #81 as candidate' }));
+  expect(screen.getByLabelText('Baseline run ID')).toHaveValue('81'); expect(screen.getByLabelText('Candidate run ID')).toHaveValue('81');
+  expect(screen.getByRole('button', { name: 'Read both selected runs' })).toBeDisabled();
+  expect(get.mock.calls.every(call => call[0] === '/cases/agents/run-library')).toBe(true);
+});
