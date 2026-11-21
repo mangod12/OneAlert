@@ -96,6 +96,8 @@ export function Validation() {
   const [evidencePage, setEvidencePage] = useState(1);
   const [resultFilter, setResultFilter] = useState<'all' | 'attention' | 'detected'>('all');
   const [runStatusFilter, setRunStatusFilter] = useState('');
+  const [runSearchDraft, setRunSearchDraft] = useState(''), [runQuery, setRunQuery] = useState('');
+  const [runMode, setRunMode] = useState(''), [runSort, setRunSort] = useState('newest');
   const [creating, setCreating] = useState(false);
   const [executing, setExecuting] = useState<number | null>(null);
   const [confirmRunId, setConfirmRunId] = useState<number | null>(null);
@@ -120,7 +122,7 @@ export function Validation() {
     const coverageRead = ++coverageRequest.current;
     setCoverageRetrying(false); setLoading(true);
     const [runsResult, coverageResult] = await Promise.allSettled([
-      apiClient.get('/validation/runs', { params: { page, size: 20, ...(runStatusFilter ? { status: runStatusFilter } : {}) } }),
+      apiClient.get('/validation/runs', { params: { page, size: 20, ...(runStatusFilter ? { status: runStatusFilter } : {}), ...(runQuery ? { query: runQuery } : {}), ...(runMode ? { mode: runMode } : {}), ...(runSort !== 'newest' ? { sort: runSort } : {}) } }),
       apiClient.get('/validation/coverage'),
     ]);
     if (request !== listRequestId.current) return;
@@ -137,7 +139,7 @@ export function Validation() {
     else { setCoverage(null); setCoverageError(getApiErrorMessage(coverageResult.reason, 'Coverage data could not be loaded.')); }
     }
     setLoading(false);
-  }, [runStatusFilter, page]);
+  }, [runStatusFilter, page, runQuery, runMode, runSort]);
 
   const createRun = async () => {
     if (!newRun.name.trim() || newRun.techniques.length === 0) return;
@@ -338,8 +340,17 @@ export function Validation() {
             </select>
           </label>
         </div>
+        <form aria-label="Search validation run history" className="mb-3 flex flex-wrap items-end gap-3" onSubmit={event => { event.preventDefault(); setRunQuery(runSearchDraft.trim()); setPage(1); }}>
+          <label className="min-w-[12rem] flex-1 text-xs text-surface-300">Run ID, name or description<input aria-label="Search validation runs" maxLength={200} value={runSearchDraft} onChange={event => setRunSearchDraft(event.target.value)} className="mt-1 block w-full rounded border border-surface-600 bg-surface-950 p-2 text-sm text-surface-100" /></label>
+          <button type="submit" className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Search run history</button>
+          <label className="text-xs text-surface-300">Saved mode<select aria-label="Filter validation runs by mode" value={runMode} onChange={event => { setRunMode(event.target.value); setPage(1); }} className="mt-1 block rounded border border-surface-600 bg-surface-950 p-2 text-sm"><option value="">All modes</option><option value="dry_run">Dry run</option><option value="lab">Lab</option><option value="production">Production records</option></select></label>
+          <label className="text-xs text-surface-300">Order<select aria-label="Order validation run history" value={runSort} onChange={event => { setRunSort(event.target.value); setPage(1); }} className="mt-1 block rounded border border-surface-600 bg-surface-950 p-2 text-sm"><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label>
+          <button type="button" onClick={() => { setRunSearchDraft(''); setRunQuery(''); setRunMode(''); setRunSort('newest'); setRunStatusFilter(''); setPage(1); }} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-300">Clear run history filters</button>
+        </form>
+        {runSearchDraft.trim() !== runQuery && <p className="mb-3 text-xs text-warning">Run history search draft not applied. Current keyword: {runQuery || 'any'}.</p>}
+        <p className="mb-3 text-xs text-surface-400">History filters search all your saved runs, not just this page. Search is literal and case-insensitive across run IDs, names and descriptions, not step results or control details. Coverage summaries above remain across all runs. Filtering saved modes does not enable production execution, run a test or prove live detection. Open results to review the recorded evidence.</p>
         {loading ? <LoadingSurface label="Loading validation runs" /> : error ? <ErrorState title="Validation unavailable" description={error} action={<RetryButton onClick={fetchRuns} />} /> : runs.length === 0 ? (
-          <EmptyState title="No validation runs" description="Create one to test current detection coverage." />
+          <EmptyState title="No validation runs" description="No saved run matches the applied filters. Clear filters to review all runs." />
         ) : (
           <div className="space-y-3">
             {runs.map(r => (
