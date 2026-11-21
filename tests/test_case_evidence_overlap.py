@@ -124,3 +124,47 @@ def test_empty_comparison_and_self_id_are_honest(context):
                                    {'other_case_id': 0}, {'other_case_id': 2147483648}])
 def test_query_bounds(context, params):
     assert read(context[0], **params).status_code == 422
+
+
+@pytest.mark.parametrize('kind', ['alert', 'event'])
+@pytest.mark.parametrize('relation,expected', [('source_only', [111]), ('other_only', [112])])
+def test_exclusive_sets_return_only_owned_retrievable_exact_ids(context, kind, relation, expected):
+    client, principal = context
+    for user in [1, 2, 3, 4]:
+        principal['id'] = user
+        data = read(client, kind=kind, relation=relation).json()
+        assert data['relation'] == relation and data['total'] == 1
+        assert [row['id'] for row in data['records']] == expected
+        assert all(row['can_open_original'] == (user == 1) for row in data['records'])
+        assert data['shared_count'] == 11 and data['source_count'] == data['other_count'] == 12
+        assert 'Private' not in str(data) and 'payload-not-returned' not in str(data)
+        assert read(client, kind=kind, relation=relation, page=2).json()['records'] == []
+
+
+@pytest.mark.parametrize('kind', ['alert', 'event'])
+def test_exclusive_sets_page_independently_when_other_set_is_empty(context, kind):
+    client, _ = context
+    pages = [read(client, kind=kind, relation='source_only', other_case_id=11, page=p).json() for p in [1, 2]]
+    assert all(p['total'] == 12 and p['shared_count'] == 0 for p in pages)
+    assert [r['id'] for p in pages for r in p['records']] == list(range(111, 99, -1))
+    empty = read(client, kind=kind, relation='other_only', other_case_id=11).json()
+    assert empty['total'] == 0 and not empty['records']
+
+
+@pytest.mark.parametrize('relation', ['shared', 'source_only', 'other_only'])
+def test_all_sets_require_both_cases_and_preserve_each_owner_boundary(context, relation):
+    client, principal = context
+    assert read(client, relation=relation, other_case_id=9).status_code == 404
+    principal['id'] = 2
+    data = read(client, relation=relation, other_case_id=10).json()
+    expected = 12 if relation == 'source_only' else 1 if relation == 'other_only' else 0
+    assert data['total'] == expected
+    assert all(not r['can_open_original'] for r in data['records'])
+    if relation == 'other_only':
+        assert [r['id'] for r in data['records']] == [900]
+    principal['id'] = 5
+    assert read(client, relation=relation).status_code == 404
+
+
+def test_relation_parameter_rejects_unknown_set(context):
+    assert read(context[0], relation='all').status_code == 422
