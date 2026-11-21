@@ -109,3 +109,47 @@ async def export_linked_case_evidence(
         'Content-Disposition': f'attachment; filename=case-{case.id}-linked-{kind}s.csv',
         'Cache-Control': 'no-store', 'X-Evidence-Record-Count': str(len(rows)),
     })
+
+
+@router.get('/{case_id}/evidence-overlap')
+async def compare_case_evidence(
+    case_id: int, other_case_id: int = Query(..., ge=1, le=2147483647),
+    kind: Literal['alert', 'event'] = 'alert',
+    page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100),
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    """Compare exact accessible evidence IDs, never infer a shared incident from text."""
+    source = (await db.execute(visible_cases(case_id, current_user))).scalar_one_or_none()
+    other = (await db.execute(visible_cases(other_case_id, current_user))).scalar_one_or_none()
+    if source is None or other is None:
+        raise HTTPException(status_code=404, detail='Investigation not found')
+    if case_id == other_case_id:
+        raise HTTPException(status_code=422, detail='Choose a different investigation to compare.')
+    model, link, reference = (Alert, CaseAlert, CaseAlert.alert_id) if kind == 'alert' else (
+        SecurityEvent, CaseEvent, CaseEvent.event_id)
+
+    def available_ids(case):
+        return select(model.id).where(model.user_id == case.user_id,
+                                      model.id.in_(select(reference).where(link.case_id == case.id)))
+
+    source_ids, other_ids = available_ids(source), available_ids(other)
+    source_count = (await db.execute(select(func.count()).select_from(source_ids.subquery()))).scalar_one()
+    other_count = (await db.execute(select(func.count()).select_from(other_ids.subquery()))).scalar_one()
+    shared = [model.id.in_(source_ids), model.id.in_(other_ids)]
+    shared_count = (await db.execute(select(func.count()).select_from(model).where(*shared))).scalar_one()
+    timestamp = model.created_at if kind == 'alert' else model.timestamp
+    rows = (await db.execute(select(model).where(*shared)
+        .order_by(timestamp.desc().nulls_last(), model.id.desc())
+        .offset((page - 1) * size).limit(size))).scalars().all()
+    records = [{'id': row.id, 'label': row.title if kind == 'alert' else row.signature,
+                'severity': row.severity.value if hasattr(row.severity, 'value') else row.severity,
+                'recorded_at': getattr(row, 'created_at' if kind == 'alert' else 'timestamp'),
+                'can_open_original': row.user_id == current_user.id} for row in rows]
+    return {'case_id': source.id, 'case_title': source.title,
+            'other_case_id': other.id, 'other_case_title': other.title, 'kind': kind,
+            'source_count': source_count, 'other_count': other_count, 'shared_count': shared_count,
+            'source_only_count': source_count - shared_count, 'other_only_count': other_count - shared_count,
+            'page': page, 'size': size, 'records': records, 'retrieved_at': datetime.now(UTC).isoformat(),
+            'scope': 'Exact shared saved record IDs, not text similarity or proof of the same incident. '
+                     'Counts include only currently retrievable records belonging to each investigation owner. '
+                     'Unavailable or wrong-owner links are excluded. No links or investigation state were changed.'}
