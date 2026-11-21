@@ -30,7 +30,7 @@ describe('Full technique reference explorer', () => {
     expect(screen.getByText(/Reference search draft not applied/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Search technique references' }));
     await waitFor(() => expect(get).toHaveBeenLastCalledWith('/mitre/techniques/T1190/reference-evidence', { params: { page: 1, size: 10, kind: 'detection_rules', query: '100%_safe', rule_state: 'disabled' } }));
-    expect(screen.getByRole('link', { name: 'Open Hunt Lab to find this saved rule by name' }).getAttribute('href')).toBe('/hunt');
+    expect(screen.getByRole('link', { name: /Open exact saved rule/  }).getAttribute('href')).toBe('/hunt?rule=25');
     fireEvent.click(screen.getByRole('button', { name: 'Clear reference filters' }));
     await waitFor(() => expect(get).toHaveBeenLastCalledWith('/mitre/techniques/T1190/reference-evidence', { params: { page: 1, size: 10, kind: 'detection_rules', query: '', rule_state: 'all' } }));
   });

@@ -200,6 +200,21 @@ async def create_detection_rule(
     return DetectionRuleResponse.model_validate(detection)
 
 
+@router.get("/detections/{rule_id}", response_model=DetectionRuleResponse)
+async def get_detection_rule(
+    rule_id: int,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Read one owned saved rule without enabling, testing or executing it."""
+    rule = (await db.execute(select(DetectionRule).where(
+        DetectionRule.id == rule_id, DetectionRule.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Detection rule not found")
+    return DetectionRuleResponse.model_validate(rule)
+
+
 @router.patch("/detections/{rule_id}", response_model=DetectionRuleResponse)
 async def update_detection_rule(
     rule_id: int,
