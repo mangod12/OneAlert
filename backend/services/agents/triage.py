@@ -13,6 +13,7 @@ from backend.models.security_event import SecurityEvent
 from backend.services.agents.base import BaseAgent
 from backend.services.ai.provider import AIMessage
 from backend.services.ai.router import TASK_TRIAGE, get_ai_provider
+from backend.services.triage_coverage import ALERT_CONTEXT_LIMIT, EVENT_CONTEXT_LIMIT, triage_coverage
 from backend.services.triage_intake import ALERT_BATCH_LIMIT, EVENT_BATCH_LIMIT, triage_predicates
 from backend.services.triage_output import validate_triage_output
 
@@ -196,6 +197,7 @@ class TriageAgent(BaseAgent):
         context = self._build_llm_context(alerts, events)
 
         start = time.time()
+        coverage = triage_coverage(alerts, events, "ai_sample")
         try:
             provider = get_ai_provider(TASK_TRIAGE)
             response = await provider.complete_json([
@@ -203,6 +205,7 @@ class TriageAgent(BaseAgent):
                 AIMessage(role="user", content=context),
             ])
             self._last_model = provider.model
+            coverage = triage_coverage(alerts, events, "ai_sample", provider.model)
             duration = int((time.time() - start) * 1000)
 
             await self.log_step(
@@ -217,6 +220,7 @@ class TriageAgent(BaseAgent):
             # Fallback: create case without LLM
             logger.warning(f"LLM analysis failed, using rule-based fallback: {e}")
             response = self._rule_based_fallback(alerts, events)
+            coverage = triage_coverage(alerts, events, "rule_based_fallback")
             await self.log_step(
                 "rule_based_fallback",
                 "LLM unavailable, used rule-based analysis",
@@ -260,7 +264,8 @@ class TriageAgent(BaseAgent):
             entry_type="ai_analysis",
             content=response.get("attack_narrative") or response.get("summary") or "No narrative was recorded.",
             source="agent",
-            metadata_json={"confidence": response.get("confidence"), "model": getattr(self, '_last_model', 'unknown')},
+            metadata_json={"confidence": response.get("confidence"), "model": coverage["model"],
+                           "triage_coverage": coverage},
         ))
 
         if response.get("recommended_actions"):
@@ -286,14 +291,20 @@ class TriageAgent(BaseAgent):
 
     def _build_llm_context(self, alerts: list, events: list) -> str:
         """Build a concise context string for LLM analysis."""
-        parts = []
+        parts = [
+            f"Correlation candidate contains {len(alerts)} alerts and {len(events)} events. "
+            f"Only the first {min(len(alerts), ALERT_CONTEXT_LIMIT)} alert summaries and "
+            f"{min(len(events), EVENT_CONTEXT_LIMIT)} event summaries are provided below. "
+            "These are selected fields, not full records or raw payloads. Base conclusions only on "
+            "the shown inputs; do not claim that omitted evidence was reviewed or that shared IPs prove an incident."
+        ]
 
         if alerts:
             parts.append("=== ALERTS ===")
             parts.extend(
                 f"- [{a.severity}] {a.title} | CVE: {a.cve_id or 'N/A'} | "
                 f"Asset ID: {a.asset_id} | CVSS: {a.cvss_score or 'N/A'}"
-                for a in alerts[:20]
+                for a in alerts[:ALERT_CONTEXT_LIMIT]
             )
 
         if events:
@@ -302,7 +313,7 @@ class TriageAgent(BaseAgent):
                 f"- [{e.severity}] {e.event_type} | {e.source_ip}:{e.source_port or ''} → "
                 f"{e.dest_ip}:{e.dest_port or ''} | "
                 f"sig: {e.signature or 'N/A'} | cat: {e.category or 'N/A'}"
-                for e in events[:50]
+                for e in events[:EVENT_CONTEXT_LIMIT]
             )
 
         return "\n".join(parts)
