@@ -1,6 +1,7 @@
 """Paged read-only evidence linked to a visible investigation, without orphan-reference disclosure."""
 import csv
 import io
+import json
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -120,20 +121,8 @@ async def compare_case_evidence(
     current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
 ):
     """Compare exact accessible evidence IDs, never infer a shared incident from text."""
-    source = (await db.execute(visible_cases(case_id, current_user))).scalar_one_or_none()
-    other = (await db.execute(visible_cases(other_case_id, current_user))).scalar_one_or_none()
-    if source is None or other is None:
-        raise HTTPException(status_code=404, detail='Investigation not found')
-    if case_id == other_case_id:
-        raise HTTPException(status_code=422, detail='Choose a different investigation to compare.')
-    model, link, reference = (Alert, CaseAlert, CaseAlert.alert_id) if kind == 'alert' else (
-        SecurityEvent, CaseEvent, CaseEvent.event_id)
-
-    def available_ids(case):
-        return select(model.id).where(model.user_id == case.user_id,
-                                      model.id.in_(select(reference).where(link.case_id == case.id)))
-
-    source_ids, other_ids = available_ids(source), available_ids(other)
+    source, other, model, source_ids, other_ids = await _comparison_scope(
+        db, case_id, other_case_id, current_user, kind)
     source_count = (await db.execute(select(func.count()).select_from(source_ids.subquery()))).scalar_one()
     other_count = (await db.execute(select(func.count()).select_from(other_ids.subquery()))).scalar_one()
     shared = [model.id.in_(source_ids), model.id.in_(other_ids)]
@@ -160,3 +149,69 @@ async def compare_case_evidence(
             'scope': 'Exact saved record ID sets, not text similarity or proof of the same incident. '
                      'Counts include only currently retrievable records belonging to each investigation owner. '
                      'Unavailable or wrong-owner links are excluded. No links or investigation state were changed.'}
+
+
+async def _comparison_scope(db, case_id, other_case_id, current_user, kind):
+    source = (await db.execute(visible_cases(case_id, current_user))).scalar_one_or_none()
+    other = (await db.execute(visible_cases(other_case_id, current_user))).scalar_one_or_none()
+    if source is None or other is None:
+        raise HTTPException(status_code=404, detail='Investigation not found')
+    if case_id == other_case_id:
+        raise HTTPException(status_code=422, detail='Choose a different investigation to compare.')
+    model, link, reference = (Alert, CaseAlert, CaseAlert.alert_id) if kind == 'alert' else (
+        SecurityEvent, CaseEvent, CaseEvent.event_id)
+
+    def available_ids(case):
+        return select(model.id).where(model.user_id == case.user_id,
+                                      model.id.in_(select(reference).where(link.case_id == case.id)))
+
+    source_ids, other_ids = available_ids(source), available_ids(other)
+    return source, other, model, source_ids, other_ids
+
+
+@router.get('/{case_id}/evidence-overlap/export')
+async def export_case_evidence_comparison(
+    case_id: int, other_case_id: int = Query(..., ge=1, le=2147483647),
+    kind: Literal['alert', 'event'] = 'alert',
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    """Export all three exact ID sets from one bounded evidence query, never page stitching."""
+    source, other, model, source_ids, other_ids = await _comparison_scope(
+        db, case_id, other_case_id, current_user, kind)
+    in_source, in_other = model.id.in_(source_ids), model.id.in_(other_ids)
+    timestamp = model.created_at if kind == 'alert' else model.timestamp
+    label = model.title if kind == 'alert' else model.signature
+    rows = (await db.execute(select(model.id, label, model.severity, timestamp,
+                                   model.user_id, in_source, in_other)
+        .where(or_(in_source, in_other)).order_by(timestamp.desc().nulls_last(), model.id.desc())
+        .limit(EXPORT_LIMIT + 1))).all()
+    if len(rows) > EXPORT_LIMIT:
+        raise HTTPException(status_code=413, detail=(
+            f'Comparison exceeds {EXPORT_LIMIT} distinct retrievable records. '
+            'No partial file was generated. Export linked evidence separately with narrower filters.'))
+    groups = {'shared': [], 'source_only': [], 'other_only': []}
+    for identity, text, severity, recorded, owner_id, source_member, other_member in rows:
+        group = 'shared' if source_member and other_member else 'source_only' if source_member else 'other_only'
+        groups[group].append({'id': identity, 'label': text,
+            'severity': severity.value if hasattr(severity, 'value') else severity,
+            'recorded_at': recorded.isoformat() if recorded else None,
+            'can_open_original': owner_id == current_user.id})
+    counts = {name: len(records) for name, records in groups.items()}
+    document = {'format': 'onealert_case_evidence_comparison_v1',
+        'exported_at': datetime.now(UTC).isoformat(), 'kind': kind,
+        'case_id': source.id, 'case_title': source.title,
+        'other_case_id': other.id, 'other_case_title': other.title,
+        'source_count': counts['shared'] + counts['source_only'],
+        'other_count': counts['shared'] + counts['other_only'],
+        'record_count': len(rows), 'set_counts': counts, 'records': groups,
+        'scope': 'Exact currently retrievable linked record IDs, not text similarity or proof of a common incident. '
+                 'All three sets use one bounded evidence query. Missing and wrong-owner links are excluded. '
+                 'Only labels, severity and recorded time are exported, not original payloads. '
+                 'This is an export-time read, not an immutable historical version or a copy of the displayed page. '
+                 'No links, permissions or investigation state were changed. Review sensitive metadata before sharing.'}
+    return Response(content=json.dumps(document, ensure_ascii=False, indent=2) + '\n',
+        media_type='application/json', headers={
+            'Content-Disposition': (
+                f'attachment; filename=case-{source.id}-vs-{other.id}-{kind}-evidence-comparison.json'),
+            'Cache-Control': 'no-store', 'X-Evidence-Record-Count': str(len(rows)),
+        })
