@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router-dom';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
@@ -29,7 +30,7 @@ it('ignores a prior scope response after a new applied search', async () => {
   get.mockResolvedValueOnce({ data: { ...snapshot, search: 'new', versions: [], total: 0 } }); view.rerender(<ComponentVersionEvidence scope={{ ...scope, search: 'new' }} onBrowseVersion={vi.fn()} />); await screen.findByText(/No matching saved version groups/); await act(async () => finish({ data: snapshot })); expect(screen.queryByText('Recorded version: 3.0')).toBeNull();
 });
 it('uses applied search not a draft when selecting a recorded version into component rows', async () => {
-  get.mockImplementation(async (url, config) => { const params = config?.params as object; return { data: String(url).endsWith('/versions') ? { ...snapshot, ...params } : { ...params, records: [], total: 0, asset_count: 0, document_count: 0 } }; }); render(<SbomComponentSearch />);
+  get.mockImplementation(async (url, config) => { const params = config?.params as object; return { data: String(url).endsWith('/versions') ? { ...snapshot, ...params } : { ...params, records: [], total: 0, asset_count: 0, document_count: 0 } }; }); render(<MemoryRouter><SbomComponentSearch /></MemoryRouter>);
   fireEvent.change(screen.getByLabelText('Cross-asset component search'), { target: { value: 'openssl' } }); fireEvent.click(screen.getByRole('button', { name: 'Search retained documents' })); await screen.findByText(/No saved component rows/);
   fireEvent.change(screen.getByLabelText('Cross-asset component search'), { target: { value: 'unapplied' } }); fireEvent.click(screen.getByRole('button', { name: 'Group by recorded version' })); await screen.findByText('Recorded version: 3.0'); fireEvent.click(screen.getByRole('button', { name: 'Browse saved rows with version 3.0' }));
   await waitFor(() => expect(get).toHaveBeenLastCalledWith('/sbom/component-search', { params: { search: 'openssl', version: '3.0', vulnerable_only: false, page: 1, size: 10 } })); expect(screen.getByText(/Draft search not applied/)).toBeTruthy();

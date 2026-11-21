@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom';
 import { ComponentVersionEvidence } from '../components/ComponentVersionEvidence';
 import { ComponentAssetImpact } from '../components/ComponentAssetImpact';
 import { useEffect, useRef, useState } from 'react';
@@ -9,13 +10,32 @@ interface Snapshot { scoped_asset_id?: number | null; scoped_asset_name?: string
 const value = (text: unknown) => text === null || text === undefined || text === '' ? 'Not recorded' : String(text);
 const positive = (value: number) => Number.isSafeInteger(value) && value > 0;
 const count = (value: number) => Number.isSafeInteger(value) && value >= 0;
+type DisplayMode = 'records' | 'assets' | 'versions';
+interface InitialSearch { scope: { search: string; version: string; vulnerable_only: boolean } | null; mode: DisplayMode; asset: number | null; invalid: boolean }
+function readSearch(params: URLSearchParams): InitialSearch {
+  const blank: InitialSearch = { scope: null, mode: 'records', asset: null, invalid: false };
+  const fields = ['search', 'version', 'vulnerable', 'view', 'asset'];
+  if (!fields.some(field => params.has(field))) return blank;
+  const invalid = { ...blank, invalid: true };
+  if (fields.some(field => params.getAll(field).length > 1)) return invalid;
+  const search = params.get('search') ?? '', version = params.get('version') ?? '';
+  const vulnerable = params.get('vulnerable'), mode = params.get('view') ?? 'records', asset = params.get('asset');
+  if (!search.trim() || search.length > 200 || version.length > 200 || (vulnerable !== null && vulnerable !== '0' && vulnerable !== '1') || !['records', 'assets', 'versions'].includes(mode)) return invalid;
+  if (asset !== null && (mode !== 'records' || !/^[1-9]\d*$/.test(asset) || !Number.isSafeInteger(Number(asset)) || Number(asset) > 2147483647)) return invalid;
+  return { scope: { search: search.trim(), version: version.trim(), vulnerable_only: vulnerable === '1' }, mode: mode as DisplayMode, asset: asset === null ? null : Number(asset), invalid: false };
+}
 export function SbomComponentSearch() {
-  const [query, setQuery] = useState(''), [version, setVersion] = useState(''), [vulnerable, setVulnerable] = useState(false);
-  const [applied, setApplied] = useState<{ search: string; version: string; vulnerable_only: boolean } | null>(null), [page, setPage] = useState(1), [retry, setRetry] = useState(0);
+  const [params] = useSearchParams();
+  return <ComponentSearchWorkspace key={params.toString()} initial={readSearch(params)} />;
+}
+function ComponentSearchWorkspace({ initial }: { initial: InitialSearch }) {
+  const [query, setQuery] = useState(initial.scope?.search ?? ''), [version, setVersion] = useState(initial.scope?.version ?? ''), [vulnerable, setVulnerable] = useState(initial.scope?.vulnerable_only ?? false);
+  const [applied, setApplied] = useState<{ search: string; version: string; vulnerable_only: boolean } | null>(initial.scope), [page, setPage] = useState(1), [retry, setRetry] = useState(0);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<'records' | 'assets' | 'versions'>('records');
-  const request = useRef(0);
-  const [scopedAsset, setScopedAsset] = useState<{ id: number; name: string } | null>(null);
+  const [mode, setMode] = useState<DisplayMode>(initial.mode);
+  const request = useRef(0), copyRequest = useRef(0);
+  const [scopedAsset, setScopedAsset] = useState<{ id: number; name: string } | null>(initial.asset === null ? null : { id: initial.asset, name: 'Loading current owned asset name' });
+  const [invalidLink, setInvalidLink] = useState(initial.invalid), [copyStatus, setCopyStatus] = useState('');
   useEffect(() => {
     const id = ++request.current; setSnapshot(null); setError('');
     if (!applied || mode !== 'records') { setLoading(false); return; }
@@ -27,18 +47,33 @@ export function SbomComponentSearch() {
     }).catch(err => { if (id === request.current) setError(getApiErrorMessage(err, 'Recorded components could not be searched.')); }).finally(() => { if (id === request.current) setLoading(false); });
     return () => { request.current += 1; };
   }, [applied, page, retry, mode, scopedAsset]);
+  const copySearch = async () => {
+    if (!applied) return;
+    const url = new URL('/app/sbom/components', window.location.origin);
+    url.searchParams.set('search', applied.search);
+    if (applied.version) url.searchParams.set('version', applied.version);
+    if (applied.vulnerable_only) url.searchParams.set('vulnerable', '1');
+    if (mode !== 'records') url.searchParams.set('view', mode);
+    if (mode === 'records' && scopedAsset) url.searchParams.set('asset', String(scopedAsset.id));
+    const id = ++copyRequest.current; setCopyStatus('');
+    try { await navigator.clipboard.writeText(url.toString()); if (id !== copyRequest.current) return; setCopyStatus('Applied component search link copied. It grants no access and reruns current saved evidence, not this result snapshot.'); }
+    catch { if (id !== copyRequest.current) return; setCopyStatus('Copy unavailable. Your applied search is unchanged.'); }
+  };
+  useEffect(() => { copyRequest.current += 1; setCopyStatus(''); return () => { copyRequest.current += 1; }; }, [applied, mode, scopedAsset]);
   const draft = !!applied && (query.trim() !== applied.search || version.trim() !== applied.version || vulnerable !== applied.vulnerable_only);
   return <div className="space-y-5">
     <PageHeader eyebrow="Observe" title="Find recorded components" description="Search saved software evidence across your retained SBOM documents and managed assets." />
     <a href="/app/sbom" className="inline-block text-sm text-primary-300">Back to SBOM documents</a>
     <p className="text-sm text-surface-400">All retained documents are searched, including older uploads. Repeated components and multiple versions can describe the same asset at different times. A match is saved evidence, not proof of current installation, exploitability or a new vulnerability scan. No documents are treated as the latest authoritative inventory.</p>
-    <form className="oa-panel flex flex-wrap items-end gap-3 p-4" onSubmit={event => { event.preventDefault(); if (!query.trim()) return; setScopedAsset(null); setApplied({ search: query.trim(), version: version.trim(), vulnerable_only: vulnerable }); setPage(1); setRetry(n => n + 1); }}>
+    {invalidLink && <p role="alert" className="rounded border border-danger/40 p-3 text-sm text-danger">This component search link is invalid or ambiguous. No search was run. Submit a new search to continue without silently broadening its scope.</p>}
+    <form className="oa-panel flex flex-wrap items-end gap-3 p-4" onSubmit={event => { event.preventDefault(); if (!query.trim()) return; setInvalidLink(false); setCopyStatus(''); setScopedAsset(null); setApplied({ search: query.trim(), version: version.trim(), vulnerable_only: vulnerable }); setPage(1); setRetry(n => n + 1); }}>
       <label className="min-w-0 text-xs text-surface-300">Name, supplier, PURL or CPE<input required aria-label="Cross-asset component search" maxLength={200} value={query} onChange={event => setQuery(event.target.value)} className="mt-1 block w-full rounded border border-surface-600 bg-surface-950 p-2" /></label>
       <label className="min-w-0 text-xs text-surface-300">Exact recorded version (optional)<input aria-label="Exact recorded component version" maxLength={200} value={version} onChange={event => setVersion(event.target.value)} className="mt-1 block w-full rounded border border-surface-600 bg-surface-950 p-2" /></label>
       <label className="flex items-start gap-2 text-xs text-surface-300"><input type="checkbox" checked={vulnerable} onChange={event => setVulnerable(event.target.checked)} />Recorded vulnerability count greater than zero</label>
       <button type="submit" disabled={!query.trim()} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300 disabled:opacity-40">Search retained documents</button>
     </form>
     {applied && <div role="group" aria-label="Component results display" className="flex flex-wrap gap-3 text-xs"><button type="button" aria-pressed={mode === 'records'} onClick={() => { setMode('records'); setPage(1); }} className="rounded border border-surface-600 px-3 py-2 text-primary-300 aria-pressed:border-primary-400 aria-pressed:bg-primary-500/10 aria-pressed:text-primary-200">Show component rows</button><button type="button" aria-pressed={mode === 'assets'} onClick={() => { setScopedAsset(null); setMode('assets'); setPage(1); }} className="rounded border border-surface-600 px-3 py-2 text-primary-300 aria-pressed:border-primary-400 aria-pressed:bg-primary-500/10 aria-pressed:text-primary-200">Group matching records by asset</button><button type="button" aria-pressed={mode === 'versions'} onClick={() => { setScopedAsset(null); setMode('versions'); setPage(1); }} className="rounded border border-surface-600 px-3 py-2 text-primary-300 aria-pressed:border-primary-400 aria-pressed:bg-primary-500/10">Group by recorded version</button></div>}
+    {applied && <section aria-label="Component search handoff" className="space-y-2 text-xs text-surface-400"><button type="button" onClick={() => void copySearch()} className="rounded border border-surface-600 px-3 py-2 text-primary-300">Copy applied component search link</button><p>The link includes your applied search text, exact version, vulnerability filter, display and any exact asset scope. It excludes draft edits and pagination. Only share it where those query details belong. Opening it requires access and reads current saved evidence again.</p>{copyStatus && <p role="status">{copyStatus}</p>}</section>}
     {draft && <p role="status" className="text-sm text-warning">Draft search not applied. Results still use the last submitted search.</p>}
     {!applied && <p className="text-sm text-surface-400">Enter a component name, supplier or identifier to search all your retained documents, beyond the SBOM list page.</p>}
     {mode === 'assets' && applied && <ComponentAssetImpact key={JSON.stringify(applied) + retry} scope={applied} onBrowseAsset={(id, name) => { setScopedAsset({ id, name }); setMode('records'); setPage(1); }} />}
