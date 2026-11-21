@@ -1,11 +1,14 @@
 """Incident correlation: groups active alerts on shared assets into incidents."""
 
+import csv
 import hashlib
+import io
 import json
 import secrets
-from datetime import date
+from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import String, cast, func, literal, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +22,7 @@ from backend.models.case import Case, CaseAlert
 from backend.models.network_connection import NetworkConnection
 from backend.models.user import User
 from backend.services.audit import add_audit_log
+from backend.services.csv_export import spreadsheet_safe_row
 from backend.services.sla import sla_due_date
 
 router = APIRouter()
@@ -278,42 +282,8 @@ async def incident_timeline(
     db: AsyncSession = Depends(get_async_db),
 ):
     """Unified timeline for an incident: alert creation and field changes, newest first."""
-    asset = (await db.execute(
-        select(Asset).where(Asset.id == asset_id, Asset.user_id == current_user.id)
-    )).scalar_one_or_none()
-    if asset is None:
-        raise HTTPException(status_code=404, detail="Asset not found")
-
-    # Keep owner scope on both sides of the union. Filter and page in SQL, so
-    # older evidence is discoverable without loading every alert and audit row.
-    creations = select(
-        literal("alert_created").label("kind"), Alert.id.label("alert_id"),
-        Alert.title.label("title"), (Alert.severity + " severity").label("detail"),
-        Alert.created_at.label("timestamp"), literal(0).label("source"),
-        Alert.id.label("event_id"),
-    ).where(Alert.asset_id == asset_id, Alert.user_id == current_user.id)
-    changes = select(
-        AuditLog.action.label("kind"), Alert.id.label("alert_id"),
-        Alert.title.label("title"), AuditLog.detail.label("detail"),
-        AuditLog.timestamp.label("timestamp"), literal(1).label("source"),
-        AuditLog.id.label("event_id"),
-    ).join(Alert, AuditLog.target_id == Alert.id).where(
-        Alert.asset_id == asset_id, Alert.user_id == current_user.id,
-        AuditLog.user_id == current_user.id, AuditLog.target_type == "alert",
-    )
-    evidence = union_all(creations, changes).subquery()
+    asset, evidence, predicates = await _timeline_scope(db, current_user.id, asset_id, search, kind)
     kinds = (await db.execute(select(evidence.c.kind).distinct().order_by(evidence.c.kind))).scalars().all()
-    predicates = []
-    if kind:
-        predicates.append(evidence.c.kind == kind)
-    if search and search.strip():
-        term = search.strip()
-        predicates.append(or_(
-            evidence.c.title.icontains(term, autoescape=True),
-            evidence.c.detail.icontains(term, autoescape=True),
-            evidence.c.kind.icontains(term, autoescape=True),
-            cast(evidence.c.alert_id, String).icontains(term, autoescape=True),
-        ))
     total = (await db.execute(
         select(func.count()).select_from(evidence).where(*predicates)
     )).scalar_one()
@@ -332,3 +302,82 @@ async def incident_timeline(
         "asset_id": asset_id, "asset_name": asset.name, "events": events,
         "total": total, "page": page, "page_size": page_size, "kinds": kinds,
     }
+
+
+async def _timeline_scope(db, user_id, asset_id, search, kind):
+    asset = (await db.execute(
+        select(Asset).where(Asset.id == asset_id, Asset.user_id == user_id)
+    )).scalar_one_or_none()
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    # Keep owner scope on both sides of the union. Filter and page in SQL, so
+    # older evidence is discoverable without loading every alert and audit row.
+    creations = select(
+        literal("alert_created").label("kind"), Alert.id.label("alert_id"),
+        Alert.title.label("title"), (Alert.severity + " severity").label("detail"),
+        Alert.created_at.label("timestamp"), literal(0).label("source"),
+        Alert.id.label("event_id"),
+    ).where(Alert.asset_id == asset_id, Alert.user_id == user_id)
+    changes = select(
+        AuditLog.action.label("kind"), Alert.id.label("alert_id"),
+        Alert.title.label("title"), AuditLog.detail.label("detail"),
+        AuditLog.timestamp.label("timestamp"), literal(1).label("source"),
+        AuditLog.id.label("event_id"),
+    ).join(Alert, AuditLog.target_id == Alert.id).where(
+        Alert.asset_id == asset_id, Alert.user_id == user_id,
+        AuditLog.user_id == user_id, AuditLog.target_type == "alert",
+    )
+    evidence = union_all(creations, changes).subquery()
+    predicates = []
+    if kind:
+        predicates.append(evidence.c.kind == kind)
+    if search and search.strip():
+        term = search.strip()
+        predicates.append(or_(
+            evidence.c.title.icontains(term, autoescape=True),
+            evidence.c.detail.icontains(term, autoescape=True),
+            evidence.c.kind.icontains(term, autoescape=True),
+            cast(evidence.c.alert_id, String).icontains(term, autoescape=True),
+        ))
+    return asset, evidence, predicates
+
+
+INCIDENT_HISTORY_EXPORT_LIMIT = 10000
+
+
+@router.get('/{asset_id}/timeline/export')
+async def export_incident_timeline(
+    asset_id: int, search: str | None = Query(None, max_length=200),
+    kind: str | None = Query(None, max_length=100),
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_async_db),
+):
+    """Export matching owned alert history without a partial result or raw payloads."""
+    asset, evidence, predicates = await _timeline_scope(db, current_user.id, asset_id, search, kind)
+    rows = (await db.execute(select(evidence).where(*predicates).order_by(
+        evidence.c.timestamp.desc().nulls_last(), evidence.c.source.desc(), evidence.c.event_id.desc(),
+    ).limit(INCIDENT_HISTORY_EXPORT_LIMIT + 1))).mappings().all()
+    if len(rows) > INCIDENT_HISTORY_EXPORT_LIMIT:
+        raise HTTPException(status_code=413, detail=(
+            f'Too many matching history records. Narrow the filters to at most {INCIDENT_HISTORY_EXPORT_LIMIT}; '
+            'no partial file was generated.'))
+    exported = datetime.now(UTC).isoformat()
+    scope = ('Current owner-scoped alert history, including resolved alerts. Not a frozen snapshot or raw payload. '
+             'Creation titles and severity reflect current alert values; change details are saved audit text. '
+             'Keep private; downloaded files have no application access controls.')
+    output = io.StringIO(newline='')
+    writer = csv.writer(output)
+    writer.writerow(['asset_id', 'asset_name', 'applied_search', 'applied_kind', 'exported_at', 'record_count',
+                     'record_scope', 'source', 'source_record_id', 'kind', 'alert_id', 'current_alert_title',
+                     'recorded_detail', 'recorded_at'])
+    for row in rows:
+        writer.writerow(spreadsheet_safe_row([
+            asset.id, asset.name, (search or '').strip(), kind or '', exported, len(rows), scope,
+            'alert_creation' if row['source'] == 0 else 'alert_audit', row['event_id'], row['kind'],
+            row['alert_id'], row['title'], row['detail'],
+            row['timestamp'].isoformat() if row['timestamp'] else None,
+        ]))
+    return Response(content=output.getvalue(), media_type='text/csv', headers={
+        'Content-Disposition': f'attachment; filename=asset-{asset_id}-incident-history.csv',
+        'Cache-Control': 'no-store', 'X-Evidence-Record-Count': str(len(rows)),
+    })

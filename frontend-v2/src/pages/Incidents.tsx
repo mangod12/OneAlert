@@ -1,3 +1,4 @@
+import { IncidentHistoryExport } from '../components/IncidentHistoryExport';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Download, Siren } from 'lucide-react';
@@ -88,6 +89,7 @@ function IncidentTimeline({ assetId }: { assetId: number }) {
         <select aria-label="Timeline event kind" value={kind} onChange={event => { setKind(event.target.value); setPage(1); }} className="max-w-full rounded border border-surface-600 bg-surface-800 px-2 py-1.5 text-xs text-surface-200"><option value="">All event kinds</option>{kinds.map(value => <option key={value} value={value}>{kindLabels[value] ?? value}</option>)}</select>
         {(appliedSearch || kind) && <button type="button" onClick={() => { setSearch(''); setAppliedSearch(''); setKind(''); setPage(1); }} className="rounded border border-surface-600 px-2.5 py-1.5 text-xs text-surface-200">Clear history filters</button>}
       </form>
+      <IncidentHistoryExport key={`${assetId}:${appliedSearch}:${kind}`} assetId={assetId} search={appliedSearch} kind={kind} disabled={events === null || !!error} />
       {search.trim() !== appliedSearch && <p className="text-xs text-warning-300">Search draft not applied. Results use {appliedSearch ? `"${appliedSearch}"` : 'all keywords'}.</p>}
       {error ? <div className="space-y-2"><p role="alert" className="text-xs text-danger-400">{error}</p><button type="button" onClick={() => setRetry(value => value + 1)} className="rounded border border-surface-600 px-2.5 py-1.5 text-xs text-primary-300">Retry incident timeline</button></div> : events === null ? <p role="status" className="text-xs text-surface-500">Loading timeline...</p> : <>
       <p className="text-xs text-surface-500">{total} recorded events match{appliedSearch ? ` "${appliedSearch}"` : ''}. Showing {visible.length ? (page - 1) * 20 + 1 : 0} to {visible.length ? Math.min(page * 20, total) : 0}.</p>
