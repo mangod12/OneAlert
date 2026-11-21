@@ -412,7 +412,7 @@ export function Cases() {
               <p className="font-semibold text-surface-100">Pipeline outcome: {pipelineResult.pipeline_status} · {(pipelineResult.total_duration_ms / 1000).toFixed(1)}s</p>
               {pipelineResult.pipeline_status !== 'completed' && <p className="text-warning">At least one stage did not complete successfully. Review the stage results; this is not an all-clear.</p>}
               <RecordedRunLinks runs={[{ label: 'Detect', id: pipelineResult.run_ids?.detect }, { label: 'Triage', id: pipelineResult.run_ids?.triage }]} />
-              <p className="text-xs text-surface-400">Detection findings are returned as review leads. They are not automatically saved as alerts or passed to triage. Triage separately reads eligible saved alerts and events, with its own batch and AI-input limits. These stages are sequential reads, not one frozen evidence snapshot.</p>
+              <p className="text-xs text-surface-400">Detection findings are returned as review leads. New runs also save bounded finding summaries in the exact Detect run receipt; earlier runs may not have them. They are not automatically saved as alerts or passed to triage. Triage separately reads eligible saved alerts and events, with its own batch and AI-input limits. These stages are sequential reads, not one frozen evidence snapshot.</p>
               <p className="text-surface-300">Detect: {pipelineResult.detect?.summary ?? pipelineResult.detect?.error ?? 'No detect stage result.'}</p>
               <p className="text-surface-300">Triage: {pipelineResult.triage?.summary ?? pipelineResult.triage?.error ?? 'No triage stage result.'}</p>
             </div>
