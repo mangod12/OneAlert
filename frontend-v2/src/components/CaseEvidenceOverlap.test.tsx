@@ -1,13 +1,15 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
+import { act, cleanup, fireEvent, render as renderBase, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { CaseEvidenceOverlap } from './CaseEvidenceOverlap';
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), patch: vi.fn() } }));
 const get = vi.mocked(apiClient.get);
+const render = (view: React.ReactNode) => renderBase(<MemoryRouter>{view}</MemoryRouter>);
 const row = { id: 100, label: 'Recorded shared alert', severity: 'high', recorded_at: null, can_open_original: true };
 const fixture = { relation: 'shared', total: 1, case_id: 7, case_title: 'Source inquiry', other_case_id: 8, other_case_title: 'Comparison inquiry', kind: 'alert', source_count: 4, other_count: 2, shared_count: 1, source_only_count: 3, other_only_count: 1, page: 1, size: 10, records: [row], retrieved_at: '2026-11-21T11:00:00Z', scope: 'Exact saved record IDs' };
 const compare = (id = '8') => { fireEvent.change(screen.getByLabelText('Other investigation ID'), { target: { value: id } }); fireEvent.click(screen.getByRole('button', { name: 'Compare linked record IDs' })); };
-beforeEach(() => { vi.resetAllMocks(); get.mockResolvedValue({ data: fixture }); });
+beforeEach(() => { vi.resetAllMocks(); get.mockResolvedValue({ data: fixture }); Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } }); });
 afterEach(cleanup);
 it('uses exact selected IDs and distinguishes overlap from similarity without mutations', async () => {
   render(<CaseEvidenceOverlap caseId={7} />); expect(get).not.toHaveBeenCalled(); compare();
@@ -86,4 +88,46 @@ it('paginates the exclusive set total rather than the shared count and resets on
   get.mockResolvedValueOnce({ data: { ...fixture, relation: 'other_only' } });
   fireEvent.change(screen.getByLabelText('Record set'), { target: { value: 'other_only' } }); await screen.findByText(/alert #100:/);
   expect(get).toHaveBeenLastCalledWith('/cases/7/evidence-overlap', { params: { other_case_id: 8, kind: 'alert', relation: 'other_only', page: 1, size: 10 } });
+});
+
+it('opens the exact comparison locator on a fresh read without mutations', async () => {
+  get.mockResolvedValue({ data: { ...fixture, relation: 'other_only', kind: 'event' } });
+  renderBase(<MemoryRouter initialEntries={['/app/cases/7?compare_case=8&compare_kind=event&compare_set=other_only']}><CaseEvidenceOverlap caseId={7} /></MemoryRouter>);
+  await screen.findByText(/event #100:/);
+  expect(get).toHaveBeenCalledExactlyOnceWith('/cases/7/evidence-overlap', { params: { other_case_id: 8, kind: 'event', relation: 'other_only', page: 1, size: 10 } });
+  expect(apiClient.post).not.toHaveBeenCalled(); expect(apiClient.patch).not.toHaveBeenCalled();
+});
+it.each(['compare_case=7&compare_kind=alert&compare_set=shared', 'compare_case=0&compare_kind=alert&compare_set=shared', 'compare_case=8&compare_case=9&compare_kind=alert&compare_set=shared', 'compare_case=8&compare_kind=alert', 'compare_case=8&compare_kind=raw&compare_set=shared', 'compare_case=8&compare_kind=alert&compare_set=all', 'compare_set=shared', 'compare_case=2147483648&compare_kind=alert&compare_set=shared'])('refuses ambiguous or invalid locator %s without any read', async query => {
+  renderBase(<MemoryRouter initialEntries={[`/app/cases/7?${query}`]}><CaseEvidenceOverlap caseId={7} /></MemoryRouter>);
+  expect(await screen.findByText(/Invalid evidence comparison link/)).toBeTruthy(); expect(get).not.toHaveBeenCalled();
+});
+it('copies only verified IDs/kind/set without unrelated query fields, fragments or page', async () => {
+  renderBase(<MemoryRouter initialEntries={['/app/cases/7?note=42#private-fragment']}><CaseEvidenceOverlap caseId={7} /></MemoryRouter>);
+  compare(); await screen.findByText(/alert #100:/); fireEvent.click(screen.getByRole('button', { name: 'Copy current evidence comparison link' }));
+  await screen.findByText(/Comparison link copied/);
+  expect(navigator.clipboard.writeText).toHaveBeenCalledWith(`${window.location.origin}/app/cases/7?compare_case=8&compare_kind=alert&compare_set=shared`);
+  fireEvent.change(screen.getByLabelText('Other investigation ID'), { target: { value: '9' } });
+  expect(screen.queryByText(/Comparison link copied/)).toBeNull(); expect(screen.queryByRole('button', { name: 'Copy current evidence comparison link' })).toBeNull();
+});
+it('does not copy before a verified read and reports clipboard refusal without changing records', async () => {
+  vi.mocked(navigator.clipboard.writeText).mockRejectedValueOnce(new Error('Clipboard denied'));
+  render(<CaseEvidenceOverlap caseId={7} />); expect(screen.queryByRole('button', { name: 'Copy current evidence comparison link' })).toBeNull();
+  compare(); await screen.findByText(/alert #100:/); fireEvent.click(screen.getByRole('button', { name: 'Copy current evidence comparison link' }));
+  await screen.findByText('The comparison link could not be copied.'); expect(screen.getByText(/alert #100:/)).toBeTruthy();
+});
+
+it('clears a selected comparison and ignores late replies after navigating to an invalid locator', async () => {
+  let finish!: (value: unknown) => void; get.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  function Navigation() { const navigate = useNavigate(); return <button onClick={() => navigate('?compare_case=8&compare_kind=raw&compare_set=shared')}>Invalid comparison route</button>; }
+  renderBase(<MemoryRouter initialEntries={['/app/cases/7?compare_case=8&compare_kind=alert&compare_set=shared']}><CaseEvidenceOverlap caseId={7} /><Navigation /></MemoryRouter>);
+  fireEvent.click(screen.getByRole('button', { name: 'Invalid comparison route' }));
+  await screen.findByText(/Invalid evidence comparison link/); await act(async () => finish({ data: fixture }));
+  expect(screen.queryByText(/alert #100:/)).toBeNull(); expect(get).toHaveBeenCalledTimes(1);
+});
+it('does not show stale clipboard success after another comparison is selected', async () => {
+  let finish!: () => void; vi.mocked(navigator.clipboard.writeText).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  render(<CaseEvidenceOverlap caseId={7} />); compare(); await screen.findByText(/alert #100:/);
+  fireEvent.click(screen.getByRole('button', { name: 'Copy current evidence comparison link' }));
+  fireEvent.change(screen.getByLabelText('Other investigation ID'), { target: { value: '9' } }); await act(async () => finish());
+  expect(screen.queryByText(/Comparison link copied/)).toBeNull();
 });
