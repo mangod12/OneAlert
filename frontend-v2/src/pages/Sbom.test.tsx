@@ -490,3 +490,6 @@ it('opens exact record evidence from a list row without loading all components',
   render(<Sbom />); fireEvent.click(await screen.findByRole('button', { name: 'Open exact SBOM 1' }));
   await screen.findByRole('dialog', { name: 'SBOM record #1' }); expect(get.mock.calls.some(([url]) => url === '/sbom/1/components')).toBe(false);
 });
+it.each(['/sbom?component=99', '/sbom?sbom=99&component=0', '/sbom?sbom=99&component=1&component=2', '/sbom?sbom=99&component=2147483648'])('rejects malformed exact component link %s without broadening to a document', async path => {
+  rtlRender(<MemoryRouter initialEntries={[path]}><Sbom /></MemoryRouter>); await screen.findByText(/This component link needs one exact positive component ID/); expect(get.mock.calls.some(([url]) => String(url).endsWith('/component-evidence'))).toBe(false); expect(screen.queryByRole('dialog')).toBeNull();
+});

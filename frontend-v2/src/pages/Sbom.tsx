@@ -46,8 +46,12 @@ export function Sbom() {
   const documentValues = searchParams.getAll('sbom');
   const documentValue = documentValues.length === 1 ? documentValues[0] : '';
   const exactDocumentId = /^[1-9][0-9]*$/.test(documentValue) && Number.isSafeInteger(Number(documentValue)) ? Number(documentValue) : null;
+  const componentValues = searchParams.getAll('component');
+  const componentValue = componentValues.length === 1 ? componentValues[0] : '';
+  const exactComponentId = /^[1-9][0-9]*$/.test(componentValue) && Number(componentValue) <= 2147483647 ? Number(componentValue) : null;
+  const invalidComponentLink = componentValues.length > 0 && (exactComponentId === null || exactDocumentId === null);
   const invalidDocumentLink = documentValues.length > 0 && exactDocumentId === null;
-  const inspectDocument = (id: number | null) => setSearchParams(current => { const next = new URLSearchParams(current); if (id === null) next.delete('sbom'); else next.set('sbom', String(id)); return next; }, { replace: id === null });
+  const inspectDocument = (id: number | null) => setSearchParams(current => { const next = new URLSearchParams(current); next.delete('component'); if (id === null) next.delete('sbom'); else next.set('sbom', String(id)); return next; }, { replace: id === null });
   const listRequestId = useRef(0);
   const [assetNamesError, setAssetNamesError] = useState('');
   const [sboms, setSboms] = useState<Sbom[]>([]);
@@ -214,7 +218,8 @@ export function Sbom() {
 
   const recordPanel = <>
       {invalidDocumentLink && <p role="alert" className="text-sm text-warning">This SBOM link needs exactly one positive document ID. No document was opened. <button type="button" onClick={() => inspectDocument(null)} className="ml-2 text-primary-300">Clear invalid SBOM link</button></p>}
-      {exactDocumentId !== null && <SbomRecordInspector key={exactDocumentId} sbomId={exactDocumentId} onClose={() => inspectDocument(null)} />}
+      {invalidComponentLink && <p role="alert" className="text-sm text-warning">This component link needs one exact positive component ID and its SBOM document ID. No component or document was opened. <button type="button" onClick={() => inspectDocument(null)} className="text-primary-300">Clear invalid component link</button></p>}
+      {exactDocumentId !== null && !invalidComponentLink && <SbomRecordInspector key={`${exactDocumentId}:${exactComponentId}`} sbomId={exactDocumentId} componentId={exactComponentId ?? undefined} onBrowseDocument={() => inspectDocument(exactDocumentId)} onClose={() => inspectDocument(null)} />}
   </>;
 
   if (loading) return <>{recordPanel}<LoadingSurface rows={4} label="Loading software bills of materials" /></>;
