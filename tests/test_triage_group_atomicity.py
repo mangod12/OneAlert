@@ -1,4 +1,5 @@
 """A failed group rolls back its writes while healthy groups and the run ledger survive."""
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -17,7 +18,7 @@ from backend.services.agents.triage import TriageAgent
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('failure', ['late_exception', 'database_constraint'])
+@pytest.mark.parametrize('failure', ['late_exception', 'database_constraint', 'receipt_write'])
 @pytest.mark.parametrize('all_failed', [False, True])
 async def test_group_write_failure_is_atomic_and_next_group_still_commits(tmp_path, monkeypatch, failure, all_failed):
     from backend.services.agents import triage
@@ -47,10 +48,16 @@ async def test_group_write_failure_is_atomic_and_next_group_still_commits(tmp_pa
             agent._group_by_correlation = MagicMock(return_value=[
                 {'alerts': [alert], 'events': [record]} for alert, record in zip(alerts, records, strict=True)])
             original_log = agent.log_step
-            if failure == 'late_exception':
+            if failure in ('late_exception', 'receipt_write'):
                 async def log_step(action, *args, **kwargs):
                     await original_log(action, *args, **kwargs)
-                    if action == 'create_case' and ('Candidate 1' in kwargs['output_summary'] or all_failed):
+                    fail_case = (action == 'create_case' and failure == 'late_exception'
+                                 and ('Candidate 1' in kwargs['output_summary'] or all_failed))
+                    receipt = json.loads(kwargs['output_summary']) if action == 'triage_group_outcome' else None
+                    fail_receipt = (receipt is not None and failure == 'receipt_write'
+                                    and receipt['outcome'] == 'case_created'
+                                    and (receipt['position'] == 1 or all_failed))
+                    if fail_case or fail_receipt:
                         raise RuntimeError('Failed after case, evidence and timeline flush')
                 agent.log_step = log_step
             else:
@@ -72,6 +79,13 @@ async def test_group_write_failure_is_atomic_and_next_group_still_commits(tmp_pa
             assert ledger.status == result['status'] and ledger.completed_at is not None
             failure_steps = (await db.execute(
                 select(AgentStep).where(AgentStep.action == 'group_failed'))).scalars().all()
+            receipts = [json.loads(step.output_summary) for step in (await db.execute(select(AgentStep).where(
+                AgentStep.action == 'triage_group_outcome').order_by(AgentStep.step_number))).scalars().all()]
+            assert [row['outcome'] for row in receipts] == (['failed', 'failed'] if all_failed else
+                                                           ['failed', 'case_created'])
+            assert receipts[0]['alert_sample_ids'] == receipts[0]['event_sample_ids'] == [1]
+            assert receipts[0]['case_id'] is receipts[0]['alert_inputs'] is receipts[0]['event_inputs'] is None
+            assert receipts[0]['method'] == 'unavailable'
             assert len(failure_steps) == result['groups_failed']
             assert all('rolled back' in step.output_summary for step in failure_steps)
             assert len(cases) == len(links) == (0 if all_failed else 1)

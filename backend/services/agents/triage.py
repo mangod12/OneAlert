@@ -14,6 +14,7 @@ from backend.services.agents.base import BaseAgent
 from backend.services.ai.provider import AIMessage
 from backend.services.ai.router import TASK_TRIAGE, get_ai_provider
 from backend.services.triage_coverage import ALERT_CONTEXT_LIMIT, EVENT_CONTEXT_LIMIT, triage_coverage
+from backend.services.triage_group_receipt import group_outcome_receipt
 from backend.services.triage_intake import ALERT_BATCH_LIMIT, EVENT_BATCH_LIMIT, triage_predicates
 from backend.services.triage_output import validate_triage_output
 
@@ -88,12 +89,19 @@ class TriageAgent(BaseAgent):
         groups_failed = 0
         groups_nonincident = 0
 
-        for group in groups:
+        for position, group in enumerate(groups, start=1):
+            self._group_method = 'unavailable'
+            # Snapshot IDs before a savepoint can expire modified ORM objects.
+            failed_receipt = group_outcome_receipt(group, position, 'failed') if self._run else None
             try:
                 # One failed group must not leave a staged case, consumed event
                 # or poisoned transaction behind for the remaining groups.
                 async with self.db.begin_nested():
                     case = await self._analyze_and_create_case(group)
+                    if self._run:
+                        await self._record_group_outcome(group_outcome_receipt(
+                            group, position, 'case_created' if case else 'nonincident',
+                            case.id if case else None, self._group_method))
                 if case:
                     cases_created += 1
                     total_alerts += len(group["alerts"])
@@ -109,6 +117,7 @@ class TriageAgent(BaseAgent):
                         "writes were rolled back."
                     ),
                 )
+                await self._record_group_outcome(failed_receipt)
 
         status = "completed" if groups_failed == 0 else "failed" if groups_failed == len(groups) else "partial"
         summary = f"Created {cases_created} cases from {total_alerts} alerts and {total_events} events"
@@ -124,6 +133,13 @@ class TriageAgent(BaseAgent):
             "events_triaged": total_events,
             "summary": summary,
         }
+
+    async def _record_group_outcome(self, receipt):
+        if receipt is None:
+            return
+        await self.log_step('triage_group_outcome',
+                            input_summary='Saved outcome metadata. Evidence IDs are bounded samples, not full context.',
+                            output_summary=receipt)
 
     async def _get_untriaged_alerts(self, cutoff: datetime, until: datetime | None = None) -> list:
         result = await self.db.execute(
@@ -230,8 +246,9 @@ class TriageAgent(BaseAgent):
 
         # Reject malformed evidence before staging a case, link or processed-state change.
         response = validate_triage_output(response)
+        self._group_method = coverage['method']
         if not response["is_incident"]:
-            await self.log_step("skip_group", "LLM determined events are not an incident")
+            await self.log_step("skip_group", "Validated analysis returned a nonincident decision")
             return None
 
         # Create case

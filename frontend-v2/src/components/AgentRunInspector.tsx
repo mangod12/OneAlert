@@ -1,3 +1,4 @@
+import { TriageGroupReceipt } from './TriageGroupReceipt';
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
@@ -120,6 +121,7 @@ export function AgentRunInspector({ runId, onClose }: { runId: number; onClose: 
             {[...detail.steps].sort((a, b) => a.step_number - b.step_number || a.id - b.id).map(step => <li key={step.id} className="min-w-0 rounded-lg border border-surface-700 p-3">
               <h4 className="break-words text-sm font-semibold text-surface-100">{step.step_number}. {step.action}</h4>
               <p className="mt-1 break-words text-xs text-surface-400">Tool: {step.tool_used || 'Not recorded'} · Duration: {step.duration_ms === null ? 'Not recorded' : `${step.duration_ms.toLocaleString()} ms`}</p>
+              {detail.agent_type === 'triage' && step.action === 'triage_group_outcome' && <TriageGroupReceipt text={step.output_summary} />}
               <dl className="mt-3 space-y-3 text-sm">
                 <div><dt className="text-xs text-surface-400">Recorded input summary</dt><dd className="mt-1 whitespace-pre-wrap break-words text-surface-300">{step.input_summary || 'Not recorded'}</dd></div>
                 <div><dt className="text-xs text-surface-400">Recorded output summary</dt><dd className="mt-1 whitespace-pre-wrap break-words text-surface-300">{step.output_summary || 'Not recorded'}</dd></div>
