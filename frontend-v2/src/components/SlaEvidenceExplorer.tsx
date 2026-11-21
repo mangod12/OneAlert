@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
+import { SlaEvidenceExport } from './SlaEvidenceExport';
 import { getApiErrorMessage } from '../api/errors';
 
 interface SlaRecord {
@@ -57,6 +58,7 @@ export function SlaEvidenceExplorer({ kind, days }: { kind: 'alerts' | 'cases'; 
       </select>
       {(query || outcome !== 'all') && <button type="button" onClick={() => { setQuery(''); setOutcome('all'); setOffset(0); }} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">Clear evidence filters</button>}
     </div>
+    <SlaEvidenceExport key={`${kind}:${days}:${outcome}:${query}`} kind={kind} days={days} outcome={outcome} query={query} />
     {loading ? <p role="status" className="text-sm text-surface-400">Loading current SLA evidence...</p> : error ? <div role="alert" className="space-y-2 text-sm text-danger"><p>{error} No records or outcomes are inferred.</p><button type="button" onClick={() => setRetry(value => value + 1)} className="rounded border border-surface-600 px-3 py-2 text-surface-200">Retry SLA evidence</button></div> : result && <>
       <p role="status" className="text-xs text-surface-300">{result.total} matching records · Due {result.window_start} through {result.window_end} (UTC dates). Snapshot: {result.generated_at}. Filters do not change the summary above.</p>
       {result.records.length ? <ul aria-label="SLA evidence records" className="space-y-3">{result.records.map(record => <li key={record.id} className="min-w-0 space-y-2 rounded border border-surface-700 p-3">
