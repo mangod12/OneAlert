@@ -123,3 +123,13 @@ it('allows retrying an export read failure without rerunning the agent', async (
   await screen.findByRole('alert'); expect(screen.getByRole('button', { name: 'Download this run evidence (JSON)' }).hasAttribute('disabled')).toBe(false);
   expect(get.mock.calls.every(([url]) => String(url).startsWith('/cases/agents/runs/3'))).toBe(true);
 });
+
+it('renders structured group outcomes only for triage receipt steps and preserves raw saved JSON', async () => {
+  const receipt = JSON.stringify({ version: 1, position: 2, outcome: 'failed', case_id: null, alerts_total: 0, events_total: 1, alert_sample_ids: [], event_sample_ids: [42], method: 'unavailable', alert_inputs: null, event_inputs: null });
+  get.mockResolvedValueOnce({ data: { ...run, steps: [{ ...run.steps[0], action: 'triage_group_outcome', output_summary: receipt }] } });
+  const view = render(<AgentRunInspector runId={3} onClose={vi.fn()} />);
+  await screen.findByRole('region', { name: 'Saved outcome for group 2' }); expect(screen.getByText(receipt)).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Open event #42' }).getAttribute('href')).toBe('/app/events/42');
+  get.mockResolvedValueOnce({ data: { ...run, id: 4, agent_type: 'response', steps: [{ ...run.steps[0], action: 'triage_group_outcome', output_summary: receipt }] } });
+  view.rerender(<AgentRunInspector runId={4} onClose={vi.fn()} />); await screen.findByText(receipt); expect(screen.queryByRole('region', { name: 'Saved outcome for group 2' })).toBeNull();
+});
