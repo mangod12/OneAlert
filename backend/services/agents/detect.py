@@ -94,18 +94,20 @@ class DetectAgent(BaseAgent):
             "summary": f"Analyzed {stats['total_events']} events, found {len(all_findings)} findings",
         }
 
-    async def _aggregate_events(self, cutoff: datetime) -> dict:
-        """Build statistical summary of recent events."""
+    async def _aggregate_events(self, cutoff: datetime, until: datetime | None = None) -> dict:
+        """Build owner-scoped statistics in the recorded timestamp window."""
+        until = until or datetime.now(UTC)
         total = (await self.db.execute(
             select(func.count(SecurityEvent.id)).where(
-                SecurityEvent.user_id == self.user_id, SecurityEvent.timestamp >= cutoff)
+                SecurityEvent.user_id == self.user_id, SecurityEvent.timestamp >= cutoff,
+                SecurityEvent.timestamp <= until)
         )).scalar_one()
 
         # Alert events
         alert_count = (await self.db.execute(
             select(func.count(SecurityEvent.id)).where(
                 SecurityEvent.user_id == self.user_id,
-                SecurityEvent.timestamp >= cutoff,
+                SecurityEvent.timestamp >= cutoff, SecurityEvent.timestamp <= until,
                 SecurityEvent.event_type == "alert",
             )
         )).scalar_one()
@@ -114,9 +116,10 @@ class DetectAgent(BaseAgent):
         src_ip_result = await self.db.execute(
             select(SecurityEvent.source_ip, func.count(SecurityEvent.id).label("cnt"))
             .where(SecurityEvent.user_id == self.user_id, SecurityEvent.timestamp >= cutoff,
+                   SecurityEvent.timestamp <= until,
                    SecurityEvent.source_ip.isnot(None))
             .group_by(SecurityEvent.source_ip)
-            .order_by(func.count(SecurityEvent.id).desc())
+            .order_by(func.count(SecurityEvent.id).desc(), SecurityEvent.source_ip.asc())
             .limit(20)
         )
         top_src_ips = {row[0]: row[1] for row in src_ip_result.all()}
@@ -125,9 +128,10 @@ class DetectAgent(BaseAgent):
         dst_port_result = await self.db.execute(
             select(SecurityEvent.dest_port, func.count(SecurityEvent.id).label("cnt"))
             .where(SecurityEvent.user_id == self.user_id, SecurityEvent.timestamp >= cutoff,
+                   SecurityEvent.timestamp <= until,
                    SecurityEvent.dest_port.isnot(None))
             .group_by(SecurityEvent.dest_port)
-            .order_by(func.count(SecurityEvent.id).desc())
+            .order_by(func.count(SecurityEvent.id).desc(), SecurityEvent.dest_port.asc())
             .limit(20)
         )
         top_dst_ports = {row[0]: row[1] for row in dst_port_result.all()}
@@ -135,7 +139,8 @@ class DetectAgent(BaseAgent):
         # Severity distribution
         sev_result = await self.db.execute(
             select(SecurityEvent.severity, func.count(SecurityEvent.id))
-            .where(SecurityEvent.user_id == self.user_id, SecurityEvent.timestamp >= cutoff)
+            .where(SecurityEvent.user_id == self.user_id, SecurityEvent.timestamp >= cutoff,
+                   SecurityEvent.timestamp <= until)
             .group_by(SecurityEvent.severity)
         )
         severity_dist = {row[0]: row[1] for row in sev_result.all()}
@@ -144,9 +149,10 @@ class DetectAgent(BaseAgent):
         sig_result = await self.db.execute(
             select(SecurityEvent.signature, func.count(SecurityEvent.id))
             .where(SecurityEvent.user_id == self.user_id, SecurityEvent.timestamp >= cutoff,
+                   SecurityEvent.timestamp <= until,
                    SecurityEvent.signature.isnot(None))
             .group_by(SecurityEvent.signature)
-            .order_by(func.count(SecurityEvent.id).desc())
+            .order_by(func.count(SecurityEvent.id).desc(), SecurityEvent.signature.asc())
             .limit(10)
         )
         top_signatures = {row[0]: row[1] for row in sig_result.all()}
