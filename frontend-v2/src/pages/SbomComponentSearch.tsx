@@ -1,3 +1,4 @@
+import { ComponentVersionEvidence } from '../components/ComponentVersionEvidence';
 import { ComponentAssetImpact } from '../components/ComponentAssetImpact';
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
@@ -12,12 +13,12 @@ export function SbomComponentSearch() {
   const [query, setQuery] = useState(''), [version, setVersion] = useState(''), [vulnerable, setVulnerable] = useState(false);
   const [applied, setApplied] = useState<{ search: string; version: string; vulnerable_only: boolean } | null>(null), [page, setPage] = useState(1), [retry, setRetry] = useState(0);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<'records' | 'assets'>('records');
+  const [mode, setMode] = useState<'records' | 'assets' | 'versions'>('records');
   const request = useRef(0);
   const [scopedAsset, setScopedAsset] = useState<{ id: number; name: string } | null>(null);
   useEffect(() => {
     const id = ++request.current; setSnapshot(null); setError('');
-    if (!applied || mode === 'assets') { setLoading(false); return; }
+    if (!applied || mode !== 'records') { setLoading(false); return; }
     setLoading(true);
     void apiClient.get<Snapshot>('/sbom/component-search', { params: { ...applied, ...(scopedAsset ? { asset_id: scopedAsset.id } : {}), page, size: 10 } }).then(({ data }) => {
       if (id !== request.current) return;
@@ -37,11 +38,12 @@ export function SbomComponentSearch() {
       <label className="flex items-start gap-2 text-xs text-surface-300"><input type="checkbox" checked={vulnerable} onChange={event => setVulnerable(event.target.checked)} />Recorded vulnerability count greater than zero</label>
       <button type="submit" disabled={!query.trim()} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300 disabled:opacity-40">Search retained documents</button>
     </form>
-    {applied && <div role="group" aria-label="Component results display" className="flex flex-wrap gap-3 text-xs"><button type="button" aria-pressed={mode === 'records'} onClick={() => { setMode('records'); setPage(1); }} className="rounded border border-surface-600 px-3 py-2 text-primary-300 aria-pressed:border-primary-400 aria-pressed:bg-primary-500/10 aria-pressed:text-primary-200">Show component rows</button><button type="button" aria-pressed={mode === 'assets'} onClick={() => { setScopedAsset(null); setMode('assets'); setPage(1); }} className="rounded border border-surface-600 px-3 py-2 text-primary-300 aria-pressed:border-primary-400 aria-pressed:bg-primary-500/10 aria-pressed:text-primary-200">Group matching records by asset</button></div>}
+    {applied && <div role="group" aria-label="Component results display" className="flex flex-wrap gap-3 text-xs"><button type="button" aria-pressed={mode === 'records'} onClick={() => { setMode('records'); setPage(1); }} className="rounded border border-surface-600 px-3 py-2 text-primary-300 aria-pressed:border-primary-400 aria-pressed:bg-primary-500/10 aria-pressed:text-primary-200">Show component rows</button><button type="button" aria-pressed={mode === 'assets'} onClick={() => { setScopedAsset(null); setMode('assets'); setPage(1); }} className="rounded border border-surface-600 px-3 py-2 text-primary-300 aria-pressed:border-primary-400 aria-pressed:bg-primary-500/10 aria-pressed:text-primary-200">Group matching records by asset</button><button type="button" aria-pressed={mode === 'versions'} onClick={() => { setScopedAsset(null); setMode('versions'); setPage(1); }} className="rounded border border-surface-600 px-3 py-2 text-primary-300 aria-pressed:border-primary-400 aria-pressed:bg-primary-500/10">Group by recorded version</button></div>}
     {draft && <p role="status" className="text-sm text-warning">Draft search not applied. Results still use the last submitted search.</p>}
     {!applied && <p className="text-sm text-surface-400">Enter a component name, supplier or identifier to search all your retained documents, beyond the SBOM list page.</p>}
     {mode === 'assets' && applied && <ComponentAssetImpact key={JSON.stringify(applied) + retry} scope={applied} onBrowseAsset={(id, name) => { setScopedAsset({ id, name }); setMode('records'); setPage(1); }} />}
     {mode === 'records' && scopedAsset && <section aria-label="Matching evidence asset scope" className="oa-panel space-y-2 p-4 text-sm text-surface-300"><h2 className="break-words font-semibold">Matching saved rows for asset #{scopedAsset.id}: {snapshot?.scoped_asset_name || scopedAsset.name}</h2><p className="text-xs text-surface-400">The applied component search, exact version and recorded-vulnerability filter are retained. Only this owned asset's retained documents are searched. This is not evidence of a current installation.</p><button type="button" onClick={() => { setScopedAsset(null); setPage(1); }} className="text-xs text-primary-300">Return to matching rows across all assets</button></section>}
+    {mode === 'versions' && applied && <ComponentVersionEvidence key={JSON.stringify(applied) + retry} scope={applied} onBrowseVersion={recordedVersion => { setScopedAsset(null); setApplied({ ...applied, version: recordedVersion }); setVersion(recordedVersion); setMode('records'); setPage(1); }} />}
     {mode === 'records' && loading && <p role="status" className="text-sm text-surface-300">Searching saved component evidence...</p>}
     {mode === 'records' && error && <div className="space-y-2"><p role="alert" className="text-sm text-danger">{error}</p><button type="button" onClick={() => setRetry(n => n + 1)} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Retry component search</button></div>}
     {mode === 'records' && !loading && !error && snapshot && <>
