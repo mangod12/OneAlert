@@ -4,6 +4,7 @@ import apiClient from '../../api/client';
 import { getApiErrorMessage } from '../../api/errors';
 import { Panel } from '../ui/Panel';
 import { toast } from '../Toast';
+import { OnCallCoverage } from './OnCallCoverage';
 
 interface AutomationPreferences {
   auto_escalate_incidents: boolean;
@@ -302,6 +303,7 @@ export function AutomationPanel() {
           {saving ? 'Saving…' : 'Save automation'}
         </button>
       </form>
+      {members.length > 0 && <OnCallCoverage revision={JSON.stringify(onCall)} />}
     </Panel>
   );
 }

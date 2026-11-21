@@ -8,7 +8,7 @@ the whole org.
 """
 
 import logging
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import select
 
@@ -42,3 +42,23 @@ async def current_on_call_id(db, org: Organization | None, today: date | None = 
         )
     )).scalar_one_or_none()
     return member.id if member is not None else None
+
+
+def rotation_coverage(member_ids: list[int], anchor: date, today: date, days: int = 56) -> list[dict]:
+    """Compress a bounded UTC-day forecast using the assignment rotation itself.
+
+    The first and last segments may be partial weeks. Before the stored anchor,
+    the existing assignment rule keeps the first member, rather than rewinding.
+    """
+    if not member_ids:
+        return []
+    segments = []
+    for offset in range(days):
+        day = today + timedelta(days=offset)
+        member_id = rotation_member_id(member_ids, anchor, day)
+        if segments and segments[-1]['scheduled_member_id'] == member_id:
+            segments[-1]['until_exclusive'] = day + timedelta(days=1)
+        else:
+            segments.append({'from_date': day, 'until_exclusive': day + timedelta(days=1),
+                             'scheduled_member_id': member_id})
+    return segments

@@ -6,7 +6,7 @@ managing organization membership (inviting users, listing members).
 """
 
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
@@ -23,7 +23,7 @@ from backend.models.organization import (
 )
 from backend.models.user import User, UserResponse
 from backend.routers.auth import get_current_user
-from backend.services.oncall import current_on_call_id
+from backend.services.oncall import current_on_call_id, rotation_coverage
 
 router = APIRouter()
 
@@ -156,6 +156,42 @@ async def get_on_call_rotation(
         anchor_date=org.on_call_anchor_date,
         current_member_id=await current_on_call_id(db, org),
     )
+
+
+@router.get("/me/on-call/coverage")
+async def get_on_call_coverage(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Eight weeks of configured coverage, not a new assignment or a commitment."""
+    if current_user.org_id is None:
+        raise HTTPException(status_code=404, detail="User does not belong to an organization")
+    org = await db.get(Organization, current_user.org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    now = datetime.now(UTC)
+    today = now.date()
+    members = (await db.execute(select(User).where(
+        User.org_id == org.id, User.is_active == True,  # noqa: E712
+    ))).scalars().all()
+    active = {member.id: member for member in members}
+    configured = bool(org.on_call_member_ids and org.on_call_anchor_date)
+    slots = rotation_coverage(org.on_call_member_ids, org.on_call_anchor_date, today) if configured else []
+    coverage = []
+    for slot in slots:
+        member = active.get(slot['scheduled_member_id'])
+        coverage.append({'from_date': slot['from_date'], 'until_exclusive': slot['until_exclusive'],
+                         'member_id': member.id if member else None,
+                         'member_name': (member.full_name or member.email) if member else None,
+                         'on_call_override_available': member is not None})
+    return {'timezone': 'UTC', 'from_date': today, 'until_exclusive': today + timedelta(days=56),
+            'retrieved_at': now.isoformat(), 'configured': configured,
+            'anchor_date': org.on_call_anchor_date, 'active_member_count': len(active),
+            'coverage': coverage,
+            'limitations': ['Based on the saved rotation and active organization roster at this read.',
+                            'First and last periods may be partial weeks. End dates are exclusive.',
+                            'Future roster or rotation changes are not predicted.',
+                            'This does not enable auto-assignment or reassign existing work.']}
 
 
 @router.patch("/me/on-call", response_model=OrgOnCallResponse)
