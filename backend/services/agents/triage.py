@@ -133,47 +133,50 @@ class TriageAgent(BaseAgent):
         return result.scalars().all()
 
     def _group_by_correlation(self, alerts: list, events: list) -> list:
-        """Group alerts and events by overlapping IPs, assets, and time windows."""
-        # Build IP → items index
-        ip_map: dict[str, dict] = {}
+        """Group alerts by asset and events by transitive shared saved IPs.
 
+        A candidate cluster is not proof of a common incident. Alert asset IDs
+        and event IP strings use separate namespaces; no asset-to-IP mapping is
+        inferred. Intake already bounds both evidence sets to this owner/window.
+        """
+        asset_groups = {}
         for alert in alerts:
-            asset_id = alert.asset_id
-            key = f"asset_{asset_id}"
-            if key not in ip_map:
-                ip_map[key] = {"alerts": [], "events": [], "ips": set()}
-            ip_map[key]["alerts"].append(alert)
+            group = asset_groups.setdefault(alert.asset_id, {"alerts": [], "events": [], "ips": set()})
+            group["alerts"].append(alert)
 
-        for event in events:
-            keys = set()
-            if event.source_ip:
-                keys.add(event.source_ip)
-            if event.dest_ip:
-                keys.add(event.dest_ip)
+        # Connected components include late bridge records, independent of input
+        # order. Keep the original intake order within each resulting component.
+        parents = list(range(len(events)))
 
-            # Try to attach to existing group
-            matched = False
-            for group in ip_map.values():
-                if keys & group["ips"]:
-                    group["events"].append(event)
-                    group["ips"] |= keys
-                    matched = True
-                    break
+        def root(index):
+            while parents[index] != index:
+                parents[index] = parents[parents[index]]
+                index = parents[index]
+            return index
 
-            if not matched:
-                # New group from event
-                new_key = event.source_ip or event.dest_ip or f"event_{event.id}"
-                if new_key not in ip_map:
-                    ip_map[new_key] = {"alerts": [], "events": [], "ips": keys}
-                ip_map[new_key]["events"].append(event)
-                ip_map[new_key]["ips"] |= keys
+        ip_first = {}
+        for index, event in enumerate(events):
+            for ip in (event.source_ip, event.dest_ip):
+                if not ip:
+                    continue
+                if ip in ip_first:
+                    left, right = root(index), root(ip_first[ip])
+                    parents[max(left, right)] = min(left, right)
+                else:
+                    ip_first[ip] = index
 
-        # Filter out groups with only info-level events and no alerts
-        return [
-            group
-            for group in ip_map.values()
-            if group["alerts"] or any(e.severity != "info" for e in group["events"])
-        ]
+        event_groups = {}
+        for index, event in enumerate(events):
+            group = event_groups.setdefault(root(index), {"alerts": [], "events": [], "ips": set()})
+            group["events"].append(event)
+            group["ips"].update(ip for ip in (event.source_ip, event.dest_ip) if ip)
+
+        # Retain informational evidence when connected to a non-info event, but
+        # do not turn standalone informational telemetry into an incident candidate.
+        return [*asset_groups.values(), *[
+            group for group in event_groups.values()
+            if any(event.severity != "info" for event in group["events"])
+        ]]
 
     async def _analyze_and_create_case(self, group: dict) -> Case | None:
         """Use LLM to analyze a correlation group and create a case."""
