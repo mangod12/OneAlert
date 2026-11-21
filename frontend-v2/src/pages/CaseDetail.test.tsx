@@ -1047,7 +1047,7 @@ it('focuses an exact task from a deep link without changing it', async () => {
   mockGet.mockImplementation((...args) => String(args[0]).endsWith('/tasks') ? Promise.resolve({ data: Array.from({ length: 23 }, (_, index) => ({ id: index + 1, title: `Deep-linked task ${index + 1}`, done: false, position: index, assignee_id: null, due_date: null })) }) : original(...args));
   renderDetail('/cases/7?task=23');
   await screen.findByText('Deep-linked task 23');
-  expect(document.activeElement?.id).toBe('case-task-23');
+  await waitFor(() => expect(document.activeElement?.id).toBe('case-task-23'));
   expect(screen.getByText('Deep-linked task 23').closest('li')?.className).toContain('ring-primary-400');
   expect(mockPatch).not.toHaveBeenCalled(); expect(mockPost).not.toHaveBeenCalled();
 });

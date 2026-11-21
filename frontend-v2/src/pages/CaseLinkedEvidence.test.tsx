@@ -5,6 +5,7 @@ import apiClient from '../api/client';
 import { CaseLinkedEvidence } from './CaseLinkedEvidence';
 vi.mock('../api/client', () => ({ default: { get: vi.fn() } }));
 const get = vi.mocked(apiClient.get);
+const NativeURL = URL;
 const alert = { id: 100, title: 'Retained linked alert', severity: 'critical', status: 'resolved', created_at: '2026-11-01T00:00:00Z', description: null, can_open_original: true };
 const snapshot = { case_id: 7, case_title: 'Saved investigation', kind: 'alert', search: '', severity: 'all', page: 1, size: 10, total: 1, available_count: 1, unavailable_reference_count: 2, records: [alert], retrieved_at: 'now' };
 beforeEach(() => { vi.resetAllMocks(); get.mockResolvedValue({ data: snapshot }); }); afterEach(cleanup);
@@ -35,4 +36,45 @@ it('ignores a slow prior investigation response after URL navigation', async () 
 });
 it.each(['/cases/0/evidence', '/cases/01/evidence', '/cases/nope/evidence', '/cases/2147483648/evidence', '/cases/7/evidence?kind=', '/cases/7/evidence?kind=alert&kind=event', '/cases/7/evidence?kind=unknown'])('rejects malformed evidence link %s without loading a broader scope', async path => {
   setup(path); await screen.findByRole('alert'); expect(get).not.toHaveBeenCalled();
+});
+it('exports all applied matches rather than the current page or an unapplied draft', async () => {
+  const create = vi.fn(() => 'blob:evidence'), revoke = vi.fn(); vi.stubGlobal('URL', class extends NativeURL { static createObjectURL = create; static revokeObjectURL = revoke; });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+  try {
+    setup(); await screen.findByText('Alert #100: Retained linked alert'); fireEvent.change(screen.getByLabelText('Search linked investigation evidence'), { target: { value: 'unapplied' } });
+    get.mockResolvedValueOnce({ data: new Blob(['record_id\r\n100'], { type: 'text/csv' }) });
+    fireEvent.click(screen.getByRole('button', { name: 'Export all matching linked evidence' }));
+    await waitFor(() => expect(click).toHaveBeenCalledOnce());
+    expect(get).toHaveBeenLastCalledWith('/cases/7/linked-evidence/export', { params: { kind: 'alert', search: '', severity: 'all' }, responseType: 'blob' });
+    expect(revoke).toHaveBeenCalledWith('blob:evidence'); expect(document.querySelector('a[download]')).toBeNull();
+  } finally { click.mockRestore(); vi.unstubAllGlobals(); }
+});
+it('does not download a stale export after the investigation changes', async () => {
+  let finish!: (value: unknown) => void; const create = vi.fn(); vi.stubGlobal('URL', class extends NativeURL { static createObjectURL = create; });
+  try {
+    setup(); await screen.findByText('Alert #100: Retained linked alert'); get.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    fireEvent.click(screen.getByRole('button', { name: 'Export all matching linked evidence' }));
+    get.mockResolvedValueOnce({ data: { ...snapshot, case_id: 8, kind: 'event', records: [] } }); fireEvent.click(screen.getByRole('button', { name: 'Next investigation' })); await screen.findByText(/No available linked event/);
+    await act(async () => finish({ data: new Blob(['old'], { type: 'text/csv' }) })); expect(create).not.toHaveBeenCalled();
+  } finally { vi.unstubAllGlobals(); }
+});
+it('shows export failures without an empty-state claim or a fake download', async () => {
+  setup(); await screen.findByText('Alert #100: Retained linked alert'); get.mockRejectedValueOnce(new Error('Export unavailable'));
+  fireEvent.click(screen.getByRole('button', { name: 'Export all matching linked evidence' })); await screen.findByRole('alert'); expect(screen.getByText('Alert #100: Retained linked alert')).toBeTruthy();
+  get.mockResolvedValueOnce({ data: new Blob(['not csv'], { type: 'application/json' }) }); fireEvent.click(screen.getByRole('button', { name: 'Export all matching linked evidence' })); await screen.findByText(/server did not return an evidence CSV/);
+});
+it('guards duplicate export clicks and discards a download after filters change', async () => {
+  let finish!: (value: unknown) => void; const create = vi.fn(); vi.stubGlobal('URL', class extends NativeURL { static createObjectURL = create; });
+  try {
+    setup(); await screen.findByText('Alert #100: Retained linked alert'); get.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    fireEvent.click(screen.getByRole('button', { name: 'Export all matching linked evidence' })); fireEvent.click(screen.getByRole('button', { name: 'Preparing evidence CSV...' }));
+    expect(get.mock.calls.filter(([url]) => String(url).endsWith('/export'))).toHaveLength(1);
+    get.mockResolvedValueOnce({ data: { ...snapshot, severity: 'high' } }); fireEvent.change(screen.getByLabelText('Linked evidence severity'), { target: { value: 'high' } });
+    await screen.findByText('Alert #100: Retained linked alert'); await act(async () => finish({ data: new Blob(['old'], { type: 'text/csv' }) })); expect(create).not.toHaveBeenCalled();
+    expect((screen.getByRole('button', { name: 'Export all matching linked evidence' }) as HTMLButtonElement).disabled).toBe(false);
+  } finally { vi.unstubAllGlobals(); }
+});
+it('decodes a server refusal delivered as a blob rather than pretending a CSV was downloaded', async () => {
+  setup(); await screen.findByText('Alert #100: Retained linked alert'); get.mockRejectedValueOnce({ isAxiosError: true, response: { data: new Blob([JSON.stringify({ error: { message: 'Narrow filters before exporting.' } })], { type: 'application/json' }) } });
+  fireEvent.click(screen.getByRole('button', { name: 'Export all matching linked evidence' })); await screen.findByText('Narrow filters before exporting.');
 });
