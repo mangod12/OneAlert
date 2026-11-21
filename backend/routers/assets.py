@@ -28,54 +28,14 @@ from backend.models.suppression_rule import AlertSuppressionRule
 from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.services.asset_linked_records import asset_linked_records
+from backend.services.asset_risk_evidence import (
+    _risk_base_scores,
+    _risk_level,
+    _risk_score,
+    asset_risk_evidence,
+)
 
 router = APIRouter()
-
-_SEVERITY_WEIGHT = {"critical": 10, "high": 5, "medium": 2, "low": 1}
-_CRITICALITY_MULTIPLIER = {"critical": 2.0, "high": 1.5, "medium": 1.0, "low": 0.5}
-_ACTIVE_ALERT_STATUSES = [AlertStatus.PENDING, AlertStatus.SENT, AlertStatus.ACKNOWLEDGED]
-
-
-def _severity_weight(severity) -> int:
-    sev = severity.value if hasattr(severity, "value") else str(severity or "").lower()
-    return _SEVERITY_WEIGHT.get(sev, 1)
-
-
-def _risk_level(score: int) -> str:
-    if score >= 40:
-        return "critical"
-    if score >= 15:
-        return "high"
-    if score >= 5:
-        return "medium"
-    if score > 0:
-        return "low"
-    return "none"
-
-
-def _risk_score(asset: Asset, base: int) -> int:
-    multiplier = _CRITICALITY_MULTIPLIER.get(str(asset.criticality or "medium").lower(), 1.0)
-    return min(100, round(base * multiplier))
-
-
-async def _risk_base_scores(db: AsyncSession, user_id: int, asset_ids: list[int]) -> dict[int, int]:
-    """Severity-weighted sum of each asset's active alerts."""
-    if not asset_ids:
-        return {}
-    rows = await db.execute(
-        select(Alert.asset_id, Alert.severity).where(
-            Alert.user_id == user_id,
-            Alert.asset_id.in_(asset_ids),
-            Alert.status.in_(_ACTIVE_ALERT_STATUSES),
-        )
-    )
-    bases: dict[int, int] = {}
-    for asset_id, severity in rows.all():
-        bases[asset_id] = bases.get(asset_id, 0) + _severity_weight(severity)
-    return bases
-
-
-
 
 @router.post("/", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
 async def create_asset(
@@ -315,6 +275,22 @@ async def get_asset(
     return AssetResponse.model_validate(asset).model_copy(
         update={"risk_score": score, "risk_level": _risk_level(score)}
     )
+
+
+@router.get("/{asset_id}/risk-evidence")
+async def get_asset_risk_evidence(
+    asset_id: int,
+    page: Annotated[int, Query(ge=1)] = 1,
+    size: Annotated[int, Query(ge=1, le=100)] = 10,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    asset = (await db.execute(select(Asset).where(
+        Asset.id == asset_id, Asset.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return await asset_risk_evidence(db, asset, current_user.id, page, size)
 
 
 @router.get("/{asset_id}/linked-records")
