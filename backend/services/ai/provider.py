@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+from backend.services.ai.usage import completion_observer
+
 
 @dataclass
 class AIResponse:
@@ -59,6 +61,9 @@ class AIProvider(ABC):
             messages = [AIMessage(role="system", content=system_suffix.strip()), *messages]
 
         response = await self.complete(messages, temperature=temperature, max_tokens=max_tokens)
+        observer = completion_observer.get()
+        if observer is not None:
+            await observer(response)
         text = response.content.strip()
 
         # Strip markdown code fences if present

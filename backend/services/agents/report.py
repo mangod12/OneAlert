@@ -99,7 +99,7 @@ class ReportAgent(BaseAgent):
                 AIMessage(role='system', content=REPORT_PROMPT),
                 AIMessage(role='user', content=json.dumps(context)),
             ])
-            self._run.model_used = provider.model
+            self._run.model_used = self._run.model_used or provider.model
             report = validate_report(raw, {row['key'] for row in records})
         except Exception:
             mode = 'recorded_metadata_fallback'

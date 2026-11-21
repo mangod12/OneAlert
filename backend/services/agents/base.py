@@ -1,5 +1,6 @@
 """Base agent with run/step ledger logging."""
 
+import json
 import logging
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
@@ -7,6 +8,7 @@ from datetime import UTC, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.case import AgentRun, AgentStep
+from backend.services.ai.usage import completion_observer
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,9 @@ class BaseAgent(ABC):
 
     async def execute(self, **kwargs) -> dict:
         """Execute the agent with full ledger logging."""
+        self._step_count = 0
+        self._total_prompt_tokens = 0
+        self._total_completion_tokens = 0
         self._run = AgentRun(
             user_id=self.user_id,
             agent_type=self.agent_type,
@@ -34,6 +39,7 @@ class BaseAgent(ABC):
         self.db.add(self._run)
         await self.db.flush()
 
+        observation = completion_observer.set(self._record_completion_usage)
         try:
             result = await self.run(**kwargs)
             outcome = result.get("status")
@@ -51,9 +57,37 @@ class BaseAgent(ABC):
             self._run.status = "failed"
             self._run.completed_at = datetime.now(UTC)
             self._run.error_message = str(e)[:500]
+            self._run.prompt_tokens = self._total_prompt_tokens
+            self._run.completion_tokens = self._total_completion_tokens
             await self.db.commit()
             logger.error(f"Agent {self.agent_type} failed: {e}")
             raise
+        finally:
+            completion_observer.reset(observation)
+
+    async def _record_completion_usage(self, response):
+        states = response.metadata.get("usage_states", {}) if isinstance(response.metadata, dict) else {}
+        if not isinstance(states, dict):
+            states = {}
+        receipt = {"format": "onealert-provider-usage-v1", "prompt": None, "completion": None,
+                   "prompt_state": "missing", "completion_state": "missing"}
+        for key in ("prompt", "completion"):
+            value = getattr(response, key + "_tokens", None)
+            state = states.get(key, "missing")
+            if state == "reported" and type(value) is int and 0 <= value <= 2**31 - 1:
+                total = getattr(self, "_total_" + key + "_tokens") + value
+                if total <= 2**31 - 1:
+                    setattr(self, "_total_" + key + "_tokens", total)
+                    receipt[key] = value
+                else:
+                    state = "invalid"
+            elif state != "missing":
+                state = "invalid"
+            receipt[key + "_state"] = state
+        if self._run is not None and isinstance(response.model, str) and response.model:
+            self._run.model_used = response.model
+        await self.log_step("provider_usage_receipt", output_summary=json.dumps(receipt, separators=(",", ":")),
+                            tool_used="ai_provider")
 
     async def log_step(
         self, action: str, input_summary: str = "", output_summary: str = "",

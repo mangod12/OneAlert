@@ -5,6 +5,7 @@ import logging
 import httpx
 
 from backend.services.ai.provider import AIMessage, AIProvider, AIResponse
+from backend.services.ai.usage import reported_usage
 
 logger = logging.getLogger(__name__)
 
@@ -44,14 +45,15 @@ class OpenAICompatibleProvider(AIProvider):
             data = resp.json()
 
         choice = data["choices"][0]
-        usage = data.get("usage", {})
+        prompt, completion, states = reported_usage(data.get("usage"), "prompt_tokens", "completion_tokens")
 
         return AIResponse(
             content=choice["message"]["content"],
             model=data.get("model", self.model),
-            prompt_tokens=usage.get("prompt_tokens", 0),
-            completion_tokens=usage.get("completion_tokens", 0),
-            total_tokens=usage.get("total_tokens", 0),
+            prompt_tokens=prompt,
+            completion_tokens=completion,
+            total_tokens=prompt + completion,
+            metadata={"usage_states": states},
         )
 
     async def embed(self, texts: list[str]) -> list[list[float]]:

@@ -1,4 +1,5 @@
 import { RecordedRunSteps, type RecordedStep } from './RecordedRunSteps';
+import { ProviderUsageEvidence } from './ProviderUsageEvidence';
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
@@ -104,6 +105,7 @@ export function AgentRunInspector({ runId, onClose }: { runId: number; onClose: 
             ['Tokens', `${detail.prompt_tokens.toLocaleString()} prompt / ${detail.completion_tokens.toLocaleString()} completion`],
           ].map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs text-surface-400">{label}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-surface-100">{value}</dd></div>)}
         </dl>
+        <ProviderUsageEvidence steps={detail.steps} promptTokens={detail.prompt_tokens} completionTokens={detail.completion_tokens} />
         <section><h3 className="text-sm font-semibold text-surface-100">Recorded result</h3><p className="mt-2 whitespace-pre-wrap break-words text-sm text-surface-300">{detail.result_summary || 'No result summary recorded.'}</p></section>
         {detail.error_message && <section><h3 className="text-sm font-semibold text-danger">Recorded failure</h3><p className="mt-2 whitespace-pre-wrap break-words text-sm text-surface-300">{detail.error_message}</p></section>}
         <RecordedRunSteps key={`${runId}:${retry}`} runId={runId} agentType={detail.agent_type} steps={detail.steps} />
