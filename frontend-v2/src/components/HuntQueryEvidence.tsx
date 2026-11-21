@@ -18,12 +18,14 @@ function cellText(value: unknown): string {
 }
 
 export function HuntQueryEvidence({ result, index }: { result: HuntQueryResult; index: number }) {
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(1), [search, setSearch] = useState(''), [field, setField] = useState('');
   const rows = result.rows ?? [];
   const columns = [...new Set(rows.flatMap(row => Object.keys(row)))];
-  const pages = Math.max(1, Math.ceil(rows.length / 20));
+  const needle = search.trim().toLowerCase();
+  const matches = needle ? rows.filter(row => (field ? [row[field]] : Object.values(row)).some(value => value != null && (typeof value === 'object' ? JSON.stringify(value) : String(value)).toLowerCase().includes(needle))) : rows;
+  const pages = Math.max(1, Math.ceil(matches.length / 20));
   const currentPage = Math.min(page, pages);
-  const visible = rows.slice((currentPage - 1) * 20, currentPage * 20);
+  const visible = matches.slice((currentPage - 1) * 20, currentPage * 20);
   return <section aria-label={`Query ${index + 1} evidence`} className="mb-4 min-w-0 rounded-lg border border-surface-700 p-3 last:mb-0">
     <div className="mb-2 flex flex-wrap items-center gap-2">
       <FileCode className="h-4 w-4 shrink-0 text-primary-400" aria-hidden="true" />
@@ -51,7 +53,16 @@ export function HuntQueryEvidence({ result, index }: { result: HuntQueryResult; 
       <p className="text-surface-400">Recorded execution bounds, not a new time window or live check.</p>
     </div> : <p className="mb-3 text-xs text-surface-500">Applied event-time bounds were not recorded for this result.</p>}
     {result.query?.params && Object.keys(result.query.params).length > 0 && <details className="mb-3 rounded border border-surface-700 p-3 text-xs text-surface-400"><summary className="cursor-pointer">Recorded query parameters</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all">{JSON.stringify(result.query.params, null, 2)}</pre></details>}
-    {rows.length > 0 ? <>
+    {rows.length > 0 && <section aria-label={`Search query ${index + 1} retained rows`} className="mb-3 space-y-2 rounded border border-surface-700 p-3">
+      <label className="block text-xs text-surface-300">Search retained row values<input type="search" aria-label={`Search retained rows for query ${index + 1}`} maxLength={200} value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} className="mt-1 min-h-9 w-full min-w-0 rounded border border-surface-600 bg-surface-950 px-2 text-sm text-surface-100" /></label>
+      <div className="flex flex-wrap gap-2"><select aria-label={`Search field for query ${index + 1}`} value={field} onChange={event => { setField(event.target.value); setPage(1); }} className="max-w-full rounded border border-surface-600 bg-surface-950 px-2 py-2 text-xs text-surface-200"><option value="">All retained fields</option>{columns.map(column => <option key={column} value={column}>{column}</option>)}</select>
+        {(search || field) && <button type="button" onClick={() => { setSearch(''); setField(''); setPage(1); }} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">Clear retained row search</button>}
+        {needle && <button type="button" disabled={!matches.length} onClick={() => saveHuntDownload(huntQueryCsv({ ...result, rows: matches }, index, { text: search.trim(), field: field || null, retained_total: rows.length }), `hunt-query-${index + 1}-matching-retained-rows.csv`, 'text/csv;charset=utf-8')} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300 disabled:opacity-40">Export matching retained rows CSV</button>}
+      </div>
+      <p className="text-xs text-surface-400">Searches literal text in retained values only, including nested JSON values, across their local pages. No query is rerun. Missing values do not match. Unretained reported rows are not searched. The original retained-row export above remains unfiltered.</p>
+      <p role="status" className="text-xs text-surface-300">{matches.length} of {rows.length} retained rows match{field ? ` in ${field}` : ''}.</p>
+    </section>}
+    {matches.length > 0 ? <>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead><tr className="border-b border-surface-700">{columns.map(column => <th key={column} scope="col" className="p-2 text-left text-surface-400">{column}</th>)}</tr></thead>
@@ -59,13 +70,13 @@ export function HuntQueryEvidence({ result, index }: { result: HuntQueryResult; 
         </table>
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
-        <p role="status" className="text-surface-400">Showing {(currentPage - 1) * 20 + 1}–{Math.min(currentPage * 20, rows.length)} of {rows.length} retained rows · Page {currentPage} of {pages}</p>
+        <p role="status" className="text-surface-400">Showing {(currentPage - 1) * 20 + 1}–{Math.min(currentPage * 20, matches.length)} of {matches.length} retained rows · Page {currentPage} of {pages}</p>
         <div className="flex gap-2">
           <button type="button" aria-label={`Previous rows for query ${index + 1}`} disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} className="rounded-md border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Previous rows</button>
           <button type="button" aria-label={`Next rows for query ${index + 1}`} disabled={currentPage === pages} onClick={() => setPage(currentPage + 1)} className="rounded-md border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Next rows</button>
         </div>
       </div>
-    </> : <p className="text-xs text-surface-400">No retained evidence rows for this query.</p>}
+    </> : <p className="text-xs text-surface-400">{rows.length ? 'No retained rows match this local search. Clear it to review the retained evidence.' : 'No retained evidence rows for this query.'}</p>}
     {typeof result.row_count === 'number' && result.row_count > rows.length && <p className="mt-3 text-xs text-warning">{result.row_count - rows.length} reported rows were not retained in this result. They are not available through paging.</p>}
     {result.error && <p role="alert" className="mt-3 whitespace-pre-wrap break-words text-xs text-danger">{result.error}</p>}
   </section>;
