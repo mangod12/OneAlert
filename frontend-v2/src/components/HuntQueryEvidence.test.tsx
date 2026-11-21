@@ -86,3 +86,10 @@ it('distinguishes a default row limit from an explicit request', () => {
   expect(screen.getByLabelText('Applied query execution').textContent).toContain('Row limit: 100 (default)');
   expect(screen.getByLabelText('Applied query execution').textContent).not.toContain('then id');
 });
+
+it('searches all retained pages using literal nested values, preserves zero and resets page on filters',()=>{
+  const evidence=[...rows,{host:'late-special',detail:{literal:'100%_match'},count:0,missing:null}];render(<HuntQueryEvidence index={0} result={{row_count:120,rows:evidence}}/>);
+  fireEvent.click(screen.getByRole('button',{name:'Next rows for query 1'}));fireEvent.change(screen.getByLabelText('Search retained rows for query 1'),{target:{value:'100%_MATCH'}});expect(screen.getByText('late-special')).toBeTruthy();expect(screen.getByText('1 of 46 retained rows match.')).toBeTruthy();expect(screen.getByText(/74 reported rows were not retained/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Search field for query 1'),{target:{value:'host'}});expect(screen.getByText(/No retained rows match this local search/)).toBeTruthy();expect(screen.getByRole('button',{name:'Export matching retained rows CSV'})).toHaveProperty('disabled',true);
+  fireEvent.change(screen.getByLabelText('Search retained rows for query 1'),{target:{value:'0'}});fireEvent.change(screen.getByLabelText('Search field for query 1'),{target:{value:'count'}});expect(screen.getByText('6 of 46 retained rows match in count.')).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Clear retained row search'}));expect(screen.getByText('host-1')).toBeTruthy();expect(screen.getByText('Showing 1–20 of 46 retained rows · Page 1 of 3')).toBeTruthy();
+});

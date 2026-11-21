@@ -43,3 +43,8 @@ describe('Retained hunt evidence exports', () => {
     expect(csv).not.toContain('completed');
   });
 });
+
+it('labels matching retained-row exports with exact local search scope and neutralizes formula-like search text', () => {
+  const csv = huntQueryCsv({outcome:'completed',rows:[{host:'match',count:0}]},0,{text:'=search',field:'host',retained_total:45});
+  expect(csv).toContain('retained_search_text');expect(csv).toContain('retained_total_before_search');expect(csv).toContain("'=search");expect(csv).toContain('only matching retained rows');expect(csv).toContain('"45"');expect(csv).toContain('"0"');
+});

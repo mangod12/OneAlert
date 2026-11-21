@@ -27,11 +27,12 @@ function csvCell(value: unknown): string {
   return `"${(formula ? `'${text}` : text).replace(/"/g, '""')}"`;
 }
 
-export function huntQueryCsv(result: HuntQueryResult, index: number): string {
+export function huntQueryCsv(result: HuntQueryResult, index: number, search?: { text: string; field: string | null; retained_total: number }): string {
   const rows = result.rows ?? [];
   const columns = [...new Set(rows.flatMap(row => Object.keys(row)))];
-  const table: unknown[][] = [['query_index', 'recorded_outcome', 'evidence_scope', ...columns.map(column => `event.${column}`)]];
-  for (const row of rows) table.push([index + 1, result.outcome ?? 'not recorded', scope, ...columns.map(column => row[column])]);
+  const searchColumns = search ? ['retained_search_text', 'retained_search_field', 'retained_total_before_search'] : [];
+  const table: unknown[][] = [['query_index', 'recorded_outcome', 'evidence_scope', ...searchColumns, ...columns.map(column => `event.${column}`)]];
+  for (const row of rows) table.push([index + 1, result.outcome ?? 'not recorded', search ? `${scope} This export contains only matching retained rows, not all reported or retained evidence.` : scope, ...(search ? [search.text, search.field || '(all retained fields)', search.retained_total] : []), ...columns.map(column => row[column])]);
   return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
 
