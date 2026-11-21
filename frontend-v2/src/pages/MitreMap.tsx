@@ -201,7 +201,7 @@ export function MitreMap() {
                   onChange={e => setGapsOnly(e.target.checked)}
                   className="h-3.5 w-3.5 rounded border-surface-600 bg-surface-800 text-primary-500 focus:ring-primary-500"
                 />
-                Gaps only
+                No recorded mapping only
               </label>
             )}
             <div className="relative">
@@ -227,19 +227,19 @@ export function MitreMap() {
                   <button
                     type="button"
                     aria-expanded={expanded}
-                    aria-label={`Show what detects ${t.id} ${t.name}`}
+                    aria-label={`Show recorded mappings for ${t.id} ${t.name}`}
                     onClick={() => void toggleTechnique(t.id)}
                     className="flex w-full items-center gap-2 text-left rounded-sm hover:bg-surface-800/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                   >
                     <span className="text-xs font-mono text-primary-400">{t.id}</span>
                     <span className="text-sm text-surface-50">{t.name}</span>
-                    <StatusBadge tone="success">Detected</StatusBadge>
+                    <StatusBadge tone="success">Mapped</StatusBadge>
                   </button>
                 ) : (
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-mono text-primary-400">{t.id}</span>
                     <span className="text-sm text-surface-50">{t.name}</span>
-                    {coverage?.covered_ids && <StatusBadge tone="neutral">Gap</StatusBadge>}
+                    {coverage?.covered_ids && <StatusBadge tone="neutral">No mapping</StatusBadge>}
                   </div>
                 )}
                 <p className="text-xs text-surface-500 mt-1">{t.description}</p>
