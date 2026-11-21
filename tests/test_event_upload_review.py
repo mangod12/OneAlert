@@ -120,3 +120,39 @@ def test_nesting_limit_has_an_explicit_matching_boundary():
     with pytest.raises(HTTPException) as error:
         parse_event_upload(b'{"x":' * 64 + b'{}' + b'}' * 64)
     assert '64 levels' in error.value.detail
+
+
+@pytest.mark.parametrize('content', [
+    b'{"severity":"critical","severity":"low"}',
+    b'[{"id":1},{"id":2,"raw":{"ip":"first","ip":"second"}}]',
+    b'{"id":1}\n{"event_type":"alert","event_type":"flow"}\n{"id":3}',
+    b'{"signature":"first","signat\\u0075re":"second"}',
+    b'{"same":"value","same":"value"}',
+])
+def test_duplicate_fields_at_any_depth_reject_the_whole_import_without_writes(monkeypatch, content):
+    import backend.services.event_ingestion as service
+
+    ingestion = AsyncMock()
+    monkeypatch.setattr(service, 'ingest_events', ingestion)
+    db = Mock()
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(upload_events_file(
+            UploadFile(filename='ambiguous.json', file=io.BytesIO(content)),
+            source_type='suricata', current_user=SimpleNamespace(id=7), db=db))
+    assert error.value.status_code == 400
+    assert 'Invalid JSON' in error.value.detail
+    assert len(error.value.detail) < 100
+    ingestion.assert_not_awaited()
+    db.add.assert_not_called()
+    db.commit.assert_not_called()
+
+
+def test_names_in_different_records_or_objects_are_not_duplicates():
+    content = b'[{"id":1,"left":{"ip":"first"},"right":{"ip":"second"}},{"id":2}]'
+    assert parse_event_upload(content) == [
+        {'id': 1, 'left': {'ip': 'first'}, 'right': {'ip': 'second'}}, {'id': 2}]
+
+
+def test_distinct_case_and_unicode_keys_remain_distinct():
+    assert parse_event_upload('{"Key":1,"key":2,"é":3,"é":4}'.encode()) == [
+        {'Key': 1, 'key': 2, 'é': 3, 'é': 4}]
