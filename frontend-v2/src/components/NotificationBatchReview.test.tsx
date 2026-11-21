@@ -58,3 +58,15 @@ it('ignores a late review response after a filter remount', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Review matching unread notifications' })); view.rerender(<NotificationBatchReview {...props} kind="case_assigned" />);
   await act(async () => finish({ data: preview })); expect(screen.queryByRole('list')).toBeNull(); await waitFor(() => expect(post).not.toHaveBeenCalled());
 });
+it('binds search preview and exact cleanup to the same literal query, discarding on search changes', async () => {
+  get.mockResolvedValue({ data: { ...preview, query: '100%_match' } });
+  const view = show({ query: '100%_match' }); await confirm();
+  expect(get).toHaveBeenCalledWith('/notifications/review-batch', { params: { operation: 'mark_read', query: '100%_match' } });
+  expect(screen.getByRole('dialog').textContent).toContain('Search text: 100%_match');
+  fireEvent.click(screen.getByRole('button', { name: 'Apply to 1 notifications' })); await screen.findByText(/1 reviewed notifications marked read/);
+  expect(post).toHaveBeenCalledWith('/notifications/review-batch', { operation: 'mark_read', kind: null, ids: [9], fingerprint: 'a'.repeat(64), query: '100%_match' });
+  await load(); view.rerender(<NotificationBatchReview {...props} query="changed" />); expect(screen.queryByRole('list')).toBeNull();
+});
+it('rejects a preview whose search scope was omitted or changed', async () => {
+  show({ query: 'saved match' }); fireEvent.click(screen.getByRole('button', { name: 'Review matching unread notifications' })); await screen.findByRole('alert'); expect(screen.queryByRole('list')).toBeNull(); expect(post).not.toHaveBeenCalled();
+});
