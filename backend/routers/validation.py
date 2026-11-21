@@ -23,7 +23,7 @@ from backend.models.validation import (
 )
 from backend.routers.auth import get_active_user
 from backend.services.csv_export import spreadsheet_safe_row
-from backend.services.validation_coverage_evidence import coverage_evidence
+from backend.services.validation_coverage_evidence import coverage_evidence, coverage_source_steps
 
 router = APIRouter()
 
@@ -324,3 +324,19 @@ async def recorded_coverage_evidence(
 ):
     """Review stored control results separately from simulated execution metadata."""
     return await coverage_evidence(db, current_user.id, execution, run_status, page, size)
+
+
+@router.get("/coverage-evidence/steps")
+async def recorded_coverage_source_steps(
+    technique_id: str = Query(..., min_length=1, max_length=200),
+    technique_name: str = Query(..., max_length=1000),
+    execution: Literal["all", "simulated", "non_simulated", "unknown"] = "all",
+    run_status: Literal["all", "completed", "failed", "running", "pending", "cancelled"] = "completed",
+    page: int = Query(1, ge=1, le=1000000),
+    size: int = Query(10, ge=1, le=100),
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Trace an exact recorded coverage group to its owned saved source steps."""
+    return await coverage_source_steps(db, current_user.id, technique_id, technique_name,
+                                       execution, run_status, page, size)

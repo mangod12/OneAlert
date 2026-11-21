@@ -1,3 +1,4 @@
+import { ValidationCoverageSources } from './ValidationCoverageSources';
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
@@ -50,6 +51,7 @@ export function ValidationCoverageEvidence() {
           <p>Steps by execution flag: {row.simulated_steps} simulated, {row.non_simulated_steps} non-simulated, {row.unknown_execution_steps} unknown</p>
           <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2"><div><dt className="text-surface-400">Recorded detected</dt><dd>{row.recorded_detected}</dd></div><div><dt className="text-surface-400">Recorded not detected</dt><dd>{row.recorded_not_detected}</dd></div><div><dt className="text-surface-400">Missing outcome</dt><dd>{row.unknown_outcomes}</dd></div><div><dt className="text-surface-400">Detected among known outcomes</dt><dd>{row.recorded_detection_percentage === null ? 'Unavailable, no known outcomes' : `${row.recorded_detection_percentage}%`}</dd></div></dl>
           {row.control_result_count === 0 && <p className="text-warning">No control results were recorded for these steps.</p>}
+          <ValidationCoverageSources techniqueId={row.technique_id} techniqueName={row.technique_name} execution={execution} runStatus={runStatus} />
         </li>)}</ol>
         <nav aria-label="Coverage evidence pages" className="flex flex-wrap gap-2"><button type="button" className={control} disabled={page === 1} onClick={() => setPage(page - 1)}>Previous coverage groups</button><button type="button" className={control} disabled={page * snapshot.size >= snapshot.total} onClick={() => setPage(page + 1)}>Next coverage groups</button></nav>
       </>}
