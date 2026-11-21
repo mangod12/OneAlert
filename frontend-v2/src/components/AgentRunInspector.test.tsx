@@ -133,3 +133,13 @@ it('renders structured group outcomes only for triage receipt steps and preserve
   get.mockResolvedValueOnce({ data: { ...run, id: 4, agent_type: 'response', steps: [{ ...run.steps[0], action: 'triage_group_outcome', output_summary: receipt }] } });
   view.rerender(<AgentRunInspector runId={4} onClose={vi.fn()} />); await screen.findByText(receipt); expect(screen.queryByRole('region', { name: 'Saved outcome for group 2' })).toBeNull();
 });
+
+it('renders a bounded saved detection receipt only for its matching detect run', async () => {
+  const receipt = { format: 'onealert-detection-review', version: 1, run_id: 3, window_from: '2026-11-20T12:00:00Z', window_until: '2026-11-21T12:00:00Z', total_events: 0, alert_events: 0, rule_count: 0, ai_count: 0, ai_status: 'skipped', included: 0, omitted: 0, limit: 30, findings: [], scope: 'Review leads, not proof.' };
+  const steps = [{ id: 1, step_number: 1, action: 'detection_review_receipt', input_summary: 'Aggregate metadata', output_summary: JSON.stringify(receipt), tool_used: 'bounded_detection_review', duration_ms: 0 }];
+  get.mockResolvedValue({ data: { ...run, agent_type: 'detect', steps } });
+  render(<AgentRunInspector runId={3} onClose={vi.fn()} />);
+  await screen.findByRole('region', { name: 'Saved detection review leads' });
+  expect(screen.getByText(/does not establish that the environment is safe/)).toBeTruthy();
+  expect(screen.queryByText(JSON.stringify(receipt))).toBeNull();
+});

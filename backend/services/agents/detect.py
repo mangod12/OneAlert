@@ -11,6 +11,7 @@ from backend.services.agents.base import BaseAgent
 from backend.services.ai.provider import AIMessage
 from backend.services.ai.router import TASK_DETECT, get_ai_provider
 from backend.services.detection_output import validate_detection_output
+from backend.services.detection_receipt import build_detection_receipt, record_detection_receipt
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +48,12 @@ class DetectAgent(BaseAgent):
 
     async def run(self, **kwargs) -> dict:
         hours_back = kwargs.get("hours_back", 24)
-        cutoff = datetime.now(UTC) - timedelta(hours=hours_back)
+        until = datetime.now(UTC)
+        cutoff = until - timedelta(hours=hours_back)
 
         # Step 1: Aggregate event statistics
         start = time.time()
-        stats = await self._aggregate_events(cutoff)
+        stats = await self._aggregate_events(cutoff, until=until)
         await self.log_step(
             "aggregate_events",
             f"Analyzed {stats['total_events']} events",
@@ -60,6 +62,7 @@ class DetectAgent(BaseAgent):
 
         if stats["total_events"] == 0:
             await self.log_step("skip", "No events to analyze")
+            await self._save_review_receipt(cutoff, until, stats, [], [], "skipped")
             return {"status": "completed", "ai_status": "skipped", "findings": [],
                     "total_events_analyzed": 0, "rule_findings_count": 0, "ai_findings_count": 0,
                     "summary": "No events to analyze"}
@@ -92,6 +95,8 @@ class DetectAgent(BaseAgent):
                 logger.warning(f"LLM detection failed, using rules only: {e}")
                 await self.log_step("llm_fallback", "AI analysis unavailable or invalid; only rule findings retained")
 
+        await self._save_review_receipt(cutoff, until, stats, rule_findings, llm_findings, ai_status)
+
         # Retain separately produced findings; no deduplication or confirmation is implied.
         all_findings = rule_findings + llm_findings
         summary = f"Analyzed {stats['total_events']} events, found {len(all_findings)} findings"
@@ -106,6 +111,11 @@ class DetectAgent(BaseAgent):
             "total_events_analyzed": stats["total_events"],
             "summary": summary,
         }
+
+    async def _save_review_receipt(self, cutoff, until, stats, rules, generated, ai_status):
+        if self._run is not None:
+            await record_detection_receipt(self, build_detection_receipt(
+                self._run.id, cutoff, until, stats, rules, generated, ai_status))
 
     async def _aggregate_events(self, cutoff: datetime, until: datetime | None = None) -> dict:
         """Build owner-scoped statistics in the recorded timestamp window."""
