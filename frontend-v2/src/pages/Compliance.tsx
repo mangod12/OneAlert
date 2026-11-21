@@ -1,3 +1,4 @@
+import { AssessmentHistoryExplorer } from '../components/AssessmentHistoryExplorer';
 import { ComplianceAssessmentReview } from '../components/ComplianceAssessmentReview';
 import { AssessmentComparison } from '../components/AssessmentComparison';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -154,7 +155,6 @@ function EvidenceDialog({ assessment, control, onClose, onSaved }: {
 function AssessmentHistoryDialog({ control, history, onClose }: { control: Control; history: Assessment[]; onClose: () => void }) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   useDialogFocus(dialogRef, onClose);
-  const [page, setPage] = useState(1);
   const [comparison, setComparison] = useState<number[]>([]);
   const sorted = [...history].sort((a, b) => b.assessed_at.localeCompare(a.assessed_at) || b.id - a.id);
   return <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -166,19 +166,13 @@ function AssessmentHistoryDialog({ control, history, onClose }: { control: Contr
       <p className="text-xs text-surface-400">{sorted.length} saved records for this control. New reviews keep earlier records. Edits to an existing record are not a separate audit history.</p>
       <AssessmentComparison controlId={control.id} ids={comparison} />
       {comparison.length > 0 && <button type="button" className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-300" onClick={() => setComparison([])}>Clear assessment comparison selection</button>}
-      <nav aria-label="Assessment history pages" className="flex flex-wrap items-center justify-between gap-2 text-xs text-surface-300">
-        <span>Page {page} of {Math.max(1, Math.ceil(sorted.length / 10))}</span><div className="flex gap-2">
-          <button type="button" disabled={page === 1} onClick={() => setPage(page - 1)} className="rounded border border-surface-600 px-2 py-1 disabled:opacity-40">Previous records</button>
-          <button type="button" disabled={page * 10 >= sorted.length} onClick={() => setPage(page + 1)} className="rounded border border-surface-600 px-2 py-1 disabled:opacity-40">More records</button>
-        </div>
-      </nav>
-      <ol className="space-y-3">{sorted.slice((page - 1) * 10, page * 10).map((record, index) => <li key={record.id} className="min-w-0 space-y-2 rounded border border-surface-700 p-3 text-xs text-surface-300">
+      <AssessmentHistoryExplorer history={sorted} controlId={control.id} selectedIds={comparison}>{record => <li key={record.id} className="min-w-0 space-y-2 rounded border border-surface-700 p-3 text-xs text-surface-300">
         <label className="flex items-center gap-2 text-xs text-surface-300"><input type="checkbox" aria-label={`Select assessment ${record.id} for comparison`} checked={comparison.includes(record.id)} disabled={comparison.length === 2 && !comparison.includes(record.id)} onChange={event => setComparison(ids => event.target.checked ? [...ids, record.id] : ids.filter(id => id !== record.id))} />Select for comparison</label>
-        <div className="flex flex-wrap items-center gap-2"><StatusBadge tone={statusTones[record.status] ?? 'neutral'}>{statusLabels[record.status] ?? record.status}</StatusBadge><span>{page === 1 && index === 0 ? 'Latest saved record' : 'Earlier saved record'} · #{record.id}</span></div>
+        <div className="flex flex-wrap items-center gap-2"><StatusBadge tone={statusTones[record.status] ?? 'neutral'}>{statusLabels[record.status] ?? record.status}</StatusBadge><span>{record.id === sorted[0]?.id ? 'Latest saved record' : 'Earlier saved record'} · #{record.id}</span></div>
         <p className="break-words">{record.assessed_by} · {new Date(record.assessed_at).toLocaleString()}</p>
         <p>Evidence type: {record.evidence_type || 'Not recorded'}</p>
         <p className="whitespace-pre-wrap break-words">{record.evidence_detail || 'No evidence detail recorded.'}</p>
-      </li>)}</ol>
+      </li>}</AssessmentHistoryExplorer>
     </section>
   </div>;
 }
