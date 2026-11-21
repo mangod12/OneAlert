@@ -8,9 +8,9 @@ const get = vi.mocked(apiClient.get);
 const source = { id: 7, hypothesis: 'Saved authentication inquiry', status: 'partial', queries_run: 1, findings_count: 3, created_at: '2026-11-21T00:00:00Z', sigma_rule: null,
   result_data: { query_results: [{ outcome: 'completed', query: { sql: 'SELECT id', description: 'Selected metadata' }, rows: [{ id: 1 }, { id: 2 }, { id: 2 }], row_count: 100 }] } };
 const other = { ...source, id: 8, hypothesis: '<b>Other saved inquiry</b>', result_data: { query_results: [{ outcome: 'failed', query: { sql: 'SELECT id, hostname', description: 'Different context' }, rows: [{ id: 1 }, { id: 3 }], row_count: 200 }] } };
-const show = () => { const value = savedHuntEvidence(source, 7); return render(<SavedHuntComparison session={value.session} evidence={value.evidence} />); };
+const show = () => { const value = savedHuntEvidence(source, 7); return render(<SavedHuntComparison session={value.session} evidence={value.evidence} sourceReadAt="2026-11-22T00:00:00Z" />); };
 const open = (id = '8') => { fireEvent.change(screen.getByLabelText('Comparison hunt session ID'), { target: { value: id } }); fireEvent.click(screen.getByRole('button', { name: 'Read other saved hunt for comparison' })); };
-beforeEach(() => { vi.resetAllMocks(); get.mockResolvedValue({ data: other }); }); afterEach(cleanup);
+beforeEach(() => { vi.resetAllMocks(); get.mockResolvedValue({ data: other }); }); afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 it('only reads another exact saved record after request and compares retained rows without rerunning anything', async () => {
   show(); expect(get).not.toHaveBeenCalled(); open(); await screen.findByText(/1 exact rows shared; 2 only in A; 1 only in B/);
   expect(get).toHaveBeenCalledExactlyOnceWith('/hunt/8'); expect(apiClient.post).not.toHaveBeenCalled(); expect(apiClient.patch).not.toHaveBeenCalled();
@@ -62,4 +62,14 @@ it('invalidates pending reads on unmount', async () => {
 it('rejects malformed retained rows instead of inferring empty results', async () => {
   get.mockResolvedValueOnce({ data: { ...other, result_data: { query_results: [{ rows: null }] } } }); show(); open(); await screen.findByRole('alert');
   expect(screen.queryByText(/exact rows shared/)).toBeNull();
+});
+
+it('downloads loaded comparison evidence without any additional reads and handles local failures', async () => {
+  URL.createObjectURL = vi.fn(() => 'blob:hunt-comparison'); URL.revokeObjectURL = vi.fn(); const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  show(); expect(screen.queryByRole('button', { name: 'Download loaded hunt comparison JSON' })).toBeNull(); open(); await screen.findByText(/exact rows shared/);
+  fireEvent.click(screen.getByRole('button', { name: 'Download loaded hunt comparison JSON' }));
+  expect(get).toHaveBeenCalledTimes(1); expect(URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob)); expect((click.mock.instances[0] as HTMLAnchorElement).download).toBe('hunt-7-vs-8-query-comparison.json');
+  vi.mocked(URL.createObjectURL).mockImplementationOnce(() => { throw Error('Local file unavailable'); }); fireEvent.click(screen.getByRole('button', { name: 'Download loaded hunt comparison JSON' })); await screen.findByText(/Loaded hunt comparison could not be downloaded/);
+  expect(screen.getByText(/exact rows shared/)).toBeTruthy(); expect(get).toHaveBeenCalledTimes(1); expect(apiClient.post).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('Comparison hunt session ID'), { target: { value: '9' } }); expect(screen.queryByRole('button', { name: 'Download loaded hunt comparison JSON' })).toBeNull();
 });
