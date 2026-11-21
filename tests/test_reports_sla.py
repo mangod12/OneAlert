@@ -248,6 +248,10 @@ class TestSlaComplianceReport:
         response = client.get("/api/v1/reports/sla", headers=auth_headers)
         # The other owner's overdue alert must not leak into this report.
         assert response.json()["alerts"]["due"] == 3
+        exported = client.get("/api/v1/reports/sla/records/export", headers=auth_headers)
+        assert exported.status_code == 200
+        assert exported.json()["total"] == 3
+        assert all(row["title"] != "Not yours" for row in exported.json()["records"])
 
 
 def test_sla_keeps_unknown_completion_timing_separate_from_decided_outcomes(client, auth_headers):
@@ -385,3 +389,42 @@ def test_sla_record_window_includes_both_boundary_dates(client, auth_headers):
     result = client.get('/api/v1/reports/sla/records?kind=cases&days=7&query=Boundary', headers=auth_headers).json()
     assert [row['title'] for row in result['records']] == ['Boundary record 6', 'Boundary record 0']
     assert result['total'] == 2
+
+
+def test_complete_sla_export_matches_paged_owner_scoped_cohort(client, auth_headers):
+    path = '/api/v1/reports/sla/records'
+    response = client.get(path + '/export', params={'kind': 'alerts', 'days': 30}, headers=auth_headers)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    page = client.get(path, params={'kind': 'alerts', 'days': 30, 'limit': 1}, headers=auth_headers).json()
+    assert data['complete'] is True and data['format'] == 'onealert-sla-evidence-v1'
+    assert len(data['records']) == data['total'] == page['total'] > 1
+    assert data['records'][0] == page['records'][0]
+    assert data['window_start'] == page['window_start'] and data['window_end'] == page['window_end']
+    filtered = client.get(path + '/export', params={'kind': 'alerts', 'outcome': 'breached', 'query': 'Overdue'}, headers=auth_headers).json()
+    assert filtered['total'] == 1 and filtered['records'][0]['title'] == 'Overdue triage'
+    assert filtered['records'][0]['outcome'] == 'breached'
+    assert client.get(path + '/export', params={'days': 91}, headers=auth_headers).status_code == 422
+    assert client.get(path + '/export', params={'kind': 'other'}, headers=auth_headers).status_code == 422
+
+
+def test_complete_sla_export_refuses_over_limit_without_partial_file(client, auth_headers, monkeypatch):
+    monkeypatch.setattr('backend.routers.reports.SLA_EVIDENCE_EXPORT_LIMIT', 2)
+    path = '/api/v1/reports/sla/records/export'
+    response = client.get(path, headers=auth_headers)
+    assert response.status_code == 422 and 'No partial export' in response.text
+    exact = client.get(path, params={'outcome': 'breached'}, headers=auth_headers)
+    assert exact.status_code == 200, exact.text
+    assert exact.json()['total'] == len(exact.json()['records']) == 2
+    empty = client.get(path, params={'query': 'not present'}, headers=auth_headers)
+    assert empty.status_code == 200 and empty.json()['records'] == []
+
+
+def test_complete_case_export_keeps_unknown_completion_evidence(client, auth_headers):
+    with TestingSessionLocal() as db:
+        db.add(Case(user_id=1, title='Unknown export timing', severity='high',
+                    status='closed', due_date=TODAY, closed_at=None))
+        db.commit()
+    response = client.get('/api/v1/reports/sla/records/export', params={'kind': 'cases', 'outcome': 'unknown'}, headers=auth_headers)
+    assert response.status_code == 200, response.text
+    assert any(row['title'] == 'Unknown export timing' and row['completed_on'] is None for row in response.json()['records'])

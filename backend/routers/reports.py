@@ -3,7 +3,7 @@
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy import case as sql_case
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -375,6 +375,31 @@ async def get_sla_records(
         "query": query, "total": total, "offset": offset, "limit": limit,
         "records": matched,
     }
+
+
+SLA_EVIDENCE_EXPORT_LIMIT = 1000
+
+
+@router.get("/sla/records/export")
+async def export_sla_evidence(
+    kind: Literal["alerts", "cases"] = "alerts", days: int = Query(30, ge=1, le=90),
+    outcome: Literal["all", "met", "breached", "unknown"] = "all", query: str = Query("", max_length=200),
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_async_db),
+):
+    """Complete bounded owner-scoped current SLA evidence, never a partial export."""
+    result = await get_sla_records(kind=kind, days=days, outcome=outcome, query=query,
+                                   offset=0, limit=SLA_EVIDENCE_EXPORT_LIMIT + 1, current_user=current_user, db=db)
+    if result["total"] > SLA_EVIDENCE_EXPORT_LIMIT or len(result["records"]) > SLA_EVIDENCE_EXPORT_LIMIT:
+        raise HTTPException(status_code=422, detail=f"More than {SLA_EVIDENCE_EXPORT_LIMIT} SLA records match. "
+                            "Narrow the search, outcome or day window. No partial export was created.")
+    if len(result["records"]) != result["total"]:
+        raise HTTPException(status_code=409, detail="SLA records changed while loading. Retry the export. "
+                            "No partial export was created.")
+    return {**result, "format": "onealert-sla-evidence-v1", "complete": True,
+            "scope": "Current owner-scoped records selected by UTC due date and the requested filters. "
+                     "A new read, not a frozen copy of the displayed report or an audit history. "
+                     "Unknown completion timing is not proof of meeting or breaching a deadline. "
+                     "No external remediation is verified. Keep this file within an appropriate audience."}
 
 
 @router.get("/team-workload")
