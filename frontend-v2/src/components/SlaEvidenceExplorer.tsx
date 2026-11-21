@@ -22,6 +22,9 @@ interface EvidencePage {
   generated_at: string;
   total: number;
   offset: number;
+  limit: number;
+  outcome: string;
+  query: string;
   records: SlaRecord[];
 }
 
@@ -40,7 +43,21 @@ export function SlaEvidenceExplorer({ kind, days }: { kind: 'alerts' | 'cases'; 
     setResult(null);
     setError('');
     void apiClient.get<EvidencePage>('/reports/sla/records', { params: { kind, days, outcome, query, offset, limit: 20 } })
-      .then(response => { if (id === request.current) setResult(response.data); })
+      .then(response => {
+        if (id !== request.current) return;
+        const value = response.data;
+        const validDate = (date: unknown): date is string => typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(`${date}T00:00:00Z`)) && new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) === date;
+        if (!value || value.kind !== kind || value.days !== days || value.outcome !== outcome || value.query !== query || value.offset !== offset || value.limit !== 20
+          || !Number.isSafeInteger(value.total) || value.total < 0 || !validDate(value.window_start) || !validDate(value.window_end)
+          || Date.parse(value.window_end) - Date.parse(value.window_start) !== (days - 1) * 86400000 || typeof value.generated_at !== 'string' || !Number.isFinite(Date.parse(value.generated_at))
+          || !Array.isArray(value.records) || value.records.length > 20 || value.records.length > value.total || new Set(value.records.map(r => r?.id)).size !== value.records.length
+          || value.records.some(r => !r || !Number.isSafeInteger(r.id) || r.id < 1 || typeof r.title !== 'string' || typeof r.status !== 'string' || typeof r.severity !== 'string' || typeof r.reason !== 'string'
+            || !validDate(r.due_date) || r.due_date < value.window_start || r.due_date > value.window_end || (r.completed_on !== null && !validDate(r.completed_on))
+            || !['met', 'breached', 'unknown'].includes(r.outcome) || (outcome !== 'all' && r.outcome !== outcome))) throw new Error('SLA evidence did not match the requested record scope. Retry before relying on it.');
+        const lastOffset = Math.max(0, (Math.ceil(value.total / 20) - 1) * 20);
+        if (offset > lastOffset) { setOffset(lastOffset); return; }
+        setResult(value);
+      })
       .catch(err => { if (id === request.current) setError(getApiErrorMessage(err, 'SLA evidence could not be loaded.')); })
       .finally(() => { if (id === request.current) setLoading(false); });
     return () => { request.current += 1; };
@@ -66,7 +83,7 @@ export function SlaEvidenceExplorer({ kind, days }: { kind: 'alerts' | 'cases'; 
         <h4 className="break-words text-sm font-medium text-surface-100">#{record.id}: {record.title}</h4>
         <p className="text-xs text-surface-300">Due {record.due_date} · Recorded completion: {record.completed_on || 'not recorded'}</p>
         <p className="text-xs text-surface-400">{record.reason}</p>
-        {kind === 'cases' && <Link to={`/cases/${record.id}`} className="inline-block text-xs text-primary-300 underline">Open investigation #{record.id}</Link>}
+        <Link to={kind === 'cases' ? `/cases/${record.id}` : `/alerts?alert=${record.id}`} className="inline-block text-xs text-primary-300 underline">Open {noun} #{record.id}</Link>
       </li>)}</ul> : <p className="text-sm text-surface-400">No records match this page and these filters. This does not mean there are no SLA records in other windows.</p>}
       <div className="flex flex-wrap items-center gap-3 text-xs text-surface-300">
         <button type="button" disabled={offset === 0} onClick={() => setOffset(value => Math.max(0, value - 20))} className="rounded border border-surface-600 px-3 py-2 disabled:opacity-40">Previous evidence page</button>
