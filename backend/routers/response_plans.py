@@ -26,30 +26,48 @@ from backend.services.response_review import review_fingerprint
 router = APIRouter()
 
 
+def _plan_scope(user_id, status_filter, case_id, query, autonomy_level):
+    filters = [ResponsePlan.user_id == user_id]
+    if status_filter:
+        filters.append(ResponsePlan.status == status_filter)
+    if case_id is not None:
+        filters.append(ResponsePlan.case_id == case_id)
+    if autonomy_level is not None:
+        filters.append(ResponsePlan.autonomy_level == autonomy_level)
+    if query.strip():
+        filters.append(or_(*[
+            func.lower(func.coalesce(cast(column, String), "")).contains(query.strip().lower(), autoescape=True)
+            for column in (ResponsePlan.id, ResponsePlan.case_id, ResponsePlan.created_by)
+        ]))
+    return filters
+
+
+def _plan_order(sort):
+    return ([ResponsePlan.created_at.asc(), ResponsePlan.id.asc()] if sort == "oldest" else
+            [ResponsePlan.created_at.desc(), ResponsePlan.id.desc()])
+
+
 @router.get("/")
 async def list_response_plans(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     status_filter: str | None = Query(None, alias="status"),
-    case_id: int | None = Query(None),
+    case_id: int | None = Query(None, ge=1),
+    query: str = Query("", max_length=200),
+    autonomy_level: Literal["L0", "L1", "L2", "L3", "L4"] | None = None,
+    sort: Literal["newest", "oldest"] = "newest",
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
     """List response plans with pagination and filters."""
     skip = (page - 1) * size
-    query = select(ResponsePlan).where(ResponsePlan.user_id == current_user.id)
-    count_q = select(func.count(ResponsePlan.id)).where(ResponsePlan.user_id == current_user.id)
-
-    if status_filter:
-        query = query.filter(ResponsePlan.status == status_filter)
-        count_q = count_q.filter(ResponsePlan.status == status_filter)
-    if case_id:
-        query = query.filter(ResponsePlan.case_id == case_id)
-        count_q = count_q.filter(ResponsePlan.case_id == case_id)
+    filters = _plan_scope(current_user.id, status_filter, case_id, query, autonomy_level)
+    statement = select(ResponsePlan).where(*filters)
+    count_q = select(func.count(ResponsePlan.id)).where(*filters)
 
     total = (await db.execute(count_q)).scalar_one()
     plans = (await db.execute(
-        query.order_by(ResponsePlan.created_at.desc(), ResponsePlan.id.desc()).offset(skip).limit(size)
+        statement.order_by(*_plan_order(sort)).offset(skip).limit(size)
     )).scalars().all()
 
     return {
@@ -64,19 +82,16 @@ async def list_response_plans(
 @router.get("/export")
 async def export_response_plans(
     status_filter: str | None = Query(None, alias="status"),
-    case_id: int | None = Query(None),
+    case_id: int | None = Query(None, ge=1),
+    query: str = Query("", max_length=200),
+    autonomy_level: Literal["L0", "L1", "L2", "L3", "L4"] | None = None,
+    sort: Literal["newest", "oldest"] = "newest",
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Export the user's response plans as CSV, honoring list filters."""
-    query = select(ResponsePlan).where(ResponsePlan.user_id == current_user.id)
-    if status_filter:
-        query = query.filter(ResponsePlan.status == status_filter)
-    if case_id:
-        query = query.filter(ResponsePlan.case_id == case_id)
-    plans = (await db.execute(
-        query.order_by(ResponsePlan.created_at.desc())
-    )).scalars().all()
+    filters = _plan_scope(current_user.id, status_filter, case_id, query, autonomy_level)
+    plans = (await db.execute(select(ResponsePlan).where(*filters).order_by(*_plan_order(sort)))).scalars().all()
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
