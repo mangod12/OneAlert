@@ -43,6 +43,9 @@ async def run_pipeline(db: AsyncSession, user_id: int, hours_back: int = 24) -> 
         results["triage"] = {"error": str(e)}
 
     results["total_duration_ms"] = int((time.time() - start) * 1000)
-    results["pipeline_status"] = "completed"
+    stages = [results["detect"], results["triage"]]
+    failed = sum(bool(stage.get("error")) or stage.get("status") == "failed" for stage in stages)
+    partial = any(stage.get("status") == "partial" for stage in stages)
+    results["pipeline_status"] = "failed" if failed == len(stages) else "partial" if failed or partial else "completed"
 
     return results

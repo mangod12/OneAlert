@@ -140,11 +140,11 @@ describe('Agent pipeline', () => {
     fireEvent.change(screen.getByLabelText('Pipeline lookback'), { target: { value: '72' } });
     fireEvent.click(screen.getByRole('button', { name: /run pipeline/i }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/pipeline', null, { params: { hours_back: 72 } }));
-    expect(await screen.findByText('Pipeline finished in 1.8s')).toBeTruthy();
+    expect(await screen.findByText('Pipeline outcome: completed · 1.8s')).toBeTruthy();
     expect(screen.getByText('Detect: Analyzed 12 events, found 3 findings')).toBeTruthy();
     expect(screen.getByText('Triage: Created 1 cases from 4 alerts and 12 events')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /dismiss pipeline result/i }));
-    expect(screen.queryByText(/Pipeline finished/)).toBeNull();
+    expect(screen.queryByText(/Pipeline outcome:/)).toBeNull();
   });
 
   it('shows an error toast when the pipeline fails', async () => {
@@ -153,7 +153,7 @@ describe('Agent pipeline', () => {
     await screen.findByText('Credential dumping on edge router');
     fireEvent.click(screen.getByRole('button', { name: /run pipeline/i }));
     await waitFor(() => expect(mockToast).toHaveBeenCalledWith(expect.stringContaining('could not be run'), 'error'));
-    expect(screen.queryByText(/Pipeline finished/)).toBeNull();
+    expect(screen.queryByText(/Pipeline outcome:/)).toBeNull();
   });
 });
 
@@ -463,4 +463,23 @@ it('applies keyword filtering to server-side rows and CSV only after submission'
   fireEvent.click(screen.getByRole('button', { name: 'Clear keyword filter' }));
   await waitFor(() => expect(mockGet).toHaveBeenLastCalledWith('/cases/', { params: { page: 1, size: 20, sort: 'created_at_desc' } }));
   click.mockRestore();
+});
+
+
+it('shows partial automatic triage as an incomplete outcome rather than an all-clear', async () => {
+  mockPost.mockResolvedValueOnce({ data: { data: { status: 'partial', summary: 'Created 1 case; 1 of 2 correlation groups failed and need review or retry' } } });
+  renderCases(); await screen.findByText('Credential dumping on edge router');
+  fireEvent.click(screen.getByRole('button', { name: /run ai triage/i }));
+  await screen.findByText('Automatic triage outcome: partial');
+  expect(screen.getByText(/do not assume zero created cases means no incident/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Dismiss triage result' }));
+  expect(screen.queryByRole('region', { name: 'Automatic triage result' })).toBeNull();
+});
+it('does not label partial pipeline results completed', async () => {
+  mockPost.mockResolvedValueOnce({ data: { data: { pipeline_status: 'partial', total_duration_ms: 300,
+    detect: { summary: 'Detection completed' }, triage: { status: 'failed', summary: 'Two groups failed' } } } });
+  renderCases(); await screen.findByText('Credential dumping on edge router');
+  fireEvent.click(screen.getByRole('button', { name: /run pipeline/i }));
+  await screen.findByText('Pipeline outcome: partial · 0.3s');
+  expect(screen.getByText(/this is not an all-clear/)).toBeTruthy();
 });

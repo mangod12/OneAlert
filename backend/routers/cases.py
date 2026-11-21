@@ -1585,23 +1585,18 @@ async def auto_triage(
     """Run the AI triage agent on recent unprocessed alerts and events."""
     from backend.services.agents.triage import TriageAgent
 
-    before_count = (await db.execute(
-        select(func.count(Case.id)).where(Case.user_id == current_user.id)
-    )).scalar_one()
     agent = TriageAgent(db=db, user_id=current_user.id)
-    await agent.execute(hours_back=hours_back)
-    after_count = (await db.execute(
-        select(func.count(Case.id)).where(Case.user_id == current_user.id)
-    )).scalar_one()
-    cases_created = max(0, after_count - before_count)
-
-    return {
-        "success": True,
-        "data": {
-            "cases_created": cases_created,
-            "summary": f"Created {cases_created} cases from recent alerts and events",
-        },
-    }
+    result = await agent.execute(hours_back=hours_back)
+    return {"success": True, "data": {
+        "status": result.get("status", "completed"),
+        "cases_created": result.get("cases_created", 0),
+        "alerts_triaged": result.get("alerts_triaged", 0),
+        "events_triaged": result.get("events_triaged", 0),
+        "groups_total": result.get("groups_total", 0),
+        "groups_failed": result.get("groups_failed", 0),
+        "groups_nonincident": result.get("groups_nonincident", 0),
+        "summary": result.get("summary", "Triage returned no summary."),
+    }}
 
 
 @router.get("/{case_id}/evidence-candidates")

@@ -67,7 +67,8 @@ class TriageAgent(BaseAgent):
 
         if not alerts and not events:
             await self.log_step("skip", "No untriaged data found")
-            return {"cases_created": 0, "alerts_triaged": 0, "events_triaged": 0, "summary": "No data to triage"}
+            return {"status": "completed", "groups_total": 0, "groups_failed": 0, "groups_nonincident": 0,
+                    "cases_created": 0, "alerts_triaged": 0, "events_triaged": 0, "summary": "No data to triage"}
 
         # Step 2: Group by entity overlap (IP, asset, time window)
         start = time.time()
@@ -82,6 +83,8 @@ class TriageAgent(BaseAgent):
         cases_created = 0
         total_alerts = 0
         total_events = 0
+        groups_failed = 0
+        groups_nonincident = 0
 
         for group in groups:
             try:
@@ -90,14 +93,25 @@ class TriageAgent(BaseAgent):
                     cases_created += 1
                     total_alerts += len(group["alerts"])
                     total_events += len(group["events"])
+                else:
+                    groups_nonincident += 1
             except Exception as e:
+                groups_failed += 1
                 logger.error(f"Triage group analysis failed: {e}")
 
+        status = "completed" if groups_failed == 0 else "failed" if groups_failed == len(groups) else "partial"
+        summary = f"Created {cases_created} cases from {total_alerts} alerts and {total_events} events"
+        if groups_failed:
+            summary += f"; {groups_failed} of {len(groups)} correlation groups failed and need review or retry"
         return {
+            "status": status,
+            "groups_total": len(groups),
+            "groups_failed": groups_failed,
+            "groups_nonincident": groups_nonincident,
             "cases_created": cases_created,
             "alerts_triaged": total_alerts,
             "events_triaged": total_events,
-            "summary": f"Created {cases_created} cases from {total_alerts} alerts and {total_events} events",
+            "summary": summary,
         }
 
     async def _get_untriaged_alerts(self, cutoff: datetime) -> list:
