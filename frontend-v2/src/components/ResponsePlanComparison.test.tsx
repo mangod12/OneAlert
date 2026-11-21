@@ -59,3 +59,16 @@ it('prefills linked IDs without fetching, then reloads both exact records on req
   expect((screen.getByLabelText('Baseline plan ID') as HTMLInputElement).value).toBe('8');
   expect(get).toHaveBeenCalledTimes(2);
 });
+
+it('searches complete loaded comparison positions beyond the current page and resets paging', async () => {
+  get.mockImplementation(async url => ({ data: { ...(url.endsWith('/7') ? before : after), actions: Array.from({ length: 22 }, (_, i) => ({ target: url.endsWith('/7') ? 'old' : i === 21 ? 'Rare last host' : 'new' })) } })); show(); load(); await screen.findByText('Stored action position 10: changed'); fireEvent.click(screen.getByText('Next comparison positions')); expect(screen.getByText(/Page 2 of 3/)).toBeTruthy(); fireEvent.change(screen.getByLabelText('Search saved action position evidence'), { target: { value: 'RARE last' } }); expect(screen.getByText('Stored action position 22: changed')).toBeTruthy(); expect(screen.getByText(/1 of 22 loaded positions match/)).toBeTruthy(); expect(screen.getByText(/Page 1 of 1/)).toBeTruthy(); expect(get).toHaveBeenCalledTimes(2);
+});
+it('keeps metadata differences visible under empty literal action searches and downloads matching scope', async () => {
+  const create = vi.fn((blob: Blob) => { expect(blob.type).toBe('application/json'); return 'blob:comparison'; }); vi.stubGlobal('URL', { createObjectURL: create, revokeObjectURL: vi.fn() }); const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  try { show(); load(); await screen.findByText('Stored action position 1: changed'); fireEvent.change(screen.getByLabelText('Search saved action position evidence'), { target: { value: '.*' } }); expect(screen.getByText('Status: approved → partial (different recorded values)')).toBeTruthy(); expect(screen.getByText(/0 of 2 loaded positions match/)).toBeTruthy(); fireEvent.click(screen.getByText('Download matching plan comparison JSON')); expect(create).toHaveBeenCalledTimes(1); expect(click).toHaveBeenCalledTimes(1); fireEvent.click(screen.getByText('Clear position evidence search')); expect(screen.getByText('Stored action position 1: changed')).toBeTruthy(); }
+  finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
+});
+it('keeps download failure separate from loaded comparison and clears export state on record changes', async () => {
+  vi.stubGlobal('URL', { createObjectURL: () => { throw Error('No download'); } });
+  try { show(); load(); await screen.findByText('Stored action position 1: changed'); fireEvent.click(screen.getByText('Download matching plan comparison JSON')); expect(screen.getByRole('alert').textContent).toContain('could not be downloaded'); expect(screen.getByText('Stored action position 1: changed')).toBeTruthy(); fireEvent.change(screen.getByLabelText('Comparison plan ID'), { target: { value: '9' } }); expect(screen.queryByRole('alert')).toBeNull(); expect(screen.queryByText('Download matching plan comparison JSON')).toBeNull(); } finally { vi.unstubAllGlobals(); }
+});
