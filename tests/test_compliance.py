@@ -571,3 +571,57 @@ def test_automation_keeps_manual_history_and_remains_idempotent(client, auth_hea
     row = next(row for row in csv.DictReader(io.StringIO(exported.text)) if row['control_id'] == 'FR1-SR1.1')
     assert row['evidence_type'] == 'automated'
     assert row['evidence_detail'] == automatic['evidence_detail']
+
+
+def test_filtered_export_uses_latest_owned_status_literal_search_and_complete_limit(client, auth_headers, monkeypatch):
+    import csv
+    import io
+    from datetime import datetime
+    with TestingSessionLocal() as db:
+        user = db.query(User).filter_by(email='compliance_test@example.com').one()
+        other = User(email='export-outsider@example.com', hashed_password='unused', is_active=True)
+        db.add(other)
+        db.flush()
+        rows = db.query(ComplianceControl).filter_by(framework_id=1).order_by(ComplianceControl.id).all()
+        rows[0].title = 'Literal 100%_match'
+        rows[1].title = 'Literal 100percentXmatch'
+        for control in rows[:2]:
+            db.add(ComplianceAssessment(user_id=user.id, control_id=control.id, status='compliant', assessed_at=datetime(2026,1,1)))
+        db.add(ComplianceAssessment(user_id=user.id, control_id=rows[0].id, status='non_compliant', assessed_at=datetime(2026,11,21)))
+        db.flush()
+        db.add(ComplianceAssessment(user_id=user.id, control_id=rows[0].id, status='partial', assessed_at=datetime(2026,11,21), evidence_detail='Latest same-time evidence'))
+        db.add(ComplianceAssessment(user_id=other.id, control_id=rows[0].id, status='compliant', assessed_at=datetime(2027,1,1), evidence_detail='Not disclosed'))
+        db.commit()
+        first_code = rows[0].control_id
+    path = '/api/v1/compliance/export'
+    params = {'framework_id':1,'query':' 100%_MATCH ','status':'partial'}
+    response = client.get(path, params=params, headers=auth_headers)
+    assert response.status_code == 200, response.text
+    exported = list(csv.DictReader(io.StringIO(response.text)))
+    assert len(exported) == 1 and exported[0]['control_id'] == first_code
+    assert exported[0]['status'] == 'partial' and exported[0]['evidence_detail'] == 'Latest same-time evidence'
+    assert 'Not disclosed' not in response.text
+    assert len(list(csv.DictReader(io.StringIO(client.get(path,params={**params,'status':'compliant'},headers=auth_headers).text)))) == 0
+    monkeypatch.setattr('backend.routers.compliance.COMPLIANCE_EXPORT_LIMIT', 1)
+    assert client.get(path,params=params,headers=auth_headers).status_code == 200
+    response = client.get(path,params={'framework_id':1},headers=auth_headers)
+    assert response.status_code == 422 and 'No partial CSV' in response.text
+    assert client.get(path,params={'status':'other'},headers=auth_headers).status_code == 422
+    assert client.get(path,params={'query':'x'*201},headers=auth_headers).status_code == 422
+
+
+def test_filtered_export_not_assessed_includes_missing_and_explicit_status(client, auth_headers):
+    import csv
+    import io
+    with TestingSessionLocal() as db:
+        user = db.query(User).filter_by(email='compliance_test@example.com').one()
+        controls = db.query(ComplianceControl).filter_by(framework_id=1).order_by(ComplianceControl.id).all()
+        db.add(ComplianceAssessment(user_id=user.id,control_id=controls[0].id,status='not_applicable'))
+        db.add(ComplianceAssessment(user_id=user.id,control_id=controls[1].id,status='not_assessed'))
+        db.commit()
+        count = len(controls)
+    response=client.get('/api/v1/compliance/export',params={'framework_id':1,'status':'not_assessed'},headers=auth_headers)
+    assert response.status_code==200
+    assert len(list(csv.DictReader(io.StringIO(response.text))))==count-1
+    response=client.get('/api/v1/compliance/export',params={'framework_id':1,'status':'not_applicable'},headers=auth_headers)
+    assert len(list(csv.DictReader(io.StringIO(response.text))))==1
