@@ -25,7 +25,7 @@ const MitreMap = lazy(() => import('./pages/MitreMap').then(module => ({ default
 const HuntLab = lazy(() => import('./pages/HuntLab').then(module => ({ default: module.HuntLab })));
 const Notifications = lazy(() => import('./pages/Notifications').then(module => ({ default: module.Notifications })));
 const Settings = lazy(() => import('./pages/Settings').then(module => ({ default: module.Settings })));
-const AuditLog = lazy(() => import('./pages/AuditLog').then(module => ({ default: module.AuditLog })));
+const AuditLog = lazy(() => import('./pages/AuditLog').then(module => ({ default: module.AuditLogRoute })));
 const Compliance = lazy(() => import('./pages/Compliance').then(module => ({ default: module.Compliance })));
 const SbomComponentSearch = lazy(() => import('./pages/SbomComponentSearch').then(module => ({ default: module.SbomComponentSearch })));
 const SuppressionMatchEvidence = lazy(() => import('./pages/SuppressionMatchEvidence').then(module => ({ default: module.SuppressionMatchEvidence })));
