@@ -22,6 +22,7 @@ const Events = lazy(() => import('./pages/EventSourceRoute').then(module => ({ d
 const Assets = lazy(() => import('./pages/Assets').then(module => ({ default: module.Assets })));
 const OTDiscovery = lazy(() => import('./pages/OTDiscovery').then(module => ({ default: module.OTDiscovery })));
 const MitreMap = lazy(() => import('./pages/MitreMap').then(module => ({ default: module.MitreMap })));
+const HuntSessionEvidenceRoute = lazy(() => import('./components/HuntSessionEvidenceRoute').then(module => ({ default: module.HuntSessionEvidenceRoute })));
 const HuntLab = lazy(() => import('./pages/HuntLab').then(module => ({ default: module.HuntLabRoute })));
 const Notifications = lazy(() => import('./pages/Notifications').then(module => ({ default: module.Notifications })));
 const Settings = lazy(() => import('./pages/Settings').then(module => ({ default: module.Settings })));
@@ -73,7 +74,7 @@ function App() {
           <Route path="/assets" element={<Assets />} />
           <Route path="/ot" element={<OTDiscovery />} />
           <Route path="/mitre" element={<MitreMap />} />
-          <Route path="/hunt" element={<HuntLab />} />
+          <Route path="/hunt" element={<HuntSessionEvidenceRoute><HuntLab /></HuntSessionEvidenceRoute>} />
           <Route path="/sbom/documents" element={<SbomDocumentLibrary />} />
           <Route path="/response-plans" element={<ResponsePlans />} />
           <Route path="/validation" element={<Validation />} />
