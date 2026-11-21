@@ -1602,6 +1602,7 @@ async def auto_triage(
         "groups_failed": result.get("groups_failed", 0),
         "groups_nonincident": result.get("groups_nonincident", 0),
         "summary": result.get("summary", "Triage returned no summary."),
+        **({"run_id": agent._run.id} if agent._run is not None else {}),
     }}
 
 
