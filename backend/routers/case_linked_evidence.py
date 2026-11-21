@@ -115,6 +115,7 @@ async def export_linked_case_evidence(
 async def compare_case_evidence(
     case_id: int, other_case_id: int = Query(..., ge=1, le=2147483647),
     kind: Literal['alert', 'event'] = 'alert',
+    relation: Literal['shared', 'source_only', 'other_only'] = 'shared',
     page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100),
     current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
 ):
@@ -137,8 +138,13 @@ async def compare_case_evidence(
     other_count = (await db.execute(select(func.count()).select_from(other_ids.subquery()))).scalar_one()
     shared = [model.id.in_(source_ids), model.id.in_(other_ids)]
     shared_count = (await db.execute(select(func.count()).select_from(model).where(*shared))).scalar_one()
+    selected = shared if relation == 'shared' else (
+        [model.id.in_(source_ids), model.id.not_in(other_ids)] if relation == 'source_only' else
+        [model.id.in_(other_ids), model.id.not_in(source_ids)])
+    total = shared_count if relation == 'shared' else (
+        source_count - shared_count if relation == 'source_only' else other_count - shared_count)
     timestamp = model.created_at if kind == 'alert' else model.timestamp
-    rows = (await db.execute(select(model).where(*shared)
+    rows = (await db.execute(select(model).where(*selected)
         .order_by(timestamp.desc().nulls_last(), model.id.desc())
         .offset((page - 1) * size).limit(size))).scalars().all()
     records = [{'id': row.id, 'label': row.title if kind == 'alert' else row.signature,
@@ -149,7 +155,8 @@ async def compare_case_evidence(
             'other_case_id': other.id, 'other_case_title': other.title, 'kind': kind,
             'source_count': source_count, 'other_count': other_count, 'shared_count': shared_count,
             'source_only_count': source_count - shared_count, 'other_only_count': other_count - shared_count,
-            'page': page, 'size': size, 'records': records, 'retrieved_at': datetime.now(UTC).isoformat(),
-            'scope': 'Exact shared saved record IDs, not text similarity or proof of the same incident. '
+            'relation': relation, 'total': total, 'page': page, 'size': size, 'records': records,
+            'retrieved_at': datetime.now(UTC).isoformat(),
+            'scope': 'Exact saved record ID sets, not text similarity or proof of the same incident. '
                      'Counts include only currently retrievable records belonging to each investigation owner. '
                      'Unavailable or wrong-owner links are excluded. No links or investigation state were changed.'}
