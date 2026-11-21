@@ -267,3 +267,17 @@ it('offers a first-page recovery when events disappear between page reads', asyn
   fireEvent.click(await screen.findByRole('button', { name: 'Return to first history page' }));
   expect(await screen.findByText('Available history')).toBeTruthy();
 });
+it('exports applied timeline filters, not an unsaved search draft or current page', async () => {
+  mockGets([{ kind: 'alert_updated', alert_id: 11, title: 'Saved update', detail: 'matching retained evidence', timestamp: null }]);
+  vi.stubGlobal('URL', class extends URL { static createObjectURL = vi.fn(() => 'blob:history'); static revokeObjectURL = vi.fn(); });
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  renderPage(); fireEvent.click(await screen.findByRole('button', { name: /3 active alerts/ }));
+  await screen.findByText('Saved update');
+  fireEvent.change(screen.getByLabelText('Search incident history'), { target: { value: 'matching' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Search history' })); await screen.findByText('Saved update');
+  fireEvent.change(screen.getByLabelText('Search incident history'), { target: { value: 'unapplied draft' } });
+  get.mockResolvedValueOnce({ data: new Blob(['asset_id\n5'], { type: 'text/csv' }) });
+  fireEvent.click(screen.getByRole('button', { name: 'Export all matching incident history' })); await screen.findByText(/Incident history download prepared/);
+  expect(get).toHaveBeenLastCalledWith('/incidents/5/timeline/export', { params: { search: 'matching' }, responseType: 'blob' });
+  expect(post).not.toHaveBeenCalled();
+});

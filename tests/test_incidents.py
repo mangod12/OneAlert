@@ -429,3 +429,92 @@ def test_incidents_and_posture_do_not_expose_cross_owner_asset_associations(clie
     assert report.status_code == 200, report.text
     assert report.json()['incidents']['active'] == 1
     assert [row['asset_name'] for row in report.json()['incidents']['top_assets']] == ['plc-01']
+
+
+def test_history_export_matches_full_filtered_timeline_not_only_latest_page(client):
+    import csv
+    import io
+    from datetime import datetime
+
+    headers = _register_and_login(client, 'export-history@example.com')
+    uid = client.get('/api/v1/auth/me', headers=headers).json()['id']
+    asset_id = _seed(uid)
+    with _TestingSessionLocal() as db:
+        alert = db.query(Alert).filter(Alert.asset_id == asset_id).first()
+        db.add_all([AuditLog(user_id=uid, action='alert_updated', target_type='alert',
+                            target_id=alert.id, detail=f'Saved change {i}',
+                            timestamp=datetime(2026, 1, 1)) for i in range(125)])
+        db.add(AuditLog(user_id=uid, action='alert_updated', target_type='alert', target_id=alert.id,
+                        detail='Old 100%_literal evidence', timestamp=datetime(2020, 1, 1)))
+        db.commit()
+    endpoint = f'/api/v1/incidents/{asset_id}/timeline'
+    response = client.get(endpoint + '/export', headers=headers)
+    assert response.status_code == 200 and response.headers['cache-control'] == 'no-store'
+    assert response.headers['x-evidence-record-count'] == '130'
+    assert 'text/csv' in response.headers['content-type']
+    rows = list(csv.DictReader(io.StringIO(response.text)))
+    assert len(rows) == 130 and rows[-1]['recorded_detail'] == 'Old 100%_literal evidence'
+    assert len({(r['source'], r['source_record_id']) for r in rows}) == 130
+    assert all(r['record_count'] == '130' and r['asset_id'] == str(asset_id) for r in rows)
+    assert 'current alert values' in rows[0]['record_scope'] and 'Keep private' in rows[0]['record_scope']
+    selected = client.get(endpoint + '/export', params={'search': ' 100%_LITERAL ', 'kind': 'alert_updated'}, headers=headers)
+    subset = list(csv.DictReader(io.StringIO(selected.text)))
+    assert len(subset) == 1 and subset[0]['applied_search'] == '100%_LITERAL'
+    assert subset[0]['applied_kind'] == 'alert_updated'
+    page = client.get(endpoint, params={'search': '100%_LITERAL', 'kind': 'alert_updated'}, headers=headers).json()
+    assert subset[0]['recorded_detail'] == page['events'][0]['detail']
+
+
+def test_history_export_retains_owner_scope_and_rejects_oversized_without_partial_file(client, monkeypatch):
+    import csv
+    import io
+    from backend.routers import incidents
+
+    owner = _register_and_login(client, 'export-owner@example.com')
+    other = _register_and_login(client, 'export-other@example.com')
+    uid = client.get('/api/v1/auth/me', headers=owner).json()['id']
+    foreign = client.get('/api/v1/auth/me', headers=other).json()['id']
+    asset_id = _seed(uid)
+    with _TestingSessionLocal() as db:
+        alert = db.query(Alert).filter(Alert.asset_id == asset_id).first()
+        db.add(AuditLog(user_id=foreign, action='foreign_kind', target_type='alert',
+                        target_id=alert.id, detail='Private foreign actor note'))
+        db.add(Alert(user_id=foreign, asset_id=asset_id, title='Private foreign alert', severity='high'))
+        db.commit()
+    endpoint = f'/api/v1/incidents/{asset_id}/timeline/export'
+    response = client.get(endpoint, headers=owner)
+    assert len(list(csv.DictReader(io.StringIO(response.text)))) == 4 and 'Private' not in response.text
+    assert client.get(endpoint, headers=other).status_code == 404
+    assert client.get('/api/v1/incidents/999999/timeline/export', headers=owner).status_code == 404
+    empty = client.get(endpoint, params={'search': 'Private'}, headers=owner)
+    assert empty.status_code == 200 and empty.headers['x-evidence-record-count'] == '0'
+    assert list(csv.DictReader(io.StringIO(empty.text))) == []
+    monkeypatch.setattr(incidents, 'INCIDENT_HISTORY_EXPORT_LIMIT', 3)
+    refused = client.get(endpoint, headers=owner)
+    assert refused.status_code == 413 and 'no partial file' in refused.text
+    assert 'content-disposition' not in refused.headers
+    assert client.get(endpoint, params={'search': 'x' * 201}, headers=owner).status_code == 422
+
+
+def test_history_export_protects_formula_cells_and_preserves_null_times(client):
+    import csv
+    import io
+
+    headers = _register_and_login(client, 'export-safe-cells@example.com')
+    uid = client.get('/api/v1/auth/me', headers=headers).json()['id']
+    asset_id = _seed(uid)
+    with _TestingSessionLocal() as db:
+        db.query(Asset).filter(Asset.id == asset_id).update({'name': '=unsafe asset'})
+        alert = db.query(Alert).filter(Alert.asset_id == asset_id).first()
+        alert.title = '  +unsafe title'
+        db.add(AuditLog(user_id=uid, action='alert_updated', target_type='alert', target_id=alert.id,
+                        detail='\t=unsafe detail'))
+        db.flush()
+        db.query(AuditLog).filter(AuditLog.target_id == alert.id).update({'timestamp': None})
+        db.commit()
+    response = client.get(f'/api/v1/incidents/{asset_id}/timeline/export', headers=headers)
+    rows = list(csv.DictReader(io.StringIO(response.text)))
+    assert all(r['asset_name'] == "'=unsafe asset" for r in rows)
+    changed = next(r for r in rows if r['source'] == 'alert_audit')
+    assert changed['current_alert_title'] == "'  +unsafe title"
+    assert changed['recorded_detail'] == "'\t=unsafe detail" and changed['recorded_at'] == ''
