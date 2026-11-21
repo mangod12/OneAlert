@@ -99,23 +99,30 @@ class TriageAgent(BaseAgent):
         }
 
     async def _get_untriaged_alerts(self, cutoff: datetime) -> list:
+        linked_to_owned_case = select(CaseAlert.id).join(Case, Case.id == CaseAlert.case_id).where(
+            CaseAlert.alert_id == Alert.id, Case.user_id == self.user_id,
+        ).exists()
         result = await self.db.execute(
             select(Alert)
-            .where(Alert.user_id == self.user_id, Alert.created_at >= cutoff)
-            .order_by(Alert.created_at.desc())
+            .where(Alert.user_id == self.user_id, Alert.created_at >= cutoff, ~linked_to_owned_case)
+            .order_by(Alert.created_at.desc(), Alert.id.desc())
             .limit(100)
         )
         return result.scalars().all()
 
     async def _get_untriaged_events(self, cutoff: datetime) -> list:
+        linked_to_owned_case = select(CaseEvent.id).join(Case, Case.id == CaseEvent.case_id).where(
+            CaseEvent.event_id == SecurityEvent.id, Case.user_id == self.user_id,
+        ).exists()
         result = await self.db.execute(
             select(SecurityEvent)
             .where(
                 SecurityEvent.user_id == self.user_id,
                 SecurityEvent.timestamp >= cutoff,
                 SecurityEvent.processed == "pending",
+                ~linked_to_owned_case,
             )
-            .order_by(SecurityEvent.timestamp.desc())
+            .order_by(SecurityEvent.timestamp.desc(), SecurityEvent.id.desc())
             .limit(500)
         )
         return result.scalars().all()
