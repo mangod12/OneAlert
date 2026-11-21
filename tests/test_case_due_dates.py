@@ -1,6 +1,6 @@
 """Tests for case due dates: PATCH set/clear, overdue filter, due-date sorting."""
 
-from datetime import date, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.database.db import Base, get_async_db, get_db
 from backend.main import app
+from backend.routers import cases as cases_router
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test_case_due_dates.db"
 _engine = create_engine(
@@ -40,8 +41,9 @@ async def _override_get_async_db():
 
 
 @pytest.fixture(scope="function")
-def client():
-    """Create a test client with fresh database tables."""
+def client(monkeypatch):
+    """Use the same fixed UTC request clock and fixture dates, even across midnight."""
+    monkeypatch.setattr(cases_router, "datetime", FixedDateTime)
     app.dependency_overrides[get_db] = _override_get_db
     app.dependency_overrides[get_async_db] = _override_get_async_db
 
@@ -81,9 +83,19 @@ def _set_due(client: TestClient, headers, case_id: int, value: str) -> None:
     assert res.status_code == 200, res.text
 
 
-YESTERDAY = (date.today() - timedelta(days=1)).isoformat()
-TOMORROW = (date.today() + timedelta(days=1)).isoformat()
-NEXT_WEEK = (date.today() + timedelta(days=7)).isoformat()
+FIXED_NOW = datetime(2026, 11, 21, 19, 30, tzinfo=UTC)
+
+
+class FixedDateTime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return FIXED_NOW.astimezone(tz) if tz is not None else FIXED_NOW.replace(tzinfo=None)
+
+
+TODAY = FIXED_NOW.date().isoformat()
+YESTERDAY = (FIXED_NOW.date() - timedelta(days=1)).isoformat()
+TOMORROW = (FIXED_NOW.date() + timedelta(days=1)).isoformat()
+NEXT_WEEK = (FIXED_NOW.date() + timedelta(days=7)).isoformat()
 
 
 class TestCaseDueDates:
@@ -133,6 +145,8 @@ class TestCaseDueDates:
         past_resolved = _make_case(client, headers, "past resolved")
         future_open = _make_case(client, headers, "future open")
         no_due = _make_case(client, headers, "no due date")
+        due_today = _make_case(client, headers, "due today UTC")
+        _set_due(client, headers, due_today, TODAY)
         _set_due(client, headers, past_open, YESTERDAY)
         _set_due(client, headers, past_resolved, YESTERDAY)
         _set_due(client, headers, future_open, TOMORROW)
@@ -145,6 +159,7 @@ class TestCaseDueDates:
         returned = {c["id"] for c in res.json()["cases"]}
         assert returned == {past_open}
         assert no_due not in returned
+        assert due_today not in returned
 
     def test_sort_by_due_date_nulls_last(self, client):
         headers = _register_and_login(client, "sort@example.com")
