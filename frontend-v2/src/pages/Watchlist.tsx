@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { WatchlistExplorer } from '../components/WatchlistExplorer';
 import { Bell, BriefcaseMedical } from 'lucide-react';
 import apiClient from '../api/client';
@@ -48,7 +48,9 @@ function severityRank(severity: string): number {
 }
 
 export function Watchlist() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [exploring, setExploring] = useState(false);
+  const linkedExplorer = ['explore', 'query', 'kind', 'severity', 'scope', 'sort'].some(key => searchParams.has(key));
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState('all');
   const [severity, setSeverity] = useState('all');
@@ -193,7 +195,7 @@ export function Watchlist() {
     setBulkConfirm(false);
   };
 
-  if (exploring) return <div className="min-w-0 space-y-6"><PageHeader eyebrow="Command" title="Watchlist" description="Full-watchlist search across alerts and investigations you follow." /><button type="button" className="rounded border border-surface-600 px-3 py-2 text-sm text-surface-200" onClick={() => setExploring(false)}>Back to loaded watchlist review</button><WatchlistExplorer /></div>;
+  if (exploring || linkedExplorer) return <div className="min-w-0 space-y-6"><PageHeader eyebrow="Command" title="Watchlist" description="Full-watchlist search across alerts and investigations you follow." /><button type="button" className="rounded border border-surface-600 px-3 py-2 text-sm text-surface-200" onClick={() => { setExploring(false); setSearchParams(current => { const next = new URLSearchParams(current); for (const key of ['explore', 'query', 'kind', 'severity', 'scope', 'sort']) next.delete(key); return next; }, { replace: true }); }}>Back to loaded watchlist review</button><WatchlistExplorer /></div>;
 
   return (
     <div className="min-w-0 space-y-6">
