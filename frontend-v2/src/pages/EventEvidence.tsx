@@ -1,5 +1,6 @@
 import { EventRecordedNeighbors } from '../components/EventRecordedNeighbors';
 import { EventFieldComparison } from '../components/EventFieldComparison';
+import { EventLinkedInvestigations } from '../components/EventLinkedInvestigations';
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import apiClient from '../api/client';
@@ -39,6 +40,7 @@ export function EventEvidence() {
         {snapshot.source_state === 'owned' && snapshot.source && <p className="text-xs text-surface-400"><a href={`/app/events?source_id=${snapshot.source.id}`} className="inline-block rounded border border-surface-600 px-3 py-2 text-primary-300">View saved events from this source</a> Opens the current source-only event list. It does not imply a common incident or preserve this loaded evidence.</p>}
         <EventRecordedNeighbors key={`${snapshot.event.id}:${snapshot.retrieved_at}`} eventId={snapshot.event.id} event={snapshot.event} />
         <EventFieldComparison key={`comparison:${snapshot.event.id}:${snapshot.retrieved_at}`} eventId={snapshot.event.id} />
+        <EventLinkedInvestigations key={`investigations:${snapshot.event.id}:${snapshot.retrieved_at}`} eventId={snapshot.event.id} />
         <section aria-label="Linked event source" className="oa-panel space-y-3 p-4"><h2 className="font-semibold text-surface-100">Linked source record</h2>{snapshot.source_state === 'owned' && snapshot.source ? <dl className="grid gap-3 text-xs sm:grid-cols-2">{Object.entries(snapshot.source).map(([field, value]) => <div key={field} className="min-w-0"><dt className="text-surface-400">{label(field)}</dt><dd className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{recorded(value)}</dd></div>)}</dl> : <p className="text-sm text-surface-400">{snapshot.source_state === 'not_linked' ? 'No source record is linked to this event.' : 'The linked source is unavailable to this account. Its private details are not included.'}</p>}</section>
         <section aria-label="Stored parsed event payload" className="oa-panel min-w-0 space-y-3 p-4"><h2 className="font-semibold text-surface-100">Stored parsed payload</h2><p className="text-xs text-surface-400">JSON text is generated from the stored parsed payload, not the original file's spacing, key order or bytes. Large integer literals are preserved in this text and in the download's raw_payload_json string. Nothing here is executed.</p>{snapshot.raw_payload_json === null ? <p className="text-sm text-surface-400">No raw payload was recorded.</p> : <pre aria-label="Exact stored payload JSON" className="max-h-96 max-w-full overflow-auto rounded border border-surface-700 bg-surface-950 p-3 text-xs">{snapshot.raw_payload_json}</pre>}</section>
       </>}
