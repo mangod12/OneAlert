@@ -40,6 +40,32 @@ export function AgentRunInspector({ runId, onClose }: { runId: number; onClose: 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
+  const exportRequest = useRef(0);
+  const [exporting, setExporting] = useState(false), [exportError, setExportError] = useState(''), [exported, setExported] = useState(false);
+  const exportBusy = useRef(false);
+  useEffect(() => {
+    exportRequest.current += 1; exportBusy.current = false; setExporting(false); setExportError(''); setExported(false);
+    return () => { exportRequest.current += 1; };
+  }, [runId]);
+  const exportRun = async () => {
+    if (exportBusy.current) return;
+    const request = ++exportRequest.current; exportBusy.current = true; setExporting(true); setExportError(''); setExported(false);
+    try {
+      const response = await apiClient.get(`/cases/agents/runs/${runId}/export`, { responseType: 'blob' });
+      if (request !== exportRequest.current) return;
+      const blob = response.data;
+      if (!(blob instanceof Blob)) throw new Error('The download did not contain a JSON file.');
+      const payload = JSON.parse(await blob.text());
+      if (request !== exportRequest.current) return;
+      if (payload?.format !== 'onealert-agent-run-evidence' || payload.version !== 1 || payload.run?.id !== runId || !Array.isArray(payload.run.steps) || !Number.isSafeInteger(payload.step_count) || payload.step_count < 0 || payload.step_count > 5000 || payload.step_count !== payload.run.steps.length || typeof payload.exported_at !== 'string' || !Number.isFinite(Date.parse(payload.exported_at)) || typeof payload.scope !== 'string') throw new Error('The evidence download did not match this run or its complete recorded step count.');
+      const url = URL.createObjectURL(blob);
+      try {
+        const link = document.createElement('a'); link.href = url; link.download = `agent-run-${runId}-evidence.json`; document.body.appendChild(link); link.click(); link.remove();
+      } finally { URL.revokeObjectURL(url); }
+      setExported(true);
+    } catch (err) { if (request === exportRequest.current) setExportError(getApiErrorMessage(err, 'Recorded run evidence could not be downloaded.')); }
+    finally { if (request === exportRequest.current) { exportBusy.current = false; setExporting(false); } }
+  };
   const copyRequest = useRef(0);
   const [copied, setCopied] = useState(false), [copyError, setCopyError] = useState('');
   const copyLink = async () => {
@@ -77,6 +103,7 @@ export function AgentRunInspector({ runId, onClose }: { runId: number; onClose: 
       {error && <div className="mt-5 space-y-3"><p role="alert" className="text-sm text-danger">{error}</p><button type="button" onClick={() => setRetry(value => value + 1)} className="rounded-md border border-surface-600 px-3 py-2 text-sm text-surface-200">Retry run</button></div>}
       {!loading && !error && detail && <div className="mt-5 space-y-5">
         <div className="space-y-2"><button type="button" onClick={() => void copyLink()} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Copy exact recorded run link</button><p className="text-xs text-surface-400">Opens this current saved run by ID, even outside the latest 50 runs. Not a frozen snapshot or a full transcript. The link does not grant access, start an agent or retry a failed action. Recipients need their own permission. Audit search drafts, date filters and URL fragments are not included.</p>{copied && <p role="status" className="text-xs text-primary-300">Recorded run link copied.</p>}{copyError && <p role="alert" className="text-xs text-danger">{copyError}</p>}</div>
+        <section className="space-y-2 rounded border border-surface-700 p-3"><h3 className="text-sm font-semibold text-surface-100">Download recorded run evidence</h3><p className="text-xs text-surface-400">Downloads a fresh JSON read of this run and all recorded step summaries, up to 5,000 steps. Not the frozen view above, a full transcript or proof an action succeeded. Running runs may be incomplete. Includes recorded failure and input/output text that may be sensitive. Keep the file private; downloaded copies have no application access controls. Nothing is sent to another person.</p><button type="button" disabled={exporting} onClick={() => void exportRun()} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300 disabled:opacity-40">{exporting ? 'Preparing run evidence...' : 'Download this run evidence (JSON)'}</button>{exported && <p role="status" className="text-xs text-primary-300">Run evidence download prepared. This does not confirm where your browser saved it.</p>}{exportError && <p role="alert" className="text-xs text-danger">{exportError} No partial file was prepared.</p>}</section>
         <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
           {[
             ['Agent', detail.agent_type], ['Recorded status', detail.status],

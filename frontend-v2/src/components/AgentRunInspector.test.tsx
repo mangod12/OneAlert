@@ -87,3 +87,39 @@ describe('AgentRunInspector', () => {
     trigger.remove();
   });
 });
+
+const exportPayload = { format: 'onealert-agent-run-evidence', version: 1, exported_at: '2026-11-21T12:00:00Z', step_count: 2, scope: 'Saved summaries only, not proof of success.', run };
+function exportBlob(value: unknown) { const blob = new Blob([JSON.stringify(value)], { type: 'application/json' }); Object.defineProperty(blob, 'text', { value: async () => JSON.stringify(value) }); return blob; }
+it('downloads a fresh exact run JSON only on request with sensitivity and current-read caveats', async () => {
+  const create = vi.fn().mockReturnValue('blob:recorded-run'), revoke = vi.fn(), click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke }));
+  render(<AgentRunInspector runId={3} onClose={vi.fn()} />); await screen.findByText('Recorded model timeout');
+  expect(screen.getByText(/downloaded copies have no application access controls/)).toBeTruthy();
+  get.mockResolvedValueOnce({ data: exportBlob(exportPayload) }); fireEvent.click(screen.getByRole('button', { name: 'Download this run evidence (JSON)' }));
+  await screen.findByText(/Run evidence download prepared/);
+  expect(get).toHaveBeenLastCalledWith('/cases/agents/runs/3/export', { responseType: 'blob' });
+  expect(create).toHaveBeenCalledTimes(1); expect(revoke).toHaveBeenCalledWith('blob:recorded-run'); expect(click).toHaveBeenCalledTimes(1);
+  click.mockRestore(); vi.unstubAllGlobals();
+});
+it.each([{ ...exportPayload, run: { ...run, id: 9 } }, { ...exportPayload, step_count: 3 }, { ...exportPayload, version: 2 }, { ...exportPayload, exported_at: 'bad' }])('does not prepare a file for mismatched or incomplete export %j', async payload => {
+  const create = vi.fn(); vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: create }));
+  render(<AgentRunInspector runId={3} onClose={vi.fn()} />); await screen.findByText('Recorded model timeout');
+  get.mockResolvedValueOnce({ data: exportBlob(payload) }); fireEvent.click(screen.getByRole('button', { name: 'Download this run evidence (JSON)' }));
+  await screen.findByRole('alert'); expect(create).not.toHaveBeenCalled(); vi.unstubAllGlobals();
+});
+it('suppresses repeated download clicks and ignores an older run export after the run changes', async () => {
+  let finish!: (value: unknown) => void; const create = vi.fn(); vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: create }));
+  const { rerender } = render(<AgentRunInspector runId={3} onClose={vi.fn()} />); await screen.findByText('Recorded model timeout');
+  get.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const button = screen.getByRole('button', { name: 'Download this run evidence (JSON)' }); fireEvent.click(button); fireEvent.click(button);
+  expect(get.mock.calls.filter(([url]) => String(url).endsWith('/export'))).toHaveLength(1);
+  get.mockResolvedValueOnce({ data: { ...run, id: 4 } }); rerender(<AgentRunInspector runId={4} onClose={vi.fn()} />);
+  await screen.findByText('Recorded agent run #4'); finish({ data: exportBlob(exportPayload) }); await new Promise(resolve => setTimeout(resolve, 0));
+  expect(create).not.toHaveBeenCalled(); expect(screen.queryByText(/Run evidence download prepared/)).toBeNull(); vi.unstubAllGlobals();
+});
+it('allows retrying an export read failure without rerunning the agent', async () => {
+  render(<AgentRunInspector runId={3} onClose={vi.fn()} />); await screen.findByText('Recorded model timeout');
+  get.mockRejectedValueOnce(new Error('Offline')); fireEvent.click(screen.getByRole('button', { name: 'Download this run evidence (JSON)' }));
+  await screen.findByRole('alert'); expect(screen.getByRole('button', { name: 'Download this run evidence (JSON)' }).hasAttribute('disabled')).toBe(false);
+  expect(get.mock.calls.every(([url]) => String(url).startsWith('/cases/agents/runs/3'))).toBe(true);
+});

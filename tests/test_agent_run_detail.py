@@ -114,3 +114,55 @@ def test_authentication_and_active_user_are_required(ledger):
     assert client.get(f"/api/v1/cases/agents/runs/{run_id}").status_code == 400
     app.dependency_overrides.pop(get_current_user)
     assert client.get(f"/api/v1/cases/agents/runs/{run_id}").status_code == 401
+
+
+def test_download_contains_complete_saved_owned_run_with_caveats_and_no_internal_owner_fields(ledger):
+    client, _, _, run_id, _ = ledger
+    response = client.get(f'/api/v1/cases/agents/runs/{run_id}/export')
+    assert response.status_code == 200
+    assert response.headers['content-disposition'] == f'attachment; filename=agent-run-{run_id}-evidence.json'
+    assert response.headers['cache-control'] == 'no-store'
+    assert response.headers['x-content-type-options'] == 'nosniff'
+    assert response.headers['x-evidence-step-count'] == '2'
+    payload = response.json()
+    assert payload['format'] == 'onealert-agent-run-evidence' and payload['version'] == 1
+    assert payload['run']['id'] == run_id and payload['step_count'] == 2
+    assert payload['run']['error_message'] == 'Recorded failure'
+    assert [row['step_number'] for row in payload['run']['steps']] == [1, 2]
+    assert payload['run']['steps'][0]['duration_ms'] == 25
+    assert 'user_id' not in str(payload) and 'run_id' not in str(payload)
+    assert 'sensitive' in payload['scope'] and 'not protected' in payload['scope']
+
+
+def test_download_is_owner_only_even_for_admin_and_missing_is_indistinguishable(ledger):
+    client, _, other, run_id, _ = ledger
+    other.role = 'admin'
+    async def current_user():
+        return other
+    app.dependency_overrides[get_current_user] = current_user
+    hidden = client.get(f'/api/v1/cases/agents/runs/{run_id}/export')
+    missing = client.get('/api/v1/cases/agents/runs/999999/export')
+    assert hidden.status_code == missing.status_code == 404 and hidden.json()['error'] == missing.json()['error']
+
+
+def test_download_limit_is_complete_or_rejected_and_running_empty_snapshot_is_explicit(ledger, monkeypatch):
+    client, owner, _, run_id, sessions = ledger
+    with sessions() as db:
+        db.add_all([AgentStep(run_id=run_id, step_number=3, action='same-number') for _ in range(4998)])
+        empty = AgentRun(user_id=owner.id, agent_type='hunt', status='running')
+        db.add(empty)
+        db.commit()
+        empty_id = empty.id
+    complete = client.get(f'/api/v1/cases/agents/runs/{run_id}/export')
+    assert complete.status_code == 200 and complete.json()['step_count'] == 5000
+    same_number_ids = [row['id'] for row in complete.json()['run']['steps'][2:]]
+    assert same_number_ids == sorted(same_number_ids)
+    with sessions() as db:
+        db.add(AgentStep(run_id=run_id, step_number=4, action='overflow'))
+        db.commit()
+    rejected = client.get(f'/api/v1/cases/agents/runs/{run_id}/export')
+    assert rejected.status_code == 413 and 'content-disposition' not in rejected.headers
+    assert 'no partial file' in rejected.text
+    running = client.get(f'/api/v1/cases/agents/runs/{empty_id}/export').json()
+    assert running['step_count'] == 0 and running['run']['steps'] == []
+    assert running['run']['status'] == 'running' and 'may be incomplete' in running['scope']

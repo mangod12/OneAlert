@@ -3,13 +3,14 @@
 
 import csv
 import io
+import json
 import re
 import secrets
 from datetime import UTC, date, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import String, cast, delete, func, or_, select, update
 from sqlalchemy import case as sql_case
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,7 @@ from backend.models.case import (
     AgentRun,
     AgentRunDetailResponse,
     AgentRunResponse,
+    AgentStep,
     Case,
     CaseAlert,
     CaseAssign,
@@ -1926,3 +1928,37 @@ async def get_agent_run(
     if run is None:
         raise HTTPException(status_code=404, detail="Agent run not found")
     return run
+
+
+@router.get("/agents/runs/{run_id}/export")
+async def export_agent_run(
+    run_id: int, current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    """Download one owned current run and all recorded steps, or reject above the safe limit."""
+    run = (await db.execute(select(AgentRun).where(
+        AgentRun.id == run_id, AgentRun.user_id == current_user.id))).scalar_one_or_none()
+    if run is None:
+        raise HTTPException(status_code=404, detail="Agent run not found")
+    steps = (await db.execute(select(AgentStep).where(AgentStep.run_id == run_id).order_by(
+        AgentStep.step_number.asc(), AgentStep.id.asc()).limit(5001))).scalars().all()
+    if len(steps) > 5000:
+        raise HTTPException(status_code=413, detail=(
+            "This run has more than 5000 recorded steps; no partial file was generated."))
+    record = AgentRunResponse.model_validate(run).model_dump(mode='json')
+    record.update(error_message=run.error_message, steps=[{
+        'id': step.id, 'step_number': step.step_number, 'action': step.action,
+        'input_summary': step.input_summary, 'output_summary': step.output_summary,
+        'tool_used': step.tool_used, 'duration_ms': step.duration_ms,
+    } for step in steps])
+    payload = {'format': 'onealert-agent-run-evidence', 'version': 1,
+               'exported_at': datetime.now(UTC).isoformat(), 'step_count': len(steps), 'run': record,
+               'scope': 'Current saved owned run and its recorded step summaries at export time. '
+                        'Summaries may be shortened by the recorder. Running runs may be incomplete. '
+                        'Not a full transcript, immutable evidence archive or proof an action succeeded. '
+                        'May contain sensitive telemetry, provider errors and recorded input/output text. '
+                        'Downloaded copies are not protected by application access controls.'}
+    return Response(content=json.dumps(payload, ensure_ascii=False, indent=2), media_type='application/json', headers={
+        'Content-Disposition': f'attachment; filename=agent-run-{run_id}-evidence.json',
+        'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+        'X-Evidence-Step-Count': str(len(steps)),
+    })
