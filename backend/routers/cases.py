@@ -49,6 +49,7 @@ from backend.models.response_plan import ApprovalRequest, ResponsePlan
 from backend.models.security_event import SecurityEvent
 from backend.models.user import User
 from backend.routers.auth import get_active_user
+from backend.routers.case_evidence_chronology import router as evidence_chronology_router
 from backend.routers.case_linked_evidence import router as linked_evidence_router
 from backend.routers.triage_intake import router as triage_intake_router
 from backend.services.audit import add_audit_log
@@ -81,6 +82,7 @@ _MENTION_RE = re.compile(r"@([A-Za-z0-9._-]+)")
 
 router = APIRouter()
 router.include_router(linked_evidence_router)
+router.include_router(evidence_chronology_router)
 router.include_router(triage_intake_router)
 
 

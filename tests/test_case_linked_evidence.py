@@ -120,3 +120,67 @@ def test_current_blast_graph_cannot_reveal_unrelated_owner_evidence_or_asset_det
     data = result.json()['data']
     assert 'Private correlated asset' not in str(data) and '203.0.113.9' not in str(data)
     assert 'Owned correlated asset' in str(data) and '10.0.0.7' in str(data)
+
+
+def test_combined_evidence_chronology_is_globally_sorted_distinct_and_read_only(context):
+    client, _ = context
+    url = '/api/v1/cases/7/evidence-chronology'
+    pages = [client.get(url, params={'page': page}).json() for page in range(1, 6)]
+    assert all(data['total'] == 50 for data in pages)
+    assert all(data['counts'] == {'alert': {'available': 25, 'unavailable': 2},
+                                  'event': {'available': 25, 'unavailable': 2}} for data in pages)
+    records = [row for data in pages for row in data['records']]
+    assert [(row['kind'], row['id']) for row in records] == [
+        (kind, identity) for kind in ['alert', 'event'] for identity in range(100, 125)]
+    assert all(row['can_open_original'] for row in records)
+    assert 'Private' not in str(pages) and 'raw content' not in str(pages) and 'owner_id' not in str(pages)
+    assert client.get(url, params={'page': 6}).json()['records'] == []
+    assert client.get('/api/v1/cases/7/linked-evidence', params={'kind': 'event'}).json()['total'] == 25
+
+
+@pytest.mark.parametrize('principal_id', [2, 3, 4])
+def test_chronology_uses_existing_collaborator_visibility_not_original_record_access(context, principal_id):
+    client, principal = context
+    principal['id'] = principal_id
+    result = client.get('/api/v1/cases/7/evidence-chronology')
+    assert result.status_code == 200
+    assert all(not row['can_open_original'] for row in result.json()['records'])
+    principal['id'] = 5
+    assert client.get('/api/v1/cases/7/evidence-chronology').status_code == 404
+    principal['id'] = 1
+    assert client.get('/api/v1/cases/8/evidence-chronology').status_code == 404
+
+
+def test_chronology_filters_and_directions_apply_before_global_paging(context):
+    client, _ = context
+    url = '/api/v1/cases/7/evidence-chronology'
+    data = client.get(url, params={'severity': 'critical', 'order': 'newest', 'size': 1}).json()
+    assert data['total'] == 2 and data['records'][0]['kind'] == 'alert'
+    data = client.get(url, params={'kind': 'event', 'severity': 'critical'}).json()
+    assert data['total'] == 1 and data['records'][0]['id'] == 100
+    assert data['counts']['alert']['available'] == 25
+    assert client.get(url, params={'severity': 'low'}).json()['total'] == 0
+
+
+@pytest.mark.parametrize('params', [{'kind': 'bad'}, {'severity': 'urgent'}, {'order': 'bad'},
+                                   {'page': 0}, {'size': 101}])
+def test_chronology_invalid_parameters_are_rejected(context, params):
+    client, _ = context
+    assert client.get('/api/v1/cases/7/evidence-chronology', params=params).status_code == 422
+
+
+def test_chronology_interleaves_sources_and_places_absent_time_last_in_both_directions(context, tmp_path):
+    import sqlite3
+    client, _ = context
+    with sqlite3.connect(tmp_path / 'linked-evidence.db') as db:
+        db.execute("UPDATE alerts SET created_at = ? WHERE id = ?", ('2025-12-30 08:00:00', 100))
+        db.execute("UPDATE security_events SET timestamp = ? WHERE id = ?", ('2025-12-31 08:00:00', 100))
+        db.execute("UPDATE alerts SET created_at = NULL WHERE id = ?", (101,))
+        db.execute("UPDATE security_events SET timestamp = ? WHERE id = ?", ('2026-01-02 08:00:00', 101))
+    url = '/api/v1/cases/7/evidence-chronology'
+    oldest = client.get(url, params={'size': 100}).json()['records']
+    newest = client.get(url, params={'size': 100, 'order': 'newest'}).json()['records']
+    assert [(row['kind'], row['id']) for row in oldest[:2]] == [('alert', 100), ('event', 100)]
+    assert (newest[0]['kind'], newest[0]['id']) == ('event', 101)
+    assert oldest[-1]['recorded_at'] is None and newest[-1]['recorded_at'] is None
+    assert oldest[-1]['kind'] == newest[-1]['kind'] == 'alert'
