@@ -10,6 +10,7 @@ from backend.models.security_event import SecurityEvent
 from backend.services.agents.base import BaseAgent
 from backend.services.ai.provider import AIMessage
 from backend.services.ai.router import TASK_DETECT, get_ai_provider
+from backend.services.detection_output import validate_detection_output
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,9 @@ class DetectAgent(BaseAgent):
 
         if stats["total_events"] == 0:
             await self.log_step("skip", "No events to analyze")
-            return {"findings": [], "summary": "No events to analyze"}
+            return {"status": "completed", "ai_status": "skipped", "findings": [],
+                    "total_events_analyzed": 0, "rule_findings_count": 0, "ai_findings_count": 0,
+                    "summary": "No events to analyze"}
 
         # Step 2: Rule-based detection
         start = time.time()
@@ -72,10 +75,12 @@ class DetectAgent(BaseAgent):
 
         # Step 3: LLM-enhanced analysis (if events warrant it)
         llm_findings = []
+        ai_status = "skipped"
         if stats["total_events"] > 5 and stats.get("alert_events", 0) > 0:
             start = time.time()
             try:
-                llm_findings = await self._llm_analysis(stats)
+                llm_findings = await self._llm_analysis(stats, hours_back=hours_back)
+                ai_status = "completed"
                 await self.log_step(
                     "llm_analysis",
                     f"LLM found {len(llm_findings)} additional findings",
@@ -83,15 +88,23 @@ class DetectAgent(BaseAgent):
                     duration_ms=int((time.time() - start) * 1000),
                 )
             except Exception as e:
+                ai_status = "failed"
                 logger.warning(f"LLM detection failed, using rules only: {e}")
-                await self.log_step("llm_fallback", f"LLM unavailable: {e}")
+                await self.log_step("llm_fallback", "AI analysis unavailable or invalid; only rule findings retained")
 
-        # Merge and deduplicate
+        # Retain separately produced findings; no deduplication or confirmation is implied.
         all_findings = rule_findings + llm_findings
+        summary = f"Analyzed {stats['total_events']} events, found {len(all_findings)} findings"
+        if ai_status == "failed":
+            summary += ("; AI analysis failed or returned invalid findings. "
+                        "Only rule-based results are available; review required")
         return {
+            "status": "partial" if ai_status == "failed" else "completed",
+            "ai_status": ai_status,
+            "rule_findings_count": len(rule_findings), "ai_findings_count": len(llm_findings),
             "findings": all_findings,
             "total_events_analyzed": stats["total_events"],
-            "summary": f"Analyzed {stats['total_events']} events, found {len(all_findings)} findings",
+            "summary": summary,
         }
 
     async def _aggregate_events(self, cutoff: datetime, until: datetime | None = None) -> dict:
@@ -215,9 +228,9 @@ class DetectAgent(BaseAgent):
 
         return findings
 
-    async def _llm_analysis(self, stats: dict) -> list:
+    async def _llm_analysis(self, stats: dict, hours_back: int = 24) -> list:
         """Use LLM to analyze event statistics for patterns humans might miss."""
-        context = f"""Event Statistics (last 24 hours):
+        context = f"""Event Statistics (requested lookback: {hours_back} hours):
 Total events: {stats['total_events']}
 Alert events: {stats['alert_events']}
 
@@ -238,4 +251,4 @@ Top signatures:
             AIMessage(role="user", content=context),
         ])
 
-        return response.get("findings", [])
+        return validate_detection_output(response)
