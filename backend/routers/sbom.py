@@ -30,9 +30,11 @@ from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.routers.sbom_component_search import router as component_search_router
 from backend.services.sbom_service import (
+    SBOMDocumentBudgetExceeded,
     parse_cyclonedx,
     parse_cyclonedx_vulnerabilities,
     parse_spdx,
+    validate_sbom_document_budget,
 )
 
 router = APIRouter()
@@ -65,6 +67,16 @@ async def upload_sbom(
         )
 
     sbom_data = payload.sbom_data
+    try:
+        validate_sbom_document_budget(sbom_data)
+    except SBOMDocumentBudgetExceeded as exc:
+        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                            detail="SBOM document exceeds the 5 MiB normalized JSON limit. "
+                                   "Use a smaller document; no SBOM was saved.") from exc
+    except (ValueError, RecursionError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="SBOM must be a finite UTF-8 JSON document with supported nesting. "
+                                   "No SBOM was saved.") from exc
 
     # Detect format and parse
     vuln_map: dict[str, set[str]] = {}
