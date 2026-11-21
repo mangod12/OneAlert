@@ -1,3 +1,4 @@
+import { TriageIntakePreview } from '../components/TriageIntakePreview';
 import { useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
@@ -64,6 +65,7 @@ export function Cases() {
   const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [triaging, setTriaging] = useState(false);
+  const [intakeVersion, setIntakeVersion] = useState(0);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -150,6 +152,7 @@ export function Cases() {
     try {
       const res = await apiClient.post('/cases/pipeline', null, { params: { hours_back: pipelineLookback } });
       setPipelineResult((res.data?.data ?? res.data) as PipelineResult);
+      setIntakeVersion(version => version + 1);
       await fetchCases();
     } catch (err: unknown) {
       toast(getApiErrorMessage(err, 'The detection pipeline could not be run.'), 'error');
@@ -162,6 +165,7 @@ export function Cases() {
     setTriaging(true);
     try {
       await apiClient.post('/cases/auto-triage', null, { params: { hours_back: 72 } });
+      setIntakeVersion(version => version + 1);
       await fetchCases();
     } catch (err: unknown) {
       toast(getApiErrorMessage(err, 'AI triage could not be started.'), 'error');
@@ -384,6 +388,8 @@ export function Cases() {
           </button>
         </>
       } />
+
+      <TriageIntakePreview key={intakeVersion} />
 
       {pipelineResult && (
         <div role="status" className="rounded-md border border-surface-700 bg-surface-900/60 px-4 py-3">
