@@ -5,6 +5,7 @@ import logging
 import httpx
 
 from backend.services.ai.provider import AIMessage, AIProvider, AIResponse
+from backend.services.ai.usage import reported_usage
 
 logger = logging.getLogger(__name__)
 
@@ -62,13 +63,14 @@ class AnthropicProvider(AIProvider):
             if block.get("type") == "text":
                 content += block["text"]
 
-        usage = data.get("usage", {})
+        prompt, completion, states = reported_usage(data.get("usage"), "input_tokens", "output_tokens")
         return AIResponse(
             content=content,
             model=data.get("model", self.model),
-            prompt_tokens=usage.get("input_tokens", 0),
-            completion_tokens=usage.get("output_tokens", 0),
-            total_tokens=usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
+            prompt_tokens=prompt,
+            completion_tokens=completion,
+            total_tokens=prompt + completion,
+            metadata={"usage_states": states},
         )
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
