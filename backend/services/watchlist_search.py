@@ -45,7 +45,22 @@ async def search_watched_records(db, user_id, *, page, size, query, kind, severi
         statement = statement.where(watched.c.status.in_(done))
     elif scope == "overdue":
         statement = statement.where(active, watched.c.due_date < today)
-    total = (await db.execute(select(func.count()).select_from(statement.subquery()))).scalar_one()
+    # Aggregate the full filtered set before paging, never just the visible rows.
+    matching = statement.subquery()
+    matching_active = or_(matching.c.status.is_(None), matching.c.status.notin_(done))
+    aggregates = (await db.execute(select(
+        func.count().label("total"),
+        func.coalesce(func.sum(sql_case((matching.c.kind == "alert", 1), else_=0)), 0).label("alerts"),
+        func.coalesce(func.sum(sql_case((matching.c.kind == "case", 1), else_=0)), 0).label("cases"),
+        func.coalesce(func.sum(sql_case((matching_active, 1), else_=0)), 0).label("active"),
+        func.coalesce(func.sum(sql_case((matching.c.status.in_(done), 1), else_=0)), 0).label("done"),
+        func.coalesce(func.sum(sql_case((matching_active & (matching.c.due_date < today), 1), else_=0)), 0)
+        .label("overdue"),
+        func.coalesce(func.sum(sql_case((matching_active & matching.c.due_date.is_(None), 1), else_=0)), 0)
+        .label("active_without_due_date"),
+    ).select_from(matching))).mappings().one()
+    total = aggregates["total"]
+    summary = {key: value for key, value in aggregates.items() if key != "total"}
     rank = sql_case({"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4},
                     value=watched.c.severity, else_=5)
     order = {
@@ -58,6 +73,6 @@ async def search_watched_records(db, user_id, *, page, size, query, kind, severi
     records = (await db.execute(statement.order_by(*order, watched.c.kind, watched.c.id)
                                .offset((page - 1) * size).limit(size))).mappings().all()
     return {"data": [dict(row) for row in records], "total": total, "page": page, "size": size,
-            "date_basis": today,
+            "date_basis": today, "summary": summary,
             "scope": "Current records you explicitly follow. Counts and pages can change between reads; "
                      "not a historical or atomic snapshot. Due filtering uses UTC calendar dates."}
