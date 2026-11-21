@@ -1,4 +1,5 @@
 import { CaseEvidenceChronology } from '../components/CaseEvidenceChronology';
+import { TriageCoverageReceipt } from '../components/TriageCoverageReceipt';
 import { CaseEvidenceOverlap } from '../components/CaseEvidenceOverlap';
 import { CaseCloseReview } from '../components/CaseCloseReview';
 import { CaseEvidencePicker } from '../components/CaseEvidencePicker';
@@ -857,6 +858,7 @@ export function CaseDetail() {
             <Brain className="w-5 h-5 text-primary-400" /> AI Analysis
           </h2>
           <NarrativeText text={caseData.attack_narrative} />
+          {caseData.created_by === 'agent' && <p className="mt-3 text-xs text-warning">Check saved input coverage in the investigation timeline before relying on generated analysis. Linked records may exceed the inputs sent to AI.</p>}
         </div>
       )}
 
@@ -1047,6 +1049,7 @@ export function CaseDetail() {
                         ) : (
                           <p className="break-words text-sm text-surface-300">{entry.content}</p>
                         )}
+                        {entry.entry_type === 'ai_analysis' && <TriageCoverageReceipt metadata={entry.metadata_json} />}
                         {entry.entry_type === 'action' && <ChecklistImportRecord metadata={entry.metadata_json} caseId={caseData.id} />}
                       </div>
                     </div>
