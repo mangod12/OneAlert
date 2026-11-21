@@ -1,3 +1,4 @@
+import { TriageCorrelationPreview } from '../components/TriageCorrelationPreview';
 import { DetectionCoveragePreview } from '../components/DetectionCoveragePreview';
 import { TriageIntakePreview } from '../components/TriageIntakePreview';
 import { useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
@@ -397,6 +398,7 @@ export function Cases() {
 
       <DetectionCoveragePreview key={`detection-${intakeVersion}`} />
       <TriageIntakePreview key={intakeVersion} />
+      <TriageCorrelationPreview key={`correlation-${intakeVersion}`} />
 
       {triageResult && <section aria-label="Automatic triage result" className="oa-panel space-y-2 p-4"><h2 className="text-sm font-semibold text-surface-100">Automatic triage outcome: {triageResult.status}</h2><p className="text-sm text-surface-300">{triageResult.summary}</p>{triageResult.status !== 'completed' && <p className="text-xs text-warning">This run did not establish complete triage. Review the agent run evidence before retrying; do not assume zero created cases means no incident.</p>}<button type="button" className="text-xs text-primary-300" onClick={() => setTriageResult(null)}>Dismiss triage result</button></section>}
 
