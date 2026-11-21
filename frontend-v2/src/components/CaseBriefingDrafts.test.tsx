@@ -64,3 +64,18 @@ it('guards duplicate generation and warns that an uncertain POST may already hav
   fireEvent.click(generate); fireEvent.click(generate); expect(post).toHaveBeenCalledTimes(1);
   await act(async () => fail({})); await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Load saved drafts before generating again'));
 });
+it('retains at most two selected IDs across history pages and clears them explicitly', async () => {
+  get.mockImplementation(async (url, config) => {
+    const params = config?.params as { before_id?: number } | undefined;
+    if (url === '/cases/7/briefing-drafts/11') return { data: { case_id: 7, record: row, retrieved_at: '2026-11-21T19:00:00Z' } };
+    if (url === '/cases/7/briefing-drafts/10') return { data: { case_id: 7, record: { ...row, timeline_id: 10 }, retrieved_at: '2026-11-21T19:00:00Z' } };
+    return { data: { case_id: 7, records: params?.before_id ? [{ ...row, timeline_id: 10 }, { ...row, timeline_id: 9 }] : [row], next_before_id: params?.before_id ? null : 11 } };
+  });
+  show(); load(); fireEvent.click(await screen.findByRole('checkbox', { name: 'Select draft #11 for comparison' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Load older briefing drafts' }));
+  fireEvent.click(await screen.findByRole('checkbox', { name: 'Select draft #10 for comparison' }));
+  await screen.findByRole('link', { name: 'Open exact draft #11' });
+  expect((screen.getByRole('checkbox', { name: 'Select draft #9 for comparison' }) as HTMLInputElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Clear briefing comparison' }));
+  expect(screen.queryByRole('region', { name: 'Selected briefing comparison' })).toBeNull(); expect(post).not.toHaveBeenCalled();
+});
