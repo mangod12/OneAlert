@@ -21,9 +21,10 @@ async def preview_triage_intake(
     now = datetime.now(UTC)
     cutoff = now - timedelta(hours=hours_back)
     return {'hours_back': hours_back, 'retrieved_at': now.isoformat(), 'cutoff': cutoff.isoformat(),
-            'alerts': await intake_preview(db, current_user.id, cutoff, 'alert'),
-            'events': await intake_preview(db, current_user.id, cutoff, 'event'),
-            'scope': 'Owned recent records not linked to an owned investigation; events must also be pending. '
+            'alerts': await intake_preview(db, current_user.id, cutoff, 'alert', until=now),
+            'events': await intake_preview(db, current_user.id, cutoff, 'event', until=now),
+            'scope': 'Owned records in the inclusive recorded-time window, excluding future-dated evidence, '
+                     'not linked to an owned investigation; events must also be pending. '
                      'Newest timestamp then highest ID first. '
                      'Each sample lists at most 10 records from the next batch. '
                      'Eligible events can still be excluded by later correlation or incident analysis. '

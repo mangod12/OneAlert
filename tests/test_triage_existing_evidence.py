@@ -87,3 +87,38 @@ async def test_second_serial_run_skips_already_linked_alert_without_another_ai_r
             assert (await db.execute(select(func.count()).select_from(CaseAlert))).scalar_one() == 1
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_fixed_inclusive_window_excludes_future_records_before_limits_and_preview_matches(tmp_path):
+    from backend.services.triage_intake import intake_preview
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'triage-window.db'}")
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        until = datetime(2026, 11, 21, 16, 0, tzinfo=UTC)
+        cutoff = until - timedelta(hours=24)
+        async with sessions() as db:
+            db.add(Asset(id=1, user_id=1, name='Owned host', asset_type='host'))
+            # More future records than either cap must not crowd out current evidence.
+            for identity in range(1, 504):
+                stamp = cutoff if identity == 1 else until if identity == 2 else until + timedelta(seconds=1)
+                db.add(Alert(id=identity, user_id=1, asset_id=1, title=f'Alert {identity}',
+                             severity='high', created_at=stamp))
+                db.add(SecurityEvent(id=identity, user_id=1, event_type='auth', severity='high',
+                                     timestamp=stamp, processed='pending'))
+            await db.commit()
+            agent = TriageAgent(db, 1)
+            for kind, method in [('alert', agent._get_untriaged_alerts), ('event', agent._get_untriaged_events)]:
+                selected = await method(cutoff, until=until)
+                preview = await intake_preview(db, 1, cutoff, kind, until=until)
+                assert [row.id for row in selected] == [2, 1]
+                assert preview['eligible_count'] == preview['batch_count'] == 2
+                assert preview['deferred_count'] == 0
+                assert [row['id'] for row in preview['sample']] == [2, 1]
+            # Advancing only the upper boundary admits the future records, rather than marking them processed.
+            later = await intake_preview(db, 1, cutoff, 'event', until=until + timedelta(seconds=1))
+            assert later['eligible_count'] == 503 and later['batch_count'] == 500
+    finally:
+        await engine.dispose()
