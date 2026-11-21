@@ -34,7 +34,10 @@ ALWAYS_REQUIRE_APPROVAL = {"isolate_host", "quarantine_vlan", "rotate_secret"}
 # OT zone restrictions — Purdue Level 0-3 always requires human approval
 OT_RESTRICTED_ZONES = {"supervisory", "control", "field", "safety_system"}
 KNOWN_OT_UNRESTRICTED_ZONES = {"it", "dmz"}
-CONTAINMENT_ACTIONS = {"isolate_host", "quarantine_vlan", "disable_egress", "block_ip", "disable_user"}
+ASSET_SCOPE_ACTIONS = {
+    "block_ip", "block_domain", "disable_user", "revoke_token", "isolate_host", "quarantine_vlan",
+    "rotate_secret", "snapshot_logs", "preserve_pcap", "disable_egress",
+}
 
 
 def check_action_approval(
@@ -52,20 +55,21 @@ def check_action_approval(
         return {"approved": False, "reason": "Autonomy level is not recognized; human review required",
                 "requires_human": True}
     zone = asset_zone.strip().lower() if isinstance(asset_zone, str) else None
-    if action_type in CONTAINMENT_ACTIONS and asset_is_ot is None:
+    if action_type in ASSET_SCOPE_ACTIONS and asset_is_ot is None:
         return {"approved": False, "reason": "Asset OT classification is unknown; human review required",
                 "requires_human": True}
-    if action_type in CONTAINMENT_ACTIONS and asset_is_ot is True and zone not in (
+    if action_type in ASSET_SCOPE_ACTIONS and asset_is_ot is True and zone not in (
         OT_RESTRICTED_ZONES | KNOWN_OT_UNRESTRICTED_ZONES
     ):
         return {"approved": False, "reason": "OT asset zone is unknown; human review required",
                 "requires_human": True}
 
-    # Hard constraint: OT zones always require approval for containment actions
-    if asset_is_ot and zone in OT_RESTRICTED_ZONES and action_type in CONTAINMENT_ACTIONS:
+    # Purdue 0-3 never inherits the larger L3/L4 auto-approve action sets.
+    if (asset_is_ot and zone in OT_RESTRICTED_ZONES
+            and action_type not in AUTONOMY_LEVELS["L2"]["auto_approve"]):
         return {
             "approved": False,
-            "reason": f"OT asset in {zone} zone — containment actions always require human approval",
+            "reason": f"OT asset in {zone} zone has maximum autonomy L2; this action requires human approval",
             "requires_human": True,
         }
 
