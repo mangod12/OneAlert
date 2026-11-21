@@ -1138,3 +1138,17 @@ it('links the visible investigation to explicit alert and event evidence explore
   expect((await screen.findByRole('link', { name: 'Browse linked alert evidence' })).getAttribute('href')).toBe('/app/cases/7/evidence?kind=alert');
   expect(screen.getByRole('link', { name: 'Browse linked event evidence' }).getAttribute('href')).toBe('/app/cases/7/evidence?kind=event');
 });
+
+it('explains lexical ranking separately from recorded shared technique evidence', async () => {
+  mockLoad();
+  const original = mockGet.getMockImplementation()!;
+  mockGet.mockImplementation(url => url.endsWith('/similar') ? Promise.resolve({ data: { data: [{
+    case_id: 4, title: 'Prior gateway case', similarity: 0.73, shared_techniques: ['T1059'],
+    ranking_method: 'lexical_tfidf_cosine', shared_terms: ['gateway', 'shell'],
+  }] } }) : original(url));
+  renderDetail();
+  expect(await screen.findByText('Top shared ranking terms: gateway, shell')).toBeTruthy();
+  expect(screen.getByText(/not a probability, confirmed relationship or incident match/)).toBeTruthy();
+  expect(screen.getByText('Shared techniques: T1059')).toBeTruthy();
+  expect(screen.getByRole('link', { name: /Prior gateway case/ }).getAttribute('href')).toBe('/cases/4');
+});

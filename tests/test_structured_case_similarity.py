@@ -40,6 +40,8 @@ def test_similarity_handles_mixed_saved_shapes_with_stable_shared_id_order_and_n
     assert {row['case_id'] for row in results} == {2, 3}
     assert all(row['shared_techniques'] == ['T1059', 'T1078'] for row in results)
     assert all('T1059.001' not in row['shared_techniques'] for row in results)
+    assert all(row['ranking_method'] == 'lexical_tfidf_cosine' for row in results)
+    assert all(len(row['shared_terms']) <= 8 for row in results)
     ordered = sorted(results, key=lambda row: (-row['similarity'], row['case_id']))
     assert [row['case_id'] for row in ordered] == [row['case_id'] for row in results]
     assert records[0].mitre_techniques == [{'id': 'T1059'}, 'T1078', {'id': 'T1059.001'}]
@@ -98,3 +100,21 @@ def test_route_reads_structured_records_and_never_returns_foreign_owner_cases(tm
         app.dependency_overrides.clear()
         app.dependency_overrides.update(original)
         asyncio.run(engine.dispose())
+
+
+def test_shared_terms_include_only_positive_ranking_contributors_in_weight_order():
+    target = case(1, ['T1059'])
+    target.title, target.summary, target.mitre_tactics = 'gateway gateway shell', 'gateway raremarker', []
+    peer = case(2, ['T1059'])
+    peer.title, peer.summary, peer.mitre_tactics = 'gateway gateway shell', 'gateway', []
+    third = case(3, ['T1078'])
+    third.title, third.summary, third.mitre_tactics = 'database credential', 'unrelated', []
+    db = AsyncMock()
+    db.execute.return_value = Mock()
+    db.execute.return_value.scalars.return_value.all.return_value = [target, peer, third]
+    result = asyncio.run(find_similar_cases(db, 7, 1, min_similarity=0))
+    match = next(row for row in result if row['case_id'] == 2)
+    assert match['shared_terms'][0] == 'gateway'
+    assert set(match['shared_terms']) == {'gateway', 'shell', 't1059'}
+    assert 'raremarker' not in match['shared_terms'] and 'high' not in match['shared_terms']
+    assert next(row for row in result if row['case_id'] == 3)['shared_terms'] == []

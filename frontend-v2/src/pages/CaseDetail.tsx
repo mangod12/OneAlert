@@ -90,7 +90,7 @@ interface BlastRadius {
   edges: Array<{ from: string; to: string; label: string }>;
   summary: { total_nodes: number; assets_affected: number; ips_involved: number; techniques_used: number };
 }
-interface SimilarCase { case_id: number; title: string; similarity: number; shared_techniques: string[]; }
+interface SimilarCase { case_id: number; title: string; similarity: number; shared_techniques: string[]; ranking_method?: string; shared_terms?: string[]; }
 interface RelatedEvent { id: number; severity: string; event_type: string; source_ip?: string | null; dest_ip?: string | null; signature?: string | null; }
 
 interface CaseWatcher { user_id: number; email: string; full_name: string | null; }
@@ -911,6 +911,7 @@ export function CaseDetail() {
           <h2 className="flex items-center gap-2 text-lg font-semibold text-surface-50 mb-3">
             <GitBranch className="w-5 h-5 text-primary-400" /> Similar Investigations
           </h2>
+          <p className="mb-3 text-xs text-surface-400">Lexical similarity of saved title, summary, narrative, ATT&amp;CK labels and severity. The percentage is a text-ranking score, not a probability, confirmed relationship or incident match. Only your owned investigations are searched. Shared ATT&amp;CK IDs are recorded evidence, not proof of the same activity.</p>
           <div className="space-y-2">
             {similarCases.map(similar => (
               <Link
@@ -918,10 +919,11 @@ export function CaseDetail() {
                 to={`/cases/${similar.case_id}`}
                 className="block rounded-md border border-surface-700 bg-surface-800/50 p-3 transition-colors hover:border-primary-500/40"
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium text-surface-100">{similar.title}</span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="min-w-0 break-words text-sm font-medium text-surface-100 [overflow-wrap:anywhere]">{similar.title}</span>
                   <span className="shrink-0 text-xs text-primary-300">{Math.round(similar.similarity * 100)}% similar</span>
                 </div>
+                {similar.ranking_method === 'lexical_tfidf_cosine' && Array.isArray(similar.shared_terms) && similar.shared_terms.length > 0 && <p className="mt-2 break-words text-xs text-surface-300 [overflow-wrap:anywhere]">Top shared ranking terms: {similar.shared_terms.join(', ')}</p>}
                 {similar.shared_techniques.length > 0 && (
                   <p className="mt-1 text-xs text-surface-500">Shared techniques: {similar.shared_techniques.join(', ')}</p>
                 )}
