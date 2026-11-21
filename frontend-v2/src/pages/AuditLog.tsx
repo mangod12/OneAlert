@@ -1,3 +1,4 @@
+import { RecordedAgentHealth } from '../components/RecordedAgentHealth';
 import { AgentStepSearch } from '../components/AgentStepSearch';
 import { useSearchParams } from 'react-router-dom';
 import { AgentRunLibrary } from '../components/AgentRunLibrary';
@@ -264,6 +265,7 @@ export function AuditLog({ linkedRunId = null, onCloseLinkedRun }: { linkedRunId
 
       )}
       {selectedRecord && <AuditRecordDialog record={selectedRecord} onClose={() => setSelectedRecord(null)} />}
+      <RecordedAgentHealth />
       <AgentRunLibrary />
       <AgentStepSearch />
       <section aria-label="Recorded agent activity" className="space-y-3">
