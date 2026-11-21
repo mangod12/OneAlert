@@ -18,10 +18,10 @@ export function verifySavedBriefing(value: SavedBriefing, caseId: number) {
       && [s.title, s.label, s.summary].every(t => t === undefined || typeof t === 'string')
       && [s.severity, s.status, s.recorded_at].every(t => t === undefined || t === null || typeof t === 'string'))
     && Array.isArray(b.observations) && b.observations.length > 0 && b.observations.length <= 12
-    && b.observations.every(o => o && typeof o.text === 'string' && o.text.length <= 400 && Array.isArray(o.sources)
+    && b.observations.every(o => o && typeof o.text === 'string' && Array.from(o.text).length <= 400 && Array.isArray(o.sources)
       && o.sources.length > 0 && o.sources.length <= 5 && o.sources.every(key => b.sources.some(s => s.key === key)))
     && [b.gaps, b.review_questions].every(items => Array.isArray(items) && items.length <= 6
-      && items.every(t => typeof t === 'string' && t.length <= 400))
+      && items.every(t => typeof t === 'string' && Array.from(t).length <= 400))
     && [b.scope?.alert, b.scope?.event].every(scope => scope && ['linked', 'available', 'included', 'omitted', 'unavailable', 'limit']
       .every(key => Number.isSafeInteger(scope[key as keyof Scope]) && scope[key as keyof Scope] >= 0)
       && scope.linked === scope.available + scope.unavailable && scope.available === scope.included + scope.omitted)
