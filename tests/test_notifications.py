@@ -512,3 +512,53 @@ def test_notification_review_validates_exact_batch_ids(client, ids):
         "operation": "mark_read", "ids": ids, "fingerprint": "a" * 64,
     })
     assert result.status_code == 422
+
+
+def test_text_search_literal_title_body_owner_muting_and_pagination(client):
+    from sqlalchemy import select
+    headers = _register_and_login(client, 'text-search@example.com')
+    other_headers = _register_and_login(client, 'text-other@example.com')
+    uid, other = _user_id(client, headers), _user_id(client, other_headers)
+    first = _add_notification(uid, 'Literal 100%_match', read=True)
+    second = _add_notification(uid, 'Different title')
+    _add_notification(uid, 'Literal 100percentXmatch')
+    _add_notification(other, 'Literal 100%_match')
+    muted = _add_notification(uid, 'Literal 100%_match', kind='alert_mention')
+    with _TestingSessionLocal() as db:
+        db.get(Notification, second).body = 'Body has 100%_MATCH too'
+        db.get(User, uid).muted_kinds = ['alert_mention']
+        db.commit()
+    params = {'query': ' 100%_match ', 'size': 1}
+    response = client.get('/api/v1/notifications/', params=params, headers=headers).json()
+    assert response['total'] == 2
+    assert len(response['data']) == 1
+    next_page = client.get('/api/v1/notifications/', params={**params, 'page': 2}, headers=headers).json()
+    assert {response['data'][0]['id'], next_page['data'][0]['id']} == {first, second}
+    unread = client.get('/api/v1/notifications/', params={**params, 'unread_only': True}, headers=headers).json()
+    assert unread['total'] == 1 and unread['data'][0]['id'] == second
+    assert muted not in {response['data'][0]['id'], next_page['data'][0]['id']}
+    assert client.get('/api/v1/notifications/', params={'query': 'x' * 201}, headers=headers).status_code == 422
+    with _TestingSessionLocal() as db:
+        assert db.execute(select(Notification).where(Notification.id == second)).scalar_one().read_at is None
+
+
+def test_search_review_exact_scope_and_fingerprint_cannot_be_broadened(client):
+    headers = _register_and_login(client, 'text-review@example.com')
+    uid = _user_id(client, headers)
+    matched = _add_notification(uid, 'target search')
+    untouched = _add_notification(uid, 'unrelated')
+    params = {'operation': 'mark_read', 'query': ' target '}
+    review = client.get('/api/v1/notifications/review-batch', params=params, headers=headers).json()
+    assert review['query'] == 'target' and review['total'] == 1
+    assert [row['id'] for row in review['records']] == [matched]
+    payload = {'operation': 'mark_read', 'ids': [matched], 'fingerprint': review['fingerprint']}
+    assert client.post('/api/v1/notifications/review-batch', json=payload, headers=headers).status_code == 409
+    newcomer = _add_notification(uid, 'target new arrival')
+    result = client.post('/api/v1/notifications/review-batch', json={**payload, 'query': 'target'}, headers=headers)
+    assert result.status_code == 200 and result.json()['ids'] == [matched]
+    with _TestingSessionLocal() as db:
+        assert db.get(Notification, untouched).read_at is None
+        assert db.get(Notification, newcomer).read_at is None
+    review = client.get('/api/v1/notifications/review-batch', params={'operation': 'delete_read', 'query': 'target'}, headers=headers).json()
+    result = client.post('/api/v1/notifications/review-batch', json={'operation': 'delete_read', 'query': 'target', 'ids': [matched], 'fingerprint': review['fingerprint']}, headers=headers)
+    assert result.status_code == 200

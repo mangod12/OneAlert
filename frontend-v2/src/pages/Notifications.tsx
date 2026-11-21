@@ -54,6 +54,7 @@ export function Notifications() {
   const [unread, setUnread] = useState(0);
   const [page, setPage] = useState(1);
   const [kind, setKind] = useState('');
+  const [query, setQuery] = useState('');
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -66,7 +67,7 @@ export function Notifications() {
     setLoadError(false);
     try {
       const resp = await apiClient.get<NotificationListResponse>('/notifications/', {
-        params: { page, size: PAGE_SIZE, unread_only: unreadOnly, ...(kind ? { kind } : {}) },
+        params: { page, size: PAGE_SIZE, unread_only: unreadOnly, ...(kind ? { kind } : {}), ...(query.trim() ? { query: query.trim() } : {}) },
       });
       if (request !== requestId.current) return;
       setLoadError(false);
@@ -80,7 +81,7 @@ export function Notifications() {
     } finally {
       if (request === requestId.current) setLoading(false);
     }
-  }, [page, unreadOnly, kind]);
+  }, [page, unreadOnly, kind, query]);
 
   useEffect(() => {
     void load();
@@ -142,9 +143,9 @@ export function Notifications() {
 
       </div>
 
-      <NotificationBatchReview kind={kind} unreadOnly={unreadOnly} disabled={busy || loading || loadError} onBusyChange={setBusy} onApplied={load} />
-
       <div className="flex flex-wrap items-center gap-3">
+        <input type="search" aria-label="Search notification text" maxLength={200} value={query} disabled={busy} onChange={e => { setQuery(e.target.value); setPage(1); setExpandedGroup(null); }} placeholder="Search titles and saved messages..." className="min-w-0 w-full rounded-md border border-surface-700 bg-surface-900 px-3 py-2 text-sm text-surface-200" />
+        {query && <button type="button" disabled={busy} onClick={() => { setQuery(''); setPage(1); }} className="text-xs text-accent-400">Clear notification search</button>}
         <label className="sr-only" htmlFor="notif-kind">Filter by type</label>
         <select
           id="notif-kind"
@@ -171,6 +172,9 @@ export function Notifications() {
       {actionError && <p role="alert" className="rounded-md border border-danger/40 px-3 py-2 text-sm text-danger">{actionError}</p>}
       {busy && <p role="status" className="text-sm text-surface-400">Updating notifications...</p>}
       {loadError && <p className="rounded-md border border-danger-500/40 bg-danger-500/10 px-3 py-2 text-sm text-danger-300">Notifications could not be loaded. <button type="button" onClick={() => void load()} className="underline">Retry notifications</button></p>}
+
+      <p className="text-xs text-surface-400">Search matches literal text in saved titles and message bodies across your visible inbox, combined with type and unread filters. Muted types stay hidden. The unread count covers all visible types, not only search matches.</p>
+      <NotificationBatchReview query={query.trim()} kind={kind} unreadOnly={unreadOnly} disabled={busy || loading || loadError} onBusyChange={setBusy} onApplied={load} />
 
       <p className="text-xs text-surface-400">Related consecutive items are grouped on this loaded page only. Review a group to read its full saved messages. Related activity on other pages is not included.</p>
       <ul className="divide-y divide-surface-800 overflow-hidden rounded-lg border border-surface-800 bg-surface-900">

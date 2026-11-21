@@ -222,3 +222,23 @@ it('removes only successful group reads from unread-only results', async () => {
   });
 
 });
+
+describe('Notification saved-message search', () => {
+  beforeEach(() => { vi.resetAllMocks(); }); afterEach(cleanup);
+  it('searches server-side across pages and resets pagination while keeping kind and unread filters', async () => {
+    mockGet.mockResolvedValue(listResponse([mk(1, 'alert_created', 'Saved match', false)], 45, 5) as never);
+    renderPage(); await screen.findByText('Saved match'); fireEvent.change(screen.getByLabelText('Filter by type'), { target: { value: 'case_mention' } }); fireEvent.click(screen.getByLabelText('Unread only'));
+    fireEvent.change(screen.getByLabelText('Search notification text'), { target: { value: ' 100%_match ' } });
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/notifications/', { params: { page: 1, size: 20, unread_only: true, kind: 'case_mention', query: '100%_match' } }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/notifications/', { params: { page: 2, size: 20, unread_only: true, kind: 'case_mention', query: '100%_match' } }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear notification search' }));
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/notifications/', { params: { page: 1, size: 20, unread_only: true, kind: 'case_mention' } }));
+  });
+  it('does not restore old search results after a newer search finishes', async () => {
+    let finish!: (value: unknown) => void;
+    mockGet.mockImplementation((_url, config) => (config?.params as {query?:string})?.query === 'old' ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(listResponse([mk(2, 'alert_created', 'Current result', false)], 1, 2)) as never);
+    renderPage(); await screen.findByText('Current result'); fireEvent.change(screen.getByLabelText('Search notification text'), { target: { value: 'old' } });fireEvent.change(screen.getByLabelText('Search notification text'), { target: { value: 'new' } });await screen.findByText('Current result');
+    await act(async () => finish(listResponse([mk(1,'alert_created','Stale result',false)],1,2)));expect(screen.queryByText('Stale result')).toBeNull();
+  });
+});
