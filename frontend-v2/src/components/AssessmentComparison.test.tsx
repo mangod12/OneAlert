@@ -47,3 +47,11 @@ it('ignores a late comparison result after a different control is selected', asy
   view.rerender(<AssessmentComparison controlId={12} ids={[4, 8]} />);
   await act(async () => finish({ data: first })); expect(screen.queryByText(/of 5 recorded fields differ/)).toBeNull(); expect(screen.queryByRole('alert')).toBeNull();
 });
+it('downloads only loaded exact evidence and preserves the display filter without another read', async () => {
+  let blob!: Blob; vi.stubGlobal('URL', { createObjectURL: (value: Blob) => { blob = value; return 'blob:assessment'; }, revokeObjectURL: vi.fn() }); const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  try { show(); expect(screen.queryByText('Download loaded assessment comparison JSON')).toBeNull(); load(); await screen.findByText(/3 of 5 recorded fields differ/); fireEvent.click(screen.getByText('Download loaded assessment comparison JSON')); expect(blob.type).toBe('application/json'); expect(blob.size).toBeGreaterThan(1000); expect(click).toHaveBeenCalledTimes(1); expect(get).toHaveBeenCalledTimes(2); expect(screen.getByText(/neither source record is redacted/)).toBeTruthy(); } finally { vi.restoreAllMocks(); vi.unstubAllGlobals(); }
+});
+it('keeps download failure separate from loaded records and clears it on selection change', async () => {
+  vi.stubGlobal('URL', { createObjectURL: () => { throw Error('Denied'); } });
+  try { const view = show(); load(); await screen.findByText(/3 of 5 recorded fields differ/); fireEvent.click(screen.getByText('Download loaded assessment comparison JSON')); expect(screen.getByRole('alert').textContent).toContain('could not be downloaded'); expect(screen.getByText(/Retained evidence/)).toBeTruthy(); view.rerender(<AssessmentComparison controlId={11} ids={[3, 10]} />); expect(screen.queryByRole('alert')).toBeNull(); expect(screen.queryByText('Download loaded assessment comparison JSON')).toBeNull(); } finally { vi.unstubAllGlobals(); }
+});
