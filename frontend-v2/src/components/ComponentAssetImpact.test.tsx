@@ -36,3 +36,18 @@ it('uses the applied scope rather than draft text when switching the full page t
   fireEvent.change(screen.getByLabelText('Cross-asset component search'), { target: { value: 'draft not submitted' } }); fireEvent.click(screen.getByRole('button', { name: 'Group matching records by asset' })); await screen.findByText('Plant gateway · Asset #7');
   expect(get).toHaveBeenLastCalledWith('/sbom/component-search/assets', { params: { ...scope, page: 1, size: 10 } }); expect(screen.getByText(/Draft search not applied/)).toBeTruthy();
 });
+it('drills down from an asset group using applied filters and returns to all assets explicitly', async () => {
+  get.mockImplementation(async (url: string, config) => {
+    const params = config?.params as Record<string, unknown>;
+    return { data: url.endsWith('/assets') ? { ...snapshot, ...params } : { ...params, total: 1, document_count: 1, asset_count: 1, scoped_asset_id: params.asset_id ?? null, scoped_asset_name: params.asset_id ? 'Current plant gateway' : null, retrieved_at: 'now', records: [{ component: { id: 9, sbom_id: 99, name: 'openssl', version: '3.0', has_known_vulnerability: 1 }, sbom_id: 99, asset_id: 7, asset_name: 'Current plant gateway' }] } };
+  });
+  render(<SbomComponentSearch />); fireEvent.change(screen.getByLabelText('Cross-asset component search'), { target: { value: 'openssl' } }); fireEvent.change(screen.getByLabelText('Exact recorded component version'), { target: { value: '3.0' } }); fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'Search retained documents' })); await screen.findByText('openssl · 3.0');
+  fireEvent.change(screen.getByLabelText('Cross-asset component search'), { target: { value: 'draft not applied' } }); fireEvent.click(screen.getByRole('button', { name: 'Group matching records by asset' })); await screen.findByText('Plant gateway · Asset #7'); fireEvent.click(screen.getByRole('button', { name: 'Browse matching saved rows for asset #7' })); await screen.findByText('Matching saved rows for asset #7: Current plant gateway');
+  expect(get).toHaveBeenLastCalledWith('/sbom/component-search', { params: { search: 'openssl', version: '3.0', vulnerable_only: true, asset_id: 7, page: 1, size: 10 } }); expect(screen.getByText(/Draft search not applied/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Return to matching rows across all assets' })); await screen.findByText('openssl · 3.0'); expect(get).toHaveBeenLastCalledWith('/sbom/component-search', { params: { search: 'openssl', version: '3.0', vulnerable_only: true, page: 1, size: 10 } });
+});
+it('rejects drilldown responses for a different asset without falling back to all assets', async () => {
+  get.mockImplementation(async (url: string, config) => ({ data: url.endsWith('/assets') ? snapshot : { ...scope, ...((config?.params ?? {}) as object), scoped_asset_id: 8, total: 1, document_count: 1, asset_count: 1, records: [] } }));
+  render(<SbomComponentSearch />); fireEvent.change(screen.getByLabelText('Cross-asset component search'), { target: { value: 'openssl' } }); fireEvent.click(screen.getByRole('button', { name: 'Search retained documents' })); await screen.findByRole('alert'); fireEvent.click(screen.getByRole('button', { name: 'Group matching records by asset' })); await screen.findByText('Plant gateway · Asset #7'); fireEvent.click(screen.getByRole('button', { name: 'Browse matching saved rows for asset #7' })); await screen.findByRole('alert'); expect(screen.queryByRole('link', { name: /Open exact SBOM/ })).toBeNull();
+  expect(get).toHaveBeenLastCalledWith('/sbom/component-search', { params: { ...scope, asset_id: 7, page: 1, size: 10 } });
+});
