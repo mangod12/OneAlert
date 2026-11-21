@@ -207,3 +207,43 @@ def test_asset_csv_preserves_ordinary_quoted_and_multiline_values(client):
     assert row["name"] == 'Gateway, "north"'
     assert row["vendor"] == "Plant\nSystems"
     assert row["version"] == "1.2.3"
+
+
+@pytest.mark.parametrize("sort", ["name_asc", "risk_desc"])
+def test_asset_export_refuses_oversized_scope_without_partial_csv(client, sort):
+    owner = _register_and_login(client, "large-owner@example.com")
+    uid = client.get("/api/v1/auth/me", headers=owner).json()["id"]
+    with _TestingSessionLocal() as db:
+        db.add_all([
+            Asset(user_id=uid, name=f"Gateway {i:05}", asset_type="hardware", vendor="Included")
+            for i in range(5001)
+        ])
+        db.commit()
+    response = client.get("/api/v1/assets/export", params={"sort": sort}, headers=owner)
+    assert response.status_code == 422
+    assert "No partial file" in response.text
+    assert "content-disposition" not in response.headers
+    with _TestingSessionLocal() as db:
+        last = db.query(Asset).filter(Asset.user_id == uid).order_by(Asset.id.desc()).first()
+        last.vendor = "Excluded"
+        db.commit()
+    response = client.get("/api/v1/assets/export", params={"sort": sort, "vendor": "Included"}, headers=owner)
+    rows = _read_csv(response)
+    assert len(rows) == 5000
+    assert len({row["id"] for row in rows}) == 5000
+
+
+@pytest.mark.parametrize("needle", ["100%_match", "part_1", r"c:\plant"])
+def test_asset_inventory_and_export_use_same_literal_trimmed_scope(client, needle):
+    owner = _register_and_login(client, "literal-owner@example.com")
+    other = _register_and_login(client, "literal-other@example.com")
+    _make_asset(client, owner, "Target " + needle, vendor="Included", is_ot_asset=True)
+    _make_asset(client, owner, "Target 100xxxmatch partA1 c:plant", vendor="Included", is_ot_asset=True)
+    _make_asset(client, owner, needle, vendor="Excluded", is_ot_asset=True)
+    _make_asset(client, other, needle, vendor="Included", is_ot_asset=True)
+    params = {"search": "  " + needle.upper() + "  ", "vendor": "Included", "is_ot": "true"}
+    listed = client.get("/api/v1/assets/", params=params, headers=owner).json()
+    rows = _read_csv(client.get("/api/v1/assets/export", params=params, headers=owner))
+    assert listed["total"] == len(rows) == 1
+    assert rows[0]["id"] == str(listed["assets"][0]["id"])
+    assert rows[0]["name"] == "Target " + needle

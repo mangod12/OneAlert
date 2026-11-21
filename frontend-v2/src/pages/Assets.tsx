@@ -54,9 +54,18 @@ export function Assets() {
   const [sort, setSort] = useState('created_at_desc');
   const [exporting, setExporting] = useState(false);
 
+  const exportRequest = useRef(0), exportBusy = useRef(false);
+  const [exportError, setExportError] = useState('');
+  useEffect(() => {
+    exportRequest.current += 1; exportBusy.current = false; setExporting(false); setExportError('');
+    return () => { exportRequest.current += 1; };
+  }, [search, typeFilter, vendorFilter, criticalityFilter, otFilter, sort]);
+
   const exportCsv = async () => {
-    if (exporting) return;
-    setExporting(true);
+    if (exportBusy.current) return;
+    exportBusy.current = true;
+    const request = ++exportRequest.current;
+    setExporting(true); setExportError('');
     try {
       const params: Record<string, string> = { sort };
       if (typeFilter) params.asset_type = typeFilter;
@@ -65,16 +74,19 @@ export function Assets() {
       if (otFilter) params.is_ot = otFilter;
       if (search.trim()) params.search = search.trim();
       const res = await apiClient.get('/assets/export', { params, responseType: 'blob' });
-      const url = URL.createObjectURL(res.data as Blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'assets.csv';
-      link.click();
-      URL.revokeObjectURL(url);
+      if (request !== exportRequest.current) return;
+      if (!(res.data instanceof Blob) || !res.data.type.startsWith('text/csv')) throw new Error('The server did not return asset CSV. No file was downloaded.');
+      const url = URL.createObjectURL(res.data);
+      try {
+        const link = document.createElement('a'); link.href = url; link.download = 'assets.csv'; link.click();
+      } finally { URL.revokeObjectURL(url); }
     } catch (err: unknown) {
-      toast(getApiErrorMessage(err, 'The export could not be downloaded.'), 'error');
+      if (request !== exportRequest.current) return;
+      const response = (err as { response?: { data?: unknown } })?.response;
+      if (response?.data instanceof Blob) { try { response.data = JSON.parse(await response.data.text()); } catch { /* Standard fallback. */ } }
+      if (request === exportRequest.current) setExportError(getApiErrorMessage(err, 'Asset export unavailable. No file was downloaded.'));
     } finally {
-      setExporting(false);
+      if (request === exportRequest.current) { exportBusy.current = false; setExporting(false); }
     }
   };
 
@@ -84,7 +96,7 @@ export function Assets() {
     setError(null);
     try {
       const params: Record<string, string | number> = { page, size: 15 };
-      if (search) params.search = search;
+      if (search.trim()) params.search = search.trim();
       if (typeFilter) params.asset_type = typeFilter;
       if (vendorFilter) params.vendor = vendorFilter;
       if (criticalityFilter) params.criticality = criticalityFilter;
@@ -242,6 +254,8 @@ export function Assets() {
       </fieldset>
       <p className="text-xs text-surface-400">Saved inventory views store filters and order, not selected asset records, comparison evidence or a frozen inventory snapshot.</p>
 
+      <p className="text-xs text-surface-400">CSV includes all assets matching the current search and filters, in the selected order, across pages. Up to 5,000 matching assets; larger requests are refused without a partial file. Search treats %, _ and backslashes as literal text. This is a new current inventory read, not a frozen snapshot. Network details and serial numbers are included. Keep the file within an appropriate audience. Changing filters cancels a pending download.</p>
+      {exportError && <p role="alert" className="text-sm text-danger">{exportError}</p>}
       {!loading && !error && assets.length > 0 && <button type="button" disabled={criticalityBusy || saving || showModal || !!pendingDelete} onClick={() => setShowCriticalityReview(value => !value)} className="rounded border border-surface-600 px-3 py-2 text-sm text-surface-200 disabled:opacity-40">{showCriticalityReview ? 'Hide criticality review' : 'Review page criticality'}</button>}
       {!loading && !error && showCriticalityReview && assets.length > 0 && <AssetCriticalityReview key={JSON.stringify([page, search, typeFilter, vendorFilter, criticalityFilter, otFilter, sort])} assets={assets} onBusy={setCriticalityBusy} onSaved={saved => { setComparisonRevision(value => value + 1); setAssets(current => current.map(asset => saved.has(asset.id) ? { ...asset, criticality: saved.get(asset.id)!, risk_score: undefined, risk_level: undefined } : asset)); }} />}
       {!loading && !error && showCriticalityReview && <button type="button" disabled={criticalityBusy} onClick={() => { setShowCriticalityReview(false); void fetchAssets(); }} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40">Refresh inventory after review</button>}
