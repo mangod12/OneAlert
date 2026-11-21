@@ -7,7 +7,7 @@ from backend.database.db import get_async_db
 from backend.models.case import Case, CaseTimeline
 from backend.models.user import User
 from backend.routers.auth import get_active_user
-from backend.services.agents.report import ReportAgent
+from backend.services.agents.report import ReportAgent, collect_briefing_inputs
 
 router = APIRouter()
 
@@ -17,6 +17,16 @@ async def owned_case(db, case_id, user_id):
     if case is None:
         raise HTTPException(status_code=404, detail='Case not found')
     return case
+
+
+@router.get('/{case_id}/briefing-inputs')
+async def preview_briefing_inputs(case_id: int, current_user: User = Depends(get_active_user),
+                                  db: AsyncSession = Depends(get_async_db)):
+    await owned_case(db, case_id, current_user.id)
+    from datetime import UTC, datetime
+    return {'format': 'onealert-briefing-inputs', 'version': 1, 'case_id': case_id,
+            'retrieved_at': datetime.now(UTC).isoformat(),
+            **await collect_briefing_inputs(db, case_id, current_user.id)}
 
 
 @router.post('/{case_id}/briefing-drafts')
