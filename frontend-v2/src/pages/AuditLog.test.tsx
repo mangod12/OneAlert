@@ -295,3 +295,25 @@ it('shows absent audit fields explicitly and preserves a zero target ID', async 
   fireEvent.click(dialog.getByRole('button', { name: 'Close record' }));
   expect(screen.queryByRole('dialog')).toBeNull();
 });
+
+it('does not download a stale audit export after filters change', async () => {
+  const create = vi.fn(() => 'blob:audit'); URL.createObjectURL = create;
+  let finish!: (value: unknown) => void;
+  get.mockImplementation(url => url === '/auth/audit-logs/export' ? new Promise(resolve => { finish = resolve; }) : Promise.resolve({ data: url === '/auth/audit-logs' ? { logs, total: 1 } : runs }));
+  render(<AuditLog />); await screen.findByText('case.status_changed'); fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
+  fireEvent.change(screen.getByLabelText('Search audit actions'), { target: { value: 'other' } });
+  await act(async () => finish({ data: new Blob(['old'], { type: 'text/csv' }) })); expect(create).not.toHaveBeenCalled(); expect(screen.getByRole('button', { name: /export csv/i })).toHaveProperty('disabled', false);
+});
+it('rejects non-CSV exports and exposes a decoded server limit error without saving a partial file', async () => {
+  const create = vi.fn(); URL.createObjectURL = create;
+  get.mockImplementation(async url => { if (url === '/auth/audit-logs/export') return { data: new Blob(['{}'], { type: 'application/json' }) }; return { data: url === '/auth/audit-logs' ? { logs, total: 1 } : runs }; });
+  render(<AuditLog />); await screen.findByText('case.status_changed'); fireEvent.click(screen.getByRole('button', { name: /export csv/i })); await screen.findByText(/did not return an audit CSV/); expect(create).not.toHaveBeenCalled();
+  const failure = new Blob(['error'], { type: 'application/json' }); Object.defineProperty(failure, 'text', { value: async () => JSON.stringify({ detail: 'No partial CSV was created. Narrow filters.' }) });
+  get.mockImplementation(async url => { if (url === '/auth/audit-logs/export') throw { isAxiosError: true, response: { data: failure } }; return { data: url === '/auth/audit-logs' ? { logs, total: 1 } : runs }; });
+  fireEvent.click(screen.getByRole('button', { name: /export csv/i })); await screen.findByText('No partial CSV was created. Narrow filters.'); expect(create).not.toHaveBeenCalled();
+});
+it('does not download an audit export after leaving the page', async () => {
+  const create = vi.fn(); URL.createObjectURL = create; let finish!: (value: unknown) => void;
+  get.mockImplementation(url => url === '/auth/audit-logs/export' ? new Promise(resolve => { finish = resolve; }) : Promise.resolve({ data: url === '/auth/audit-logs' ? { logs, total: 1 } : runs }));
+  const view = render(<AuditLog />); await screen.findByText('case.status_changed'); fireEvent.click(screen.getByRole('button', { name: /export csv/i })); view.unmount(); await act(async () => finish({ data: new Blob(['old'], { type: 'text/csv' }) })); expect(create).not.toHaveBeenCalled();
+});

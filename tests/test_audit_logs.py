@@ -284,3 +284,35 @@ def test_export_preserves_plain_text_csv_quoting_and_null_target(client):
     record = next(r for r in csv.DictReader(io.StringIO(response.text)) if r['id'] == str(record_id))
     assert record['detail'] == 'Reviewed, "unchanged"\nsecond line'
     assert record['target_id'] == record['target_type'] == ''
+
+
+def test_export_refuses_over_limit_without_partial_csv_and_allows_exact_limit(client, monkeypatch):
+    headers = _register_admin_and_login(client, 'bounded-audit@example.com')
+    _add_logs('bounded-audit@example.com', 4)
+    monkeypatch.setattr('backend.routers.auth.AUDIT_EXPORT_LIMIT', 3)
+    response = client.get('/api/v1/auth/audit-logs/export', headers=headers)
+    assert response.status_code == 422
+    assert 'No partial CSV' in response.text
+    assert not response.headers['content-type'].startswith('text/csv')
+    response = client.get('/api/v1/auth/audit-logs/export', headers=headers, params={'action': 'action_1'})
+    assert response.status_code == 200
+    assert len(list(csv.DictReader(io.StringIO(response.text)))) == 1
+    monkeypatch.setattr('backend.routers.auth.AUDIT_EXPORT_LIMIT', 4)
+    response = client.get('/api/v1/auth/audit-logs/export', headers=headers)
+    assert response.status_code == 200
+    assert len(list(csv.DictReader(io.StringIO(response.text)))) == 4
+
+
+def test_export_orders_equal_timestamps_by_id_descending(client):
+    email = 'audit-ties@example.com'
+    headers = _register_admin_and_login(client, email)
+    _add_logs(email, 3)
+    with _TestingSessionLocal() as db:
+        for row in db.execute(select(AuditLog)).scalars():
+            row.timestamp = datetime(2026, 11, 1, tzinfo=UTC)
+        db.commit()
+    response = client.get('/api/v1/auth/audit-logs/export', headers=headers)
+    assert response.status_code == 200
+    ids = [int(row['id']) for row in csv.DictReader(io.StringIO(response.text))]
+    assert len(ids) == 3
+    assert ids == sorted(ids, reverse=True)
