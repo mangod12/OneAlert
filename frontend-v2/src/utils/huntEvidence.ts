@@ -2,6 +2,7 @@ import type { HuntQueryResult } from '../components/HuntQueryEvidence';
 
 export interface HuntEvidenceResult {
   session_id?: number;
+  agent_run_id?: number | null;
   hypothesis?: string;
   status?: string;
   recorded_at?: string;
