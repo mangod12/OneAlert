@@ -6,22 +6,21 @@ window, severity buckets, upcoming (not yet due) counts, attainment
 percentage, window validation, and owner isolation.
 """
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
+from backend.database.db import Base, get_async_db, get_db
 from backend.main import app
-from backend.database.db import get_db, get_async_db, Base
 from backend.models.alert import Alert
 from backend.models.asset import Asset
 from backend.models.case import Case
 from backend.models.user import User
 from backend.services.auth_service import get_password_hash
-
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test_reports_sla.db"
 engine = create_engine(
@@ -51,11 +50,27 @@ async def override_get_async_db():
         yield session
 
 
-TODAY = date.today()
+# These fixtures and the report must share a clock even if the suite crosses UTC midnight.
+NOW = datetime(2026, 11, 20, 12, 0, tzinfo=UTC)
+TODAY = NOW.date()
+
+
+@pytest.fixture(autouse=True)
+def fixed_report_clock(monkeypatch):
+    class DateTimeType(type):
+        def __instancecheck__(cls, instance):
+            return isinstance(instance, datetime)
+
+    class FrozenDateTime(datetime, metaclass=DateTimeType):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz) if tz is not None else NOW.replace(tzinfo=None)
+    monkeypatch.setattr('backend.routers.reports.datetime', FrozenDateTime)
+
 
 
 def _naive(days_ago=0):
-    return (datetime.now(UTC) - timedelta(days=days_ago)).replace(tzinfo=None)
+    return (NOW - timedelta(days=days_ago)).replace(tzinfo=None)
 
 
 def _seed(session, user_id):
@@ -70,33 +85,38 @@ def _seed(session, user_id):
     session.add(Alert(
         user_id=user_id, asset_id=router.id, title="Patched on time",
         description="met", severity="critical", status="resolved",
-        created_at=_naive(days_ago=4), due_date=TODAY - timedelta(days=1),
+        created_at=_naive(days_ago=4),
+                    due_date=TODAY - timedelta(days=1),
         resolved_at=_naive(days_ago=2),
     ))
     # Breached: due five days ago, still open.
     session.add(Alert(
         user_id=user_id, asset_id=router.id, title="Overdue triage",
         description="breached", severity="high", status="pending",
-        created_at=_naive(days_ago=6), due_date=TODAY - timedelta(days=5),
+        created_at=_naive(days_ago=6),
+                    due_date=TODAY - timedelta(days=5),
     ))
     # Breached: due three days ago, resolved only yesterday.
     session.add(Alert(
         user_id=user_id, asset_id=router.id, title="Late patch",
         description="breached", severity="high", status="resolved",
-        created_at=_naive(days_ago=6), due_date=TODAY - timedelta(days=3),
+        created_at=_naive(days_ago=6),
+                    due_date=TODAY - timedelta(days=3),
         resolved_at=_naive(days_ago=1),
     ))
     # Upcoming: due in three days, not scored.
     session.add(Alert(
         user_id=user_id, asset_id=router.id, title="Future triage",
         description="upcoming", severity="low", status="acknowledged",
-        created_at=_naive(days_ago=1), due_date=TODAY + timedelta(days=3),
+        created_at=_naive(days_ago=1),
+                    due_date=TODAY + timedelta(days=3),
     ))
     # Outside the window: due 60 days ago.
     session.add(Alert(
         user_id=user_id, asset_id=router.id, title="Ancient alert",
         description="out of window", severity="medium", status="resolved",
-        created_at=_naive(days_ago=65), due_date=TODAY - timedelta(days=60),
+        created_at=_naive(days_ago=65),
+                    due_date=TODAY - timedelta(days=60),
         resolved_at=_naive(days_ago=61),
     ))
 
@@ -221,7 +241,8 @@ class TestSlaComplianceReport:
             session.add(Alert(
                 user_id=other.id, asset_id=asset.id, title="Not yours",
                 description="other owner", severity="critical", status="pending",
-                created_at=_naive(days_ago=2), due_date=TODAY - timedelta(days=1),
+                created_at=_naive(days_ago=2),
+                    due_date=TODAY - timedelta(days=1),
             ))
             session.commit()
         response = client.get("/api/v1/reports/sla", headers=auth_headers)
@@ -232,10 +253,16 @@ class TestSlaComplianceReport:
 def test_sla_keeps_unknown_completion_timing_separate_from_decided_outcomes(client, auth_headers):
     with TestingSessionLocal() as db:
         user = db.query(User).filter_by(email='sla_report_test@example.com').one()
-        db.add(Case(user_id=user.id, title='Legacy closed record', severity='critical', status='closed', due_date=TODAY - timedelta(days=1), updated_at=_naive(days_ago=2)))
-        db.add(Case(user_id=user.id, title='Reopened with obsolete close time', severity='critical', status='open', due_date=TODAY - timedelta(days=1), closed_at=_naive(days_ago=2)))
+        db.add(Case(user_id=user.id, title='Legacy closed record',
+                    severity='critical', status='closed',
+                    due_date=TODAY - timedelta(days=1), updated_at=_naive(days_ago=2)))
+        db.add(Case(user_id=user.id, title='Reopened with obsolete close time',
+                    severity='critical', status='open',
+                    due_date=TODAY - timedelta(days=1), closed_at=_naive(days_ago=2)))
         asset = db.query(Asset).filter_by(user_id=user.id).first()
-        db.add(Alert(user_id=user.id, asset_id=asset.id, title='Legacy resolved alert', description='missing timing', severity='critical', status='resolved', due_date=TODAY - timedelta(days=1)))
+        db.add(Alert(user_id=user.id, asset_id=asset.id, title='Legacy resolved alert',
+                     description='missing timing', severity='critical', status='resolved',
+                    due_date=TODAY - timedelta(days=1)))
         db.commit()
     result = client.get('/api/v1/reports/sla', headers=auth_headers).json()
     assert result['cases']['unknown'] == 1
@@ -253,7 +280,9 @@ def test_sla_reports_no_score_when_all_completion_times_are_unknown(client, auth
     with TestingSessionLocal() as db:
         db.query(Case).delete()
         user = db.query(User).filter_by(email='sla_report_test@example.com').one()
-        db.add(Case(user_id=user.id, title='Closed without timing evidence', severity='high', status='closed', due_date=TODAY - timedelta(days=1), updated_at=_naive(days_ago=2)))
+        db.add(Case(user_id=user.id, title='Closed without timing evidence',
+                    severity='high', status='closed',
+                    due_date=TODAY - timedelta(days=1), updated_at=_naive(days_ago=2)))
         db.commit()
     bucket = client.get('/api/v1/reports/sla', headers=auth_headers).json()['cases']
     assert bucket['unknown'] == bucket['due'] == 1
@@ -303,15 +332,18 @@ def test_sla_records_preserve_unknown_and_reopened_evidence(client, auth_headers
     with TestingSessionLocal() as db:
         user = db.query(User).filter_by(email='sla_report_test@example.com').one()
         db.add(Case(user_id=user.id, title='Unscored completed record', status='closed',
-                    severity='high', due_date=TODAY - timedelta(days=1)))
+                    severity='high',
+                    due_date=TODAY - timedelta(days=1)))
         db.add(Case(user_id=user.id, title='Reopened after completion', status='open',
-                    severity='high', due_date=TODAY - timedelta(days=1), closed_at=_naive(days_ago=2)))
+                    severity='high',
+                    due_date=TODAY - timedelta(days=1), closed_at=_naive(days_ago=2)))
         other = User(email='sla_records_other@example.com', hashed_password=get_password_hash('testpass123'),
                      full_name='Other', company='Other', is_active=True, is_verified=True)
         db.add(other)
         db.flush()
         db.add(Case(user_id=other.id, title='Private foreign case', status='open',
-                    severity='high', due_date=TODAY - timedelta(days=1)))
+                    severity='high',
+                    due_date=TODAY - timedelta(days=1)))
         db.commit()
     result = client.get('/api/v1/reports/sla/records?kind=cases', headers=auth_headers).json()
     by_title = {row['title']: row for row in result['records']}
@@ -347,7 +379,8 @@ def test_sla_record_window_includes_both_boundary_dates(client, auth_headers):
         user = db.query(User).filter_by(email='sla_report_test@example.com').one()
         for days_ago in [0, 6, 7]:
             db.add(Case(user_id=user.id, title=f'Boundary record {days_ago}', status='open',
-                        severity='high', due_date=TODAY - timedelta(days=days_ago)))
+                        severity='high',
+                    due_date=TODAY - timedelta(days=days_ago)))
         db.commit()
     result = client.get('/api/v1/reports/sla/records?kind=cases&days=7&query=Boundary', headers=auth_headers).json()
     assert [row['title'] for row in result['records']] == ['Boundary record 6', 'Boundary record 0']
