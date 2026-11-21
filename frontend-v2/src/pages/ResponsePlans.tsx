@@ -84,26 +84,40 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState('');
+  const [historyDraft, setHistoryDraft] = useState(''), [historyQuery, setHistoryQuery] = useState('');
+  const [historyCaseDraft, setHistoryCaseDraft] = useState(''), [historyCase, setHistoryCase] = useState('');
+  const [historyLevel, setHistoryLevel] = useState(''), [historySort, setHistorySort] = useState('newest');
+  const invalidHistoryCase = historyCaseDraft.trim() !== '' && (!/^[1-9][0-9]*$/.test(historyCaseDraft.trim()) || !Number.isSafeInteger(Number(historyCaseDraft.trim())));
   const [executionNotice, setExecutionNotice] = useState<{ text: string; success: boolean } | null>(null);
   const [exporting, setExporting] = useState(false);
 
+  const exportBusy = useRef(false), exportReads = useRef(0);
+  const [exportError, setExportError] = useState('');
+  useEffect(() => { exportReads.current += 1; exportBusy.current = false; setExporting(false); setExportError(''); return () => { exportReads.current += 1; }; }, [statusFilter, historyQuery, historyCase, historyLevel, historySort]);
   const exportCsv = async () => {
-    if (exporting) return;
-    setExporting(true);
+    if (exportBusy.current) return;
+    exportBusy.current = true; const request = ++exportReads.current;
+    setExporting(true); setExportError('');
     try {
       const params: Record<string, string> = {};
       if (statusFilter) params.status = statusFilter;
+      if (historyQuery) params.query = historyQuery;
+      if (historyCase) params.case_id = historyCase;
+      if (historyLevel) params.autonomy_level = historyLevel;
+      if (historySort !== 'newest') params.sort = historySort;
       const res = await apiClient.get('/response-plans/export', { params, responseType: 'blob' });
-      const url = URL.createObjectURL(res.data as Blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'response-plans.csv';
-      link.click();
-      URL.revokeObjectURL(url);
+      if (request !== exportReads.current) return;
+      if (!(res.data instanceof Blob) || !res.data.type.startsWith('text/csv')) throw new Error('The server did not return response plan CSV. No file was downloaded.');
+      const url = URL.createObjectURL(res.data);
+      try { const link = document.createElement('a'); link.href = url; link.download = 'response-plans.csv'; link.click(); }
+      finally { URL.revokeObjectURL(url); }
     } catch (err: unknown) {
-      toast(getApiErrorMessage(err, 'The export could not be downloaded.'), 'error');
+      if (request !== exportReads.current) return;
+      const response = (err as { response?: { data?: unknown } })?.response;
+      if (response?.data instanceof Blob) { try { response.data = JSON.parse(await response.data.text()); } catch { /* Standard fallback. */ } }
+      if (request === exportReads.current) setExportError(getApiErrorMessage(err, 'Response plan export unavailable. No file was downloaded.'));
     } finally {
-      setExporting(false);
+      if (request === exportReads.current) { exportBusy.current = false; setExporting(false); }
     }
   };
   const [approvalDraft, setApprovalDraft] = useState(''), [approvalQuery, setApprovalQuery] = useState('');
@@ -123,7 +137,7 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
     const request = ++requestId.current;
     setLoading(true);
     const [planResult, approvalResult] = await Promise.allSettled([
-      apiClient.get('/response-plans/', { params: { page, size: 20, ...(statusFilter ? { status: statusFilter } : {}) } }),
+      apiClient.get('/response-plans/', { params: { page, size: 20, ...(statusFilter ? { status: statusFilter } : {}), ...(historyQuery ? { query: historyQuery } : {}), ...(historyCase ? { case_id: Number(historyCase) } : {}), ...(historyLevel ? { autonomy_level: historyLevel } : {}), ...(historySort !== 'newest' ? { sort: historySort } : {}) } }),
       apiClient.get('/response-plans/pending-approvals', { params: { page: approvalPage, size: 10, ...(approvalQuery ? { query: approvalQuery } : {}), ...(approvalCase ? { case_id: Number(approvalCase) } : {}), ...(approvalLevel ? { autonomy_level: approvalLevel } : {}), ...(approvalSort !== 'newest' ? { sort: approvalSort } : {}) } }),
     ]);
     if (request !== requestId.current) return;
@@ -151,7 +165,7 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
     else { setPending([]); setApprovalTotal(0); nextErrors.push(getApiErrorMessage(approvalResult.reason, 'Pending approvals could not be loaded.')); }
     setErrors(nextErrors);
     setLoading(false);
-  }, [statusFilter, page, approvalPage, approvalQuery, approvalCase, approvalLevel, approvalSort]);
+  }, [statusFilter, page, approvalPage, approvalQuery, approvalCase, approvalLevel, approvalSort, historyQuery, historyCase, historyLevel, historySort]);
 
   const approvePlan = async (planId: number) => {
     if (approving.current || workingPlan !== null || loading || errors.length || !pending.some(item => item.plan_id === planId && item.id === reviewApprovalId)) return;
@@ -306,7 +320,7 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
       <div className="oa-panel p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-surface-50">All Response Plans</h2>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={() => { void exportCsv(); }}
@@ -336,8 +350,20 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
           </label>
           </div>
         </div>
+        <form aria-label="Search response plan history" className="mb-3 flex flex-wrap items-end gap-3" onSubmit={event => { event.preventDefault(); if (invalidHistoryCase) return; setHistoryQuery(historyDraft.trim()); setHistoryCase(historyCaseDraft.trim()); setPage(1); setSelectedPlanId(null); }}>
+          <label className="min-w-0 text-xs text-surface-300">Plan ID, investigation ID or creator<input aria-label="Search plan history" maxLength={200} value={historyDraft} onChange={event => setHistoryDraft(event.target.value)} className="mt-1 block w-full rounded border border-surface-600 bg-surface-950 p-2 text-sm" /></label>
+          <label className="min-w-0 text-xs text-surface-300">Exact investigation ID<input aria-label="Plan history investigation ID" inputMode="numeric" value={historyCaseDraft} onChange={event => setHistoryCaseDraft(event.target.value)} className="mt-1 block w-full rounded border border-surface-600 bg-surface-950 p-2 text-sm" /></label>
+          <button type="submit" disabled={invalidHistoryCase} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300 disabled:opacity-40">Search plan history</button>
+          <label className="text-xs text-surface-300">Autonomy level<select aria-label="Filter plan history autonomy" value={historyLevel} onChange={event => { setHistoryLevel(event.target.value); setPage(1); setSelectedPlanId(null); }} className="mt-1 block rounded border border-surface-600 bg-surface-950 p-2 text-sm"><option value="">All levels</option>{['L0', 'L1', 'L2', 'L3', 'L4'].map(level => <option key={level}>{level}</option>)}</select></label>
+          <label className="text-xs text-surface-300">Order<select aria-label="Order plan history" value={historySort} onChange={event => { setHistorySort(event.target.value); setPage(1); setSelectedPlanId(null); }} className="mt-1 block rounded border border-surface-600 bg-surface-950 p-2 text-sm"><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label>
+          <button type="button" onClick={() => { setHistoryDraft(''); setHistoryQuery(''); setHistoryCaseDraft(''); setHistoryCase(''); setHistoryLevel(''); setHistorySort('newest'); setStatusFilter(''); setPage(1); setSelectedPlanId(null); }} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-300">Clear plan history filters</button>
+        </form>
+        {invalidHistoryCase && <p role="alert" className="mb-3 text-xs text-danger">Use one positive whole-number investigation ID. The draft has not been applied.</p>}
+        {(historyDraft.trim() !== historyQuery || historyCaseDraft.trim() !== historyCase) && <p className="mb-3 text-xs text-warning">Plan history search draft not applied. Results and CSV still use keyword {historyQuery ? `"${historyQuery}"` : 'any'} and investigation {historyCase ? `#${historyCase}` : 'any'}.</p>}
+        <p className="mb-3 break-words text-xs text-surface-400">{total} matching plan records across all pages. Literal case-insensitive search covers plan IDs, investigation IDs and creators, not action text. CSV includes all matching plan metadata in this order, not action targets or execution details. This is a new current read, not a frozen snapshot. Changing applied filters cancels a pending download. Approval queue filters above are separate.</p>
+        {exportError && <p role="alert" className="mb-3 text-xs text-danger">{exportError}</p>}
         {plans.length === 0 ? (
-          !loading && errors.length === 0 && <EmptyState title="No response plans" description="Run the agent pipeline to generate a guarded response plan." />
+          !loading && errors.length === 0 && <EmptyState title="No response plans" description="No saved plan matches the applied filters. Clear filters to review all plans." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
