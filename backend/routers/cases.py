@@ -453,11 +453,24 @@ async def explore_assigned_tasks(
             raise HTTPException(status_code=422, detail="Supply the calendar date used for due filtering")
         statement = statement.where(CaseTask.due_date < today if due == "overdue" else
                                     CaseTask.due_date == today if due == "today" else CaseTask.due_date > today)
-    total = (await db.execute(select(func.count()).select_from(statement.order_by(None).subquery()))).scalar_one()
+    matched = statement.order_by(None).with_only_columns(
+        CaseTask.case_id.label("case_id"), CaseTask.done.label("done"),
+        CaseTask.due_date.label("due_date"), CaseTask.completed_at.label("completed_at"),
+        maintain_column_froms=True,
+    ).subquery()
+    counts = (await db.execute(select(
+        func.count().label("total"), func.count(func.distinct(matched.c.case_id)).label("investigations"),
+        func.count().filter(matched.c.done.is_(False)).label("open"),
+        func.count().filter(matched.c.done.is_(True)).label("completed"),
+        func.count().filter(matched.c.due_date.is_(None)).label("without_due_date"),
+        func.count().filter(matched.c.done.is_(True), matched.c.completed_at.is_(None))
+        .label("completed_without_timestamp"),
+    ).select_from(matched))).mappings().one()
+    total = counts["total"]
     rows = (await db.execute(statement.offset((page - 1) * size).limit(size))).all()
     records = [dict(row.model_dump(), done=task.done, completed_at=task.completed_at)
                for row, (task, _case) in zip(_assigned_task_rows(rows), rows, strict=True)]
-    return {"data": records, "total": total, "page": page, "size": size,
+    return {"data": records, "total": total, "summary": dict(counts), "page": page, "size": size,
             "filter_date": today, "completion": completion, "investigations": investigations,
             "scope": "Current records assigned to your account on currently visible investigations. "
                      "Not assignment history or proof of external remediation."}
