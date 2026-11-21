@@ -1,5 +1,5 @@
 import { MemoryRouter } from 'react-router-dom';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Alert, AlertListResponse } from '../api/types';
 import { Alerts } from './Alerts';
@@ -582,5 +582,25 @@ describe('Alerts bulk triage due date', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select alert CVE-2026-0001' }));
     fireEvent.change(screen.getByLabelText('Set due date for selected alerts'), { target: { value: 'clear' } });
     await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/alerts/1', { due_date: null }));
+  });
+});
+
+describe('Exact alert link identity guards', () => {
+  it.each(['0', '-1', '07', '1.5', '2147483648', '7&alert=8', ''])('does not fetch an ambiguous or invalid exact alert reference %s', async identity => {
+    render(<MemoryRouter initialEntries={[`/alerts?alert=${identity}`]}><Alerts /></MemoryRouter>);
+    await screen.findByText('This alert link needs one positive alert ID. No alert detail was loaded.');
+    expect(mockGet.mock.calls.some(([url]) => /^\/alerts\/\d+$/.test(url))).toBe(false); expect(screen.queryByRole('dialog')).toBeNull();
+  });
+  it('rejects a mismatched exact record before exposing drawer actions', async () => {
+    const original = mockGet.getMockImplementation()!; mockGet.mockImplementation((...args) => args[0] === '/alerts/7' ? Promise.resolve({ data: makeAlert({ id: 8, title: 'Wrong linked alert' }) }) : original(...args));
+    render(<MemoryRouter initialEntries={['/alerts?alert=7']}><Alerts /></MemoryRouter>); await screen.findByText(/linked alert response did not match/); expect(screen.queryByRole('dialog')).toBeNull(); expect(screen.queryByText('Wrong linked alert')).toBeNull();
+  });
+  it('cancels a pending exact lookup when the invalid or unavailable link is dismissed', async () => {
+    let finish!: (value: unknown) => void; const original = mockGet.getMockImplementation()!; mockGet.mockImplementation((...args) => args[0] === '/alerts/7' ? new Promise(resolve => { finish = resolve; }) : original(...args));
+    render(<MemoryRouter initialEntries={['/alerts?alert=7']}><Alerts /></MemoryRouter>); await screen.findByText('Loading exact linked alert...');
+    // Choosing an explicitly listed record removes the prior link and cancels its pending lookup.
+    fireEvent.click(await screen.findByText('CVE-2026-0001')); await screen.findByRole('dialog');
+    await act(async () => finish({ data: makeAlert({ id: 7, title: 'Late linked alert' }) }));
+    expect(screen.queryByText('Late linked alert')).toBeNull(); expect(screen.getByRole('dialog')).toBeTruthy();
   });
 });
