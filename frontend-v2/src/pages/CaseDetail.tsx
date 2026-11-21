@@ -12,6 +12,7 @@ import { TaskTitleDialog } from '../components/TaskTitleDialog';
 import { CaseResponsePlans } from '../components/CaseResponsePlans';
 import { CaseHandoff } from '../components/CaseHandoff';
 import { CaseBriefingDrafts } from '../components/CaseBriefingDrafts';
+import { CaseBriefingExactReview } from '../components/CaseBriefingExactReview';
 import { MentionTextarea } from '../components/MentionTextarea';
 import apiClient from '../api/client';
 import { ChecklistTriage } from '../components/ChecklistTriage';
@@ -941,6 +942,7 @@ export function CaseDetail() {
       <CaseEvidenceChronology key={`chronology-${caseData.id}`} caseId={caseData.id} />
       <CaseEvidenceOverlap key={`overlap-${caseData.id}`} caseId={caseData.id} />
 
+      <CaseBriefingExactReview caseId={caseData.id} canOpen={currentUserId === null ? null : isOwner} />
       {isOwner && <CaseBriefingDrafts key={`briefings-${caseData.id}`} caseId={caseData.id} />}
       <CaseResponsePlans canDraft={currentUserId !== null && caseData.user_id === currentUserId} key={caseData.id} caseId={caseData.id} onSeed={(id, payload) => seedTasksFromPlan(id, payload)} seedBusy={!canManageChecklist || seedingPlanId !== null || batchTaskBusy} tasksUnavailable={tasksUnavailable} />
 

@@ -40,3 +40,20 @@ async def list_briefings(case_id: int, before_id: int | None = Query(None, ge=1)
     return {'case_id': case_id, 'records': [{'timeline_id': row.id, 'briefing': row.metadata_json}
                                            for row in rows[:5]],
             'next_before_id': rows[4].id if len(rows) > 5 else None}
+
+
+@router.get('/{case_id}/briefing-drafts/{timeline_id}')
+async def get_briefing(case_id: int, timeline_id: int, current_user: User = Depends(get_active_user),
+                        db: AsyncSession = Depends(get_async_db)):
+    """Reopen the exact saved draft, without refreshing sources or generating AI text."""
+    from datetime import UTC, datetime
+    await owned_case(db, case_id, current_user.id)
+    row = (await db.execute(select(CaseTimeline).where(
+        CaseTimeline.id == timeline_id, CaseTimeline.case_id == case_id,
+        CaseTimeline.entry_type == 'ai_analysis', CaseTimeline.source == 'agent'))).scalar_one_or_none()
+    value = row.metadata_json if row is not None else None
+    if not isinstance(value, dict) or value.get('format') != 'onealert-case-briefing' or (
+            value.get('version') != 1 or value.get('case_id') != case_id):
+        raise HTTPException(status_code=404, detail='Briefing draft not found')
+    return {'case_id': case_id, 'record': {'timeline_id': row.id, 'briefing': value},
+            'retrieved_at': datetime.now(UTC).isoformat()}
