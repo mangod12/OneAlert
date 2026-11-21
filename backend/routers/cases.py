@@ -1874,6 +1874,39 @@ async def list_agent_runs(
     return result.scalars().all()
 
 
+@router.get("/agents/run-library")
+async def browse_agent_runs(
+    query: str = Query("", max_length=200), agent_type: str = Query("", max_length=100),
+    run_status: str = Query("", max_length=100), model: str = Query("", max_length=200),
+    page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    """Browse all current owned ledger runs without loading step bodies or errors."""
+    scope = [AgentRun.user_id == current_user.id]
+    filtered = list(scope)
+    if query.strip():
+        needle = query.strip().lower()
+        filtered.append(or_(*[func.lower(func.coalesce(cast(column, String), "")).contains(
+            needle, autoescape=True) for column in (
+                AgentRun.id, AgentRun.agent_type, AgentRun.status, AgentRun.model_used, AgentRun.result_summary,
+            )]))
+    for value, column in ((agent_type, AgentRun.agent_type), (run_status, AgentRun.status),
+                          (model, AgentRun.model_used)):
+        if value:
+            filtered.append(column == value)
+    total = (await db.execute(select(func.count(AgentRun.id)).where(*filtered))).scalar_one()
+    records = (await db.execute(select(AgentRun).where(*filtered).order_by(
+        AgentRun.started_at.desc(), AgentRun.id.desc()).offset((page - 1) * size).limit(size))).scalars().all()
+    options = {}
+    for key, column in (("agent_types", AgentRun.agent_type), ("statuses", AgentRun.status),
+                        ("models", AgentRun.model_used)):
+        values = (await db.execute(select(column).where(*scope).distinct().order_by(column))).scalars().all()
+        options[key] = [value for value in values if value]
+    return {"query": query.strip(), "agent_type": agent_type, "run_status": run_status, "model": model,
+            "page": page, "size": size, "total": total, "retrieved_at": datetime.now(UTC), **options,
+            "records": [AgentRunResponse.model_validate(row) for row in records]}
+
+
 @router.get("/agents/runs/{run_id}", response_model=AgentRunDetailResponse)
 async def get_agent_run(
     run_id: int,
