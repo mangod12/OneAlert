@@ -5,6 +5,12 @@ on:
   push:
     branches: [main]
 
+# Do not cancel an active Azure operation when a newer main commit arrives.
+# One pending run is retained by GitHub while the current deployment completes.
+concurrency:
+  group: onealert-demo-azure-deployment
+  cancel-in-progress: false
+
 permissions:
   contents: read
   packages: write
@@ -46,6 +52,8 @@ jobs:
     needs: build
     environment: azure-production
     steps:
+      - uses: actions/checkout@v4
+
       - id: azure_secret
         env:
           AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
@@ -90,7 +98,7 @@ jobs:
           )
 
           if az containerapp show --name "$CONTAINERAPP_NAME" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
-            az containerapp update \
+            bash scripts/ci/retry-containerapp-operation.sh az containerapp update \
               --name "$CONTAINERAPP_NAME" \
               --resource-group "$RESOURCE_GROUP" \
               --image "${{ needs.build.outputs.image }}" \
@@ -101,7 +109,7 @@ jobs:
               --set-env-vars "${ENV_VARS[@]}" \
               --only-show-errors
           else
-            az containerapp create \
+            bash scripts/ci/retry-containerapp-operation.sh az containerapp create \
               --name "$CONTAINERAPP_NAME" \
               --resource-group "$RESOURCE_GROUP" \
               --environment "$CONTAINERAPPS_ENV" \
