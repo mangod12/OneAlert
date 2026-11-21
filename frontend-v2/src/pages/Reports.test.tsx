@@ -286,7 +286,7 @@ it('shows unknown completion timing without presenting a false percentage and re
 
 it('loads SLA record evidence only when requested and keeps its own cohort window', async () => {
   get.mockImplementation(async (url: string) => {
-    if (url === '/reports/sla/records') return { data: { kind: 'cases', days: 30, window_start: '2026-10-22', window_end: '2026-11-20', generated_at: '2026-11-20T14:00:00Z', total: 0, offset: 0, records: [] } };
+    if (url === '/reports/sla/records') return { data: { kind: 'cases', days: 30, window_start: '2026-10-22', window_end: '2026-11-20', generated_at: '2026-11-20T14:00:00Z', total: 0, offset: 0, limit:20, outcome:'all', query:'', records: [] } };
     if (url === '/reports/sla') return { data: slaReport };
     if (url === '/reports/team-workload') return { data: workload };
     if (url === '/reports/alert-trend') return { data: trend };
