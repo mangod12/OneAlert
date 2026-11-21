@@ -1,7 +1,7 @@
 """Integration configuration model for SIEM/SOAR integrations."""
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.sql import func
 
@@ -45,3 +45,11 @@ class IntegrationConfigUpdate(BaseModel):
     config: dict | None = None
     is_active: bool | None = None
     model_config = {"from_attributes": True}
+
+
+    @field_validator('name', 'config', 'is_active', mode='before')
+    @classmethod
+    def required_update_values_cannot_be_null(cls, value):
+        if value is None:
+            raise ValueError('This field cannot be null; omit it to keep its saved value')
+        return value
