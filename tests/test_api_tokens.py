@@ -199,3 +199,47 @@ class TestReadOnlyTokens:
         listing = client.get("/api/v1/api-tokens/", headers=headers).json()
         by_name = {t["name"]: t["read_only"] for t in listing}
         assert by_name == {"reporting": True, "automation": False}
+
+
+class TestExpiredTokenCapacity:
+    def test_expired_tokens_release_capacity_but_remain_in_history(self, client, monkeypatch):
+        from backend.models.user import User
+        from backend.routers import api_tokens
+        fixed = datetime(2026, 11, 21, 8, 0, 0)
+        monkeypatch.setattr(api_tokens, '_utcnow', lambda: fixed)
+        headers = _register_and_login(client, 'expired-capacity@example.com')
+        with _TestingSessionLocal() as db:
+            owner = db.query(User).filter_by(email='expired-capacity@example.com').one()
+            for index in range(20):
+                db.add(ApiToken(user_id=owner.id, name=f'Expired {index}', prefix='oa_expired',
+                    salt='00' * 16, token_hash='00' * 64,
+                    expires_at=fixed - timedelta(seconds=index)))
+            db.commit()
+        response = _create_token(client, headers, expires_in_days=1)
+        assert response.status_code == 201
+        assert response.json()['expires_at'].startswith('2026-11-22T08:00:00')
+        history = client.get('/api/v1/api-tokens/', headers=headers).json()
+        assert len(history) == 21 and all('token' not in row for row in history)
+
+    def test_only_current_owners_unexpired_unrevoked_tokens_consume_capacity(self, client, monkeypatch):
+        from backend.models.user import User
+        from backend.routers import api_tokens
+        fixed = datetime(2026, 11, 21, 8, 0, 0)
+        monkeypatch.setattr(api_tokens, '_utcnow', lambda: fixed)
+        foreign_headers = _register_and_login(client, 'foreign-capacity@example.com')
+        assert foreign_headers
+        headers = _register_and_login(client, 'mixed-capacity@example.com')
+        with _TestingSessionLocal() as db:
+            owner = db.query(User).filter_by(email='mixed-capacity@example.com').one()
+            foreign = db.query(User).filter_by(email='foreign-capacity@example.com').one()
+            for index in range(19):
+                db.add(ApiToken(user_id=owner.id, name=f'Active {index}', prefix='oa_active',
+                    salt='00' * 16, token_hash='00' * 64,
+                    expires_at=None if index % 2 else fixed + timedelta(seconds=1)))
+            db.add(ApiToken(user_id=owner.id, name='Revoked', prefix='oa_revoked',
+                salt='00' * 16, token_hash='00' * 64, revoked_at=fixed, expires_at=None))
+            db.add(ApiToken(user_id=foreign.id, name='Foreign active', prefix='oa_foreign',
+                salt='00' * 16, token_hash='00' * 64, expires_at=None))
+            db.commit()
+        assert _create_token(client, headers).status_code == 201
+        assert _create_token(client, headers).status_code == 400

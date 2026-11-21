@@ -4,7 +4,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -60,9 +60,11 @@ async def create_api_token(
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Token name cannot be blank")
+    now = _utcnow()
     active = await db.execute(
         select(func.count(ApiToken.id)).where(
-            ApiToken.user_id == current_user.id, ApiToken.revoked_at.is_(None)
+            ApiToken.user_id == current_user.id, ApiToken.revoked_at.is_(None),
+            or_(ApiToken.expires_at.is_(None), ApiToken.expires_at > now),
         )
     )
     if (active.scalar() or 0) >= MAX_ACTIVE_TOKENS_PER_USER:
@@ -80,7 +82,7 @@ async def create_api_token(
         token_hash=hash_api_token(raw, salt),
         read_only=payload.read_only,
         expires_at=(
-            _utcnow() + timedelta(days=payload.expires_in_days)
+            now + timedelta(days=payload.expires_in_days)
             if payload.expires_in_days is not None
             else None
         ),
