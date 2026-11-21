@@ -34,6 +34,7 @@ from backend.models.asset import Asset
 from backend.models.case import Case, CaseAlert
 from backend.models.notification import Notification
 from backend.models.user import User
+from backend.routers.alert_investigation import router as investigation_router
 from backend.routers.auth import get_active_user
 from backend.services.assignment import _open_work_loads, org_members
 from backend.services.audit import add_audit_log
@@ -92,7 +93,9 @@ async def _email_alert_update(
             )
 
 
+
 router = APIRouter()
+router.include_router(investigation_router)
 
 
 @router.get("/", response_model=AlertListResponse)

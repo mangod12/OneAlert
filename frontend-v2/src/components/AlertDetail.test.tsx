@@ -93,6 +93,7 @@ describe('Escalate to investigation', () => {
   function mockDetailGets() {
     get.mockImplementation(async (url: string) => {
       if (url === '/alerts/1/watchers') return { data: [] };
+      if (url === '/alerts/1/investigation-preview') return { data: { alert: { id: 1, title: 'Saved alert', severity: 'critical', status: 'pending', asset_id: 1, cve_id: 'CVE-2026-0001' }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), existing_case_count: 0, existing_cases: [], due_dates: {info:null,low:null,medium:null,high:null,critical:null} } };
       if (url === '/alerts/1/epss') return { data: { cve_id: 'CVE-2026-0001', epss_score: null, epss_percentile: null } };
       if (url === '/alerts/1/remediations') return { data: [] };
       throw new Error(`unexpected ${url}`);
@@ -101,19 +102,15 @@ describe('Escalate to investigation', () => {
 
   it('creates a case, links the alert, and navigates to the case', async () => {
     mockDetailGets();
-    post.mockImplementation(async (url: string) => {
-      if (url === '/cases/') return { data: { id: 42 } };
-      if (url === '/cases/42/alerts/1') return { data: {} };
-      throw new Error(`unexpected ${url}`);
-    });
+    post.mockResolvedValue({ data: { id: 42, alert_id: 1, linked: true, reviewed_fingerprint: 'b'.repeat(64) } });
     render(<MemoryRouter><AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: /open investigation/i }));
     const dialog = await screen.findByRole('dialog', { name: 'Open investigation' });
-    expect((dialog.querySelector('#escalate-title') as HTMLInputElement).value).toBe('Investigate CVE-2026-0001 on edge-router-01');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Open investigation' }));
+    expect(await within(dialog).findByLabelText('Title')).toHaveProperty('value', 'Investigate: Saved alert');
+    await within(dialog).findByRole('checkbox'); fireEvent.click(within(dialog).getByRole('checkbox'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create reviewed investigation' }));
     await waitFor(() => {
-      expect(post).toHaveBeenCalledWith('/cases/', { title: 'Investigate CVE-2026-0001 on edge-router-01', summary: null, severity: 'critical' });
-      expect(post).toHaveBeenCalledWith('/cases/42/alerts/1');
+      expect(post).toHaveBeenCalledExactlyOnceWith('/alerts/1/investigations', { title: 'Investigate: Saved alert', summary: null, severity: 'critical', reviewed_fingerprint: 'b'.repeat(64) });
     });
   });
 
@@ -123,7 +120,8 @@ describe('Escalate to investigation', () => {
     render(<MemoryRouter><AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: /open investigation/i }));
     const dialog = await screen.findByRole('dialog', { name: 'Open investigation' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Open investigation' }));
+    await within(dialog).findByRole('checkbox'); fireEvent.click(within(dialog).getByRole('checkbox'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create reviewed investigation' }));
     expect(await screen.findByRole('alert')).toBeTruthy();
     expect(screen.getByRole('dialog', { name: 'Open investigation' })).toBeTruthy();
   });
