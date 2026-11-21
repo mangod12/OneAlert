@@ -561,6 +561,7 @@ export function HuntLab() {
                     {s.status}
                   </span>
                 </button>
+                <a href={`/app/hunt?session=${s.id}`} className="max-w-32 rounded border border-surface-600 px-2 py-2 text-xs text-primary-300">Open saved hunt #{s.id} evidence</a>
                 <button
                   type="button"
                   aria-label={`Delete hunt: ${s.hypothesis}`}
