@@ -5,7 +5,7 @@ import type { Alert, AlertListResponse } from '../api/types';
 import { AlertDetail } from '../components/AlertDetail';
 import { SavedViewsMenu, type SavedViewFilters } from '../components/SavedViewsMenu';
 import { Search, Filter, CheckCircle, ChevronRight, Download } from 'lucide-react';
-import { getApiErrorMessage } from '../api/errors';
+import { getApiErrorMessage, getDownloadErrorMessage } from '../api/errors';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { alertSeverityTones, alertStatusTones } from '../components/ui/tones';
@@ -104,7 +104,7 @@ export function Alerts() {
       link.click();
       URL.revokeObjectURL(url);
     } catch (err: unknown) {
-      toast(getApiErrorMessage(err, 'The export could not be downloaded.'), 'error');
+      toast(await getDownloadErrorMessage(err, 'The export could not be downloaded.'), 'error');
     } finally {
       setExporting(false);
     }
