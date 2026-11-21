@@ -53,24 +53,32 @@ export function Alerts() {
   const [bulkAssigning, setBulkAssigning] = useState(false);
   const [bulkDueApplying, setBulkDueApplying] = useState(false);
 
-  // Deep link: /alerts?alert=<id> opens the detail drawer for that alert.
+  const [linkError, setLinkError] = useState(''), [linkLoading, setLinkLoading] = useState(false);
+  const alertValues = searchParams.getAll('alert'), alertLink = alertValues.join(':'), alertCount = alertValues.length;
+  const closeAlert = () => {
+    setSelectedAlert(null);
+    setSearchParams(previous => { const next = new URLSearchParams(previous); next.delete('alert'); return next; }, { replace: true });
+  };
+  const openAlert = (alert: Alert) => {
+    setSearchParams(previous => { const next = new URLSearchParams(previous); next.delete('alert'); return next; }, { replace: true });
+    setSelectedAlert(alert);
+  };
+  // Keep the exact reference until the drawer closes so route changes cancel stale reads.
   useEffect(() => {
-    const alertParam = searchParams.get('alert');
-    if (!alertParam) return;
-    const alertId = Number(alertParam);
-    setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('alert'); return next; }, { replace: true });
-    if (!Number.isInteger(alertId) || alertId <= 0) return;
-    if (selectedAlert?.id === alertId) return;
-    void (async () => {
-      try {
-        const res = await apiClient.get<Alert>(`/alerts/${alertId}`);
-        setSelectedAlert(res.data);
-      } catch (err: unknown) {
-        toast(getApiErrorMessage(err, 'The linked alert could not be opened.'), 'error');
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+    let cancelled = false; setLinkError(''); setLinkLoading(false);
+    if (!alertCount) return;
+    setSelectedAlert(null);
+    if (alertCount !== 1 || !/^[1-9][0-9]*$/.test(alertLink) || Number(alertLink) > 2147483647) {
+      setLinkError('This alert link needs one positive alert ID. No alert detail was loaded.'); return;
+    }
+    const identity = Number(alertLink); setLinkLoading(true);
+    void apiClient.get<Alert>(`/alerts/${identity}`).then(({ data }) => {
+      if (cancelled) return;
+      if (data.id !== identity) throw new Error('The linked alert response did not match the requested record. No alert actions were opened.');
+      setSelectedAlert(data);
+    }).catch(err => { if (!cancelled) setLinkError(getApiErrorMessage(err, 'The linked alert could not be opened.')); }).finally(() => { if (!cancelled) setLinkLoading(false); });
+    return () => { cancelled = true; };
+  }, [alertLink, alertCount]);
 
   const exportCsv = async () => {
     if (exporting) return;
@@ -172,7 +180,7 @@ export function Alerts() {
     try {
       await apiClient.post(`/alerts/${alertId}/acknowledge`);
       await fetchAlerts();
-      setSelectedAlert(null);
+      closeAlert();
     } catch (err: unknown) {
       toast(getApiErrorMessage(err, 'Alert could not be acknowledged.'), 'error');
     } finally {
@@ -220,7 +228,7 @@ export function Alerts() {
         toast(`Alert snoozed for ${hours >= 24 ? `${hours / 24} day${hours > 24 ? 's' : ''}` : `${hours} hour${hours > 1 ? 's' : ''}`}.`, 'success');
       }
       await fetchAlerts();
-      setSelectedAlert(null);
+      closeAlert();
     } catch (err: unknown) {
       toast(getApiErrorMessage(err, 'Alert could not be snoozed.'), 'error');
     } finally {
@@ -234,7 +242,7 @@ export function Alerts() {
     try {
       await apiClient.post(`/alerts/${alertId}/resolve`);
       await fetchAlerts();
-      setSelectedAlert(null);
+      closeAlert();
     } catch (err: unknown) {
       toast(getApiErrorMessage(err, 'Alert could not be resolved.'), 'error');
     } finally {
@@ -248,7 +256,7 @@ export function Alerts() {
     try {
       await apiClient.post(`/alerts/${alertId}/reopen`);
       await fetchAlerts();
-      setSelectedAlert(null);
+      closeAlert();
     } catch (err: unknown) {
       toast(getApiErrorMessage(err, 'Alert could not be reopened.'), 'error');
     } finally {
@@ -622,12 +630,12 @@ export function Alerts() {
                 <tr
                   key={alert.id}
                   tabIndex={0}
-                  onClick={() => setSelectedAlert(alert)}
+                  onClick={() => openAlert(alert)}
                   onKeyDown={(event) => {
                     if (event.target !== event.currentTarget) return;
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
-                      setSelectedAlert(alert);
+                      openAlert(alert);
                     }
                   }}
                   className="group border-b border-surface-700/50 hover:bg-surface-800 cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500"
@@ -713,12 +721,15 @@ export function Alerts() {
         </div>
       )}
 
+      {linkLoading && <p role="status" className="text-sm text-surface-300">Loading exact linked alert...</p>}
+      {linkError && <div className="oa-panel space-y-2 p-4"><p role="alert" className="text-sm text-danger">{linkError}</p><button type="button" onClick={closeAlert} className="text-xs text-primary-300">Dismiss invalid or unavailable alert link</button></div>}
       {/* Detail Panel */}
       {selectedAlert && (
         <AlertDetail
+          key={selectedAlert.id}
           alert={selectedAlert}
           highlightNoteId={Number(searchParams.get('note')) || null}
-          onClose={() => setSelectedAlert(null)}
+          onClose={closeAlert}
           onAcknowledge={handleAcknowledge}
           onResolve={handleResolve}
           onReopen={handleReopen}
