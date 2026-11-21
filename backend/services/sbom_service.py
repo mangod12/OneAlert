@@ -1,5 +1,29 @@
 """Parse recorded component evidence from CycloneDX and SPDX documents."""
 
+import json
+
+# Match the client import limit without depending on a browser-side check.
+MAX_SBOM_DOCUMENT_BYTES = 5 * 1024 * 1024
+
+
+class SBOMDocumentBudgetExceeded(ValueError):
+    """A decoded SBOM exceeds the supported normalized JSON budget."""
+
+
+def validate_sbom_document_budget(data: dict) -> None:
+    """Bound normalized UTF-8 JSON before parsing or persisting component rows.
+
+    JSON whitespace is not retained by the API. Count the compact document,
+    including unknown properties, rather than just the component inventory.
+    Iteration stops at the limit instead of joining a second full JSON copy.
+    This does not replace a transport-level request-size limit.
+    """
+    total = 0
+    for chunk in json.JSONEncoder(ensure_ascii=False, separators=(',', ':'), allow_nan=False).iterencode(data):
+        total += len(chunk.encode('utf-8'))
+        if total > MAX_SBOM_DOCUMENT_BYTES:
+            raise SBOMDocumentBudgetExceeded('SBOM document exceeds the 5 MiB normalized JSON limit')
+
 
 def _objects(value, path: str) -> list[dict]:
     if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
