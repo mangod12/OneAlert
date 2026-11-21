@@ -212,7 +212,7 @@ async def export_cases(
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Export the filtered investigations list as CSV (same filters as the list, up to 5000 rows, never silently truncated)."""
+    """Export complete filtered investigations as CSV, or refuse above 5,000 matches."""
     alert_counts = (
         select(func.count(func.distinct(Alert.id))).select_from(CaseAlert)
         .join(Alert, Alert.id == CaseAlert.alert_id)
