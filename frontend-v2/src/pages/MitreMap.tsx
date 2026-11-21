@@ -1,3 +1,4 @@
+import { MitreReferenceExplorer } from '../components/MitreReferenceExplorer';
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
@@ -120,6 +121,8 @@ export function MitreMap() {
       <PageHeader eyebrow="Analyze" title="MITRE ATT&CK Coverage" description="Detection coverage mapped to enterprise and industrial ATT&CK techniques." actions={<button type="button" disabled={filteredTechniques.length === 0} onClick={exportFiltered} className="flex items-center gap-2 rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40"><Download className="h-4 w-4" aria-hidden="true" />Export filtered techniques</button>} />
       <p className="text-xs text-surface-400">{filteredTechniques.length} of {techniques.length} loaded techniques shown. CSV matches these filters and available coverage. Missing coverage is unknown, not a gap. Download stays on your device.</p>
       {errors.length > 0 && <DegradedBanner messages={errors} onRetry={() => void fetchData()} />}
+
+      <MitreReferenceExplorer />
 
       {/* Overall Coverage */}
       {coverage && (
@@ -244,7 +247,7 @@ export function MitreMap() {
                 {expanded && references && (
                   <div className="mt-3 space-y-3 border-t border-surface-700 pt-3">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-surface-400">Cases</p>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-surface-400">Cases, latest 20</p>
                       {references.cases.length === 0 ? (
                         <p className="mt-1 text-xs text-surface-500">No cases reference this technique.</p>
                       ) : (
@@ -261,7 +264,7 @@ export function MitreMap() {
                       )}
                     </div>
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-surface-400">Detection rules</p>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-surface-400">Detection rules, latest 20</p>
                       {references.detection_rules.length === 0 ? (
                         <p className="mt-1 text-xs text-surface-500">No detection rules cover this technique.</p>
                       ) : (

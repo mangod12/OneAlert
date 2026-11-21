@@ -1,5 +1,8 @@
 """MITRE ATT&CK router — coverage, techniques, and mapping."""
 
+from datetime import UTC, datetime
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -94,6 +97,47 @@ async def get_technique_references(
         "cases": cases,
         "detection_rules": rules,
     }
+
+
+@router.get("/techniques/{technique_id}/reference-evidence")
+async def browse_technique_reference_evidence(
+    technique_id: str,
+    kind: Literal["cases", "detection_rules"] = "cases",
+    page: int = Query(1, ge=1),
+    size: int = Query(10, ge=1, le=100),
+    query: str = Query("", max_length=200),
+    rule_state: Literal["all", "enabled", "disabled"] = "all",
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Read the full exact-technique reference set with bounded output pages."""
+    technique_id = technique_id.upper()
+    technique = TECHNIQUES.get(technique_id)
+    if technique is None:
+        raise HTTPException(status_code=404, detail="Unknown technique")
+    case_rows = (await db.execute(select(Case.id, Case.title, Case.status, Case.mitre_techniques)
+                                 .where(Case.user_id == current_user.id)
+                                 .order_by(Case.created_at.desc(), Case.id.desc()))).all()
+    cases = [{"id": row.id, "title": row.title, "status": row.status} for row in case_rows
+             if _technique_matches(row.mitre_techniques, technique_id)]
+    rule_rows = (await db.execute(select(DetectionRule.id, DetectionRule.name, DetectionRule.enabled,
+                                        DetectionRule.mitre_techniques)
+                                 .where(DetectionRule.user_id == current_user.id)
+                                 .order_by(DetectionRule.created_at.desc(), DetectionRule.id.desc()))).all()
+    rules = [{"id": row.id, "name": row.name, "enabled": row.enabled} for row in rule_rows
+             if _technique_matches(row.mitre_techniques, technique_id)]
+    records = cases if kind == "cases" else rules
+    if kind == "detection_rules" and rule_state != "all":
+        records = [row for row in records if row["enabled"] is (rule_state == "enabled")]
+    needle = query.strip().lower()
+    if needle:
+        records = [row for row in records if any(needle in str(value).lower() for value in row.values())]
+    return {"technique_id": technique_id, "technique_name": technique["name"], "kind": kind,
+            "page": page, "size": size, "query": query.strip(), "rule_state": rule_state,
+            "total": len(records), "counts": {"cases": len(cases), "detection_rules": len(rules),
+                "enabled_rules": sum(row["enabled"] is True for row in rules),
+                "disabled_rules": sum(row["enabled"] is False for row in rules)},
+            "records": records[(page - 1) * size:page * size], "retrieved_at": datetime.now(UTC).isoformat()}
 
 
 @router.get("/coverage")
