@@ -1,3 +1,4 @@
+import { AgentStepSearch } from '../components/AgentStepSearch';
 import { useSearchParams } from 'react-router-dom';
 import { AgentRunLibrary } from '../components/AgentRunLibrary';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -264,6 +265,7 @@ export function AuditLog({ linkedRunId = null, onCloseLinkedRun }: { linkedRunId
       )}
       {selectedRecord && <AuditRecordDialog record={selectedRecord} onClose={() => setSelectedRecord(null)} />}
       <AgentRunLibrary />
+      <AgentStepSearch />
       <section aria-label="Recorded agent activity" className="space-y-3">
         <p className="text-sm text-surface-400">Your latest 50 recorded agent runs. Inspect a run for its saved step summaries. This ledger is not a full execution transcript.</p>
         {agentLoading && <p role="status" className="text-sm text-surface-400">Loading recorded agent activity...</p>}
