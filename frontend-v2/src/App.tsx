@@ -32,7 +32,7 @@ const Sbom = lazy(() => import('./pages/Sbom').then(module => ({ default: module
 const Topology = lazy(() => import('./pages/Topology').then(module => ({ default: module.Topology })));
 const SbomDocumentLibrary = lazy(() => import('./pages/SbomDocumentLibrary').then(module => ({ default: module.SbomDocumentLibrary })));
 const ResponsePlans = lazy(() => import('./pages/ResponsePlans').then(module => ({ default: module.ResponsePlansRoute })));
-const Validation = lazy(() => import('./pages/Validation').then(module => ({ default: module.Validation })));
+const Validation = lazy(() => import('./pages/Validation').then(module => ({ default: module.ValidationRoute })));
 
 function App() {
   const { isAuthenticated, hasCheckedSession, fetchUser } = useAuthStore();

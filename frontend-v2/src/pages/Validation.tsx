@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom';
 import { useCallback, useState, useEffect, useRef } from 'react';
 import apiClient from '../api/client';
 import { Play, Plus, ShieldCheck, Target, CheckCircle, XCircle, Trash2, Download } from 'lucide-react';
@@ -77,7 +78,20 @@ const STATUS_STYLES: Record<string, string> = {
   failed: 'bg-danger/10 text-danger',
 };
 
-export function Validation() {
+export function ValidationRoute() {
+  const [params, setParams] = useSearchParams();
+  const values = params.getAll('run');
+  const raw = values.length === 1 ? values[0] : '';
+  const runId = /^[1-9][0-9]*$/.test(raw) && Number.isSafeInteger(Number(raw)) ? Number(raw) : null;
+  const invalid = values.length > 0 && runId === null;
+  const clear = () => setParams(current => { const next = new URLSearchParams(current); next.delete('run'); return next; }, { replace: true });
+  return <>
+    {invalid && <p role="alert" className="mb-4 text-sm text-danger">This validation run link needs one positive whole-number run ID. No run was opened from this link. <button type="button" className="text-primary-300" onClick={clear}>Clear invalid run link</button></p>}
+    <Validation linkedRunId={runId} onCloseLinkedRun={clear} />
+  </>;
+}
+
+export function Validation({ linkedRunId = null, onCloseLinkedRun }: { linkedRunId?: number | null; onCloseLinkedRun?: () => void } = {}) {
   const listRequestId = useRef(0);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -204,9 +218,10 @@ export function Validation() {
     detailRequestId.current += 1;
     requestedRunId.current = null;
     setDetailRunId(null); setSelectedRun(null); setDetailError(''); setDetailLoading(false);
+    onCloseLinkedRun?.();
   };
 
-  const viewRun = async (runId: number) => {
+  const viewRun = useCallback(async (runId: number) => {
     setShowComparison(false);
     const request = ++detailRequestId.current;
     requestedRunId.current = runId;
@@ -215,16 +230,33 @@ export function Validation() {
     try {
       const res = await apiClient.get(`/validation/runs/${runId}`);
       if (request !== detailRequestId.current) return;
-      if (res.data.data?.id !== runId) throw new Error('The response did not match this validation run. Try again.');
+      if (res.data.data?.id !== runId || !Array.isArray(res.data.data?.steps)) throw new Error('The response did not match this validation run. Try again.');
       setSelectedRun(res.data.data);
     } catch (err) {
       if (request === detailRequestId.current) setDetailError(getApiErrorMessage(err, 'Run details could not be loaded.'));
     } finally {
       if (request === detailRequestId.current) setDetailLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => () => { detailRequestId.current += 1; }, []);
+  useEffect(() => {
+    if (linkedRunId !== null) void viewRun(linkedRunId);
+    else {
+      detailRequestId.current += 1; requestedRunId.current = null;
+      setDetailRunId(null); setSelectedRun(null); setDetailError(''); setDetailLoading(false);
+    }
+    return () => { detailRequestId.current += 1; };
+  }, [linkedRunId, viewRun]);
+
+  const [copiedRun, setCopiedRun] = useState<number | null>(null), [copyError, setCopyError] = useState('');
+  useEffect(() => { setCopiedRun(null); setCopyError(''); }, [detailRunId]);
+  const copyRunLink = async (id: number) => {
+    setCopiedRun(null); setCopyError('');
+    try {
+      const url = new URL('/app/validation', window.location.origin); url.searchParams.set('run', String(id));
+      await navigator.clipboard.writeText(url.toString()); if (requestedRunId.current === id) setCopiedRun(id);
+    } catch { if (requestedRunId.current === id) setCopyError('The validation run link could not be copied. Try again.'); }
+  };
 
   const toggleTechnique = (techId: string) => {
     setNewRun(prev => ({
@@ -419,6 +451,7 @@ export function Validation() {
             </button>
           </div>
 
+          <div className="mb-4 space-y-2"><button type="button" onClick={() => void copyRunLink(selectedRun.id)} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Copy exact validation run link</button><p className="text-xs text-surface-400">Opens this saved run by ID, even outside the current history page. It reads current saved results, not a frozen snapshot, and does not execute tests or grant access. Recipients need their own permission. No search drafts or result filters are included.</p>{copiedRun === selectedRun.id && <p role="status" className="text-xs text-primary-300">Validation run link copied.</p>}{copyError && <p role="alert" className="text-xs text-danger">{copyError}</p>}</div>
           {showComparison && <ValidationComparison key={selectedRun.id} current={selectedRun} onClose={() => setShowComparison(false)} />}
           {selectedRun.description && <p className="mb-4 text-sm text-surface-400">{selectedRun.description}</p>}
           {selectedRun.mode === 'dry_run' && (
