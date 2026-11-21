@@ -32,13 +32,18 @@ def _status_value(alert: Alert) -> str:
     return status.value if hasattr(status, "value") else str(status)
 
 
+def _naive_utc(value: datetime) -> datetime:
+    """Normalize an instant before arithmetic; legacy naive timestamps are stored UTC."""
+    return value.astimezone(UTC).replace(tzinfo=None) if value.tzinfo is not None else value
+
+
 def _mean_delta_seconds(rows: list) -> float | None:
     deltas = []
     for created_at, ended_at in rows:
         if created_at is None or ended_at is None:
             continue
-        start_dt = created_at.replace(tzinfo=None) if created_at.tzinfo else created_at
-        end_dt = ended_at.replace(tzinfo=None) if ended_at.tzinfo else ended_at
+        start_dt = _naive_utc(created_at)
+        end_dt = _naive_utc(ended_at)
         delta = (end_dt - start_dt).total_seconds()
         if delta >= 0:
             deltas.append(delta)
@@ -195,7 +200,7 @@ async def get_posture_report(
         1
         for _, created_at in case_rows
         if created_at is not None
-        and (created_at.replace(tzinfo=None) if created_at.tzinfo else created_at) >= start
+        and _naive_utc(created_at) >= start
     )
 
     return {
