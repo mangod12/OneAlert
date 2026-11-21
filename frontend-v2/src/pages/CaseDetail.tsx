@@ -1,3 +1,4 @@
+import { CaseEvidenceOverlap } from '../components/CaseEvidenceOverlap';
 import { CaseCloseReview } from '../components/CaseCloseReview';
 import { CaseEvidencePicker } from '../components/CaseEvidencePicker';
 import { ChecklistBatchTools } from '../components/ChecklistBatchTools';
@@ -932,6 +933,8 @@ export function CaseDetail() {
           </div>
         </div>
       )}
+
+      <CaseEvidenceOverlap key={`overlap-${caseData.id}`} caseId={caseData.id} />
 
       <CaseResponsePlans key={caseData.id} caseId={caseData.id} onSeed={(id, payload) => seedTasksFromPlan(id, payload)} seedBusy={!canManageChecklist || seedingPlanId !== null || batchTaskBusy} tasksUnavailable={tasksUnavailable} />
 
