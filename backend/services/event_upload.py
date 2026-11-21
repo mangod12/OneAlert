@@ -11,8 +11,19 @@ def _reject_non_json_number(value):
     raise ValueError("Nonstandard JSON number")
 
 
+def _unique_object(pairs):
+    record = {}
+    for key, value in pairs:
+        if key in record:
+            # A repeated field can silently replace security evidence. Never
+            # echo the untrusted key or pick whichever occurrence came last.
+            raise ValueError("Repeated JSON object field")
+        record[key] = value
+    return record
+
+
 def _loads(text):
-    return json.loads(text, parse_constant=_reject_non_json_number)
+    return json.loads(text, parse_constant=_reject_non_json_number, object_pairs_hook=_unique_object)
 
 
 def _validate_nesting(records):
