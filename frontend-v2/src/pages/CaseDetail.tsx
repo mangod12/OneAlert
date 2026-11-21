@@ -940,7 +940,7 @@ export function CaseDetail() {
       <CaseEvidenceChronology key={`chronology-${caseData.id}`} caseId={caseData.id} />
       <CaseEvidenceOverlap key={`overlap-${caseData.id}`} caseId={caseData.id} />
 
-      <CaseResponsePlans key={caseData.id} caseId={caseData.id} onSeed={(id, payload) => seedTasksFromPlan(id, payload)} seedBusy={!canManageChecklist || seedingPlanId !== null || batchTaskBusy} tasksUnavailable={tasksUnavailable} />
+      <CaseResponsePlans canDraft={currentUserId !== null && caseData.user_id === currentUserId} key={caseData.id} caseId={caseData.id} onSeed={(id, payload) => seedTasksFromPlan(id, payload)} seedBusy={!canManageChecklist || seedingPlanId !== null || batchTaskBusy} tasksUnavailable={tasksUnavailable} />
 
       {/* Two-column layout: Timeline + Related Items */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

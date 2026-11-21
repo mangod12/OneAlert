@@ -18,7 +18,7 @@ from backend.services.agents.response import ResponseAgent
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('zones', [[('it', False), ('field', True)], [('field', True), ('it', False)],
-                                  [('it', False), ('supervisory', True)]])
+                                  [('it', False), ('supervisory', True)], [('it', False)] * 20 + [('field', True)]])
 async def test_saved_plan_requires_approval_for_any_linked_restricted_ot_context(tmp_path, monkeypatch, zones):
     from backend.services.agents import response
     provider = SimpleNamespace(model='test-local', complete_json=AsyncMock(return_value={
@@ -47,11 +47,15 @@ async def test_saved_plan_requires_approval_for_any_linked_restricted_ot_context
                 db.add(CaseAlert(case_id=case.id, alert_id=alert.id))
             await db.commit()
             result = await ResponseAgent(db=db, user_id=1).run(case_id=case.id, autonomy_level='L4')
+            if len(zones) > 20:
+                messages = provider.complete_json.call_args.args[0]
+                assert 'first 20 of 21 saved links' in messages[1].content
+                assert 'asset-20' not in messages[1].content
             assert result['needs_approval'] is True
             assert result['status'] == 'pending_approval'
             saved = await db.get(ResponsePlan, result['plan_id'])
             assert saved.actions[0]['policy_check']['approved'] is False
-            assert saved.actions[0]['policy_check']['assessed_context_count'] == 2
+            assert saved.actions[0]['policy_check']['assessed_context_count'] == len(set(zones))
             approval = (await db.execute(
                 select(ApprovalRequest).where(ApprovalRequest.plan_id == saved.id)
             )).scalar_one()
