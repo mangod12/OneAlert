@@ -2,40 +2,28 @@ import { useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
 
-type Source = { key: string; kind: 'case' | 'alert' | 'event'; id: number; title?: string; label?: string; summary?: string };
-type Scope = { linked: number; available: number; included: number; omitted: number; unavailable: number; limit: number };
-interface Briefing {
-  format: string; version: number; case_id: number; run_id: number; mode: string; captured_at: string;
-  observations: { text: string; sources: string[] }[]; gaps: string[]; review_questions: string[];
-  sources: Source[]; scope: { alert: Scope; event: Scope };
-}
-interface SavedBriefing { timeline_id: number; briefing: Briefing }
-const positive = (id: unknown): id is number => typeof id === 'number' && Number.isSafeInteger(id) && id > 0;
-function verified(value: SavedBriefing, caseId: number) {
-  const b = value?.briefing;
-  return positive(value?.timeline_id) && b?.format === 'onealert-case-briefing' && b.version === 1 && b.case_id === caseId
-    && positive(b.run_id) && ['ai_draft', 'recorded_metadata_fallback'].includes(b.mode)
-    && typeof b.captured_at === 'string' && Number.isFinite(Date.parse(b.captured_at))
-    && Array.isArray(b.sources) && b.sources.length <= 71 && b.sources.every(s => s && positive(s.id)
-      && ['case', 'alert', 'event'].includes(s.kind) && s.key === `${s.kind}:${s.id}`
-      && (s.kind !== 'case' || s.id === caseId)
-      && [s.title, s.label, s.summary].every(t => t === undefined || typeof t === 'string'))
-    && Array.isArray(b.observations) && b.observations.length > 0 && b.observations.length <= 12
-    && b.observations.every(o => o && typeof o.text === 'string' && o.text.length <= 400 && Array.isArray(o.sources)
-      && o.sources.length > 0 && o.sources.length <= 5 && o.sources.every(key => b.sources.some(s => s.key === key)))
-    && [b.gaps, b.review_questions].every(items => Array.isArray(items) && items.length <= 6
-      && items.every(t => typeof t === 'string' && t.length <= 400))
-    && [b.scope?.alert, b.scope?.event].every(scope => scope && ['linked', 'available', 'included', 'omitted', 'unavailable', 'limit']
-      .every(key => Number.isSafeInteger(scope[key as keyof Scope]) && scope[key as keyof Scope] >= 0)
-      && scope.linked === scope.available + scope.unavailable && scope.available === scope.included + scope.omitted)
-    && b.sources.filter(s => s.kind === 'case').length === 1
-    && b.scope.alert.included <= 20 && b.scope.event.included <= 50
-    && (['alert', 'event'] as const).every(kind => b.sources.filter(s => s.kind === kind).length === b.scope[kind].included);
-}
+import { verifySavedBriefing, type SavedBriefing, type Source } from '../utils/caseBriefingEvidence';
+
 function SourceLink({ source }: { source: Source }) {
   const href = source.kind === 'case' ? `/app/cases/${source.id}` : source.kind === 'alert'
     ? `/app/alerts?alert=${source.id}` : `/app/events/${source.id}`;
   return <a href={href} className="text-primary-300 underline">{source.kind} #{source.id}</a>;
+}
+
+export function BriefingDraftView({ row, offerOpen = true }: { row: SavedBriefing; offerOpen?: boolean }) {
+  const { timeline_id, briefing: b } = row;
+  return <article className="min-w-0 space-y-3 rounded border border-surface-700 p-3 text-xs text-surface-300">
+      <h3 className="font-semibold text-surface-100">Briefing draft #{timeline_id} · {b.mode === 'ai_draft' ? 'Unverified AI draft' : 'AI unavailable or invalid: metadata-only fallback'}</h3>
+      {offerOpen && <a href={`/app/cases/${b.case_id}?briefing=${timeline_id}`} className="inline-block text-primary-300 underline">Reopen exact briefing draft #{timeline_id}</a>}
+      <p>Draft prepared at: {b.captured_at}. Source excerpts below belong to this draft; opening a record reads its current state.</p>
+      <a href={`/app/audit-log?run=${b.run_id}`} className="inline-block text-primary-300 underline">Inspect exact briefing run #{b.run_id}</a>
+      {(['alert', 'event'] as const).map(kind => <p key={kind}>{kind}: {b.scope[kind].included} included / {b.scope[kind].available} available linked records; {b.scope[kind].omitted} omitted by input limit; {b.scope[kind].unavailable} unavailable links.</p>)}
+      <h4 className="font-semibold">Draft observations</h4><ol className="list-inside list-decimal space-y-2">{b.observations.map((o, i) => <li key={i} className="break-words whitespace-pre-wrap">{o.text}<div className="mt-1 flex flex-wrap gap-3">{o.sources.map(key => <SourceLink key={key} source={b.sources.find(s => s.key === key)!} />)}</div></li>)}</ol>
+      <h4 className="font-semibold">Draft evidence gaps</h4>{b.gaps.length ? <ul className="space-y-1">{b.gaps.map((text, i) => <li key={i} className="break-words">{text}</li>)}</ul> : <p>No gaps listed by this draft, not proof the evidence is complete.</p>}
+      <h4 className="font-semibold">Questions for human review, not executed actions</h4>{b.review_questions.map((text, i) => <p key={i} className="break-words">{text}</p>)}
+      <details><summary className="cursor-pointer text-primary-300">Recorded input excerpts ({b.sources.length})</summary><ul className="mt-2 space-y-2">{b.sources.map((s, i) => <li key={`${s.key}:${i}`} className="min-w-0 break-words"><SourceLink source={s} /><p className="whitespace-pre-wrap">{s.title || s.label || 'No label recorded'}</p>{s.summary && <p className="whitespace-pre-wrap">{s.summary}</p>}</li>)}</ul></details>
+    </article>;
+
 }
 
 export function CaseBriefingDrafts({ caseId }: { caseId: number }) {
@@ -55,8 +43,8 @@ export function CaseBriefingDrafts({ caseId }: { caseId: number }) {
       const { data } = await apiClient.get(`/cases/${caseId}/briefing-drafts`, { params: before ? { before_id: before } : {} });
       if (read !== revision.current) return;
       if (data?.case_id !== caseId || !Array.isArray(data.records) || data.records.length > 5
-        || !data.records.every((row: SavedBriefing) => verified(row, caseId))
-        || (data.next_before_id !== null && !positive(data.next_before_id))) throw new Error('Saved briefings could not be verified for this case.');
+        || !data.records.every((row: SavedBriefing) => verifySavedBriefing(row, caseId))
+        || (data.next_before_id !== null && !(Number.isSafeInteger(data.next_before_id) && data.next_before_id > 0))) throw new Error('Saved briefings could not be verified for this case.');
       setRecords(data.records); setCursor(data.next_before_id); setLoaded(true);
     } catch (err) { if (read === revision.current) setError(getApiErrorMessage(err, 'Saved briefings could not be loaded.')); }
     finally { if (read === revision.current) { historyBusy.current = false; setLoading(false); } }
@@ -68,7 +56,7 @@ export function CaseBriefingDrafts({ caseId }: { caseId: number }) {
       const { data } = await apiClient.post(`/cases/${caseId}/briefing-drafts`);
       if (read !== revision.current) return;
       const row = { timeline_id: data?.data?.timeline_id, briefing: data?.data?.briefing };
-      if (!verified(row, caseId)) throw new Error('A draft may have been saved, but the returned receipt could not be verified. Load saved drafts before retrying.');
+      if (!verifySavedBriefing(row, caseId)) throw new Error('A draft may have been saved, but the returned receipt could not be verified. Load saved drafts before retrying.');
       setRecords([row]); setLoaded(true); setReviewing(false); setAck(false);
     } catch (err) { if (read === revision.current) setError(getApiErrorMessage(err,
       'Briefing outcome could not be confirmed. Load saved drafts before generating again; do not assume no draft was saved.')); }
@@ -82,16 +70,7 @@ export function CaseBriefingDrafts({ caseId }: { caseId: number }) {
     {loading && <p role="status" className="text-xs text-surface-300">Loading saved briefing drafts...</p>}
     {error && <p role="alert" className="break-words text-xs text-danger">{error}</p>}
     {loaded && !records.length && <p className="text-xs text-surface-400">No saved briefing drafts on this page. This does not establish that no investigation work occurred.</p>}
-    {records.map(({ timeline_id, briefing: b }) => <article key={timeline_id} className="min-w-0 space-y-3 rounded border border-surface-700 p-3 text-xs text-surface-300">
-      <h3 className="font-semibold text-surface-100">Briefing draft #{timeline_id} · {b.mode === 'ai_draft' ? 'Unverified AI draft' : 'AI unavailable or invalid: metadata-only fallback'}</h3>
-      <p>Draft prepared at: {b.captured_at}. Source excerpts below belong to this draft; opening a record reads its current state.</p>
-      <a href={`/app/audit-log?run=${b.run_id}`} className="inline-block text-primary-300 underline">Inspect exact briefing run #{b.run_id}</a>
-      {(['alert', 'event'] as const).map(kind => <p key={kind}>{kind}: {b.scope[kind].included} included / {b.scope[kind].available} available linked records; {b.scope[kind].omitted} omitted by input limit; {b.scope[kind].unavailable} unavailable links.</p>)}
-      <h4 className="font-semibold">Draft observations</h4><ol className="list-inside list-decimal space-y-2">{b.observations.map((o, i) => <li key={i} className="break-words whitespace-pre-wrap">{o.text}<div className="mt-1 flex flex-wrap gap-3">{o.sources.map(key => <SourceLink key={key} source={b.sources.find(s => s.key === key)!} />)}</div></li>)}</ol>
-      <h4 className="font-semibold">Draft evidence gaps</h4>{b.gaps.length ? <ul className="space-y-1">{b.gaps.map((text, i) => <li key={i} className="break-words">{text}</li>)}</ul> : <p>No gaps listed by this draft, not proof the evidence is complete.</p>}
-      <h4 className="font-semibold">Questions for human review, not executed actions</h4>{b.review_questions.map((text, i) => <p key={i} className="break-words">{text}</p>)}
-      <details><summary className="cursor-pointer text-primary-300">Recorded input excerpts ({b.sources.length})</summary><ul className="mt-2 space-y-2">{b.sources.map((s, i) => <li key={`${s.key}:${i}`} className="min-w-0 break-words"><SourceLink source={s} /><p className="whitespace-pre-wrap">{s.title || s.label || 'No label recorded'}</p>{s.summary && <p className="whitespace-pre-wrap">{s.summary}</p>}</li>)}</ul></details>
-    </article>)}
+    {records.map(row => <BriefingDraftView key={row.timeline_id} row={row} />)}
     {cursor !== null && <button type="button" disabled={busy || loading} onClick={() => void history(cursor)} className="rounded border border-surface-600 p-2 text-xs text-primary-300">Load older briefing drafts</button>}
   </section>;
 }
