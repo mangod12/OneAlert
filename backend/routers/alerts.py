@@ -270,7 +270,7 @@ async def export_alerts(
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db)
 ):
-    """Export the filtered alert list as CSV (same filters as the list, max 5000 rows)."""
+    """Export the filtered alert list as CSV (same filters as the list, up to 5000 rows, never silently truncated)."""
     if watching == "me":
         # "Watched by me" spans the org: any alert the user follows as a watcher.
         export_base = Alert.id.in_(
@@ -314,8 +314,12 @@ async def export_alerts(
         active_statuses = (AlertStatus.PENDING, AlertStatus.SENT, AlertStatus.ACKNOWLEDGED)
         query = query.filter(Alert.due_date.isnot(None), Alert.due_date < today, Alert.status.in_(active_statuses))
 
-    query = query.order_by(Alert.created_at.desc()).limit(5000)
+    query = query.order_by(Alert.created_at.desc(), Alert.id.desc()).limit(5001)
     rows = (await db.execute(query)).all()
+    if len(rows) > 5000:
+        raise HTTPException(status_code=422, detail=(
+            "The filtered alerts export exceeds 5,000 records. Narrow the applied filters and retry. "
+            "No partial CSV was created."))
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)

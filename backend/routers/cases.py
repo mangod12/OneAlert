@@ -212,7 +212,7 @@ async def export_cases(
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Export the filtered investigations list as CSV (same filters as the list, max 5000 rows)."""
+    """Export complete filtered investigations as CSV, or refuse above 5,000 matches."""
     alert_counts = (
         select(func.count(func.distinct(Alert.id))).select_from(CaseAlert)
         .join(Alert, Alert.id == CaseAlert.alert_id)
@@ -266,8 +266,12 @@ async def export_cases(
         "due_date_asc": [Case.due_date.asc().nulls_last(), Case.created_at.desc()],
         "due_date_desc": [Case.due_date.desc().nulls_last(), Case.created_at.desc()],
     }
-    query = query.order_by(*order_columns[sort], Case.id.desc()).limit(5000)
+    query = query.order_by(*order_columns[sort], Case.id.desc()).limit(5001)
     rows = (await db.execute(query)).all()
+    if len(rows) > 5000:
+        raise HTTPException(status_code=422, detail=(
+            "The filtered cases export exceeds 5,000 records. Narrow the applied filters and retry. "
+            "No partial CSV was created."))
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react
 import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
 import { Play, Plus, Search, Shield, ChevronRight, X } from 'lucide-react';
-import { getApiErrorMessage } from '../api/errors';
+import { getApiErrorMessage, getDownloadErrorMessage } from '../api/errors';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { useDialogFocus } from '../components/ui/useDialogFocus';
@@ -206,7 +206,7 @@ export function Cases() {
       link.click();
       URL.revokeObjectURL(url);
     } catch (err: unknown) {
-      toast(getApiErrorMessage(err, 'The export could not be downloaded.'), 'error');
+      toast(await getDownloadErrorMessage(err, 'The export could not be downloaded.'), 'error');
     } finally {
       setExporting(false);
     }

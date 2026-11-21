@@ -29,3 +29,15 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
   }
   return fallback;
 }
+
+
+/** Blob downloads also return errors as Blobs; inspect only bounded JSON envelopes. */
+export async function getDownloadErrorMessage(error: unknown, fallback: string): Promise<string> {
+  if (!axios.isAxiosError(error) || !(error.response?.data instanceof Blob)) return getApiErrorMessage(error, fallback);
+  const blob = error.response.data;
+  if (blob.size > 65536 || !blob.type.toLowerCase().includes('json')) return fallback;
+  try {
+    const data = JSON.parse(await blob.text());
+    return getApiErrorMessage({ ...error, isAxiosError: true, response: { ...error.response, data } }, fallback);
+  } catch { return fallback; }
+}
