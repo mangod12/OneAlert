@@ -134,7 +134,7 @@ describe('MitreMap', () => {
     expect(bar.getAttribute('aria-valuemin')).toBe('0');
     expect(bar.getAttribute('aria-valuemax')).toBe('100');
     expect(screen.getByText('42%')).toBeTruthy();
-    expect(screen.getByText('21 of 50 techniques detected')).toBeTruthy();
+    expect(screen.getByText('21 of 50 techniques with case or enabled-rule mappings')).toBeTruthy();
   });
 
   it('labels each tactic bar so the percentage is announced with its tactic', async () => {
