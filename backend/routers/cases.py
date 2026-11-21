@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from backend.database.db import get_async_db
+from backend.models.alert import Alert
 from backend.models.case import (
     AgentRun,
     AgentRunDetailResponse,
@@ -45,6 +46,7 @@ from backend.models.case import (
 )
 from backend.models.notification import Notification
 from backend.models.response_plan import ApprovalRequest, ResponsePlan
+from backend.models.security_event import SecurityEvent
 from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.routers.case_linked_evidence import router as linked_evidence_router
@@ -175,12 +177,14 @@ async def list_cases(
     # Keep enrichment bounded to the visible page, without two queries per case.
     case_ids = [case.id for case in cases]
     alert_counts = dict((await db.execute(
-        select(CaseAlert.case_id, func.count(CaseAlert.id))
-        .where(CaseAlert.case_id.in_(case_ids)).group_by(CaseAlert.case_id)
+        select(CaseAlert.case_id, func.count(func.distinct(Alert.id)))
+        .join(Alert, Alert.id == CaseAlert.alert_id).join(Case, Case.id == CaseAlert.case_id)
+        .where(CaseAlert.case_id.in_(case_ids), Alert.user_id == Case.user_id).group_by(CaseAlert.case_id)
     )).all()) if case_ids else {}
     event_counts = dict((await db.execute(
-        select(CaseEvent.case_id, func.count(CaseEvent.id))
-        .where(CaseEvent.case_id.in_(case_ids)).group_by(CaseEvent.case_id)
+        select(CaseEvent.case_id, func.count(func.distinct(SecurityEvent.id)))
+        .join(SecurityEvent, SecurityEvent.id == CaseEvent.event_id).join(Case, Case.id == CaseEvent.case_id)
+        .where(CaseEvent.case_id.in_(case_ids), SecurityEvent.user_id == Case.user_id).group_by(CaseEvent.case_id)
     )).all()) if case_ids else {}
     case_responses = []
     for case in cases:
@@ -210,10 +214,14 @@ async def export_cases(
 ):
     """Export the filtered investigations list as CSV (same filters as the list, max 5000 rows)."""
     alert_counts = (
-        select(func.count(CaseAlert.id)).where(CaseAlert.case_id == Case.id).correlate(Case).scalar_subquery()
+        select(func.count(func.distinct(Alert.id))).select_from(CaseAlert)
+        .join(Alert, Alert.id == CaseAlert.alert_id)
+        .where(CaseAlert.case_id == Case.id, Alert.user_id == Case.user_id).correlate(Case).scalar_subquery()
     )
     event_counts = (
-        select(func.count(CaseEvent.id)).where(CaseEvent.case_id == Case.id).correlate(Case).scalar_subquery()
+        select(func.count(func.distinct(SecurityEvent.id))).select_from(CaseEvent)
+        .join(SecurityEvent, SecurityEvent.id == CaseEvent.event_id)
+        .where(CaseEvent.case_id == Case.id, SecurityEvent.user_id == Case.user_id).correlate(Case).scalar_subquery()
     )
     base_query = (
         select(Case, alert_counts.label("alert_count"), event_counts.label("event_count"))
@@ -549,10 +557,14 @@ async def get_case(
 
     # Get counts
     alert_count = (await db.execute(
-        select(func.count(CaseAlert.id)).where(CaseAlert.case_id == case_id)
+        select(func.count(func.distinct(Alert.id))).select_from(CaseAlert)
+        .join(Alert, Alert.id == CaseAlert.alert_id)
+        .where(CaseAlert.case_id == case_id, Alert.user_id == case.user_id)
     )).scalar_one()
     event_count = (await db.execute(
-        select(func.count(CaseEvent.id)).where(CaseEvent.case_id == case_id)
+        select(func.count(func.distinct(SecurityEvent.id))).select_from(CaseEvent)
+        .join(SecurityEvent, SecurityEvent.id == CaseEvent.event_id)
+        .where(CaseEvent.case_id == case_id, SecurityEvent.user_id == case.user_id)
     )).scalar_one()
 
     resp = CaseDetailResponse.model_validate(case)
