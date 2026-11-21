@@ -29,6 +29,7 @@ interface ValidationStep {
   test_name: string;
   actual_result: string | null;
   duration_ms: number | null;
+  expected_detection?: string | null;
   simulated?: boolean;
   status?: string;
   test_type?: string;
@@ -45,7 +46,7 @@ interface ValidationRun {
   status: string;
   mode: string;
   mitre_techniques: string[];
-  results_summary: { tested: number; detected: number; missed: number; detection_rate: number } | null;
+  results_summary: { tested: number; detected: number; missed: number; detection_rate: number | null; measurement_mode?: string; simulated_tests?: number; agent_run_id?: number } | null;
   created_at: string;
 }
 
@@ -113,6 +114,7 @@ export function Validation({ linkedRunId = null, onCloseLinkedRun }: { linkedRun
   const [runSearchDraft, setRunSearchDraft] = useState(''), [runQuery, setRunQuery] = useState('');
   const [runMode, setRunMode] = useState(''), [runSort, setRunSort] = useState('newest');
   const [creating, setCreating] = useState(false);
+  const executeBusy = useRef(false);
   const [executing, setExecuting] = useState<number | null>(null);
   const [confirmRunId, setConfirmRunId] = useState<number | null>(null);
   const [deletingRun, setDeletingRun] = useState<ValidationRun | null>(null);
@@ -174,16 +176,22 @@ export function Validation({ linkedRunId = null, onCloseLinkedRun }: { linkedRun
   };
 
   const executeRun = async (runId: number) => {
-    if (executing !== null) return;
-    setExecuting(runId);
+    if (executeBusy.current) return;
+    executeBusy.current = true; setExecuting(runId);
     try {
-      await apiClient.post(`/validation/runs/${runId}/execute`);
-      toast('Validation complete', 'success');
+      const response = await apiClient.post(`/validation/runs/${runId}/execute`);
+      const receipt = response.data?.data, results = receipt?.results;
+      if (response.data?.success !== true || receipt?.run_id !== runId || receipt.status !== 'completed'
+        || results?.measurement_mode !== 'simulation_only' || !Number.isSafeInteger(results.simulated_tests)
+        || results.simulated_tests < 1 || results.detection_rate !== null || results.tested !== 0
+        || results.detected !== 0 || results.missed !== 0 || !Number.isSafeInteger(results.agent_run_id)
+        || results.agent_run_id < 1) throw new Error('The simulation outcome could not be verified. Read saved results before retrying.');
+      toast('Simulation plan prepared, detection not measured', 'success');
       setConfirmRunId(null);
       await fetchRuns();
       await viewRun(runId);
-    } catch (err) { toast(getApiErrorMessage(err, 'Execution failed.'), 'error'); }
-    finally { setExecuting(null); }
+    } catch (err) { toast(getApiErrorMessage(err, 'The simulation outcome is uncertain. Read saved results before retrying.'), 'error'); }
+    finally { executeBusy.current = false; setExecuting(null); }
   };
 
   const exportRun = async (runId: number) => {
@@ -284,7 +292,7 @@ export function Validation({ linkedRunId = null, onCloseLinkedRun }: { linkedRun
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Act" title="Purple-Team Validation" description="Test detection controls against simulated ATT&CK techniques and expose measurable coverage gaps." actions={
+      <PageHeader eyebrow="Act" title="Purple-Team Validation" description="Prepare ATT&CK simulation plans and review recorded evidence. Simulation plans do not execute commands or measure detection coverage." actions={
         <button onClick={() => setShowCreate(!showCreate)}
           className="flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-400 text-surface-950 rounded-lg text-sm font-medium transition-colors">
           <Plus className="w-4 h-4" /> New Validation
@@ -395,10 +403,10 @@ export function Validation({ linkedRunId = null, onCloseLinkedRun }: { linkedRun
                     Run #{r.id} · {r.mitre_techniques?.length || 0} techniques · {r.mode} · {new Date(r.created_at).toLocaleDateString()}
                   </p>
                 </div>
-                {r.results_summary && (
+                {r.results_summary?.measurement_mode === 'simulation_only' ? <div className="text-right text-xs text-surface-300"><p>Simulation steps prepared: {r.results_summary.simulated_tests}</p><p>Detection not measured</p></div> : r.results_summary && (
                   <div className="text-right">
-                    <p className={clsx('text-lg font-bold', r.results_summary.detection_rate >= 70 ? 'text-success' : r.results_summary.detection_rate >= 40 ? 'text-warning' : 'text-danger')}>
-                      {r.results_summary.detection_rate}%
+                    <p className={clsx('text-lg font-bold', (r.results_summary.detection_rate ?? 0) >= 70 ? 'text-success' : (r.results_summary.detection_rate ?? 0) >= 40 ? 'text-warning' : 'text-danger')}>
+                      {r.results_summary.detection_rate === null ? 'Not measured' : `${r.results_summary.detection_rate}%`}
                     </p>
                     <p className="text-xs text-surface-500">{r.results_summary.detected}/{r.results_summary.tested} detected</p>
                   </div>
@@ -454,13 +462,13 @@ export function Validation({ linkedRunId = null, onCloseLinkedRun }: { linkedRun
           <div className="mb-4 space-y-2"><button type="button" onClick={() => void copyRunLink(selectedRun.id)} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Copy exact validation run link</button><p className="text-xs text-surface-400">Opens this saved run by ID, even outside the current history page. It reads current saved results, not a frozen snapshot, and does not execute tests or grant access. Recipients need their own permission. No search drafts or result filters are included.</p>{copiedRun === selectedRun.id && <p role="status" className="text-xs text-primary-300">Validation run link copied.</p>}{copyError && <p role="alert" className="text-xs text-danger">{copyError}</p>}</div>
           {showComparison && <ValidationComparison key={selectedRun.id} current={selectedRun} onClose={() => setShowComparison(false)} />}
           {selectedRun.description && <p className="mb-4 text-sm text-surface-400">{selectedRun.description}</p>}
-          {selectedRun.mode === 'dry_run' && (
+          {(selectedRun.mode === 'dry_run' || selectedRun.steps.some(step => step.simulated === true)) && (
             <div className="mb-5 rounded-md border border-info/30 bg-info/10 p-3 text-sm text-info" role="note">
-              Dry-run simulation. These results do not prove that live detection controls fired.
+              {selectedRun.results_summary?.measurement_mode === 'simulation_only' ? 'Simulation plan only. No commands executed, network probes made or detection controls measured. Completed means the plan was prepared, not that live tests ran. Duration is plan preparation time, not detection latency.' : 'Recorded simulation. These results do not prove that live detection controls fired.'}
             </div>
           )}
 
-          {selectedRun.results_summary && (
+          {selectedRun.results_summary?.measurement_mode === 'simulation_only' ? <section aria-label="Unmeasured simulation outcome" className="mb-5 space-y-2 rounded border border-surface-700 p-4 text-sm text-surface-300"><p>Simulation steps prepared: {selectedRun.results_summary.simulated_tests}. Detection rate, detected controls and missed controls: not measured.</p><p>Zero observed tests is not zero threats or successful coverage. No control-result observations were fabricated. Historical coverage aggregates above may still include old simulation records.</p>{Number.isSafeInteger(selectedRun.results_summary.agent_run_id) && Number(selectedRun.results_summary.agent_run_id) > 0 && <a className="inline-block text-primary-300 underline" href={`/app/audit-log?run=${selectedRun.results_summary.agent_run_id}`}>Inspect exact simulation agent run #{selectedRun.results_summary.agent_run_id}</a>}</section> : selectedRun.results_summary && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
               <div className="bg-surface-900/50 rounded-lg p-3 text-center">
                 <p className="text-2xl font-bold text-surface-50">{selectedRun.results_summary.tested}</p>
@@ -475,8 +483,8 @@ export function Validation({ linkedRunId = null, onCloseLinkedRun }: { linkedRun
                 <p className="text-xs text-surface-500">Missed</p>
               </div>
               <div className="bg-surface-900/50 rounded-lg p-3 text-center">
-                <p className={clsx('text-2xl font-bold', selectedRun.results_summary.detection_rate >= 70 ? 'text-success' : 'text-warning')}>
-                  {selectedRun.results_summary.detection_rate}%
+                <p className={clsx('text-2xl font-bold', (selectedRun.results_summary.detection_rate ?? 0) >= 70 ? 'text-success' : 'text-warning')}>
+                  {selectedRun.results_summary.detection_rate === null ? 'Not measured' : `${selectedRun.results_summary.detection_rate}%`}
                 </p>
                 <p className="text-xs text-surface-500">Detection Rate</p>
               </div>
@@ -533,7 +541,7 @@ export function Validation({ linkedRunId = null, onCloseLinkedRun }: { linkedRun
                   {step.actual_result === 'detected' ? <CheckCircle className="h-4 w-4 shrink-0 text-success" aria-hidden="true" /> : <XCircle className="h-4 w-4 shrink-0 text-warning" aria-hidden="true" />}
                   <span className="font-mono text-xs text-primary-400">{step.technique_id}</span>
                   <span className="min-w-0 flex-1 basis-40 break-words text-sm text-surface-300">{step.test_name}</span>
-                  <StatusBadge tone={step.actual_result === 'detected' ? 'success' : step.actual_result === 'missed' || step.actual_result === 'error' ? 'danger' : 'warning'}>{step.actual_result || 'Not run'}</StatusBadge>
+                  <StatusBadge tone={step.actual_result === 'detected' ? 'success' : step.actual_result === 'missed' || step.actual_result === 'error' ? 'danger' : 'warning'}>{step.actual_result === 'simulated_unmeasured' ? 'Simulated, not measured' : step.actual_result || 'Not run'}</StatusBadge>
                   <span className="text-xs tabular-nums text-surface-500">{step.duration_ms === null ? 'Not timed' : `${step.duration_ms}ms`}</span>
                 </div>
                   <details className="mt-3 border-t border-surface-700 pt-3 text-sm">
@@ -545,6 +553,7 @@ export function Validation({ linkedRunId = null, onCloseLinkedRun }: { linkedRun
                       <div><dt className="text-xs text-surface-400">Test type</dt><dd className="break-words text-surface-200">{step.test_type || 'Not recorded'}</dd></div>
                       <div><dt className="text-xs text-surface-400">Executed at</dt><dd className="break-words text-surface-200">{step.executed_at ? (Number.isNaN(Date.parse(step.executed_at)) ? step.executed_at : new Date(step.executed_at).toLocaleString()) : 'Not recorded'}</dd></div>
                     </dl>
+                    {step.expected_detection && <p className="mt-3 break-words text-xs text-surface-300">Planned expected detection, not an observation: {step.expected_detection}</p>}
                     <h3 className="mt-4 font-semibold text-surface-200">Recorded control results ({step.controls?.length || 0})</h3>
                     {!step.controls?.length ? <p className="mt-2 text-surface-400">No control results recorded for this step.</p> : <ul className="mt-3 space-y-3">
                       {step.controls.map(control => <li key={control.id} className="min-w-0 space-y-2 rounded-md border border-surface-700 p-3">
@@ -568,7 +577,7 @@ export function Validation({ linkedRunId = null, onCloseLinkedRun }: { linkedRun
       {confirmRunId !== null && (
         <ConfirmDialog
           title={`Run validation #${confirmRunId}?`}
-          description="The run simulates its ATT&CK techniques against your detection controls and records per-step results."
+          description="Prepares simulation-plan records only. No commands, network probes or live control checks run, in dry-run or lab mode. No detected/missed observations or detection rate will be invented. Production execution is unavailable."
           confirmLabel="Run now"
           busy={executing !== null}
           onCancel={() => setConfirmRunId(null)}

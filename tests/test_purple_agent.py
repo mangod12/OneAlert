@@ -1,8 +1,10 @@
 """Tests for purple-team validation agent and models."""
 
+from datetime import UTC
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from backend.services.agents.purple import PurpleAgent, ATOMIC_TESTS
+
+from backend.services.agents.purple import ATOMIC_TESTS
 
 
 class TestAtomicTestLibrary:
@@ -12,7 +14,7 @@ class TestAtomicTestLibrary:
         assert len(ATOMIC_TESTS) >= 8
 
     def test_each_technique_has_tests(self):
-        for tech_id, data in ATOMIC_TESTS.items():
+        for data in ATOMIC_TESTS.values():
             assert "name" in data
             assert "tests" in data
             assert len(data["tests"]) >= 1
@@ -28,18 +30,18 @@ class TestAtomicTestLibrary:
 
 
 class TestPurpleAgentSimulation:
-    """Test purple agent simulation logic."""
+    """Simulation plans validate known techniques without randomized measurements."""
 
-    def test_simulate_returns_valid_result(self):
-        agent = PurpleAgent.__new__(PurpleAgent)
-        for tech_id in ATOMIC_TESTS:
-            result = agent._simulate_test(tech_id, "dry_run")
-            assert result in ("detected", "missed")
+    def test_all_library_techniques_are_validated_without_fake_detection_rates(self):
+        from backend.services.agents.purple import simulation_techniques
+        assert simulation_techniques(list(ATOMIC_TESTS)) == list(ATOMIC_TESTS)
+        assert simulation_techniques(['T1110', 'T1110']) == ['T1110']
 
-    def test_simulate_unknown_technique_uses_default_rate(self):
-        agent = PurpleAgent.__new__(PurpleAgent)
-        result = agent._simulate_test("T9999", "dry_run")
-        assert result in ("detected", "missed")
+    @pytest.mark.parametrize('value', [[], ['T9999'], ['T1110'] * 101, [True], 'T1110'])
+    def test_unknown_empty_or_unbounded_plans_fail_before_preparing_steps(self, value):
+        from backend.services.agents.purple import simulation_techniques
+        with pytest.raises(ValueError):
+            simulation_techniques(value)
 
 
 class TestValidationModels:
@@ -65,34 +67,25 @@ class TestValidationModels:
         assert run.scope is None
 
     def test_validation_run_response_schema(self):
+        from datetime import datetime
+
         from backend.models.validation import ValidationRunResponse
-        from datetime import datetime, timezone
         resp = ValidationRunResponse(
             id=1,
             name="Test",
             status="completed",
             mode="dry_run",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         assert resp.id == 1
         assert resp.status == "completed"
 
 
-class TestDetectionCoverage:
-    """Test detection rate simulation."""
 
-    def test_detection_rates_are_realistic(self):
-        """Detection rates should be between 0 and 1."""
-        agent = PurpleAgent.__new__(PurpleAgent)
-        results = {"detected": 0, "missed": 0}
 
-        # Run many simulations to verify distribution
-        for _ in range(1000):
-            for tech_id in ATOMIC_TESTS:
-                result = agent._simulate_test(tech_id, "dry_run")
-                results[result] += 1
+def test_unknown_saved_mode_cannot_be_created_through_schema():
+    from pydantic import ValidationError
 
-        total = results["detected"] + results["missed"]
-        rate = results["detected"] / total
-        # Overall rate should be between 40% and 95%
-        assert 0.4 < rate < 0.95, f"Overall detection rate {rate:.2%} outside expected range"
+    from backend.models.validation import ValidationRunCreate
+    with pytest.raises(ValidationError):
+        ValidationRunCreate(name='Invalid mode', mode='unexpected')

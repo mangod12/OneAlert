@@ -1,6 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
+import { toast } from '../components/Toast';
+vi.mock('../components/Toast', () => ({ toast: vi.fn() }));
 import { Validation } from './Validation';
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }));
 const run = {
@@ -368,4 +370,46 @@ it('opens read-only outcome comparison from recorded results without executing a
   expect(vi.mocked(apiClient.delete)).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Close comparison' }));
   expect(screen.queryByLabelText('Validation outcome comparison')).toBeNull();
+});
+
+it('renders new lab simulation plans as unmeasured, never a 0% or successful detection result', async () => {
+  const plan = { ...run, mode: 'lab', results_summary: { measurement_mode: 'simulation_only', simulated_tests: 1,
+    tested: 0, detected: 0, missed: 0, detection_rate: null, agent_run_id: 83 },
+    steps: [{ id: 4, technique_id: 'T1110', test_name: 'Authentication simulation plan', actual_result: 'simulated_unmeasured',
+      duration_ms: 0, simulated: true, executed_at: null, expected_detection: 'Sigma auth rule', controls: [] }] };
+  vi.mocked(apiClient.get).mockImplementation(url => Promise.resolve({ data: { data: url.endsWith('/8') ? plan : [plan] } }));
+  render(<Validation />); fireEvent.click(await screen.findByRole('button', { name: 'View results for Perimeter check' }));
+  await screen.findByRole('region', { name: 'Unmeasured simulation outcome' });
+  expect(screen.getByText('Simulated, not measured')).toBeTruthy(); expect(screen.getByRole('note').textContent).toContain('No commands executed');
+  expect(screen.queryByText('0%')).toBeNull(); expect(screen.queryByText('Detection Rate')).toBeNull();
+  expect(screen.getByRole('link', { name: 'Inspect exact simulation agent run #83' }).getAttribute('href')).toBe('/app/audit-log?run=83');
+  fireEvent.click(screen.getByText('Inspect recorded evidence', { exact: true }));
+  expect(screen.getByText('Planned expected detection, not an observation: Sigma auth rule')).toBeTruthy();
+  expect(screen.getByText('No control results recorded for this step.')).toBeTruthy();
+  expect(screen.getAllByText('Not recorded')[0]).toBeTruthy(); expect(apiClient.post).not.toHaveBeenCalled();
+});
+it('explains simulation-only execution and unavailable production before confirmation', async () => {
+  vi.mocked(apiClient.get).mockResolvedValue({ data: { data: [{ ...run, status: 'pending', mode: 'lab' }] } });
+  render(<Validation />); fireEvent.click(await screen.findByRole('button', { name: 'Run' }));
+  expect((await screen.findByRole('dialog')).textContent).toContain('No commands, network probes or live control checks');
+  expect(screen.getByRole('dialog').textContent).toContain('Production execution is unavailable');
+  expect(apiClient.post).not.toHaveBeenCalled();
+});
+
+it('does not claim unmeasured simulation success for a mismatched receipt', async () => {
+  vi.mocked(apiClient.get).mockResolvedValue({ data: { data: [{ ...run, status: 'pending' }] } });
+  vi.mocked(apiClient.post).mockResolvedValue({ data: { success: true, data: { run_id: 99, status: 'completed' } } });
+  render(<Validation />); fireEvent.click(await screen.findByRole('button', { name: 'Run' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Run now' }));
+  await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.stringContaining('could not be verified'), 'error'));
+  expect(toast).not.toHaveBeenCalledWith('Simulation plan prepared, detection not measured', 'success');
+});
+it('blocks repeated confirmation before the pending simulation receipt returns', async () => {
+  let reject!: (error: unknown) => void;
+  vi.mocked(apiClient.get).mockResolvedValue({ data: { data: [{ ...run, status: 'pending' }] } });
+  vi.mocked(apiClient.post).mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  render(<Validation />); fireEvent.click(await screen.findByRole('button', { name: 'Run' }));
+  const confirm = await screen.findByRole('button', { name: 'Run now' }); fireEvent.click(confirm); fireEvent.click(confirm);
+  expect(apiClient.post).toHaveBeenCalledTimes(1); await act(async () => reject({}));
+  expect(toast).toHaveBeenCalledWith(expect.stringContaining('Read saved results before retrying'), 'error');
 });

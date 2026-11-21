@@ -11,14 +11,13 @@ import io
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
+from backend.database.db import Base, get_async_db, get_db
 from backend.main import app
-from backend.database.db import get_db, get_async_db, Base
 from backend.models.user import User
 from backend.services.auth_service import get_password_hash
-
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test_validation_delete.db"
 engine = create_engine(
@@ -186,12 +185,16 @@ class TestExportValidationRun:
         assert rows[0] == [
             "run", "mode", "run_status", "step_number", "technique_id",
             "technique_name", "test_name", "test_type", "step_status",
-            "actual_result", "duration_ms", "controls", "executed_at",
+            "actual_result", "duration_ms", "controls", "executed_at", "simulated", "measurement_mode",
         ]
         assert len(rows) > 1
         assert rows[1][0] == "Weekly coverage test"
         assert rows[1][1] == "dry_run"
         assert rows[1][4] == "T1110"
+        exported = dict(zip(rows[0], rows[1], strict=True))
+        assert exported['actual_result'] == 'simulated_unmeasured'
+        assert exported['controls'] == exported['executed_at'] == ''
+        assert exported['simulated'] == 'True' and exported['measurement_mode'] == 'simulation_only'
 
     def test_export_unknown_run_returns_404(self, client, auth_headers):
         response = client.get(
