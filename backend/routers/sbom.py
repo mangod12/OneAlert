@@ -13,7 +13,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, or_, select
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -143,6 +143,52 @@ async def list_sboms(
     )
     sboms = result.scalars().all()
     return sboms
+
+
+@router.get("/document-library")
+async def browse_sbom_documents(
+    page: Annotated[int, Query(ge=1)] = 1,
+    size: Annotated[int, Query(ge=1, le=100)] = 10,
+    query: Annotated[str, Query(max_length=200)] = "",
+    asset_id: Annotated[int | None, Query(ge=1)] = None,
+    document_format: Annotated[str, Query(max_length=100)] = "",
+    source: Annotated[str, Query(max_length=100)] = "",
+    vulnerabilities_only: bool = False,
+    sort: Literal["newest", "oldest"] = "newest",
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Bounded owned-document discovery, independent of loaded legacy inventory."""
+    statement = (select(SBOM, Asset.name).outerjoin(
+        Asset, (Asset.id == SBOM.asset_id) & (Asset.user_id == current_user.id),
+    ).where(SBOM.user_id == current_user.id))
+    if query.strip():
+        statement = statement.where(or_(*[
+            func.lower(func.coalesce(cast(column, String), "")).contains(query.strip().lower(), autoescape=True)
+            for column in (SBOM.id, SBOM.asset_id, SBOM.version, SBOM.source, SBOM.format, Asset.name)
+        ]))
+    if asset_id is not None:
+        statement = statement.where(SBOM.asset_id == asset_id)
+    if document_format:
+        statement = statement.where(SBOM.format == document_format)
+    if source:
+        statement = statement.where(SBOM.source == source)
+    if vulnerabilities_only:
+        statement = statement.where(SBOM.vulnerability_count > 0)
+    total = (await db.execute(select(func.count()).select_from(statement.subquery()))).scalar_one()
+    order = ([SBOM.created_at.asc(), SBOM.id.asc()] if sort == "oldest" else
+             [SBOM.created_at.desc(), SBOM.id.desc()])
+    rows = (await db.execute(statement.order_by(*order).offset((page - 1) * size).limit(size))).all()
+    options = {}
+    for key, column in [("formats", SBOM.format), ("sources", SBOM.source)]:
+        values = (await db.execute(select(column).where(SBOM.user_id == current_user.id)
+                                   .distinct().order_by(column))).scalars().all()
+        options[key] = [value for value in values if value is not None]
+    return {"page": page, "size": size, "total": total, "query": query.strip(), "asset_id": asset_id,
+            "document_format": document_format, "source": source, "vulnerabilities_only": vulnerabilities_only,
+            "sort": sort, **options, "retrieved_at": datetime.now(UTC).isoformat(),
+            "documents": [{**SBOMResponse.model_validate(document).model_dump(), "asset_name": name}
+                          for document, name in rows]}
 
 
 @router.get("/{sbom_id}", response_model=SBOMResponse)
