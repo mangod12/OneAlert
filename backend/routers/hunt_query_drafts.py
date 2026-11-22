@@ -14,6 +14,7 @@ from backend.models.detection_rule import HuntSession
 from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.services.hunt_query_drafts import (
+    AuthoredHuntQueryDraftAgent,
     HuntQueryDraftAgent,
     RefinedHuntQueryDraftAgent,
     ReviewedHuntQueriesAgent,
@@ -55,6 +56,28 @@ class QueryEdit(BaseModel):
             not item or len(item) > 2048 for item in value.values()
         ):
             raise ValueError("Use bounded since, before or keyword parameters only")
+        return value
+
+
+class AuthoredQuery(QueryEdit):
+    description: str = Field(default="", max_length=1000)
+
+    @field_validator("sql")
+    @classmethod
+    def nonempty_sql(cls, value):
+        if not value.strip():
+            raise ValueError("A nonempty SQL query is required")
+        return value
+
+
+class AuthoredRequest(PrepareRequest):
+    queries: list[AuthoredQuery] = Field(..., min_length=1, max_length=3)
+
+    @field_validator("queries")
+    @classmethod
+    def contiguous_positions(cls, value):
+        if [item.position for item in value] != list(range(1, len(value) + 1)):
+            raise ValueError("Number authored queries once in order, starting at one")
         return value
 
 
@@ -154,6 +177,21 @@ async def prepare_queries(
     if not req.hypothesis.strip():
         raise HTTPException(422, "A nonempty hypothesis is required")
     session = await save_run(db, current_user.id, req.hypothesis, HuntQueryDraftAgent(db, current_user.id))
+    if session.status != "prepared":
+        return {"success": False, "data": {**session.result_data, "session_id": session.id}}
+    return {"success": True, "data": await draft_view(db, current_user.id, session.id)}
+
+
+@router.post("/authored")
+async def author_queries(
+    req: AuthoredRequest,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    if not req.hypothesis.strip():
+        raise HTTPException(422, "A nonempty hypothesis is required")
+    agent = AuthoredHuntQueryDraftAgent(db, current_user.id, [query.model_dump() for query in req.queries])
+    session = await save_run(db, current_user.id, req.hypothesis, agent)
     if session.status != "prepared":
         return {"success": False, "data": {**session.result_data, "session_id": session.id}}
     return {"success": True, "data": await draft_view(db, current_user.id, session.id)}
