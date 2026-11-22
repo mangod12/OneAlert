@@ -12,6 +12,8 @@ vi.mock('../api/client', () => ({
 }));
 
 import apiClient from '../api/client';
+import { eventFilePreviewFingerprint } from '../utils/eventParserPreview';
+vi.mock('../utils/eventParserPreview', async original => ({ ...await original<typeof import('../utils/eventParserPreview')>(), eventFilePreviewFingerprint: vi.fn() }));
 
 const mockGet = vi.mocked(apiClient.get);
 const mockPost = vi.mocked(apiClient.post);
@@ -448,7 +450,7 @@ describe('Event file review before import', () => {
     fireEvent.change(screen.getByLabelText('Log file'), { target: { files: [file] } });
     const review = await screen.findByLabelText('Selected event file review');
     expect(review.textContent).toContain('2 JSON records');
-    expect(review.textContent).toContain('No records have been sent yet.');
+    expect(review.textContent).toContain('Only Upload requests an import.');
     expect(review.textContent).toContain('not source-parser acceptance');
     expect(mockPost).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Upload 2 records' })).toBeTruthy();
@@ -514,4 +516,74 @@ it('shows bounded JSON Blob refusal guidance instead of downloading a partial ev
   fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
   await screen.findByText('Narrow the applied event filters. No partial CSV was created.');
   expect(createUrl).not.toHaveBeenCalled();
+});
+
+describe('Source-parser preview attached to an explicit event import', () => {
+  const hash = 'c'.repeat(64);
+  const selected = new File(['[{},{}]'], 'same-file.json');
+  const counters = (extra = {}) => ({ format: 'onealert_event_parser_preview_v1', source_type: 'suricata', fingerprint: hash, byte_size: selected.size, previewed_at: '2026-11-22T06:30:00Z', received: 2, accepted: 1, skipped: 1, redactions_in_accepted: 0, skip_reasons: { invalid_fields: 1 }, skipped_positions: { invalid_fields: { record_positions: [2], omitted_positions: 0 } }, ...extra });
+  const previewButton = () => screen.getByRole('button', { name: 'Preview source parser without importing' });
+  const uploadButton = () => screen.getByRole('button', { name: 'Upload 2 records' }) as HTMLButtonElement;
+  const selectFile = async () => {
+    render(<Events />); fireEvent.click(await screen.findByRole('button', { name: /upload events/i }));
+    fireEvent.change(screen.getByLabelText('Log file'), { target: { files: [selected] } }); await screen.findByLabelText('Selected event file review');
+  };
+  beforeEach(() => {
+    vi.mocked(eventFilePreviewFingerprint).mockResolvedValue(hash);
+    mockPost.mockImplementation(async url => url === '/events/upload/preview' ? { data: { success: true, data: counters() } } : { data: { success: true, data: { received: 2, ingested: 1, skipped: 1 } } });
+  });
+  it('keeps legacy import optional and sends no fingerprint when no preview was requested', async () => {
+    await selectFile(); expect(mockPost).not.toHaveBeenCalled(); fireEvent.click(uploadButton());
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1)); expect(mockPost.mock.calls[0][0]).toBe('/events/upload'); expect(mockPost.mock.calls[0][2]?.params).toEqual({ source_type: 'suricata' });
+  });
+  it('sends only the exact loaded fingerprint on the later explicit import', async () => {
+    await selectFile(); fireEvent.click(previewButton()); await screen.findByLabelText('Loaded parser-preview counters'); expect(mockPost).toHaveBeenCalledTimes(1);
+    fireEvent.click(uploadButton()); await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
+    expect(mockPost.mock.calls[1][0]).toBe('/events/upload'); expect(mockPost.mock.calls[1][2]?.params).toEqual({ source_type: 'suricata', preview_fingerprint: hash });
+    expect((mockPost.mock.calls[1][1] as FormData).get('file')).toBe(selected);
+  });
+  it('disables import while the explicit preview is awaiting its response', async () => {
+    mockPost.mockReturnValue(new Promise(() => {})); await selectFile(); fireEvent.click(previewButton());
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1)); expect(uploadButton().disabled).toBe(true); fireEvent.submit(uploadButton().closest('form')!); expect(mockPost).toHaveBeenCalledTimes(1);
+  });
+  it('blocks a zero-accepted import even on direct form submission', async () => {
+    mockPost.mockResolvedValue({ data: { success: true, data: counters({ accepted: 0, skipped: 2, skip_reasons: { invalid_fields: 2 }, skipped_positions: { invalid_fields: { record_positions: [1, 2], omitted_positions: 0 } } }) } });
+    await selectFile(); fireEvent.click(previewButton()); await screen.findByLabelText('Loaded parser-preview counters'); expect(uploadButton().disabled).toBe(true);
+    fireEvent.submit(uploadButton().closest('form')!); await screen.findByText(/Change the file or parser and request a new preview/); expect(mockPost).toHaveBeenCalledTimes(1);
+    fireEvent.change(screen.getByLabelText('Source type'), { target: { value: 'zeek' } }); expect(screen.queryByLabelText('Loaded parser-preview counters')).toBeNull(); expect(uploadButton().disabled).toBe(false);
+  });
+  it('clears loaded binding on parser changes without automatically previewing again', async () => {
+    await selectFile(); fireEvent.click(previewButton()); await screen.findByLabelText('Loaded parser-preview counters');
+    fireEvent.change(screen.getByLabelText('Source type'), { target: { value: 'zeek' } }); expect(screen.queryByLabelText('Loaded parser-preview counters')).toBeNull(); expect(mockPost).toHaveBeenCalledTimes(1);
+    fireEvent.click(uploadButton()); await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2)); expect(mockPost.mock.calls[1][2]?.params).toEqual({ source_type: 'zeek' });
+  });
+  it('clears binding on a different File object even with the same name, size and lastModified', async () => {
+    await selectFile(); fireEvent.click(previewButton()); await screen.findByLabelText('Loaded parser-preview counters');
+    const replacement = new File(['[{},{}]'], selected.name, { lastModified: selected.lastModified });
+    fireEvent.change(screen.getByLabelText('Log file'), { target: { files: [replacement] } }); await screen.findByLabelText('Selected event file review'); expect(screen.queryByLabelText('Loaded parser-preview counters')).toBeNull();
+    fireEvent.click(uploadButton()); await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2)); expect(mockPost.mock.calls[1][2]?.params).toEqual({ source_type: 'suricata' }); expect((mockPost.mock.calls[1][1] as FormData).get('file')).toBe(replacement);
+  });
+  it('ignores late replies after a parser change and never attaches them to a new import', async () => {
+    let resolve!: (value: unknown) => void; mockPost.mockReturnValueOnce(new Promise(done => { resolve = done; }));
+    await selectFile(); fireEvent.click(previewButton()); await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByLabelText('Source type'), { target: { value: 'zeek' } }); await act(async () => resolve({ data: { success: true, data: counters() } }));
+    expect(screen.queryByLabelText('Loaded parser-preview counters')).toBeNull(); expect(uploadButton().disabled).toBe(false);
+    fireEvent.click(uploadButton()); await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2)); expect(mockPost.mock.calls[1][2]?.params).toEqual({ source_type: 'zeek' });
+  });
+  it('clears a refused binding and offers no automatic retry or stale download', async () => {
+    await selectFile(); fireEvent.click(previewButton()); await screen.findByLabelText('Loaded parser-preview counters');
+    mockPost.mockRejectedValueOnce({ response: { status: 409, data: { detail: 'File bytes or parser changed' } } }); fireEvent.click(uploadButton());
+    await screen.findByText(/The server refused the preview binding before importing/); expect(screen.queryByLabelText('Loaded parser-preview counters')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Download parser-preview metadata JSON' })).toBeNull(); expect(mockPost).toHaveBeenCalledTimes(2);
+  });
+  it('clears counters after an unconfirmed import and warns against duplicate retries', async () => {
+    await selectFile(); fireEvent.click(previewButton()); await screen.findByLabelText('Loaded parser-preview counters'); mockPost.mockRejectedValueOnce(Error('network interrupted')); fireEvent.click(uploadButton());
+    await screen.findByText(/Import was not confirmed/); expect(screen.queryByLabelText('Loaded parser-preview counters')).toBeNull(); expect(mockPost).toHaveBeenCalledTimes(2);
+  });
+  it('closing and reopening does not restore an old in-flight preview', async () => {
+    let resolve!: (value: unknown) => void; mockPost.mockReturnValueOnce(new Promise(done => { resolve = done; }));
+    await selectFile(); fireEvent.click(previewButton()); await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1)); fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(await screen.findByRole('button', { name: /upload events/i })); await act(async () => resolve({ data: { success: true, data: counters() } }));
+    expect(screen.queryByLabelText('Loaded parser-preview counters')).toBeNull(); expect(screen.queryByLabelText('Selected event file review')).toBeNull(); expect(mockPost).toHaveBeenCalledTimes(1);
+  });
 });
