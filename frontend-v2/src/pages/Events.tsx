@@ -15,7 +15,8 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import { SavedViewsMenu } from '../components/SavedViewsMenu';
 import { reviewEventFile, type EventFileReview } from '../utils/eventFileReview';
 import { EventParserPreviewPanel } from '../components/EventParserPreviewPanel';
-import type { EventParserPreview } from '../utils/eventParserPreview';
+import { WindowsSecurityFormatHelp } from '../components/WindowsSecurityFormatHelp';
+import { eventSourceParserLabels, type EventParserPreview } from '../utils/eventParserPreview';
 import { EventImportReceipt } from '../components/EventImportReceipt';
 import { importResponseMetadata, type ImportReceipt } from '../utils/eventImportReceipt';
 import { eventSeverityTones } from '../components/ui/tones';
@@ -217,7 +218,7 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
       await fetchEvents();
       return 'uploaded';
     } catch (err: unknown) {
-      toast(getApiErrorMessage(err, 'The file could not be ingested. Use Suricata EVE JSON or Zeek JSON logs.'), 'error');
+      toast(getApiErrorMessage(err, 'The file could not be ingested. Use Suricata EVE JSON, Zeek JSON logs or Windows Security-channel JSON.'), 'error');
       return previewFingerprint && (err as { response?: { status?: number } } | null)?.response?.status === 409 ? 'preview_changed' : 'failed';
     } finally {
       uploadInFlight.current = false;
@@ -430,7 +431,7 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
           <Activity className="w-16 h-16 text-surface-600 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-surface-300">{hasEventFilters ? 'No events match these filters' : 'No events ingested yet'}</h3>
           <p className="text-surface-500 mt-2 max-w-md mx-auto">
-            {hasEventFilters ? 'Try a wider applied time window or adjust the other event filters.' : 'Upload Suricata EVE JSON or Zeek logs, or configure a webhook receiver for real-time ingestion.'}
+            {hasEventFilters ? 'Try a wider applied time window or adjust the other event filters.' : 'Upload Suricata EVE JSON, Zeek logs or Windows Security-channel JSON, or configure a webhook receiver for real-time ingestion.'}
           </p>
         </div>
       ) : (
@@ -622,15 +623,15 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
               onChange={e => { selectedParser.current = e.target.value; setSourceType(e.target.value); setParserPreview(null); setPreviewing(false); setFormError(''); }}
               className="w-full rounded-lg border border-surface-600 bg-surface-800 px-3 py-2 text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
-              <option value="suricata">Suricata (EVE JSON)</option>
-              <option value="zeek">Zeek (JSON logs)</option>
+              {Object.entries(eventSourceParserLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </div>
+          {sourceType === 'windows_security' && <WindowsSecurityFormatHelp />}
           {reviewing && <p role="status" className="text-xs text-surface-400">Reading and validating the selected file locally...</p>}
           {file && review && <section aria-label="Selected event file review" className="space-y-2 rounded border border-surface-700 p-3 text-xs text-surface-300">
             <p className="break-all font-medium text-surface-100">{file.name}</p>
             <p>{review.format} · {review.records.toLocaleString()} JSON records · {file.size.toLocaleString()} bytes</p>
-            <p>Selected parser: {sourceType === 'suricata' ? 'Suricata (EVE JSON)' : 'Zeek (JSON logs)'}</p>
+            <p>Selected parser: {eventSourceParserLabels[sourceType as keyof typeof eventSourceParserLabels]}</p>
             <p>Destination: your event stream and a source named after this file.</p>
             <p className="break-words">Sample field names (first three records, up to 20, long names shortened): {review.sampleFields.join(', ') || 'Empty objects'}</p>
             <p className="text-surface-400">JSON validation is not source-parser acceptance. Unsupported records may still be skipped; the final import reports ingested and skipped counts. {uploading ? 'Submitting this reviewed file...' : 'Only Upload requests an import. Optional parser preview below sends the file to the server without importing.'}</p>

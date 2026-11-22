@@ -44,3 +44,18 @@ it('fails closed without secure hashing support or a supported bounded file', as
   await expect(eventFilePreviewFingerprint(new File([], 'input.json'), 'suricata')).rejects.toThrow();
   await expect(eventFilePreviewFingerprint(new File(['{}'], 'input.json'), 'unknown')).rejects.toThrow();
 });
+
+it('validates and exports the explicit Windows parser without accepting another parser binding', () => {
+  const value = { ...fixture(), source_type: 'windows_security' };
+  const parsed = parseEventParserPreview(value, { ...binding, sourceType: 'windows_security' });
+  expect(parsed.source_type).toBe('windows_security'); expect(JSON.parse(eventParserPreviewJson(parsed, 'windows.ndjson', '2026-11-22T06:31:00Z')).source_type).toBe('windows_security');
+  expect(() => parseEventParserPreview(value, binding)).toThrow();
+});
+it('binds Windows bytes to its own parser context and rejects inherited object keys as parser names', async () => {
+  const digest = vi.fn().mockResolvedValue(new Uint8Array(32).fill(10).buffer); vi.stubGlobal('crypto', { subtle: { digest } });
+  await eventFilePreviewFingerprint(new File(['{}'], 'windows.json'), 'windows_security'); expect(new TextDecoder().decode(digest.mock.calls[0][1])).toBe('onealert_event_parser_preview_v1\0windows_security\0{}');
+  for (const parser of ['constructor', '__proto__', 'toString']) {
+    await expect(eventFilePreviewFingerprint(new File(['{}'], 'windows.json'), parser)).rejects.toThrow();
+    expect(() => parseEventParserPreview({ ...fixture(), source_type: parser }, { ...binding, sourceType: parser })).toThrow();
+  }
+});
