@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "preferences": {
+    "email_notifications_enabled": true,
+    "notify_min_severity": "high",
+    "muted_kinds": [
+      "alert_created",
+      "case_assigned",
+      "legacy_名"
+    ],
+    "quiet_hours_start": "22:00",
+    "quiet_hours_end": "06:00",
+    "digest_enabled": true,
+    "digest_hour_utc": 7
+  },
+  "preferences_fingerprint": "199954195f40225d4024f1f987c5e21b2b4d998d536af6eb56fbce63da4df1ff",
+  "retrieved_at": "2026-11-22T18:00:00Z",
+  "request": {
+    "scenario": "new_alert",
+    "severity": "high",
+    "utc_time": "23:00"
+  },
+  "tested_utc_time": "23:00",
+  "time_basis": "chosen_utc_clock",
+  "kind": "alert_created",
+  "predicate": "new_alert_email",
+  "gates": {
+    "email_enabled": true,
+    "kind_is_muted": true,
+    "kind_gate_applies": false,
+    "quiet_window_state": "configured",
+    "inside_quiet_hours": true,
+    "critical_quiet_bypass": false,
+    "effective_minimum": "high",
+    "minimum_fallback": false,
+    "unknown_severity": false,
+    "severity_meets_minimum": true
+  },
+  "selected": {
+    "severity": "high",
+    "allowed_by_preference_predicate": false,
+    "blocking_reasons": [
+      "quiet_hours"
+    ]
+  },
+  "severity_matrix": [
+    {
+      "severity": "low",
+      "allowed_by_preference_predicate": false,
+      "blocking_reasons": [
+        "quiet_hours",
+        "below_minimum"
+      ]
+    },
+    {
+      "severity": "medium",
+      "allowed_by_preference_predicate": false,
+      "blocking_reasons": [
+        "quiet_hours",
+        "below_minimum"
+      ]
+    },
+    {
+      "severity": "high",
+      "allowed_by_preference_predicate": false,
+      "blocking_reasons": [
+        "quiet_hours"
+      ]
+    },
+    {
+      "severity": "critical",
+      "allowed_by_preference_predicate": true,
+      "blocking_reasons": []
+    },
+    {
+      "severity": null,
+      "allowed_by_preference_predicate": false,
+      "blocking_reasons": [
+        "quiet_hours"
+      ]
+    }
+  ],
+  "feed_kind_hidden_by_saved_mute": true
+}

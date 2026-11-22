@@ -7,6 +7,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { SiemIntegrationsPanel } from '../components/settings/SiemIntegrationsPanel';
 import { ApiTokensPanel } from '../components/settings/ApiTokensPanel';
+import { NotificationPolicyPreview } from '../components/settings/NotificationPolicyPreview';
 import { SuppressionRulesPanel } from '../components/settings/SuppressionRulesPanel';
 import { AutomationPanel } from '../components/settings/AutomationPanel';
 import { Panel } from '../components/ui/Panel';
@@ -745,6 +746,8 @@ export function Settings() {
             </div>
           </form>
         </Panel>
+
+        <NotificationPolicyPreview />
 
         <Panel title="Notification integrations" description="Alerts and investigation events (assignments, escalations, SLA breaches) post to these endpoints. Credentials are write-only and never returned to the browser." action={<Bell className="h-4 w-4 text-warning" />}>
           <form className="space-y-5 p-5" onSubmit={event => { event.preventDefault(); void handleSaveIntegrations(); }}>
