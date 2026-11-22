@@ -153,6 +153,7 @@ export function SuppressionRulesPanel() {
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <a href={`/app/settings/suppression-rules/${rule.id}/overlap`} className="rounded-md border border-surface-600 px-2.5 py-1.5 text-xs text-primary-300">Review current overlap for rule #{rule.id}</a>
                   <a href={`/app/settings/suppression-rules/${rule.id}`} className="rounded-md border border-surface-600 px-2.5 py-1.5 text-xs text-primary-300">Review matching alerts for rule #{rule.id}</a>
                   <button
                     type="button"

@@ -24,6 +24,7 @@ from backend.models.suppression_rule import (
 )
 from backend.models.user import User
 from backend.routers.auth import get_active_user
+from backend.routers.suppression_overlap import router as overlap_router
 from backend.routers.suppression_preview import router as preview_router
 from backend.services.audit import add_audit_log
 from backend.services.suppression_review import (
@@ -35,6 +36,7 @@ from backend.services.suppression_review import (
 
 router = APIRouter()
 router.include_router(preview_router)
+router.include_router(overlap_router)
 
 _ACTIVE_STATUSES = ("pending", "sent", "acknowledged")
 
