@@ -26,3 +26,14 @@ it.each([null, '', '{bad', JSON.stringify({}), ...[{ run_id: 99 }, { version: 2 
   render(<DetectionRunReceipt runId={3} text={text} />); expect(screen.getByRole('alert')).toBeTruthy();
   expect(screen.queryByText(lead.description)).toBeNull();
 });
+
+const input = { format: 'bounded_aggregate_json_v1', max_context_characters: 64000, text_character_limit: 128, included_groups: { severity_distribution: 100, top_source_ips: 10, top_dest_ports: 2, top_signatures: 10 }, omitted_groups: { severity_distribution: 3, top_source_ips: 10, top_dest_ports: 0, top_signatures: 0 }, shortened_labels: [{ group: 'top_signatures', position: 1 }] };
+it('shows prepared input bounds, supplied aggregate omissions and shortened label positions separately from findings', () => {
+  render(<DetectionRunReceipt runId={3} text={JSON.stringify({ ...receipt, input_context: input })} />); expect(screen.getByText(/At most 128 Unicode characters per text label/)).toBeTruthy(); expect(screen.getByText('100 supplied rows included · 3 supplied rows omitted')).toBeTruthy(); expect(screen.getByText('top signatures: prepared row 1')).toBeTruthy(); expect(screen.getByText(/not all distinct labels in the database/)).toBeTruthy(); expect(screen.getByText(/not confirmation of provider success/)).toBeTruthy(); expect(screen.queryByRole('button')).toBeNull();
+});
+it.each([{ format: 'wrong' }, { ...input, included_groups: { ...input.included_groups, unknown: 1 } }, { ...input, omitted_groups: { ...input.omitted_groups, unknown: 1 } }, { ...input, text_character_limit: 13 }, { ...input, included_groups: { ...input.included_groups, top_signatures: 11 } }, { ...input, shortened_labels: [{ group: 'raw_data', position: 1 }] }, { ...input, shortened_labels: [{ group: 'top_signatures', position: 11 }] }, { ...input, shortened_labels: [{ group: 'top_signatures', position: 1 }, { group: 'top_signatures', position: 1 }] }])('does not interpret inconsistent input metadata as full aggregate coverage %#', input_context => {
+  render(<DetectionRunReceipt runId={3} text={JSON.stringify({ ...receipt, input_context })} />); expect(screen.getByText(/input bounds and aggregate omissions were not recorded/)).toBeTruthy(); expect(screen.queryByRole('region', { name: 'Saved detection aggregate input scope' })).toBeNull(); expect(screen.getByText(/AI-generated lead/)).toBeTruthy();
+});
+it('does not claim prepared AI input for a skipped analysis, even if old scope metadata is present', () => {
+  render(<DetectionRunReceipt runId={3} text={JSON.stringify({ ...receipt, ai_status: 'skipped', ai_count: 0, included: 0, findings: [], input_context: input })} />); expect(screen.queryByRole('region', { name: 'Saved detection aggregate input scope' })).toBeNull();
+});

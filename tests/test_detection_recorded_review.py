@@ -42,7 +42,8 @@ def test_receipt_bounds_text_lists_and_findings_without_altering_original():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('mode', ['completed', 'failed', 'empty'])
-async def test_execute_persists_owned_exact_receipt_without_security_mutations(tmp_path, mode):
+@pytest.mark.parametrize('bounded', [False, True])
+async def test_execute_persists_owned_exact_receipt_without_security_mutations(tmp_path, mode, bounded, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'detection-receipts.db'}")
     try:
         async with engine.begin() as connection:
@@ -57,11 +58,21 @@ async def test_execute_persists_owned_exact_receipt_without_security_mutations(t
             records.extend([SecurityEvent(user_id=owner, timestamp=stamp, event_type='alert', severity='critical')
                             for owner, stamp in [(9, now), (1, now + timedelta(days=1)),
                                                  (1, now - timedelta(days=3))]])
+            if bounded and records:
+                records[0].signature = 'S' * 400
             db.add_all(records)
             await db.commit()
             agent = DetectAgent(db, 1)
-            agent._llm_analysis = AsyncMock(side_effect=RuntimeError('unavailable') if mode == 'failed' else None,
-                                            return_value=[FINDING])
+            if bounded:
+                from backend.services.agents import detect
+                provider = SimpleNamespace(complete_json=AsyncMock(
+                    side_effect=RuntimeError('unavailable') if mode == 'failed' else None,
+                    return_value={'findings': [FINDING]}))
+                monkeypatch.setattr(detect, 'get_ai_provider', lambda _: provider)
+            else:
+                agent._llm_analysis = AsyncMock(
+                    side_effect=RuntimeError('unavailable') if mode == 'failed' else None,
+                    return_value=[FINDING])
             result = await agent.execute(hours_back=24)
             detail = await get_agent_run(run_id=agent._run.id, current_user=SimpleNamespace(id=1), db=db)
             step = next(step for step in detail.steps if step.action == 'detection_review_receipt')
@@ -77,8 +88,18 @@ async def test_execute_persists_owned_exact_receipt_without_security_mutations(t
                 assert receipt['findings'][-1]['method'] == 'ai'
                 assert receipt['findings'][-1]['description'] == FINDING['description']
             if mode == 'empty':
-                agent._llm_analysis.assert_not_awaited()
+                if bounded:
+                    provider.complete_json.assert_not_awaited()
+                else:
+                    agent._llm_analysis.assert_not_awaited()
                 assert receipt['findings'] == []
+            if bounded and mode != 'empty':
+                sent = provider.complete_json.call_args.args[0][1].content
+                assert receipt['input_context'] == json.loads(sent.split('\n', 1)[1])['input_context']
+                assert receipt['input_context']['shortened_labels'] == [
+                    {'group': 'top_signatures', 'position': 1}]
+            else:
+                assert receipt['input_context'] is None
             with pytest.raises(HTTPException) as denied:
                 await get_agent_run(run_id=agent._run.id, current_user=SimpleNamespace(id=9), db=db)
             assert denied.value.status_code == 404
