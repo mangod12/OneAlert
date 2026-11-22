@@ -1,26 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Zap } from 'lucide-react';
 import apiClient from '../../api/client';
-import { getApiErrorMessage } from '../../api/errors';
 import { Panel } from '../ui/Panel';
-import { toast } from '../Toast';
-import { OnCallCoverage } from './OnCallCoverage';
+import { OnCallRotationPanel } from './OnCallRotationPanel';
 import { checkedAutomationPreferences, sameAutomationPreferences, automationPreferenceChanges, automationPreferenceKeys, automationPreferenceLabels, exactAutomationInteger, type AutomationPreferences } from '../../utils/automationPreferences';
 
 const inputClass = 'w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 disabled:opacity-50';
-
-interface OrgMember {
-  id: number;
-  email: string;
-  full_name: string | null;
-  is_active: boolean;
-}
-
-interface OnCallState {
-  member_ids: number[];
-  anchor_date: string | null;
-  current_member_id: number | null;
-}
 
 const SLA_FIELDS = [
   { key: 'sla_days_critical', label: 'Critical' },
@@ -48,9 +33,6 @@ export function AutomationPanel() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [members, setMembers] = useState<OrgMember[]>([]);
-  const [onCall, setOnCall] = useState<OnCallState>({ member_ids: [], anchor_date: null, current_member_id: null });
-  const [onCallBusy, setOnCallBusy] = useState(false);
 
   const [snapshot, setSnapshot] = useState<AutomationPreferences | null>(null);
   const [readAt, setReadAt] = useState(''), [notice, setNotice] = useState('');
@@ -74,38 +56,7 @@ export function AutomationPanel() {
     finally { if (id === reads.current) setLoading(false); }
   }, [applyDraft]);
 
-  const toggleOnCall = useCallback(async (memberId: number) => {
-    if (onCallBusy) return;
-    const next = onCall.member_ids.includes(memberId)
-      ? onCall.member_ids.filter(id => id !== memberId)
-      : [...onCall.member_ids, memberId];
-    setOnCallBusy(true);
-    try {
-      const resp = await apiClient.patch<OnCallState>('/orgs/me/on-call', { member_ids: next });
-      setOnCall(resp.data);
-      toast(next.length === 0 ? 'On-call rotation cleared.' : 'On-call rotation updated.', 'success');
-    } catch (err) {
-      toast(getApiErrorMessage(err, 'The on-call rotation could not be updated.'), 'error');
-    } finally {
-      setOnCallBusy(false);
-    }
-  }, [onCall.member_ids, onCallBusy]);
-
-  const loadOnCall = useCallback(async () => {
-    try {
-      const [rotation, roster] = await Promise.all([
-        apiClient.get<OnCallState>('/orgs/me/on-call'),
-        apiClient.get<OrgMember[]>('/orgs/me/members'),
-      ]);
-      setOnCall(rotation.data);
-      setMembers(roster.data);
-    } catch {
-      // No organization (or no access): the rotation section stays hidden.
-      setMembers([]);
-    }
-  }, []);
-
-  useEffect(() => { void load(); void loadOnCall(); return invalidateRead; }, [load, loadOnCall, invalidateRead]);
+  useEffect(() => { void load(); return invalidateRead; }, [load, invalidateRead]);
   useEffect(() => { if (review) reviewRef.current?.scrollIntoView?.({ block: 'nearest' }); }, [review]);
 
   const draft = (): AutomationPreferences => checkedAutomationPreferences({
@@ -146,13 +97,14 @@ export function AutomationPanel() {
   };
 
   return (
+    <>
     <Panel
       title="Incident auto-escalation"
       description="Automatically open an investigation when one asset collects enough active alerts at or above a severity. Nothing escalates while this is off."
       action={<Zap className="h-4 w-4 text-warning" />}
     >
       <div className="space-y-3 p-5">
-        <p className="text-xs text-surface-400">Preferences are unknown until a complete current read succeeds. Saving first reviews your draft, then rechecks current preferences before sending the reviewed values. This is not an atomic lock; another session can still change preferences between the check and save. On-call member buttons are separate immediate changes, not part of this preference review.</p>
+        <p className="text-xs text-surface-400">Preferences are unknown until a complete current read succeeds. Saving first reviews your draft, then rechecks current preferences before sending the reviewed values. This is not an atomic lock; another session can still change preferences between the check and save. On-call rotation changes have their own separate review below.</p>
         <button type="button" disabled={loading || saving} onClick={() => void load()} className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300 disabled:opacity-40">{snapshot ? 'Discard draft and reread preferences' : 'Read current automation preferences'}</button>
         {loading && <p role="status" className="text-sm text-surface-300">Reading current automation preferences. No editable defaults are shown.</p>}
         {loadError && <p role="alert" className="text-sm text-danger">{loadError}</p>}
@@ -253,46 +205,6 @@ export function AutomationPanel() {
           </p>
         </div>
 
-        {members.filter(m => m.is_active).length >= 2 && (
-          <div className="border-t border-surface-700 pt-4">
-            <h3 className="text-sm text-surface-200">On-call rotation</h3>
-            <p className="mt-3 text-xs text-surface-500">
-              While a rotation is set, auto-assignment goes to whoever is on call instead of balancing load. The rotation hands off every 7 days in the order you pick. Click a member to add or remove them; changes save immediately.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {members.filter(m => m.is_active).map((m) => {
-                const position = onCall.member_ids.indexOf(m.id);
-                const inRotation = position !== -1;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    disabled={onCallBusy}
-                    aria-pressed={inRotation}
-                    onClick={() => void toggleOnCall(m.id)}
-                    className={`flex min-h-9 items-center gap-2 rounded-md border px-3 text-sm disabled:opacity-50 ${
-                      inRotation
-                        ? 'border-primary-500 bg-primary-500/10 text-primary-300'
-                        : 'border-surface-600 text-surface-300 hover:border-primary-500/50'
-                    }`}
-                  >
-                    {inRotation && (
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-500 text-xs font-bold text-surface-950">
-                        {position + 1}
-                      </span>
-                    )}
-                    {m.full_name || m.email}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="mt-3 text-xs text-surface-500">
-              {onCall.current_member_id !== null
-                ? `On call this week: ${members.find(m => m.id === onCall.current_member_id)?.email ?? 'unknown'}`
-                : 'No rotation set: auto-assignment balances load across the whole organization.'}
-            </p>
-          </div>
-        )}
 
         <button
           type="submit"
@@ -312,7 +224,9 @@ export function AutomationPanel() {
           <div className="flex flex-wrap gap-2"><button type="button" disabled={saving} onClick={() => setReview(null)} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40">Cancel preference review</button><button type="button" disabled={saving} onClick={() => void confirmSave()} className="rounded bg-primary-500 px-3 py-2 text-xs font-semibold text-surface-950 disabled:opacity-40">{saving ? 'Checking and saving...' : 'Confirm reviewed preferences'}</button></div>
         </section>}
       </form>}
-      {members.length > 0 && <OnCallCoverage revision={JSON.stringify(onCall)} />}
+
     </Panel>
+    <OnCallRotationPanel />
+    </>
   );
 }

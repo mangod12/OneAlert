@@ -33,6 +33,7 @@ const EMPTY_ROTATION = { member_ids: [], anchor_date: null, current_member_id: n
 
 function mockPrefs(prefs: unknown = DEFAULT_PREFS, rotation: unknown = EMPTY_ROTATION) {
   get.mockImplementation(async (url: string) => {
+    if (url === '/auth/me') return { data: { id: 1, org_id: 9, role: 'admin', is_active: true } };
     if (url === '/auth/me/automation-preferences') return { data: prefs };
     if (url === '/orgs/me/on-call') return { data: rotation };
     if (url === '/orgs/me/members') return { data: MEMBERS };
@@ -99,36 +100,40 @@ describe('AutomationPanel', () => {
       expect.objectContaining({ auto_assign_new_alerts: true })));
   });
 
-  it('shows who is on call and saves rotation changes immediately', async () => {
+  it('stages on-call changes separately and saves only after an explicit review confirmation', async () => {
     mockPrefs(DEFAULT_PREFS, { member_ids: [2, 1], anchor_date: '2026-11-16', current_member_id: 2 });
-    patch.mockResolvedValue({ data: { member_ids: [1, 2], anchor_date: '2026-11-19', current_member_id: 1 } });
+    patch.mockResolvedValue({ data: { member_ids: [2], anchor_date: '2026-11-23', current_member_id: 2 } });
     render(<AutomationPanel />);
-    await screen.findByText('On call this week: sam@example.com');
-    expect(screen.queryByRole('button', { name: /gone@example.com/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /Admin One/ }));
-    // Admin One is already in the rotation; clicking removes them.
-    await waitFor(() => expect(patch).toHaveBeenCalledWith('/orgs/me/on-call', { member_ids: [2] }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open saved on-call rotation' }));
+    await screen.findByRole('region', { name: 'Verified saved on-call rotation' });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove member #1 from draft rotation' }));
+    expect(patch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Review rotation changes' }));
+    expect(screen.getByRole('region', { name: 'On-call rotation change review' }).textContent).toContain('resets the anchor');
+    expect(patch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm reviewed rotation' }));
+    await waitFor(() => expect(patch).toHaveBeenCalledExactlyOnceWith('/orgs/me/on-call', { member_ids: [2] }));
   });
 
-  it('adds a member to an empty rotation', async () => {
+  it('adds a member to an empty draft without an immediate write', async () => {
     mockPrefs();
-    patch.mockResolvedValue({ data: { member_ids: [2], anchor_date: '2026-11-19', current_member_id: 2 } });
+    patch.mockResolvedValue({ data: { member_ids: [2], anchor_date: '2026-11-23', current_member_id: 2 } });
     render(<AutomationPanel />);
-    await screen.findByText('No rotation set: auto-assignment balances load across the whole organization.');
-    fireEvent.click(screen.getByRole('button', { name: 'Sam Two' }));
-    await waitFor(() => expect(patch).toHaveBeenCalledWith('/orgs/me/on-call', { member_ids: [2] }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open saved on-call rotation' }));
+    await screen.findByText('No saved rotation. There is no configured on-call override.');
+    fireEvent.click(screen.getByRole('button', { name: 'Add Sam Two · #2' }));
+    expect(patch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Review rotation changes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm reviewed rotation' }));
+    await waitFor(() => expect(patch).toHaveBeenCalledExactlyOnceWith('/orgs/me/on-call', { member_ids: [2] }));
   });
 
-  it('hides the rotation section for a solo organization', async () => {
-    get.mockImplementation(async (url: string) => {
-      if (url === '/auth/me/automation-preferences') return { data: DEFAULT_PREFS };
-      if (url === '/orgs/me/on-call') return { data: EMPTY_ROTATION };
-      if (url === '/orgs/me/members') return { data: [MEMBERS[0]] };
-      throw new Error(`unexpected ${url}`);
-    });
+  it('keeps the lazy rotation entry available even when automation preferences fail', async () => {
+    get.mockRejectedValue(new Error('offline'));
     render(<AutomationPanel />);
-    await screen.findByLabelText('Auto-assign new alerts and investigations across your organization');
-    expect(screen.queryByText('On-call rotation')).toBeNull();
+    await screen.findByRole('alert');
+    expect(screen.getByRole('button', { name: 'Open saved on-call rotation' })).toBeTruthy();
+    expect(get.mock.calls.some(([url]) => url === '/orgs/me/on-call')).toBe(false);
   });
 
   it('rejects an out-of-range alert threshold', async () => {
