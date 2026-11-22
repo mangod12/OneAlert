@@ -42,7 +42,7 @@ function Inspector({ sessionId, onClose }: { sessionId: number; onClose: () => v
   };
   return <section aria-label={`Exact saved hunt session ${sessionId}`} className="oa-panel mb-6 min-w-0 space-y-4 p-4 sm:p-6">
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold text-surface-100">Saved hunt session #{sessionId}</h2><button type="button" className={control} onClick={onClose}>Close saved hunt evidence</button></div>
-    <p className="text-xs text-surface-400">Read-only saved evidence, independent of history pages and the hypothesis draft. No hunt or database query is rerun. Retained query rows are not confirmed threats. Refresh reads the current saved record, not an immutable version.</p>
+    <p className="text-xs text-surface-400">Read-only saved evidence, independent of history pages and the hypothesis draft. No original hunt query is rerun. Retained query rows are not confirmed threats. Refresh reads the current saved record, not an immutable version.</p>
     {loading && <p role="status" className="text-sm text-surface-300">Loading exact saved hunt evidence...</p>}
     {error && <div className="space-y-2"><p role="alert" className="text-sm text-danger">{error}</p><button type="button" className={control} onClick={() => setRetry(retry + 1)}>Retry saved hunt evidence</button></div>}
     {!loading && !error && record && <>
@@ -58,7 +58,7 @@ function Inspector({ sessionId, onClose }: { sessionId: number; onClose: () => v
       {record.evidence.explanation && <p className="whitespace-pre-wrap break-words text-sm text-surface-300">{record.evidence.explanation}</p>}
       {record.evidence.error && <p role="alert" className="whitespace-pre-wrap break-words text-sm text-danger">{record.evidence.error}</p>}
       {!record.evidence.query_results?.length && <p className="text-sm text-surface-400">No query evidence was retained in this saved record. This does not establish zero results or a successful hunt.</p>}
-      {record.evidence.query_results?.map((result, index) => <HuntQueryEvidence key={index} result={result} index={index} />)}
+      {record.evidence.query_results?.map((result, index) => <HuntQueryEvidence key={index} result={result} index={index} savedReview={record.session.retained_evidence_fingerprint ? { sessionId, fingerprint: record.session.retained_evidence_fingerprint, onRefresh: () => setRetry(value => value + 1) } : undefined} />)}
       {record.evidence.sigma_rule && <details><summary className="cursor-pointer text-xs text-primary-300">Saved Sigma output, not installed or tested here</summary><pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap break-all rounded border border-surface-700 p-3 text-xs text-surface-300">{record.evidence.sigma_rule}</pre></details>}
     </>}
   </section>;
