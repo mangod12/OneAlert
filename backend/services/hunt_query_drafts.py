@@ -94,6 +94,13 @@ def read_draft(session):
         )
     ):
         raise ValueError("Saved draft query selection is unsupported")
+    if draft.get("generation_method") == "analyst_authored" and (
+        type(draft.get("generated_query_count")) is not int
+        or draft["generated_query_count"] != len(queries)
+        or type(draft.get("omitted_query_count")) is not int or draft["omitted_query_count"] != 0
+        or draft.get("explanation") is not None or draft.get("explanation_shortened") is not False
+    ):
+        raise ValueError("Saved analyst-authored draft has inconsistent input provenance")
     lineage = draft.get("refinement")
     if draft.get("generation_method") == "analyst_refinement":
         if not isinstance(lineage, dict):
@@ -173,6 +180,33 @@ class HuntQueryDraftAgent(HuntAgent):
             "query_draft": draft,
             "summary": "Saved query draft prepared. No event SELECT executed; no findings are claimed.",
         }
+
+
+class AuthoredHuntQueryDraftAgent(HuntQueryDraftAgent):
+    """Compile bounded analyst-authored queries without consulting a provider."""
+
+    def __init__(self, db, user_id, queries):
+        super().__init__(db, user_id)
+        self.authored_queries = queries
+
+    async def _generate_response(self, hypothesis):
+        self._generation_method = "analyst_authored"
+        await self.log_step(
+            "author_hunt_query_draft",
+            f"Analyst supplied {len(self.authored_queries)} queries",
+            output_summary="Compile only. No provider call, event SELECT or execution approval.",
+            tool_used="analyst_query_input",
+        )
+        return {"queries": self.authored_queries, "explanation": None}
+
+    async def run(self, **kwargs):
+        result = await super().run(**kwargs)
+        draft = result.get("query_draft")
+        if draft is not None:
+            for current, authored in zip(draft["queries"], self.authored_queries, strict=True):
+                # Preserve bounded submitted parameters even for compiler rejection.
+                current["params"] = authored["params"].copy()
+        return result
 
 
 class RefinedHuntQueryDraftAgent(HuntQueryDraftAgent):
