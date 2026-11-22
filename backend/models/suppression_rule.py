@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, StrictBool, field_validator
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.sql import func
 
@@ -70,6 +70,12 @@ class SuppressionRuleUpdate(BaseModel):
         if value is None:
             raise ValueError("This field cannot be null; omit it to leave the saved value unchanged")
         return value
+
+
+class ReviewedSuppressionStatus(BaseModel):
+    expected_fingerprint: str = Field(pattern="^[a-f0-9]{64}$")
+    enabled: StrictBool
+    model_config = {"extra": "forbid"}
 
 
 class SuppressionRuleResponse(BaseModel):

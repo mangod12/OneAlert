@@ -1,0 +1,14 @@
+{
+  "rule": {
+    "id": 7,
+    "name": "Unicode 名 %_ ",
+    "cve_id": null,
+    "asset_id": 11,
+    "severity": "high",
+    "title_contains": "100%_ literal",
+    "duration_hours": 24,
+    "enabled": false,
+    "created_at": "2026-01-01T00:00:00Z"
+  },
+  "fingerprint": "89bdcc4de836ba101626c7640bdaff960fc110aaed32a8e563828e3ac4706852"
+}
