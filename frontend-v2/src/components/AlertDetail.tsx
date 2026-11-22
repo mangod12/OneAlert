@@ -1,3 +1,4 @@
+import { AlertExistingInvestigation } from './AlertExistingInvestigation';
 import { AlertInvestigationDialog } from './AlertInvestigationDialog';
 import type { Alert, EpssScore, RemediationAction } from '../api/types';
 import apiClient from '../api/client';
@@ -78,6 +79,7 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
   const [notes, setNotes] = useState<AlertNote[] | null>(null);
   const [activity, setActivity] = useState<AlertActivity[] | null>(null);
   const [linkedCases, setLinkedCases] = useState<LinkedCase[] | null>(null);
+  const linkedCaseRequest = useRef(0);
   const [noteDraft, setNoteDraft] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
@@ -182,9 +184,10 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
 
   useEffect(() => {
     let cancelled = false;
+    const request = ++linkedCaseRequest.current;
     apiClient.get<LinkedCase[]>(`/alerts/${alert.id}/cases`)
-      .then(res => { if (!cancelled) setLinkedCases(res.data); })
-      .catch(() => { if (!cancelled) setLinkedCases([]); });
+      .then(res => { if (!cancelled && request === linkedCaseRequest.current) setLinkedCases(res.data); })
+      .catch(() => { if (!cancelled && request === linkedCaseRequest.current) setLinkedCases([]); });
     return () => { cancelled = true; };
   }, [alert.id]);
 
@@ -383,6 +386,8 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
           {linkedCases !== null && linkedCases.length > 0 && (
             <LinkedCasesList cases={linkedCases} onClose={onClose} />
           )}
+
+          {isOwner && <AlertExistingInvestigation key={alert.id} alertId={alert.id} onLinkOutcome={() => { linkedCaseRequest.current++; setLinkedCases(null); }} />}
 
           <div className="pt-4 border-t border-surface-700">
             <label className="text-xs text-surface-500 uppercase tracking-wide">Notes</label>

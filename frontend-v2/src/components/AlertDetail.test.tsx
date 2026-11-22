@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
@@ -550,6 +550,7 @@ describe('Alert watchers', () => {
     renderDetail();
     await screen.findByLabelText('Watch this alert');
     await waitFor(() => expect(screen.queryByLabelText('Add an alert watcher')).toBeNull());
+    expect(screen.queryByLabelText('Link alert to an existing investigation')).toBeNull();
   });
 });
 
@@ -592,4 +593,25 @@ describe('AlertDetail triage due date', () => {
     render(<AlertDetail alert={{ ...alert, due_date: '2020-01-01' }} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />);
     expect(await screen.findByText(/Overdue: the triage target has passed/)).toBeTruthy();
   });
+});
+
+it('discards a prior linked-case read arriving after an uncertain reviewed mutation', async () => {
+  let finish!: (value: { data: unknown[] }) => void;
+  const proposal = { alert, case: { id: 12, title: 'Reviewed case', summary: null, severity: 'low', status: 'open', due_date: null, closed_at: null, assigned_to_id: null }, alert_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), already_linked: false, resulting_severity: 'critical' };
+  get.mockImplementation(async (url: string) => {
+    if (url === '/alerts/1/cases') return new Promise(resolve => { finish = resolve; });
+    if (url === '/alerts/1/existing-investigations/12/preview') return { data: proposal };
+    if (url.endsWith('/epss')) return { data: { epss_score: null, epss_percentile: null } };
+    return { data: [] };
+  });
+  post.mockRejectedValueOnce(new Error('lost response'));
+  render(<MemoryRouter><AlertDetail alert={alert} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} /></MemoryRouter>);
+  fireEvent.change(screen.getByLabelText('Existing investigation ID'), { target: { value: '12' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review exact investigation link' }));
+  fireEvent.click(await screen.findByRole('checkbox', { name: /I reviewed alert/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save reviewed investigation link' }));
+  await screen.findByText(/The link outcome could not be confirmed/);
+  await act(async () => finish({ data: [{ id: 17, title: 'Stale late investigation', status: 'open', severity: 'low', created_at: '2026-11-20T00:00:00Z' }] }));
+  expect(screen.queryByText('Stale late investigation')).toBeNull();
+  expect(post).toHaveBeenCalledExactlyOnceWith('/alerts/1/existing-investigations/12', { reviewed_fingerprint: 'b'.repeat(64) });
 });
