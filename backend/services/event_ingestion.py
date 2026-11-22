@@ -13,6 +13,7 @@ from backend.services.parsers.entra_signin import parse_entra_signin
 from backend.services.parsers.event_time import EventTimestampError
 from backend.services.parsers.github_audit import parse_github_audit
 from backend.services.parsers.linux_journal import parse_linux_journal
+from backend.services.parsers.okta_system import parse_okta_system
 from backend.services.parsers.suricata import parse_suricata_eve
 from backend.services.parsers.windows_security import parse_windows_security
 from backend.services.parsers.zeek import parse_zeek_log
@@ -21,6 +22,7 @@ from backend.services.pii_redactor import redact_dict
 logger = logging.getLogger(__name__)
 
 PARSERS = {
+    "okta_system": parse_okta_system,
     "github_audit": parse_github_audit,
     "entra_signin": parse_entra_signin,
     "aws_cloudtrail": parse_aws_cloudtrail,

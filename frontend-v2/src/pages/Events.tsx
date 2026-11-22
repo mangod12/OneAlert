@@ -15,6 +15,7 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import { SavedViewsMenu } from '../components/SavedViewsMenu';
 import { reviewEventFile, type EventFileReview } from '../utils/eventFileReview';
 import { EventParserPreviewPanel } from '../components/EventParserPreviewPanel';
+import { OktaSystemFormatHelp } from '../components/OktaSystemFormatHelp';
 import { GitHubAuditFormatHelp } from '../components/GitHubAuditFormatHelp';
 import { EntraSigninFormatHelp } from '../components/EntraSigninFormatHelp';
 import { CloudTrailFormatHelp } from '../components/CloudTrailFormatHelp';
@@ -636,6 +637,7 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
           </div>
           {sourceType === 'windows_security' && <WindowsSecurityFormatHelp />}
           {sourceType === 'linux_journal' && <LinuxJournalFormatHelp />}
+          {sourceType === 'okta_system' && <OktaSystemFormatHelp />}
           {sourceType === 'github_audit' && <GitHubAuditFormatHelp />}
           {sourceType === 'entra_signin' && <EntraSigninFormatHelp />}
           {sourceType === 'aws_cloudtrail' && <CloudTrailFormatHelp />}

@@ -1,6 +1,6 @@
 import { MAX_EVENT_FILE_BYTES, MAX_EVENT_FILE_RECORDS } from './eventFileReview';
 import { reasonLabels } from './eventImportReceipt';
-export const eventSourceParserLabels = { suricata: 'Suricata (EVE JSON)', zeek: 'Zeek (JSON logs)', windows_security: 'Windows Security (Winlogbeat JSON)', linux_journal: 'Linux journal (systemd JSON)', aws_cloudtrail: 'AWS CloudTrail (JSON records)', entra_signin: 'Microsoft Entra sign-in (Graph JSON)', github_audit: 'GitHub audit (JSON records)' } as const;
+export const eventSourceParserLabels = { suricata: 'Suricata (EVE JSON)', zeek: 'Zeek (JSON logs)', windows_security: 'Windows Security (Winlogbeat JSON)', linux_journal: 'Linux journal (systemd JSON)', aws_cloudtrail: 'AWS CloudTrail (JSON records)', entra_signin: 'Microsoft Entra sign-in (Graph JSON)', github_audit: 'GitHub audit (JSON records)', okta_system: 'Okta System Log (JSON records)' } as const;
 export type EventSourceParser = keyof typeof eventSourceParserLabels;
 export interface EventParserPreview {
   format: string; source_type: EventSourceParser; fingerprint: string; byte_size: number; previewed_at: string;
