@@ -61,7 +61,7 @@ describe('AutomationPanel', () => {
 
   it('saves updated preferences', async () => {
     mockPrefs({ ...DEFAULT_PREFS, auto_escalate_incidents: false, sla_due_dates_enabled: false });
-    patch.mockResolvedValue({ data: {} });
+    patch.mockImplementation(async (_url, body) => ({ data: body }));
     render(<AutomationPanel />);
     fireEvent.click(await screen.findByLabelText('Auto-escalate noisy incidents to an investigation'));
     fireEvent.change(screen.getByLabelText('Active alerts on one asset'), { target: { value: '5' } });
@@ -69,6 +69,8 @@ describe('AutomationPanel', () => {
     fireEvent.click(screen.getByLabelText('Set SLA due dates on new alerts and investigations'));
     fireEvent.change(screen.getByLabelText('High (days)'), { target: { value: '5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save automation' }));
+    expect(patch).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm reviewed preferences' }));
     await waitFor(() => expect(patch).toHaveBeenCalledWith('/auth/me/automation-preferences', {
       auto_escalate_incidents: true,
       auto_escalate_min_alerts: 5,
@@ -85,12 +87,14 @@ describe('AutomationPanel', () => {
 
   it('saves the auto-assign toggle', async () => {
     mockPrefs();
-    patch.mockResolvedValue({ data: {} });
+    patch.mockImplementation(async (_url, body) => ({ data: body }));
     render(<AutomationPanel />);
     const toggle = await screen.findByLabelText('Auto-assign new alerts and investigations across your organization');
     expect((toggle as HTMLInputElement).checked).toBe(false);
     fireEvent.click(toggle);
     fireEvent.click(screen.getByRole('button', { name: 'Save automation' }));
+    expect(patch).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm reviewed preferences' }));
     await waitFor(() => expect(patch).toHaveBeenCalledWith('/auth/me/automation-preferences',
       expect.objectContaining({ auto_assign_new_alerts: true })));
   });
