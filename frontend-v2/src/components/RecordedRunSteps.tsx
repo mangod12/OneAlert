@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { DetectionRunReceipt } from './DetectionRunReceipt';
+import { DetectionWindowEvents } from './DetectionWindowEvents';
 import { TriageGroupReceipt } from './TriageGroupReceipt';
 import { saveHuntDownload } from '../utils/huntEvidence';
 export interface RecordedStep { id: number; step_number: number; action: string; input_summary: string | null; output_summary: string | null; tool_used: string | null; duration_ms: number | null }
@@ -43,7 +44,7 @@ export function RecordedRunSteps({ runId, agentType, steps }: { runId: number; a
       <ol aria-label="Matching recorded steps" className="space-y-3">{matches.slice((currentPage - 1) * 20, currentPage * 20).map(step => <li key={step.id} className="min-w-0 rounded-lg border border-surface-700 p-3">
         <h4 className="break-words text-sm font-semibold text-surface-100">{step.step_number}. {step.action}</h4>
         <p className="mt-1 break-words text-xs text-surface-400">Step record #{step.id} · Tool: {step.tool_used || 'Not recorded'} · Duration: {step.duration_ms === null ? 'Not recorded' : `${step.duration_ms.toLocaleString()} ms`}</p>
-        {agentType === 'detect' && step.action === 'detection_review_receipt' && <DetectionRunReceipt text={step.output_summary} runId={runId} />}
+        {agentType === 'detect' && step.action === 'detection_review_receipt' && <><DetectionRunReceipt text={step.output_summary} runId={runId} /><DetectionWindowEvents key={`${runId}:${step.id}`} runId={runId} stepId={step.id} /></>}
         {agentType === 'triage' && step.action === 'triage_group_outcome' && <TriageGroupReceipt text={step.output_summary} />}
         <dl className="mt-3 space-y-3 text-sm"><div><dt className="text-xs text-surface-400">Recorded input summary</dt><dd className="mt-1 whitespace-pre-wrap break-words text-surface-300">{step.input_summary ?? 'Not recorded'}</dd></div>{!(agentType === 'detect' && step.action === 'detection_review_receipt') && <div><dt className="text-xs text-surface-400">Recorded output summary</dt><dd className="mt-1 whitespace-pre-wrap break-words text-surface-300">{step.output_summary ?? 'Not recorded'}</dd></div>}</dl>
       </li>)}</ol>
