@@ -1,3 +1,5 @@
+import { EventScopeHandoff } from '../components/EventScopeHandoff';
+import { type EventInvestigationScope } from '../utils/eventInvestigationScope';
 import { recordedEventFields, recordedEventFilter, recordedEventFilterLink, type RecordedEventFilter, type RecordedEventField } from '../utils/recordedEventFilter';
 import { EventRecordedFieldLinks } from '../components/EventRecordedFieldLinks';
 import { EventSourceEvidence } from '../components/EventSourceEvidence';
@@ -96,9 +98,10 @@ interface EventSource {
   created_at: string;
 }
 
-export function Events({ initialSourceId = '', initialRecordedFilter = null }: { initialSourceId?: string; initialRecordedFilter?: RecordedEventFilter | null } = {}) {
-  const [exactFilter, setExactFilter] = useState<RecordedEventFilter | null>(initialRecordedFilter);
-  const [exactDraft, setExactDraft] = useState<RecordedEventFilter>(initialRecordedFilter ?? { field: 'username', value: '' });
+export function Events({ initialSourceId = '', initialRecordedFilter = null, initialScope }: { initialSourceId?: string; initialRecordedFilter?: RecordedEventFilter | null; initialScope?: EventInvestigationScope } = {}) {
+  const initialExact = initialScope ? recordedEventFilter(initialScope.recorded_field || undefined, initialScope.recorded_value || undefined) : initialRecordedFilter;
+  const [exactFilter, setExactFilter] = useState<RecordedEventFilter | null>(initialExact);
+  const [exactDraft, setExactDraft] = useState<RecordedEventFilter>(initialExact ?? { field: 'username', value: '' });
   const [exactError, setExactError] = useState('');
   const exactDirty = exactFilter !== null ? exactDraft.field !== exactFilter.field || exactDraft.value !== exactFilter.value : exactDraft.value !== '';
   const eventRequestId = useRef(0);
@@ -108,22 +111,22 @@ export function Events({ initialSourceId = '', initialRecordedFilter = null }: {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [severityFilter, setSeverityFilter] = useState('');
-  const [sort, setSort] = useState('timestamp_desc');
-  const [eventTypeFilter, setEventTypeFilter] = useState('');
+  const [severityFilter, setSeverityFilter] = useState(initialScope?.severity ?? '');
+  const [sort, setSort] = useState(initialScope?.sort ?? 'timestamp_desc');
+  const [eventTypeFilter, setEventTypeFilter] = useState(initialScope?.event_type ?? '');
   const [eventTypes, setEventTypes] = useState<string[]>([]);
-  const [ipSearch, setIpSearch] = useState('');
-  const [signatureSearch, setSignatureSearch] = useState('');
-  const [sourceTypeFilter, setSourceTypeFilter] = useState('');
-  const [sourceIdFilter, setSourceIdFilter] = useState(initialSourceId);
+  const [ipSearch, setIpSearch] = useState(initialScope?.ip ?? '');
+  const [signatureSearch, setSignatureSearch] = useState(initialScope?.signature ?? '');
+  const [sourceTypeFilter, setSourceTypeFilter] = useState(initialScope?.source_type ?? '');
+  const [sourceIdFilter, setSourceIdFilter] = useState(initialScope?.source_id ?? initialSourceId);
   const [errors, setErrors] = useState<string[]>([]);
   const [sources, setSources] = useState<EventSource[]>([]);
   const [showUpload, setShowUpload] = useState(false);
   const [importReceipt, setImportReceipt] = useState<ImportReceipt | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [timeWindow, setTimeWindow] = useState<{ started_at?: string; ended_before?: string }>({});
-  const [startInput, setStartInput] = useState('');
-  const [endInput, setEndInput] = useState('');
+  const [timeWindow, setTimeWindow] = useState<{ started_at?: string; ended_before?: string }>({ ...(initialScope?.started_at ? { started_at: initialScope.started_at } : {}), ...(initialScope?.ended_before ? { ended_before: initialScope.ended_before } : {}) });
+  const [startInput, setStartInput] = useState(utcInput(initialScope?.started_at));
+  const [endInput, setEndInput] = useState(utcInput(initialScope?.ended_before));
   const [timeError, setTimeError] = useState('');
   const timeDirty = startInput !== utcInput(timeWindow.started_at) || endInput !== utcInput(timeWindow.ended_before);
   const applyTimeWindow = (event: React.FormEvent) => {
@@ -311,6 +314,7 @@ export function Events({ initialSourceId = '', initialRecordedFilter = null }: {
 
       <section aria-label="Event time window" className="oa-panel space-y-3 rounded-md p-4">
         <h2 className="text-sm font-semibold text-surface-200">Event time window (UTC)</h2>
+        <p className="text-xs text-surface-400">Time inputs display milliseconds. Applied bounds below and complete-scope links preserve finer saved precision until you explicitly apply a new time window.</p>
         <form onSubmit={applyTimeWindow} className="flex flex-wrap items-end gap-3">
           <label className="min-w-0 space-y-1 text-xs text-surface-400"><span className="block">Start, included (UTC)</span><input aria-label="Event start time UTC" type="datetime-local" step="0.001" value={startInput} onChange={event => setStartInput(event.target.value)} className="max-w-full rounded border border-surface-600 bg-surface-900 px-2 py-2 text-sm text-surface-200" /></label>
           <label className="min-w-0 space-y-1 text-xs text-surface-400"><span className="block">End, excluded (UTC)</span><input aria-label="Event end time UTC" type="datetime-local" step="0.001" value={endInput} onChange={event => setEndInput(event.target.value)} className="max-w-full rounded border border-surface-600 bg-surface-900 px-2 py-2 text-sm text-surface-200" /></label>
@@ -349,6 +353,13 @@ export function Events({ initialSourceId = '', initialRecordedFilter = null }: {
         {sourceIdFilter && <p className="text-xs text-surface-400"><a href={`/app/events?source_id=${encodeURIComponent(sourceIdFilter)}`} className="inline-block rounded border border-surface-600 px-3 py-2 text-primary-300">Open source-only event link</a> This link carries only the selected recorded source ID, not the other filters, current results or account access.</p>}
         {sourceIdFilter && <button type="button" onClick={() => { setSourceIdFilter(''); setPage(1); }} className="text-xs text-primary-300">Clear recorded source</button>}
       </section>
+
+      <EventScopeHandoff hasDraft={timeDirty || exactDirty} scope={{ version: 1,
+        source_id: sourceIdFilter, recorded_field: exactFilter?.field ?? '', recorded_value: exactFilter?.value ?? '',
+        started_at: timeWindow.started_at ?? '', ended_before: timeWindow.ended_before ?? '',
+        severity: severityFilter, event_type: eventTypeFilter, source_type: sourceTypeFilter,
+        ip: ipSearch.trim(), signature: signatureSearch.trim(), sort,
+      }} />
 
       {/* Event filters */}
       <div className="flex items-center gap-4 flex-wrap">
@@ -417,10 +428,11 @@ export function Events({ initialSourceId = '', initialRecordedFilter = null }: {
           className="bg-surface-800 border border-surface-700 text-surface-200 text-xs rounded px-2 py-1.5"
         >
           <option value="">All sensors</option>
+          {sourceTypeFilter && !sources.some(source => source.source_type === sourceTypeFilter) && <option value={sourceTypeFilter}>{sourceTypeFilter} (not listed by current sources)</option>}
           {[...new Set(sources.map(s => s.source_type))].map(t => <option key={t} value={t}>{t}</option>)}
         </select>
       </div>
-      {eventTypes.length > 0 && (
+      {(eventTypes.length > 0 || eventTypeFilter) && (
         <div className="flex items-center gap-2">
           <label htmlFor="event-type-filter" className="text-xs text-surface-400">Type</label>
           <select
@@ -431,6 +443,7 @@ export function Events({ initialSourceId = '', initialRecordedFilter = null }: {
             className="bg-surface-800 border border-surface-700 text-surface-200 text-xs rounded px-2 py-1.5"
           >
             <option value="">All types</option>
+            {eventTypeFilter && !eventTypes.includes(eventTypeFilter) && <option value={eventTypeFilter}>{eventTypeFilter} (not listed by current records)</option>}
             {eventTypes.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
