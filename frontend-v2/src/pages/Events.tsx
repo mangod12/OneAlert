@@ -1,3 +1,4 @@
+import { EventSourceEvidence } from '../components/EventSourceEvidence';
 import { recordedEndpoint } from '../utils/topologyAddress';
 import { TopologyAddressLink } from '../components/TopologyAddressLink';
 import { Fragment, useCallback, useRef, useState, useEffect } from 'react';
@@ -309,6 +310,7 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
 
       {/* Event filters */}
       <div className="flex items-center gap-4 flex-wrap">
+      {sourceIdFilter && <EventSourceEvidence key={sourceIdFilter} sourceId={Number(sourceIdFilter)} />}
       <SavedViewsMenu<EventViewFilters>
         basePath="/events/views/"
         currentFilters={{
