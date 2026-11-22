@@ -2,9 +2,10 @@
 import hashlib
 import json
 import secrets
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import Field
+from fastapi import APIRouter, Depends, HTTPException, Path
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -94,4 +95,76 @@ async def create_event_investigation(
                   detail=f'Investigation opened and linked to saved event #{event.id} in one transaction')
     await db.commit()
     return {'id': case.id, 'event_id': event.id, 'linked': True,
+            'reviewed_fingerprint': payload.reviewed_fingerprint}
+
+
+ExactEvidenceId = Annotated[int, Path(ge=1, le=9007199254740991)]
+
+
+class ReviewedExistingInvestigation(BaseModel):
+    reviewed_fingerprint: str = Field(pattern='^[a-f0-9]{64}$')
+    model_config = {'extra': 'forbid'}
+
+
+async def _owned_existing_case(db, user_id, case_id, *, lock=False):
+    # Match the case-first lock order used by the existing case evidence routes.
+    if lock and db.bind.dialect.name == 'sqlite':
+        await db.execute(update(Case).where(Case.id == case_id, Case.user_id == user_id)
+                         .values(id=Case.id, updated_at=Case.updated_at))
+    statement = select(Case).where(Case.id == case_id, Case.user_id == user_id)
+    if lock:
+        statement = statement.with_for_update().execution_options(populate_existing=True)
+    case = (await db.execute(statement)).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail='Investigation not found')
+    return case
+
+
+async def _existing_link_preview(db, event, case):
+    linked = (await db.execute(select(CaseEvent.id).where(
+        CaseEvent.event_id == event.id, CaseEvent.case_id == case.id).limit(1))).scalar_one_or_none() is not None
+    full_event = {column.name: getattr(event, column.name) for column in SecurityEvent.__table__.columns}
+    event_digest = hashlib.sha256(json.dumps(full_event, sort_keys=True, default=str,
+                                            separators=(',', ':')).encode()).hexdigest()
+    proposal = {'event': {field: getattr(event, field) for field in (
+        'id', 'timestamp', 'event_type', 'signature', 'severity', 'source_ip', 'dest_ip', 'processed')},
+        'case': {field: getattr(case, field) for field in (
+            'id', 'title', 'summary', 'severity', 'status', 'due_date', 'closed_at', 'assigned_to_id')},
+        'event_fingerprint': event_digest, 'already_linked': linked}
+    encoded = json.dumps(proposal, sort_keys=True, default=str, separators=(',', ':'))
+    return dict(proposal, reviewed_fingerprint=hashlib.sha256(encoded.encode()).hexdigest())
+
+
+@router.get('/{event_id}/existing-investigations/{case_id}/preview')
+async def preview_existing_investigation_link(
+    event_id: ExactEvidenceId, case_id: ExactEvidenceId,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    event = await _owned_event(db, current_user.id, event_id)
+    case = await _owned_existing_case(db, current_user.id, case_id)
+    return await _existing_link_preview(db, event, case)
+
+
+@router.post('/{event_id}/existing-investigations/{case_id}')
+async def link_reviewed_existing_investigation(
+    event_id: ExactEvidenceId, case_id: ExactEvidenceId, payload: ReviewedExistingInvestigation,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    case = await _owned_existing_case(db, current_user.id, case_id, lock=True)
+    event = await _owned_event(db, current_user.id, event_id, lock=True)
+    preview = await _existing_link_preview(db, event, case)
+    if not secrets.compare_digest(payload.reviewed_fingerprint, preview['reviewed_fingerprint']):
+        raise HTTPException(status_code=409, detail='Event, investigation details or link changed. Review again.')
+    if preview['already_linked']:
+        return {'case_id': case.id, 'event_id': event.id, 'linked': True, 'created': False,
+                'reviewed_fingerprint': payload.reviewed_fingerprint}
+    db.add(CaseEvent(case_id=case.id, event_id=event.id))
+    event.processed = 'in_case'
+    db.add(CaseTimeline(case_id=case.id, entry_type='event', source='human', user_id=current_user.id,
+                        content=f'Saved event #{event.id} linked after reviewing the exact event and investigation.',
+                        metadata_json={'event_id': event.id, 'reviewed_fingerprint': payload.reviewed_fingerprint}))
+    add_audit_log(db, user_id=current_user.id, action='case_event_linked', target_type='case', target_id=case.id,
+                  detail=f'Saved event #{event.id} linked after exact event and investigation review')
+    await db.commit()
+    return {'case_id': case.id, 'event_id': event.id, 'linked': True, 'created': True,
             'reviewed_fingerprint': payload.reviewed_fingerprint}
