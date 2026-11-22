@@ -59,3 +59,18 @@ it('binds Windows bytes to its own parser context and rejects inherited object k
     expect(() => parseEventParserPreview({ ...fixture(), source_type: parser }, { ...binding, sourceType: parser })).toThrow();
   }
 });
+
+it('validates and exports the explicit Linux journal parser without accepting another parser binding', () => {
+  const value = { ...fixture(), source_type: 'linux_journal' };
+  const parsed = parseEventParserPreview(value, { ...binding, sourceType: 'linux_journal' });
+  expect(parsed.source_type).toBe('linux_journal'); expect(JSON.parse(eventParserPreviewJson(parsed, 'journal.ndjson', '2026-11-22T06:31:00Z')).source_type).toBe('linux_journal');
+  expect(() => parseEventParserPreview(value, binding)).toThrow();
+});
+it('binds Linux journal bytes to its own parser context and rejects inherited object keys as parser names', async () => {
+  const digest = vi.fn().mockResolvedValue(new Uint8Array(32).fill(10).buffer); vi.stubGlobal('crypto', { subtle: { digest } });
+  await eventFilePreviewFingerprint(new File(['{}'], 'journal.json'), 'linux_journal'); expect(new TextDecoder().decode(digest.mock.calls[0][1])).toBe('onealert_event_parser_preview_v1\0linux_journal\0{}');
+  for (const parser of ['constructor', '__proto__', 'toString']) {
+    await expect(eventFilePreviewFingerprint(new File(['{}'], 'journal.json'), parser)).rejects.toThrow();
+    expect(() => parseEventParserPreview({ ...fixture(), source_type: parser }, { ...binding, sourceType: parser })).toThrow();
+  }
+});

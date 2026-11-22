@@ -15,6 +15,7 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import { SavedViewsMenu } from '../components/SavedViewsMenu';
 import { reviewEventFile, type EventFileReview } from '../utils/eventFileReview';
 import { EventParserPreviewPanel } from '../components/EventParserPreviewPanel';
+import { LinuxJournalFormatHelp } from '../components/LinuxJournalFormatHelp';
 import { WindowsSecurityFormatHelp } from '../components/WindowsSecurityFormatHelp';
 import { eventSourceParserLabels, type EventParserPreview } from '../utils/eventParserPreview';
 import { compareImportPreview, snapshotImportPreview } from '../utils/eventImportComparison';
@@ -222,7 +223,7 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
       await fetchEvents();
       return 'uploaded';
     } catch (err: unknown) {
-      toast(getApiErrorMessage(err, 'The file could not be ingested. Use Suricata EVE JSON, Zeek JSON logs or Windows Security-channel JSON.'), 'error');
+      toast(getApiErrorMessage(err, 'The file could not be ingested. Use Suricata EVE JSON, Zeek JSON logs, Windows Security-channel JSON or Linux journal JSON.'), 'error');
       return parserPreview && (err as { response?: { status?: number } } | null)?.response?.status === 409 ? 'preview_changed' : 'failed';
     } finally {
       uploadInFlight.current = false;
@@ -435,7 +436,7 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
           <Activity className="w-16 h-16 text-surface-600 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-surface-300">{hasEventFilters ? 'No events match these filters' : 'No events ingested yet'}</h3>
           <p className="text-surface-500 mt-2 max-w-md mx-auto">
-            {hasEventFilters ? 'Try a wider applied time window or adjust the other event filters.' : 'Upload Suricata EVE JSON, Zeek logs or Windows Security-channel JSON, or configure a webhook receiver for real-time ingestion.'}
+            {hasEventFilters ? 'Try a wider applied time window or adjust the other event filters.' : 'Upload Suricata EVE JSON, Zeek logs, Windows Security-channel JSON or Linux journal JSON, or configure a webhook receiver for real-time ingestion.'}
           </p>
         </div>
       ) : (
@@ -631,6 +632,7 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
             </select>
           </div>
           {sourceType === 'windows_security' && <WindowsSecurityFormatHelp />}
+          {sourceType === 'linux_journal' && <LinuxJournalFormatHelp />}
           {reviewing && <p role="status" className="text-xs text-surface-400">Reading and validating the selected file locally...</p>}
           {file && review && <section aria-label="Selected event file review" className="space-y-2 rounded border border-surface-700 p-3 text-xs text-surface-300">
             <p className="break-all font-medium text-surface-100">{file.name}</p>
