@@ -59,6 +59,11 @@ async def test_saved_nonincident_fallback_case_and_invalid_ai_decision_are_disti
             run = (await db.execute(select(AgentRun))).scalar_one()
             steps = (await db.execute(select(AgentStep).where(AgentStep.action == 'triage_group_outcome')
                                       .order_by(AgentStep.step_number))).scalars().all()
+            prepared = (await db.execute(select(AgentStep).where(
+                AgentStep.action == 'triage_context_scope'))).scalars().all()
+            assert len(prepared) == 2
+            assert all('Prepared scope only' in row.output_summary and len(row.output_summary) <= 500
+                       for row in prepared)
             receipts = [json.loads(step.output_summary) for step in steps]
             assert [row['position'] for row in receipts] == [1, 2, 3]
             assert [row['outcome'] for row in receipts] == ['nonincident', 'case_created', 'failed']

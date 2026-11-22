@@ -126,7 +126,7 @@ class TestBuildLLMContext:
 
     def test_context_truncates_large_sets(self):
         agent = TriageAgent.__new__(TriageAgent)
-        alerts = [self._make_alert(id=i) for i in range(50)]
+        alerts = [self._make_alert(id=i + 1) for i in range(50)]
         context = agent._build_llm_context(alerts, [])
         # Should only include first 20
         lines = [l for l in context.split("\n") if l.startswith("-")]

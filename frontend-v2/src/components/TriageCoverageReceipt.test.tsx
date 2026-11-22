@@ -22,3 +22,15 @@ it('labels rule-based fallback without attributing conclusions or confidence to 
 it.each([null, {}, { triage_coverage: null }, { triage_coverage: { ...value, version: 2 } }, { triage_coverage: { ...value, alerts_omitted: 1 } }, { triage_coverage: { ...value, event_input_ids: [] } }, { triage_coverage: { ...value, method: 'manual' } }, { triage_coverage: { ...value, model: {} } }, { triage_coverage: { ...value, alert_input_ids: [0] } }, { triage_coverage: { ...value, alert_input_ids: Array(20).fill(7) } }, { triage_coverage: { ...value, alerts_total: 101, alerts_omitted: 81 } }, { triage_coverage: { ...value, method: 'rule_based_fallback' } }])('does not interpret legacy or inconsistent data as full AI coverage %j', metadata => {
   render(<TriageCoverageReceipt metadata={metadata} />); expect(screen.getByText(/coverage was not recorded in a supported format/)).toBeTruthy(); expect(screen.queryByRole('region')).toBeNull();
 });
+
+it('reports the saved JSON text bounds and shortened fields separately from record omissions', () => {
+  render(<TriageCoverageReceipt metadata={{ triage_coverage: { ...value, input_context: { format: 'bounded_json_v1', max_context_characters: 64000, text_character_limit: 128, shortened_fields: [{ kind: 'event', id: 100, fields: ['signature', 'source_ip'] }] } } }} />);
+  expect(screen.getByText(/Text fields were limited to 128 Unicode characters/)).toBeTruthy(); expect(screen.getByText('Shortened text in 1 supplied record')).toBeTruthy(); expect(screen.getByText('event #100: signature, source_ip')).toBeTruthy(); expect(screen.getByText(/separately from whole-record omissions above/)).toBeTruthy(); expect(screen.queryByRole('link')).toBeNull();
+});
+it('reports no text shortening without claiming full record review', () => {
+  render(<TriageCoverageReceipt metadata={{ triage_coverage: { ...value, input_context: { format: 'bounded_json_v1', max_context_characters: 64000, text_character_limit: 256, shortened_fields: [] } } }} />);
+  expect(screen.getByText(/No supplied text fields were shortened/)).toBeTruthy(); expect(screen.getByText(/Only selected fields were sent, not full records/)).toBeTruthy();
+});
+it.each([{ format: 'unknown' }, { format: 'bounded_json_v1', max_context_characters: 64000, text_character_limit: 17, shortened_fields: [] }, { format: 'bounded_json_v1', max_context_characters: 64000, text_character_limit: 256, shortened_fields: [{ kind: 'event', id: 999, fields: ['signature'] }] }, { format: 'bounded_json_v1', max_context_characters: 64000, text_character_limit: 256, shortened_fields: [{ kind: 'event', id: 100, fields: ['raw_data'] }] }])('does not interpret malformed clipping metadata as complete source text', input_context => {
+  render(<TriageCoverageReceipt metadata={{ triage_coverage: { ...value, input_context } }} />); expect(screen.getByText(/Text bounds and shortening details were not recorded/)).toBeTruthy(); expect(screen.queryByText(/No supplied text fields were shortened/)).toBeNull();
+});
