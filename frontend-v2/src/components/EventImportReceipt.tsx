@@ -1,3 +1,4 @@
+import { EventImportSourceReview } from './EventImportSourceReview';
 import { EventImportPreviewComparison } from './EventImportPreviewComparison';
 import { compareImportReceipt, importReceiptDownload } from '../utils/eventImportComparison';
 import { useState } from 'react';
@@ -31,6 +32,7 @@ export function EventImportReceipt({ receipt, onDismiss }: { receipt: ImportRece
     {result.skip_reasons && Object.keys(result.skip_reasons).length > 0 ? <ul aria-label="Recorded skip reasons" className="space-y-1 rounded border border-surface-700 p-3 text-xs text-surface-300">{Object.entries(result.skip_reasons).map(([reason,value]) => <li key={reason}>{reasonLabels[reason] ?? 'Other recorded reason'}: {count(value)}</li>)}</ul> : (result.skipped ?? 0) > 0 ? <p className="text-xs text-warning">Skip reasons were not recorded in this response.</p> : null}
     <p className="text-xs text-surface-400">This response is kept only for this page visit. Download it if needed. These are recorded response counters, not a live scan or independent confirmation of stored events. Re-uploading the same file can create duplicate events.</p>
     <EventImportPreviewComparison comparison={comparison} />
+    <EventImportSourceReview receipt={receipt} />
     {downloadError && <p role="alert" className="text-xs text-danger">{downloadError}</p>}
   </section>;
 }

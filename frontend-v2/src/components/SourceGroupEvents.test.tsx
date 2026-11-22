@@ -35,3 +35,8 @@ it('ignores late data after unmount', async () => {
 it('clamps a disappearing last page and rereads rather than showing false emptiness', async () => {
   render(<SourceGroupEvents sourceId={7} selection={selection} onClose={vi.fn()} />); await screen.findByText('11 current matching source events · Page 1 of 2'); get.mockResolvedValueOnce({ data: { ...data(2), total: 1, records: [] } }).mockResolvedValueOnce({ data: { ...data(), total: 1, records: data().records.slice(0, 1) } }); fireEvent.click(screen.getByRole('button', { name: 'More source events' })); await screen.findByText('1 current matching source events · Page 1 of 1'); expect(get).toHaveBeenCalledTimes(3);
 });
+
+it('does not spread unexpected response or nested event payload fields into a metadata page download', async () => {
+  const value = data(); Object.assign(value, { credentials: 'PRIVATE_EXTRA', scope: 'PRIVATE_EXTRA' }); value.records.forEach(row => Object.assign(row, { raw_data: { value: 'PRIVATE_EXTRA' } })); get.mockResolvedValueOnce({ data: value });
+  render(<SourceGroupEvents sourceId={7} selection={selection} onClose={vi.fn()} />); await screen.findByText('11 current matching source events · Page 1 of 2'); fireEvent.click(screen.getByRole('button', { name: 'Download loaded source event page JSON' })); expect(save.mock.calls[0][0]).not.toContain('PRIVATE_EXTRA'); expect(JSON.parse(save.mock.calls[0][0]).records).toHaveLength(10); expect(get).toHaveBeenCalledTimes(1);
+});

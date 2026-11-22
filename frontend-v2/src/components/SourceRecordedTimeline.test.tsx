@@ -64,3 +64,10 @@ it('validates exact inclusive/exclusive row timestamps and complete safe windows
 it('shows a failed download without discarding loaded data', async () => {
   show(); await ready(); save.mockImplementationOnce(() => { throw Error('download unavailable'); }); fireEvent.click(screen.getByRole('button', { name: 'Download complete loaded distribution JSON' })); expect(await screen.findByRole('alert')).toHaveTextContent('could not be downloaded'); expect(screen.getByText('10 retained rows in 24 UTC buckets · Source #7')).toBeInTheDocument();
 });
+
+it('does not spread unknown distribution or bucket fields into the complete metadata download', async () => {
+  const value = timeline(); Object.assign(value, { source_configuration: 'PRIVATE_EXTRA', scope: 'PRIVATE_EXTRA' }); value.buckets.forEach(row => Object.assign(row, { raw_data: 'PRIVATE_EXTRA' })); get.mockResolvedValueOnce({ data: value }); show(); await ready(); fireEvent.click(screen.getByRole('button', { name: 'Download complete loaded distribution JSON' })); expect(save.mock.calls[0][0]).not.toContain('PRIVATE_EXTRA'); expect(JSON.parse(save.mock.calls[0][0]).buckets).toHaveLength(24); expect(get).toHaveBeenCalledTimes(1);
+});
+it('does not spread unknown window-page or event payload fields into bucket metadata downloads', async () => {
+  show(); await ready(); const value = events(); Object.assign(value, { raw_data: 'PRIVATE_EXTRA', scope: 'PRIVATE_EXTRA' }); value.records.forEach(row => Object.assign(row, { raw_data: 'PRIVATE_EXTRA' })); get.mockResolvedValueOnce({ data: value }); fireEvent.click(screen.getByRole('button', { name: 'Read bucket events from 2026-11-01T00:00:00.000Z' })); await screen.findByText('11 current bucket events · Page 1 of 2'); fireEvent.click(screen.getByRole('button', { name: 'Download loaded bucket event page JSON' })); expect(save.mock.calls[0][0]).not.toContain('PRIVATE_EXTRA'); expect(JSON.parse(save.mock.calls[0][0]).records).toHaveLength(10); expect(get).toHaveBeenCalledTimes(2);
+});
