@@ -36,6 +36,7 @@ export function parseRefinedHuntDraft(value: unknown, source: HuntQueryDraft, ed
   return child;
 }
 const sameJson = (left: unknown, right: unknown) => JSON.stringify(left, (_key, value) => object(value) ? Object.fromEntries(Object.entries(value).sort(([a],[b]) => a.localeCompare(b))) : value) === JSON.stringify(right, (_key, value) => object(value) ? Object.fromEntries(Object.entries(value).sort(([a],[b]) => a.localeCompare(b))) : value);
+export { sameJson as sameHuntDraftValue };
 export function isReviewedHuntOrigin(value: unknown): value is NonNullable<HuntEvidenceResult['reviewed_draft']> {
   const origin = value as NonNullable<HuntEvidenceResult['reviewed_draft']>;
   return !!origin && id(origin.session_id) && typeof origin.fingerprint === 'string' && origin.fingerprint.length === 64 && /^[0-9a-f]{64}$/.test(origin.fingerprint) && Array.isArray(origin.query_numbers) && origin.query_numbers.length >= 1 && origin.query_numbers.length <= 3 && origin.query_numbers.every(number => Number.isInteger(number) && number >= 1 && number <= 3) && new Set(origin.query_numbers).size === origin.query_numbers.length && text(origin.scope, 2000) && !!origin.scope;
