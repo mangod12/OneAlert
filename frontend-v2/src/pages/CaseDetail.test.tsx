@@ -391,24 +391,24 @@ describe('Unlinking related items', () => {
     });
   }
 
-  it('unlinks an alert and refreshes the case', async () => {
+  it.each([['alert', 11, 'Suspicious login burst'], ['event', 21, 'ET SCAN Nmap']])('reviews %s unlink with a reason, preserves evidence and refreshes the case', async (kind, id, label) => {
     mockLoadWithLinked();
-    mockDelete.mockResolvedValue({ data: { success: true, data: { unlinked: true } } });
-    renderDetail();
-    await screen.findByText('Suspicious login burst');
-    fireEvent.click(screen.getByRole('button', { name: 'Unlink alert Suspicious login burst' }));
-    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/7/alerts/11'));
-    await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2));
+    const oldGet = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation((url, config) => url.endsWith('/unlink-preview') ? Promise.resolve({ data: { case: { id: 7, title: caseData.title, summary: caseData.summary, status: 'open', severity: 'high', due_date: null, closed_at: null }, kind, record: { id, label, severity: 'high', recorded_at: null, processing_label: kind === 'event' ? 'in_case' : 'acknowledged' }, link_count: 1, other_owned_case_count: 0, record_fingerprint: 'b'.repeat(64), reviewed_fingerprint: 'a'.repeat(64) } }) : oldGet(url, config));
+    mockPost.mockResolvedValue({ data: { case_id: 7, kind, record_id: id, unlinked: true, removed_link_rows: 1, reviewed_fingerprint: 'a'.repeat(64) } });
+    renderDetail(); await screen.findByText(new RegExp(label));
+    fireEvent.click(screen.getByRole('button', { name: `Unlink ${kind} ${label}` }));
+    await screen.findByLabelText('Reason for unlinking'); expect(mockPost).not.toHaveBeenCalled(); expect(mockDelete).not.toHaveBeenCalled();
+    const confirm = screen.getByRole('button', { name: 'Unlink reviewed evidence' }); expect(confirm).toHaveProperty('disabled', true);
+    fireEvent.change(screen.getByLabelText('Reason for unlinking'), { target: { value: 'Reviewed unrelated evidence' } }); fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(confirm);
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith(`/cases/7/evidence/${kind}/${id}/unlink`, { reviewed_fingerprint: 'a'.repeat(64), reason: 'Reviewed unrelated evidence' }));
+    await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2)); expect(mockDelete).not.toHaveBeenCalled(); expect(screen.queryByRole('dialog', { name: 'Review evidence unlink' })).toBeNull();
   });
 
-  it('unlinks an event and refreshes the case', async () => {
-    mockLoadWithLinked();
-    mockDelete.mockResolvedValue({ data: { success: true, data: { unlinked: true } } });
-    renderDetail();
-    await screen.findByText(/ET SCAN Nmap/);
-    fireEvent.click(screen.getByRole('button', { name: 'Unlink event ET SCAN Nmap' }));
-    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/7/events/21'));
-    await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2));
+  it('closing an uncertain unlink review refreshes the full case without retrying', async () => {
+    mockLoadWithLinked(); const oldGet = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation((url, config) => url.endsWith('/unlink-preview') ? Promise.resolve({ data: { case: { id: 7, title: caseData.title, summary: caseData.summary, status: 'open', severity: 'high', due_date: null, closed_at: null }, kind: 'event', record: { id: 21, label: 'ET SCAN Nmap', severity: 'high', recorded_at: null, processing_label: 'in_case' }, link_count: 1, other_owned_case_count: 0, record_fingerprint: 'b'.repeat(64), reviewed_fingerprint: 'a'.repeat(64) } }) : oldGet(url, config));
+    mockPost.mockRejectedValueOnce(new Error('Network outcome unknown')); renderDetail(); await screen.findByText(/ET SCAN Nmap/); fireEvent.click(screen.getByRole('button', { name: 'Unlink event ET SCAN Nmap' })); await screen.findByLabelText('Reason for unlinking'); fireEvent.change(screen.getByLabelText('Reason for unlinking'), { target: { value: 'Reviewed unrelated event' } }); fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'Unlink reviewed evidence' })); await screen.findByText(/No automatic retry was made/); fireEvent.click(screen.getByRole('button', { name: 'Cancel and refresh case' })); await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2)); expect(mockPost).toHaveBeenCalledTimes(1); expect(mockDelete).not.toHaveBeenCalled();
   });
 });
 

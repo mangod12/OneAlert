@@ -2,6 +2,7 @@ import { CaseEvidenceChronology } from '../components/CaseEvidenceChronology';
 import { TriageCoverageReceipt } from '../components/TriageCoverageReceipt';
 import { CaseEvidenceOverlap } from '../components/CaseEvidenceOverlap';
 import { CaseCloseReview } from '../components/CaseCloseReview';
+import { CaseEvidenceUnlinkDialog } from '../components/CaseEvidenceUnlinkDialog';
 import { CaseEvidencePicker } from '../components/CaseEvidencePicker';
 import { ChecklistBatchTools } from '../components/ChecklistBatchTools';
 import type { ChecklistSelection } from '../components/ChecklistImportPreview';
@@ -137,7 +138,7 @@ export function CaseDetail() {
   const [exportingTimeline, setExportingTimeline] = useState(false);
   const [showLinkAlert, setShowLinkAlert] = useState(false);
   const [showLinkEvent, setShowLinkEvent] = useState(false);
-  const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
+  const [unlinkTarget, setUnlinkTarget] = useState<{ kind: 'alert' | 'event'; id: number } | null>(null);
   const [changingSeverity, setChangingSeverity] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -240,18 +241,6 @@ export function CaseDetail() {
       toast('Case details updated.', 'success');
       await fetchAll();
     } catch (err) { toast(getApiErrorMessage(err, 'Case details could not be updated.'), 'error'); }
-  };
-
-  const unlinkItem = async (kind: 'alerts' | 'events', id: number) => {
-    const key = `${kind}-${id}`;
-    if (unlinkingId) return;
-    setUnlinkingId(key);
-    try {
-      await apiClient.delete(`/cases/${caseId}/${kind}/${id}`);
-      toast(`${kind === 'alerts' ? 'Alert' : 'Event'} unlinked from the case.`, 'success');
-      await fetchAll();
-    } catch (err) { toast(getApiErrorMessage(err, 'The link could not be removed.'), 'error'); }
-    finally { setUnlinkingId(null); }
   };
 
   const addNote = async () => {
@@ -473,7 +462,7 @@ export function CaseDetail() {
     setLoading(false);
   }, [caseId]);
 
-  useEffect(() => { setShowLinkAlert(false); setShowLinkEvent(false); }, [caseId]);
+  useEffect(() => { setShowLinkAlert(false); setShowLinkEvent(false); setUnlinkTarget(null); }, [caseId]);
 
   useEffect(() => { void fetchAll(); return () => { caseRequestId.current += 1; }; }, [fetchAll]);
 
@@ -1087,8 +1076,8 @@ export function CaseDetail() {
                         <button
                           type="button"
                           aria-label={`Unlink alert ${a.title}`}
-                          disabled={unlinkingId !== null}
-                          onClick={() => void unlinkItem('alerts', a.id)}
+                          disabled={unlinkTarget !== null}
+                          onClick={() => setUnlinkTarget({ kind: 'alert', id: a.id })}
                           className="ml-auto text-surface-500 hover:text-danger disabled:opacity-50"
                         >
                           <X className="w-3.5 h-3.5" />
@@ -1124,8 +1113,8 @@ export function CaseDetail() {
                         <button
                           type="button"
                           aria-label={`Unlink event ${e.signature ?? e.event_type}`}
-                          disabled={unlinkingId !== null}
-                          onClick={() => void unlinkItem('events', e.id)}
+                          disabled={unlinkTarget !== null}
+                          onClick={() => setUnlinkTarget({ kind: 'event', id: e.id })}
                           className="ml-auto text-surface-500 hover:text-danger disabled:opacity-50"
                         >
                           <X className="w-3.5 h-3.5" />
@@ -1185,6 +1174,8 @@ export function CaseDetail() {
           onSave={(title, summary) => void saveDetails(title, summary)}
         />
       )}
+
+      {isOwner && unlinkTarget && <CaseEvidenceUnlinkDialog key={`${caseId}:${unlinkTarget.kind}:${unlinkTarget.id}`} caseId={Number(caseId)} kind={unlinkTarget.kind} recordId={unlinkTarget.id} onCancel={() => { setUnlinkTarget(null); void fetchAll(); }} onUnlinked={() => { setUnlinkTarget(null); toast('Reviewed evidence relationship removed. Original evidence kept.', 'success'); void fetchAll(); }} />}
 
       {showLinkAlert && <CaseEvidencePicker key={`alert-${caseId}`} caseId={Number(caseId)} kind="alert" onCancel={() => setShowLinkAlert(false)} onLinked={created => { setShowLinkAlert(false); toast(created ? 'Alert linked to the case.' : 'Alert was already linked. Reloading the case.', 'success'); void fetchAll(); }} />}
       {showLinkEvent && <CaseEvidencePicker key={`event-${caseId}`} caseId={Number(caseId)} kind="event" onCancel={() => setShowLinkEvent(false)} onLinked={created => { setShowLinkEvent(false); toast(created ? 'Event linked to the case.' : 'Event was already linked. Reloading the case.', 'success'); void fetchAll(); }} />}
