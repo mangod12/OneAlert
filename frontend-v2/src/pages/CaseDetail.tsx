@@ -2,6 +2,8 @@ import { CaseEvidenceChronology } from '../components/CaseEvidenceChronology';
 import { TriageCoverageReceipt } from '../components/TriageCoverageReceipt';
 import { CaseEvidenceOverlap } from '../components/CaseEvidenceOverlap';
 import { CaseCloseReview } from '../components/CaseCloseReview';
+import { CaseEvidenceNoteDialog } from '../components/CaseEvidenceNoteDialog';
+import { EvidenceNoteReference } from '../components/EvidenceNoteReference';
 import { CaseEvidenceUnlinkDialog } from '../components/CaseEvidenceUnlinkDialog';
 import { CaseEvidencePicker } from '../components/CaseEvidencePicker';
 import { ChecklistBatchTools } from '../components/ChecklistBatchTools';
@@ -138,6 +140,7 @@ export function CaseDetail() {
   const [exportingTimeline, setExportingTimeline] = useState(false);
   const [showLinkAlert, setShowLinkAlert] = useState(false);
   const [showLinkEvent, setShowLinkEvent] = useState(false);
+  const [noteTarget, setNoteTarget] = useState<{ kind: 'alert' | 'event'; id: number } | null>(null);
   const [unlinkTarget, setUnlinkTarget] = useState<{ kind: 'alert' | 'event'; id: number } | null>(null);
   const [changingSeverity, setChangingSeverity] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
@@ -462,7 +465,7 @@ export function CaseDetail() {
     setLoading(false);
   }, [caseId]);
 
-  useEffect(() => { setShowLinkAlert(false); setShowLinkEvent(false); setUnlinkTarget(null); }, [caseId]);
+  useEffect(() => { setShowLinkAlert(false); setShowLinkEvent(false); setUnlinkTarget(null); setNoteTarget(null); }, [caseId]);
 
   useEffect(() => { void fetchAll(); return () => { caseRequestId.current += 1; }; }, [fetchAll]);
 
@@ -1042,6 +1045,7 @@ export function CaseDetail() {
                         ) : (
                           <p className="break-words text-sm text-surface-300">{entry.content}</p>
                         )}
+                        {entry.entry_type === 'note' && <EvidenceNoteReference metadata={entry.metadata_json} caseId={caseData.id} canOpenOriginal={isOwner} />}
                         {entry.entry_type === 'ai_analysis' && <TriageCoverageReceipt metadata={entry.metadata_json} />}
                         {entry.entry_type === 'action' && <ChecklistImportRecord metadata={entry.metadata_json} caseId={caseData.id} />}
                       </div>
@@ -1073,15 +1077,18 @@ export function CaseDetail() {
                       <StatusBadge tone={alertSeverityTones[a.severity] ?? 'neutral'}>{a.severity}</StatusBadge>
                       {a.cve_id && <span className="text-xs text-primary-400">{a.cve_id}</span>}
                       {isOwner && (
+                        <span className="ml-auto inline-flex items-center gap-3">
+                        <button type="button" disabled={noteTarget !== null || unlinkTarget !== null} aria-label={`Note about alert ${a.title}`} onClick={() => setNoteTarget({ kind: 'alert', id: a.id })} className="min-h-9 text-xs text-primary-300 hover:underline disabled:opacity-50">Add evidence note</button>
                         <button
                           type="button"
                           aria-label={`Unlink alert ${a.title}`}
-                          disabled={unlinkTarget !== null}
+                          disabled={unlinkTarget !== null || noteTarget !== null}
                           onClick={() => setUnlinkTarget({ kind: 'alert', id: a.id })}
-                          className="ml-auto text-surface-500 hover:text-danger disabled:opacity-50"
+                          className="text-surface-500 hover:text-danger disabled:opacity-50"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
+                        </span>
                       )}
                     </div>
                     <p className="text-sm text-surface-300 truncate">{a.title}</p>
@@ -1110,15 +1117,18 @@ export function CaseDetail() {
                       <StatusBadge tone={eventSeverityTones[e.severity] ?? 'neutral'}>{e.severity}</StatusBadge>
                       <span className="text-xs text-surface-500">{e.event_type}</span>
                       {isOwner && (
+                        <span className="ml-auto inline-flex items-center gap-3">
+                        <button type="button" disabled={noteTarget !== null || unlinkTarget !== null} aria-label={`Note about event ${e.signature ?? e.event_type}`} onClick={() => setNoteTarget({ kind: 'event', id: e.id })} className="min-h-9 text-xs text-primary-300 hover:underline disabled:opacity-50">Add evidence note</button>
                         <button
                           type="button"
                           aria-label={`Unlink event ${e.signature ?? e.event_type}`}
-                          disabled={unlinkTarget !== null}
+                          disabled={unlinkTarget !== null || noteTarget !== null}
                           onClick={() => setUnlinkTarget({ kind: 'event', id: e.id })}
-                          className="ml-auto text-surface-500 hover:text-danger disabled:opacity-50"
+                          className="text-surface-500 hover:text-danger disabled:opacity-50"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
+                        </span>
                       )}
                     </div>
                     <p className="text-xs text-surface-400">
@@ -1174,6 +1184,8 @@ export function CaseDetail() {
           onSave={(title, summary) => void saveDetails(title, summary)}
         />
       )}
+
+      {isOwner && noteTarget && <CaseEvidenceNoteDialog key={`${caseId}:${noteTarget.kind}:${noteTarget.id}`} caseId={Number(caseId)} kind={noteTarget.kind} recordId={noteTarget.id} onCancel={() => { setNoteTarget(null); void fetchAll(); }} onSaved={(noteId, created) => { setNoteTarget(null); toast(created ? 'Reviewed evidence note saved. Original evidence and case state kept.' : 'Existing identical note found. No duplicate was added.', 'success'); const params = new URLSearchParams(searchParams); params.set('note', String(noteId)); navigate(`/cases/${caseId}?${params}`, { replace: true }); void fetchAll(); }} />}
 
       {isOwner && unlinkTarget && <CaseEvidenceUnlinkDialog key={`${caseId}:${unlinkTarget.kind}:${unlinkTarget.id}`} caseId={Number(caseId)} kind={unlinkTarget.kind} recordId={unlinkTarget.id} onCancel={() => { setUnlinkTarget(null); void fetchAll(); }} onUnlinked={() => { setUnlinkTarget(null); toast('Reviewed evidence relationship removed. Original evidence kept.', 'success'); void fetchAll(); }} />}
 
