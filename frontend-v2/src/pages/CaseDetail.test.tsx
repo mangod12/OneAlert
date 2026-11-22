@@ -39,6 +39,11 @@ const caseData = {
   timeline: [],
 };
 
+function reviewedLink(kind: 'alert' | 'event', id: number) {
+  const common = { case: { id: 7, title: caseData.title, summary: caseData.summary, severity: 'high', status: 'open', due_date: null, closed_at: null, assigned_to_id: null }, reviewed_fingerprint: 'b'.repeat(64), already_linked: false };
+  return kind === 'alert' ? { ...common, alert: { id, title: 'Current saved alert', description: null, created_at: '2026-01-01T00:00:00Z', status: 'pending', severity: 'critical', cve_id: null, asset_id: null }, alert_fingerprint: 'a'.repeat(64), resulting_severity: 'critical' } : { ...common, event: { id, signature: 'Current saved event', event_type: 'dns', timestamp: '2026-01-01T00:00:00Z', severity: 'medium', processed: 'pending', source_ip: null, dest_ip: null }, event_fingerprint: 'a'.repeat(64) };
+}
+
 function mockLoad(status = 'open') {
   mockGet.mockImplementation(url => {
     if (url.endsWith('/closeout-review')) return Promise.resolve({ data: { case_id: 7, title: caseData.title, status: 'open', target_status: 'resolved', resolution: null, can_edit_resolution: true, open_tasks: [], task_total: 0, remaining_alerts: [], alert_total: 0, unavailable_alert_links: 0, reviewed_fingerprint: 'a'.repeat(64) } });
@@ -285,6 +290,7 @@ describe('Linking alerts to the case', () => {
 
   function mockLoadWithRecentAlerts() {
     mockGet.mockImplementation(url => {
+      if (url === '/alerts/12/existing-investigations/7/preview') return Promise.resolve({ data: reviewedLink('alert', 12) });
     if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
       if (url.endsWith('/evidence-candidates')) return Promise.resolve({ data: { data: [{ id: 12, kind: 'alert', title: 'New exposure', severity: 'critical' }], total: 1, page: 1, size: 10, kind: 'alert', case_id: 7 } });
       if (url.endsWith('/alerts')) return Promise.resolve({ data: [{ id: 11, severity: 'high', title: 'Suspicious login burst' }] });
@@ -297,7 +303,7 @@ describe('Linking alerts to the case', () => {
 
   it('links a selected alert and refreshes the case', async () => {
     mockLoadWithRecentAlerts();
-    mockPost.mockResolvedValue({ data: { success: true, data: { linked: true } } });
+    mockPost.mockResolvedValue({ data: { case_id: 7, alert_id: 12, linked: true, created: true, reviewed_fingerprint: 'b'.repeat(64), severity: 'critical' } });
     renderDetail();
     await screen.findByText('Suspicious lateral movement');
     fireEvent.click(screen.getByRole('button', { name: 'Link alert' }));
@@ -305,10 +311,14 @@ describe('Linking alerts to the case', () => {
     // Alert 11 is already linked, so only alert 12 is offered.
     expect(screen.queryByRole('option', { name: /Suspicious login burst/ })).toBeNull();
     fireEvent.click(radio);
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Link selected alert' }));
-    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/alerts/12'));
+    const dialog = within(screen.getByRole('dialog')); fireEvent.click(dialog.getByRole('button', { name: 'Review exact investigation link' })); await dialog.findByRole('checkbox'); expect(mockPost).not.toHaveBeenCalled(); fireEvent.click(dialog.getByRole('checkbox')); fireEvent.click(dialog.getByRole('button', { name: 'Save reviewed investigation link' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/alerts/12/existing-investigations/7', { reviewed_fingerprint: 'b'.repeat(64) }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2));
+  });
+
+  it('closing an uncertain reviewed link refreshes the full case without repeating the write', async () => {
+    mockLoadWithRecentAlerts(); mockPost.mockRejectedValueOnce(new Error('Uncertain outcome')); renderDetail(); await screen.findByText('Suspicious lateral movement'); fireEvent.click(screen.getByRole('button', { name: 'Link alert' })); await screen.findByLabelText('Select alert #12'); fireEvent.click(screen.getByLabelText('Select alert #12')); const dialog = within(screen.getByRole('dialog')); fireEvent.click(dialog.getByRole('button', { name: 'Review exact investigation link' })); await dialog.findByRole('checkbox'); fireEvent.click(dialog.getByRole('checkbox')); fireEvent.click(dialog.getByRole('button', { name: 'Save reviewed investigation link' })); await dialog.findByText(/No automatic retry was made/); fireEvent.click(dialog.getByRole('button', { name: 'Cancel and refresh investigation' })); await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2)); expect(mockPost).toHaveBeenCalledTimes(1); expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('explains when no unlinked alerts match the current query', async () => {
@@ -336,6 +346,7 @@ describe('Linking events to the case', () => {
 
   function mockLoadWithRecentEvents() {
     mockGet.mockImplementation(url => {
+      if (url === '/events/22/existing-investigations/7/preview') return Promise.resolve({ data: reviewedLink('event', 22) });
     if (url.endsWith('/watchers')) return Promise.resolve({ data: [] });
       if (url.endsWith('/evidence-candidates')) return Promise.resolve({ data: { data: [{ id: 22, kind: 'event', title: 'DNS event', severity: 'medium' }], total: 1, page: 1, size: 10, kind: 'event', case_id: 7 } });
       if (url.endsWith('/events')) return Promise.resolve({ data: [{ id: 21, event_type: 'alert', severity: 'high', signature: 'ET SCAN Nmap' }] });
@@ -348,7 +359,7 @@ describe('Linking events to the case', () => {
 
   it('links a selected event and refreshes the case', async () => {
     mockLoadWithRecentEvents();
-    mockPost.mockResolvedValue({ data: { success: true, data: { linked: true } } });
+    mockPost.mockResolvedValue({ data: { case_id: 7, event_id: 22, linked: true, created: true, reviewed_fingerprint: 'b'.repeat(64) } });
     renderDetail();
     await screen.findByText('Suspicious lateral movement');
     fireEvent.click(screen.getByRole('button', { name: 'Link event' }));
@@ -356,8 +367,8 @@ describe('Linking events to the case', () => {
     // Event 21 is already linked, so only event 22 is offered.
     expect(screen.queryByRole('option', { name: /ET SCAN Nmap/ })).toBeNull();
     fireEvent.click(radio);
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Link selected event' }));
-    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/events/22'));
+    const dialog = within(screen.getByRole('dialog')); fireEvent.click(dialog.getByRole('button', { name: 'Review exact investigation link' })); await dialog.findByRole('checkbox'); expect(mockPost).not.toHaveBeenCalled(); fireEvent.click(dialog.getByRole('checkbox')); fireEvent.click(dialog.getByRole('button', { name: 'Save reviewed investigation link' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/events/22/existing-investigations/7', { reviewed_fingerprint: 'b'.repeat(64) }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2));
   });

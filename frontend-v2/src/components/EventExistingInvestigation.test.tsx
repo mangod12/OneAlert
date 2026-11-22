@@ -64,3 +64,16 @@ it('changing event identity during a pending mutation resets the surface and ign
 it('invalidates previously loaded investigation links even when a mutation outcome is uncertain', async () => {
   const onLinkOutcome = vi.fn(); post.mockRejectedValueOnce(new Error('lost response')); render(<EventExistingInvestigation eventId={99} onLinkOutcome={onLinkOutcome} />); await acknowledge(); expect(onLinkOutcome).not.toHaveBeenCalled(); fireEvent.click(save()); await screen.findByRole('alert'); expect(onLinkOutcome).toHaveBeenCalledOnce(); expect(screen.queryByRole('checkbox')).toBeNull();
 });
+
+it('a fixed investigation never loads automatically or accepts another destination from its disabled input', async () => {
+  const onConfirmed = vi.fn(), onPendingChange = vi.fn(); render(<EventExistingInvestigation eventId={99} investigationId={12} onConfirmed={onConfirmed} onPendingChange={onPendingChange} />); expect(id()).toHaveProperty('value', '12'); expect(id()).toHaveProperty('disabled', true); expect(get).not.toHaveBeenCalled(); fireEvent.change(id(), { target: { value: '13' } }); fireEvent.click(review()); await screen.findByRole('checkbox'); expect(get).toHaveBeenCalledExactlyOnceWith('/events/99/existing-investigations/12/preview'); fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(save()); await waitFor(() => expect(onConfirmed).toHaveBeenCalledExactlyOnceWith(true)); expect(onPendingChange.mock.calls).toEqual([[true], [false]]);
+});
+it('an uncertain fixed-pair outcome releases its outer controls but never confirms a saved link', async () => {
+  const onConfirmed = vi.fn(), onPendingChange = vi.fn(); post.mockRejectedValueOnce(new Error('Unknown outcome')); render(<EventExistingInvestigation eventId={99} investigationId={12} onConfirmed={onConfirmed} onPendingChange={onPendingChange} />); fireEvent.click(review()); await screen.findByRole('checkbox'); fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(save()); await screen.findByRole('alert'); expect(onConfirmed).not.toHaveBeenCalled(); expect(onPendingChange.mock.calls).toEqual([[true], [false]]); expect(post).toHaveBeenCalledTimes(1);
+});
+it('changing a fixed destination discards an earlier read and starts with no consent', async () => {
+  let finish!: (value: unknown) => void; get.mockReturnValueOnce(new Promise(resolve => { finish = resolve; })); const view = render(<EventExistingInvestigation eventId={99} investigationId={12} />); fireEvent.click(review()); view.rerender(<EventExistingInvestigation eventId={99} investigationId={13} />); expect(id()).toHaveProperty('value', '13'); await act(async () => finish({ data: preview })); expect(screen.queryByRole('checkbox')).toBeNull(); expect(screen.queryByText('Owned saved summary')).toBeNull(); expect(post).not.toHaveBeenCalled();
+});
+it('a fixed invalid destination fails before any read', async () => {
+  render(<EventExistingInvestigation eventId={99} investigationId={0} />); fireEvent.click(review()); await screen.findByRole('alert'); expect(get).not.toHaveBeenCalled(); expect(post).not.toHaveBeenCalled();
+});

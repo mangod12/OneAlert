@@ -1177,8 +1177,8 @@ export function CaseDetail() {
 
       {isOwner && unlinkTarget && <CaseEvidenceUnlinkDialog key={`${caseId}:${unlinkTarget.kind}:${unlinkTarget.id}`} caseId={Number(caseId)} kind={unlinkTarget.kind} recordId={unlinkTarget.id} onCancel={() => { setUnlinkTarget(null); void fetchAll(); }} onUnlinked={() => { setUnlinkTarget(null); toast('Reviewed evidence relationship removed. Original evidence kept.', 'success'); void fetchAll(); }} />}
 
-      {showLinkAlert && <CaseEvidencePicker key={`alert-${caseId}`} caseId={Number(caseId)} kind="alert" onCancel={() => setShowLinkAlert(false)} onLinked={created => { setShowLinkAlert(false); toast(created ? 'Alert linked to the case.' : 'Alert was already linked. Reloading the case.', 'success'); void fetchAll(); }} />}
-      {showLinkEvent && <CaseEvidencePicker key={`event-${caseId}`} caseId={Number(caseId)} kind="event" onCancel={() => setShowLinkEvent(false)} onLinked={created => { setShowLinkEvent(false); toast(created ? 'Event linked to the case.' : 'Event was already linked. Reloading the case.', 'success'); void fetchAll(); }} />}
+      {showLinkAlert && <CaseEvidencePicker key={`alert-${caseId}`} caseId={Number(caseId)} kind="alert" onCancel={() => { setShowLinkAlert(false); void fetchAll(); }} onLinked={created => { setShowLinkAlert(false); toast(created ? 'Alert linked to the case.' : 'Alert was already linked. Reloading the case.', 'success'); void fetchAll(); }} />}
+      {showLinkEvent && <CaseEvidencePicker key={`event-${caseId}`} caseId={Number(caseId)} kind="event" onCancel={() => { setShowLinkEvent(false); void fetchAll(); }} onLinked={created => { setShowLinkEvent(false); toast(created ? 'Event linked to the case.' : 'Event was already linked. Reloading the case.', 'success'); void fetchAll(); }} />}
     </div>
   );
 }

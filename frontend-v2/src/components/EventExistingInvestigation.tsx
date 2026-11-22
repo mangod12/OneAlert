@@ -21,16 +21,17 @@ function matches(value: Preview, eventId: number, caseId: number) {
     time(value.event.timestamp) && text(value.event.event_type) && nullableText(value.event.signature) && severities.includes(value.event.severity) && nullableText(value.event.source_ip) && nullableText(value.event.dest_ip) && text(value.event.processed);
 }
 const control = 'min-h-10 rounded border border-surface-600 bg-surface-950 px-3 py-2 text-xs text-surface-200 disabled:opacity-40';
-export function EventExistingInvestigation({ eventId, onLinkOutcome }: { eventId: number; onLinkOutcome?: () => void }) {
-  return <ExistingInvestigationLink key={eventId} eventId={eventId} onLinkOutcome={onLinkOutcome} />;
+interface Props { eventId: number; investigationId?: number; onLinkOutcome?: () => void; onConfirmed?: (created: boolean) => void; onPendingChange?: (pending: boolean) => void }
+export function EventExistingInvestigation(props: Props) {
+  return <ExistingInvestigationLink key={`${props.eventId}:${props.investigationId ?? 'manual'}`} {...props} />;
 }
-function ExistingInvestigationLink({ eventId, onLinkOutcome }: { eventId: number; onLinkOutcome?: () => void }) {
-  const [draft, setDraft] = useState(''), [preview, setPreview] = useState<Preview | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(false), [busy, setBusy] = useState(false), [ack, setAck] = useState(false), [confirmed, setConfirmed] = useState<number | null>(null);
+function ExistingInvestigationLink({ eventId, investigationId, onLinkOutcome, onConfirmed, onPendingChange }: Props) {
+  const [draft, setDraft] = useState(investigationId === undefined ? '' : String(investigationId)), [preview, setPreview] = useState<Preview | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(false), [busy, setBusy] = useState(false), [ack, setAck] = useState(false), [confirmed, setConfirmed] = useState<number | null>(null);
   const request = useRef(0), inFlight = useRef(false), mounted = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const read = async (event: React.FormEvent) => {
     event.preventDefault(); if (inFlight.current) return;
-    const identity = exactId(draft), version = ++request.current;
+    const identity = exactId(investigationId === undefined ? draft : String(investigationId)), version = ++request.current;
     setPreview(null); setAck(false); setError(''); setConfirmed(null); setLoading(false);
     if (!identity || !Number.isSafeInteger(eventId) || eventId <= 0) { setError('Enter a positive exact investigation ID. No investigation was read.'); return; }
     setLoading(true);
@@ -40,19 +41,19 @@ function ExistingInvestigationLink({ eventId, onLinkOutcome }: { eventId: number
   };
   const link = async () => {
     if (!preview || !ack || preview.already_linked || inFlight.current || loading) return;
-    const reviewed = preview; inFlight.current = true; setBusy(true); setError(''); setAck(false); request.current++;
+    const reviewed = preview; inFlight.current = true; setBusy(true); onPendingChange?.(true); setError(''); setAck(false); request.current++;
     try {
       const { data } = await apiClient.post(`/events/${eventId}/existing-investigations/${reviewed.case.id}`, { reviewed_fingerprint: reviewed.reviewed_fingerprint });
       if (!mounted.current) return;
       if (data?.event_id !== eventId || data.case_id !== reviewed.case.id || data.linked !== true || typeof data.created !== 'boolean' || data.reviewed_fingerprint !== reviewed.reviewed_fingerprint) throw Error('Unconfirmed response');
-      setConfirmed(reviewed.case.id); setPreview(null);
+      setConfirmed(reviewed.case.id); setPreview(null); onConfirmed?.(data.created);
     } catch { if (mounted.current) { setPreview(null); setError('The link outcome could not be confirmed. No automatic retry was made. Read this exact investigation again to check its saved link before deciding whether to submit again.'); } }
-    finally { inFlight.current = false; if (mounted.current) { setBusy(false); onLinkOutcome?.(); } }
+    finally { inFlight.current = false; if (mounted.current) { setBusy(false); onPendingChange?.(false); onLinkOutcome?.(); } }
   };
   return <section aria-label="Link event to an existing investigation" className="oa-panel space-y-3 p-4">
     <h2 className="font-semibold text-surface-100">Add this event to an existing investigation</h2>
-    <p className="text-xs text-surface-400">Keep related evidence in a case you already own instead of creating another investigation. Enter its exact ID from its case page. Review both saved records before linking. Nothing is searched, linked or sent automatically.</p>
-    <form onSubmit={event => void read(event)} className="flex flex-wrap items-end gap-3"><label className="block text-xs">Existing investigation ID<input inputMode="numeric" autoComplete="off" aria-label="Existing investigation ID" className={`${control} mt-1 block w-48 max-w-full`} value={draft} disabled={busy} onChange={event => { request.current++; setDraft(event.target.value); setPreview(null); setAck(false); setError(''); setConfirmed(null); setLoading(false); }} /></label><button type="submit" disabled={loading || busy} className={control}>Review exact investigation link</button></form>
+    <p className="text-xs text-surface-400">Keep related evidence in a case you already own instead of creating another investigation. {investigationId === undefined ? 'Enter its exact ID from its case page.' : `The destination is fixed to investigation #${investigationId}; read its current saved state below.`} Review both saved records before linking. Nothing is searched, linked or sent automatically.</p>
+    <form onSubmit={event => void read(event)} className="flex flex-wrap items-end gap-3"><label className="block text-xs">Existing investigation ID<input inputMode="numeric" autoComplete="off" aria-label="Existing investigation ID" className={`${control} mt-1 block w-48 max-w-full`} value={investigationId === undefined ? draft : String(investigationId)} disabled={busy || investigationId !== undefined} onChange={event => { request.current++; setDraft(event.target.value); setPreview(null); setAck(false); setError(''); setConfirmed(null); setLoading(false); }} /></label><button type="submit" disabled={loading || busy} className={control}>Review exact investigation link</button></form>
     {loading && <p role="status" className="text-xs">Reading the exact event and investigation...</p>}{error && <p role="alert" className="break-words text-xs text-danger">{error}</p>}
     {confirmed !== null && <p role="status" className="text-sm text-success">Saved link confirmed for event #{eventId} and investigation #{confirmed}. <a className="underline" href={`/app/cases/${confirmed}`}>Open linked investigation #{confirmed}</a>. No new case was created. Refresh exact event evidence to read its updated processing label. Read linked investigations again for a current list.</p>}
     {preview && <div className="min-w-0 space-y-3 text-xs [overflow-wrap:anywhere]">
