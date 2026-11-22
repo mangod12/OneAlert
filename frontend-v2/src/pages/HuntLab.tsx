@@ -1,3 +1,4 @@
+import { EventHuntDraft } from '../components/EventHuntDraft';
 import { CaseHuntDraft } from '../components/CaseHuntDraft';
 import { HuntRunLink } from '../components/HuntRunLink';
 import { useSearchParams } from 'react-router-dom';
@@ -59,17 +60,24 @@ export function HuntLabRoute() {
   const clear = () => setParams(current => { const next = new URLSearchParams(current); next.delete('rule'); return next; }, { replace: true });
   const sources = params.getAll('source_case'), sourceRaw = sources.length === 1 ? sources[0] : '';
   const sourceId = /^[1-9][0-9]*$/.test(sourceRaw) && Number.isSafeInteger(Number(sourceRaw)) && Number(sourceRaw) <= 2147483647 ? Number(sourceRaw) : null;
+  const eventSources = params.getAll('source_event'), eventRaw = eventSources.length === 1 ? eventSources[0] : '';
+  const eventSourceId = /^[1-9][0-9]*$/.test(eventRaw) && Number.isSafeInteger(Number(eventRaw)) && Number(eventRaw) <= 2147483647 ? Number(eventRaw) : null;
+  const conflictingSources = sources.length > 0 && eventSources.length > 0;
+  const clearEventSource = () => setParams(current => { const next = new URLSearchParams(current); next.delete('source_event'); return next; }, { replace: true });
   const clearSource = () => setParams(current => { const next = new URLSearchParams(current); next.delete('source_case'); return next; }, { replace: true });
   return <>
     {values.length > 0 && id === null && <p role="alert" className="mb-4 text-sm text-danger">This saved rule link needs exactly one positive whole-number rule ID. No rule was opened. <button type="button" className="text-primary-300" onClick={clear}>Clear invalid rule link</button></p>}
     {id !== null && <DetectionRuleInspector key={id} ruleId={id} onClose={clear} />}
     {sources.length > 0 && sourceId === null && <p role="alert" className="mb-4 text-sm text-danger">Invalid source investigation link. Use one positive whole-number case ID. No case was read and your hypothesis is unchanged. <button type="button" className="text-primary-300" onClick={clearSource}>Clear invalid case handoff</button></p>}
     {sourceId !== null && <button type="button" className="mb-3 text-xs text-primary-300 underline" onClick={clearSource}>Close case-to-hunt handoff</button>}
-    <HuntLab sourceCaseId={sourceId} />
+    {eventSources.length > 0 && eventSourceId === null && <p role="alert" className="mb-4 text-sm text-danger">Invalid source event handoff. Use one positive whole-number event ID. No event was read and your hypothesis is unchanged. <button type="button" className="text-primary-300" onClick={clearEventSource}>Clear invalid event handoff</button></p>}
+    {conflictingSources && <p role="alert" className="mb-4 text-sm text-danger">This link names both an investigation and event source. Neither source draft is opened. Close one handoff before reading a draft.</p>}
+    {eventSourceId !== null && <button type="button" className="mb-3 text-xs text-primary-300 underline" onClick={clearEventSource}>Close event-to-hunt handoff</button>}
+    <HuntLab sourceCaseId={conflictingSources ? null : sourceId} sourceEventId={conflictingSources ? null : eventSourceId} />
   </>;
 }
 
-export function HuntLab({ sourceCaseId = null }: { sourceCaseId?: number | null } = {}) {
+export function HuntLab({ sourceCaseId = null, sourceEventId = null }: { sourceCaseId?: number | null; sourceEventId?: number | null } = {}) {
   const [hypothesis, setHypothesis] = useState('');
   const [sessions, setSessions] = useState<HuntSession[]>([]);
   const [resultVersion, setResultVersion] = useState(0);
@@ -292,6 +300,7 @@ export function HuntLab({ sourceCaseId = null }: { sourceCaseId?: number | null 
     <div className="space-y-6">
       <PageHeader eyebrow="Analyze" title="Threat Hunt Lab" description="Turn an investigation hypothesis into reviewable queries, evidence, and detection content." />
 
+      {sourceEventId !== null && <EventHuntDraft key={sourceEventId} eventId={sourceEventId} hasDraft={!!hypothesis.trim()} busy={hunting || loadingSessionId !== null} onApply={setHypothesis} />}
       {sourceCaseId !== null && <CaseHuntDraft key={sourceCaseId} caseId={sourceCaseId} hasDraft={!!hypothesis.trim()} busy={hunting || loadingSessionId !== null} onApply={setHypothesis} />}
 
       {/* Hunt Input */}
