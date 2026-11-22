@@ -1,3 +1,4 @@
+import { eventScopeFromParams } from '../utils/eventInvestigationScope';
 import { useSearchParams } from 'react-router-dom';
 import { recordedEventFilter } from '../utils/recordedEventFilter';
 import { Events } from './Events';
@@ -6,6 +7,11 @@ import { PageHeader } from '../components/ui/PageHeader';
 /** A source-only link never silently broadens an invalid source to the whole stream. */
 export function EventSourceRoute() {
   const [params] = useSearchParams();
+  let scope;
+  try { scope = eventScopeFromParams(params); } catch {
+    return <div className="space-y-4"><PageHeader eyebrow="Observe" title="Invalid complete event scope link" description="No event list or export has been loaded." /><p role="alert" className="text-sm text-danger">This link needs one complete supported event scope, without missing fields, mixed parameters or ambiguous values. It was not broadened to all events. Open the original complete link or choose all events explicitly.</p><a href="/app/events" className="inline-block text-sm text-primary-300">Open all recorded events instead</a></div>;
+  }
+  if (scope) return <Events key={JSON.stringify(scope)} initialScope={scope} />;
   const values = params.getAll('source_id');
   const sourceId = values[0] ?? '';
   const valid = values.length === 0 || (values.length === 1 && /^[1-9][0-9]*$/.test(sourceId) && Number(sourceId) <= 2147483647);
