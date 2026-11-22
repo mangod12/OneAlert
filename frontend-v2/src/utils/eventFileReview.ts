@@ -4,15 +4,20 @@ export interface EventFileReview { format: string; records: number; sampleFields
 
 const objectRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-export function reviewEventText(text: string): EventFileReview {
+export function reviewEventText(text: string, sourceType = ''): EventFileReview {
   let document: unknown;
   let parsed = false;
   try { document = JSON.parse(text.replace(/^\uFEFF/, '')); parsed = true; } catch { /* Try strict newline-delimited JSON. */ }
   let records: unknown[];
   let format: string;
   if (parsed) {
-    records = Array.isArray(document) ? document : [document];
-    format = Array.isArray(document) ? 'JSON array' : 'JSON object';
+    if (sourceType === 'aws_cloudtrail' && objectRecord(document) && Object.hasOwn(document, 'Records')) {
+      if (Object.keys(document).length !== 1 || !Array.isArray(document.Records)) throw new Error('CloudTrail envelope must contain only a Records array.');
+      records = document.Records; format = 'CloudTrail Records envelope';
+    } else {
+      records = Array.isArray(document) ? document : [document];
+      format = Array.isArray(document) ? 'JSON array' : 'JSON object';
+    }
     if (records.length > MAX_EVENT_FILE_RECORDS) throw new Error('File limit is 50,000 JSON records.');
     for (let index = 0; index < records.length; index++) if (!objectRecord(records[index])) throw new Error(`Record ${index + 1} must be a JSON object.`);
   } else {
@@ -42,7 +47,7 @@ export function reviewEventText(text: string): EventFileReview {
   return { format, records: records.length, sampleFields: [...new Set(records.slice(0, 3).flatMap(record => Object.keys(record as Record<string, unknown>)))].slice(0, 20).map(field => field.length > 100 ? field.slice(0, 100) + '...' : field) };
 }
 
-export async function reviewEventFile(file: File): Promise<EventFileReview> {
+export async function reviewEventFile(file: File, sourceType = ''): Promise<EventFileReview> {
   if (file.size > MAX_EVENT_FILE_BYTES) throw new Error('File exceeds the 10 MiB limit.');
   let bytes: ArrayBuffer;
   try {
@@ -55,5 +60,5 @@ export async function reviewEventFile(file: File): Promise<EventFileReview> {
   } catch { throw new Error('File could not be read. Choose it again.'); }
   let text: string;
   try { text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { throw new Error('Event file must be valid UTF-8 JSON.'); }
-  return reviewEventText(text);
+  return reviewEventText(text, sourceType);
 }

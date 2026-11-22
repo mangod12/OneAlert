@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.security_event import EventSource, SecurityEvent
 from backend.services.normalized_event import validate_normalized_event
+from backend.services.parsers.aws_cloudtrail import parse_aws_cloudtrail
 from backend.services.parsers.event_time import EventTimestampError
 from backend.services.parsers.linux_journal import parse_linux_journal
 from backend.services.parsers.suricata import parse_suricata_eve
@@ -18,6 +19,7 @@ from backend.services.pii_redactor import redact_dict
 logger = logging.getLogger(__name__)
 
 PARSERS = {
+    "aws_cloudtrail": parse_aws_cloudtrail,
     "suricata": parse_suricata_eve,
     "zeek": parse_zeek_log,
     "windows_security": parse_windows_security,
