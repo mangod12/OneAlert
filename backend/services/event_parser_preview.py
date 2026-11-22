@@ -13,9 +13,10 @@ def event_preview_fingerprint(content: bytes, source_type: str) -> str:
 
 
 def preview_event_file(content: bytes, source_type: str) -> dict:
-    if source_type not in {"suricata", "zeek", "windows_security", "linux_journal", "aws_cloudtrail"}:
+    if source_type not in {"suricata", "zeek", "windows_security", "linux_journal", "aws_cloudtrail", "entra_signin"}:
         raise ValueError(
-            "Preview supports Suricata, Zeek, Windows Security, Linux journal and AWS CloudTrail JSON parsers only"
+            "Preview supports Suricata, Zeek, Windows Security, Linux journal, "
+            "AWS CloudTrail and Entra sign-in JSON only"
         )
     records = parse_event_upload(content, source_type)
     parser = ingestion.PARSERS[source_type]

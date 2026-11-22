@@ -15,6 +15,7 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import { SavedViewsMenu } from '../components/SavedViewsMenu';
 import { reviewEventFile, type EventFileReview } from '../utils/eventFileReview';
 import { EventParserPreviewPanel } from '../components/EventParserPreviewPanel';
+import { EntraSigninFormatHelp } from '../components/EntraSigninFormatHelp';
 import { CloudTrailFormatHelp } from '../components/CloudTrailFormatHelp';
 import { LinuxJournalFormatHelp } from '../components/LinuxJournalFormatHelp';
 import { WindowsSecurityFormatHelp } from '../components/WindowsSecurityFormatHelp';
@@ -626,7 +627,7 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
               id="event-upload-type"
               disabled={uploading}
               value={sourceType}
-              onChange={e => { const rereview = selectedParser.current === 'aws_cloudtrail' || e.target.value === 'aws_cloudtrail'; selectedParser.current = e.target.value; setSourceType(e.target.value); if (rereview) void chooseFile(file); else { setParserPreview(null); setPreviewing(false); setFormError(''); } }}
+              onChange={e => { const rereview = ['aws_cloudtrail', 'entra_signin'].some(parser => parser === selectedParser.current || parser === e.target.value); selectedParser.current = e.target.value; setSourceType(e.target.value); if (rereview) void chooseFile(file); else { setParserPreview(null); setPreviewing(false); setFormError(''); } }}
               className="w-full rounded-lg border border-surface-600 bg-surface-800 px-3 py-2 text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
               {Object.entries(eventSourceParserLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -634,6 +635,7 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
           </div>
           {sourceType === 'windows_security' && <WindowsSecurityFormatHelp />}
           {sourceType === 'linux_journal' && <LinuxJournalFormatHelp />}
+          {sourceType === 'entra_signin' && <EntraSigninFormatHelp />}
           {sourceType === 'aws_cloudtrail' && <CloudTrailFormatHelp />}
           {reviewing && <p role="status" className="text-xs text-surface-400">Reading and validating the selected file locally...</p>}
           {file && review && <section aria-label="Selected event file review" className="space-y-2 rounded border border-surface-700 p-3 text-xs text-surface-300">

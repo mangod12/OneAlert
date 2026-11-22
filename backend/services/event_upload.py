@@ -86,6 +86,19 @@ def parse_event_upload(content: bytes, source_type: str | None = None) -> list[d
             if set(document) != {"Records"} or not isinstance(document["Records"], list):
                 raise HTTPException(status_code=400, detail="CloudTrail envelope must contain only a Records array")
             records = document["Records"]
+        elif source_type == "entra_signin" and isinstance(document, dict) and "value" in document:
+            allowed = {"value", "@odata.context", "@odata.nextLink"}
+            if not set(document).issubset(allowed) or not isinstance(document["value"], list):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Entra sign-in envelope requires a value array with optional context and nextLink text only",
+                )
+            for field in ("@odata.context", "@odata.nextLink"):
+                if field in document and (not isinstance(document[field], str) or not document[field].strip()):
+                    raise HTTPException(status_code=400, detail="Entra envelope metadata must be nonempty text")
+            # Read supplied records only. Never follow or retain continuation
+            # URLs in events, parser previews or import receipts.
+            records = document["value"]
         else:
             records = document if isinstance(document, list) else [document]
         if len(records) > MAX_UPLOAD_RECORDS:

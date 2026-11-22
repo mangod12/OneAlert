@@ -15,6 +15,11 @@ export function reviewEventText(text: string, sourceType = ''): EventFileReview 
     if (sourceType === 'aws_cloudtrail' && objectRecord(document) && Object.hasOwn(document, 'Records')) {
       if (Object.keys(document).length !== 1 || !Array.isArray(document.Records)) throw new Error('CloudTrail envelope must contain only a Records array.');
       records = document.Records; format = 'CloudTrail Records envelope';
+    } else if (sourceType === 'entra_signin' && objectRecord(document) && Object.hasOwn(document, 'value')) {
+      const allowed = new Set(['value', '@odata.context', '@odata.nextLink']);
+      if (Object.keys(document).some(key => !allowed.has(key)) || !Array.isArray(document.value)) throw new Error('Entra sign-in envelope requires a value array with optional context and nextLink text only.');
+      for (const field of ['@odata.context', '@odata.nextLink']) if (Object.hasOwn(document, field) && (typeof document[field] !== 'string' || !document[field].trim())) throw new Error('Entra envelope metadata must be nonempty text.');
+      records = document.value; format = 'Entra sign-in value envelope (supplied page only; continuation not followed)';
     } else {
       records = Array.isArray(document) ? document : [document];
       format = Array.isArray(document) ? 'JSON array' : 'JSON object';
