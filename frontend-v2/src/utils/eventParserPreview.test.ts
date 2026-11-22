@@ -74,3 +74,13 @@ it('binds Linux journal bytes to its own parser context and rejects inherited ob
     expect(() => parseEventParserPreview({ ...fixture(), source_type: parser }, { ...binding, sourceType: parser })).toThrow();
   }
 });
+
+it('binds the complete native CloudTrail bytes to its explicit parser and exports only matching preview metadata', async () => {
+  const value = { ...fixture(), source_type: 'aws_cloudtrail' };
+  const parsed = parseEventParserPreview(value, { ...binding, sourceType: 'aws_cloudtrail' });
+  expect(JSON.parse(eventParserPreviewJson(parsed, 'trail.json', '2026-11-22T06:31:00Z')).source_type).toBe('aws_cloudtrail');
+  expect(() => parseEventParserPreview(value, binding)).toThrow();
+  const digest = vi.fn().mockResolvedValue(new Uint8Array(32).fill(10).buffer); vi.stubGlobal('crypto', { subtle: { digest } });
+  await eventFilePreviewFingerprint(new File(['{"Records":[{}]}'], 'trail.json'), 'aws_cloudtrail');
+  expect(new TextDecoder().decode(digest.mock.calls[0][1])).toBe('onealert_event_parser_preview_v1\0aws_cloudtrail\0{"Records":[{}]}');
+});

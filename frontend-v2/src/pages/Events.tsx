@@ -15,6 +15,7 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import { SavedViewsMenu } from '../components/SavedViewsMenu';
 import { reviewEventFile, type EventFileReview } from '../utils/eventFileReview';
 import { EventParserPreviewPanel } from '../components/EventParserPreviewPanel';
+import { CloudTrailFormatHelp } from '../components/CloudTrailFormatHelp';
 import { LinuxJournalFormatHelp } from '../components/LinuxJournalFormatHelp';
 import { WindowsSecurityFormatHelp } from '../components/WindowsSecurityFormatHelp';
 import { eventSourceParserLabels, type EventParserPreview } from '../utils/eventParserPreview';
@@ -573,7 +574,7 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
     setFile(selected); setReview(null); setFormError(''); setReviewing(Boolean(selected));
     if (!selected) return;
     try {
-      const next = await reviewEventFile(selected);
+      const next = await reviewEventFile(selected, selectedParser.current);
       if (version === readVersion.current) setReview(next);
     } catch (err) {
       if (version === readVersion.current) setFormError(err instanceof Error ? err.message : 'File could not be reviewed.');
@@ -625,7 +626,7 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
               id="event-upload-type"
               disabled={uploading}
               value={sourceType}
-              onChange={e => { selectedParser.current = e.target.value; setSourceType(e.target.value); setParserPreview(null); setPreviewing(false); setFormError(''); }}
+              onChange={e => { const rereview = selectedParser.current === 'aws_cloudtrail' || e.target.value === 'aws_cloudtrail'; selectedParser.current = e.target.value; setSourceType(e.target.value); if (rereview) void chooseFile(file); else { setParserPreview(null); setPreviewing(false); setFormError(''); } }}
               className="w-full rounded-lg border border-surface-600 bg-surface-800 px-3 py-2 text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
               {Object.entries(eventSourceParserLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -633,6 +634,7 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
           </div>
           {sourceType === 'windows_security' && <WindowsSecurityFormatHelp />}
           {sourceType === 'linux_journal' && <LinuxJournalFormatHelp />}
+          {sourceType === 'aws_cloudtrail' && <CloudTrailFormatHelp />}
           {reviewing && <p role="status" className="text-xs text-surface-400">Reading and validating the selected file locally...</p>}
           {file && review && <section aria-label="Selected event file review" className="space-y-2 rounded border border-surface-700 p-3 text-xs text-surface-300">
             <p className="break-all font-medium text-surface-100">{file.name}</p>

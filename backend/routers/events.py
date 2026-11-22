@@ -97,7 +97,7 @@ async def ingest_events_webhook(
 @router.post("/upload/preview")
 async def preview_events_file(
     file: UploadFile = File(...),
-    source_type: Literal["suricata", "zeek", "windows_security", "linux_journal"] = Query("suricata"),
+    source_type: Literal["suricata", "zeek", "windows_security", "linux_journal", "aws_cloudtrail"] = Query("suricata"),
     current_user: User = Depends(get_active_user),
 ):
     """Inspect parser acceptance without creating sources or importing events."""
@@ -134,7 +134,7 @@ async def upload_events_file(
 
     # Validate the whole envelope before creating a source or writing any rows.
     # Source-specific parsers still report ingested/skipped outcomes separately.
-    events = parse_event_upload(content)
+    events = parse_event_upload(content, source_type)
 
     result = await ingest_events(
         db=db,

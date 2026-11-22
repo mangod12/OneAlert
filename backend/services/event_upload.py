@@ -41,7 +41,7 @@ def _validate_nesting(records):
             stack.append((iter(value.values() if isinstance(value, dict) else value), depth + 1))
 
 
-def parse_event_upload(content: bytes) -> list[dict]:
+def parse_event_upload(content: bytes, source_type: str | None = None) -> list[dict]:
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
@@ -67,7 +67,12 @@ def parse_event_upload(content: bytes) -> list[dict]:
             if len(records) > MAX_UPLOAD_RECORDS:
                 raise HTTPException(status_code=400, detail="File limit is 50,000 JSON records") from None
     else:
-        records = document if isinstance(document, list) else [document]
+        if source_type == "aws_cloudtrail" and isinstance(document, dict) and "Records" in document:
+            if set(document) != {"Records"} or not isinstance(document["Records"], list):
+                raise HTTPException(status_code=400, detail="CloudTrail envelope must contain only a Records array")
+            records = document["Records"]
+        else:
+            records = document if isinstance(document, list) else [document]
         if len(records) > MAX_UPLOAD_RECORDS:
             raise HTTPException(status_code=400, detail="File limit is 50,000 JSON records")
         for index, record in enumerate(records, 1):
