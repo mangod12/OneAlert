@@ -614,7 +614,7 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
             <input
               id="event-upload-file"
               type="file"
-              accept=".json,.log,.eve,.ndjson,application/json"
+              accept=".json,.log,.eve,.ndjson,.gz,application/json,application/gzip"
               disabled={uploading}
               onChange={e => { void chooseFile(e.target.files?.[0] ?? null); }}
               className="w-full text-sm text-surface-300 file:mr-3 file:rounded-md file:border file:border-surface-600 file:bg-surface-800 file:px-3 file:py-1.5 file:text-xs file:text-surface-200"
@@ -640,6 +640,7 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
             <p className="break-all font-medium text-surface-100">{file.name}</p>
             <p>{review.format} · {review.records.toLocaleString()} JSON records · {file.size.toLocaleString()} bytes</p>
             <p>Selected parser: {eventSourceParserLabels[sourceType as keyof typeof eventSourceParserLabels]}</p>
+            {review.decodedByteSize !== undefined && <p>Compressed file: {file.size.toLocaleString()} bytes. Expanded JSON: {review.decodedByteSize.toLocaleString()} bytes. Each is limited to 10 MiB. Preview and import use the original compressed file and its byte fingerprint, not recompressed or expanded bytes.</p>}
             <p>Destination: your event stream and a source named after this file.</p>
             <p className="break-words">Sample field names (first three records, up to 20, long names shortened): {review.sampleFields.join(', ') || 'Empty objects'}</p>
             <p className="text-surface-400">JSON validation is not source-parser acceptance. Unsupported records may still be skipped; the final import reports ingested and skipped counts. {uploading ? 'Submitting this reviewed file...' : 'Only Upload requests an import. Optional parser preview below sends the file to the server without importing.'}</p>
