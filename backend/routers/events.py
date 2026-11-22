@@ -98,7 +98,7 @@ async def ingest_events_webhook(
 async def preview_events_file(
     file: UploadFile = File(...),
     source_type: Literal[
-        "suricata", "zeek", "windows_security", "linux_journal", "aws_cloudtrail", "entra_signin"
+        "suricata", "zeek", "windows_security", "linux_journal", "aws_cloudtrail", "entra_signin", "github_audit"
     ] = Query("suricata"),
     current_user: User = Depends(get_active_user),
 ):
