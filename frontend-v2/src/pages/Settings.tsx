@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bell, KeyRound, Mail, Pencil, Settings as SettingsIcon, Shield, UserPlus, UserRound, Users } from 'lucide-react';
+import { Bell, KeyRound, Pencil, Settings as SettingsIcon, Shield, UserPlus, UserRound, Users } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
@@ -7,6 +7,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { SiemIntegrationsPanel } from '../components/settings/SiemIntegrationsPanel';
 import { ApiTokensPanel } from '../components/settings/ApiTokensPanel';
+import { NotificationPreferencesPanel } from '../components/settings/NotificationPreferencesPanel';
 import { NotificationPolicyPreview } from '../components/settings/NotificationPolicyPreview';
 import { SuppressionRulesPanel } from '../components/settings/SuppressionRulesPanel';
 import { AutomationPanel } from '../components/settings/AutomationPanel';
@@ -48,15 +49,6 @@ export function Settings() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviting, setInviting] = useState(false);
   const [teamMessage, setTeamMessage] = useState<{ text: string; error: boolean } | null>(null);
-  const [notifEnabled, setNotifEnabled] = useState(true);
-  const [notifMinSeverity, setNotifMinSeverity] = useState('low');
-  const [notifMutedKinds, setNotifMutedKinds] = useState<string[]>([]);
-  const [quietStart, setQuietStart] = useState('');
-  const [quietEnd, setQuietEnd] = useState('');
-  const [digestEnabled, setDigestEnabled] = useState(false);
-  const [digestHour, setDigestHour] = useState('7');
-  const [notifSaving, setNotifSaving] = useState(false);
-  const [notifMessage, setNotifMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [pwCurrent, setPwCurrent] = useState('');
   const [pwNew, setPwNew] = useState('');
   const [pwConfirm, setPwConfirm] = useState('');
@@ -90,60 +82,6 @@ export function Settings() {
       } else {
         setTeamMessage({ text: getApiErrorMessage(error, 'Team information could not be loaded.'), error: true });
       }
-    }
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const res = await apiClient.get<{ email_notifications_enabled: boolean; notify_min_severity: string; muted_kinds: string[]; quiet_hours_start: string | null; quiet_hours_end: string | null; digest_enabled: boolean; digest_hour_utc: number }>('/auth/me/notification-preferences');
-        if (cancelled) return;
-        setNotifEnabled(res.data.email_notifications_enabled);
-        setNotifMinSeverity(res.data.notify_min_severity);
-        setNotifMutedKinds(res.data.muted_kinds ?? []);
-        setQuietStart(res.data.quiet_hours_start ?? '');
-        setQuietEnd(res.data.quiet_hours_end ?? '');
-        setDigestEnabled(res.data.digest_enabled);
-        setDigestHour(String(res.data.digest_hour_utc));
-      } catch {
-        if (!cancelled) setNotifMessage({ text: 'Notification preferences could not be loaded.', error: true });
-      }
-    };
-    void load();
-    return () => { cancelled = true; };
-  }, []);
-
-  const handleSaveNotifications = async () => {
-    if (notifSaving) return;
-    if ((quietStart === '') !== (quietEnd === '')) {
-      setNotifMessage({ text: 'Quiet hours need both a start and an end time, or neither.', error: true });
-      return;
-    }
-    setNotifSaving(true);
-    setNotifMessage(null);
-    try {
-      const res = await apiClient.patch<{ email_notifications_enabled: boolean; notify_min_severity: string; muted_kinds: string[]; quiet_hours_start: string | null; quiet_hours_end: string | null; digest_enabled: boolean; digest_hour_utc: number }>('/auth/me/notification-preferences', {
-        email_notifications_enabled: notifEnabled,
-        notify_min_severity: notifMinSeverity,
-        muted_kinds: notifMutedKinds,
-        quiet_hours_start: quietStart === '' ? null : quietStart,
-        quiet_hours_end: quietEnd === '' ? null : quietEnd,
-        digest_enabled: digestEnabled,
-        digest_hour_utc: parseInt(digestHour, 10),
-      });
-      setNotifEnabled(res.data.email_notifications_enabled);
-      setNotifMinSeverity(res.data.notify_min_severity);
-      setNotifMutedKinds(res.data.muted_kinds ?? []);
-      setQuietStart(res.data.quiet_hours_start ?? '');
-      setQuietEnd(res.data.quiet_hours_end ?? '');
-      setDigestEnabled(res.data.digest_enabled);
-      setDigestHour(String(res.data.digest_hour_utc));
-      setNotifMessage({ text: 'Notification preferences saved.', error: false });
-    } catch (error: unknown) {
-      setNotifMessage({ text: getApiErrorMessage(error, 'The notification preferences could not be saved.'), error: true });
-    } finally {
-      setNotifSaving(false);
     }
   };
 
@@ -638,114 +576,7 @@ export function Settings() {
         </div>
 
         <div className="space-y-4">
-        <Panel title="Email notifications" description="Choose which new alerts trigger an email to you." action={<Mail className="h-4 w-4 text-warning" />}>
-          <form className="space-y-5 p-5" onSubmit={event => { event.preventDefault(); void handleSaveNotifications(); }}>
-            <label className="flex items-center gap-3 text-sm text-surface-200">
-              <input
-                type="checkbox"
-                checked={notifEnabled}
-                onChange={event => setNotifEnabled(event.target.checked)}
-                className="h-4 w-4 rounded border-surface-600 bg-surface-950 text-primary-500 focus:ring-2 focus:ring-primary-500"
-              />
-              Email me about new alerts
-            </label>
-            <div>
-              <label htmlFor="notif-min-severity" className="mb-1.5 block text-sm font-medium text-surface-300">Minimum severity</label>
-              <select
-                id="notif-min-severity"
-                value={notifMinSeverity}
-                onChange={event => setNotifMinSeverity(event.target.value)}
-                disabled={!notifEnabled}
-                className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2.5 text-sm text-surface-100 disabled:opacity-50"
-              >
-                <option value="low">Low and above</option>
-                <option value="medium">Medium and above</option>
-                <option value="high">High and above</option>
-                <option value="critical">Critical only</option>
-              </select>
-              <p className="mt-1.5 text-xs text-surface-500">Alerts below this severity still appear in the app but do not trigger an email.</p>
-            </div>
-            <div>
-              <p className="mb-1.5 text-sm font-medium text-surface-300">In-app notifications</p>
-              <p className="mb-2 text-xs text-surface-500">Muted kinds stay recorded but no longer appear in the notification feed or unread count.</p>
-              {([['alert_created', 'New alerts'], ['case_assigned', 'Case assignments'], ['case_task_assigned', 'Task assignments'], ['case_task_due_soon', 'Task due soon'], ['case_task_overdue', 'Task overdue'], ['case_updated', 'Case updates'], ['case_watching', 'Case watch additions'], ['case_mention', 'Case mentions'], ['alert_mention', 'Alert mentions'], ['alert_assigned', 'Alert assignments'], ['alert_updated', 'Alert updates'], ['alert_watching', 'Alert watch additions'], ['incident_escalated', 'Incident escalations'], ['case_sla_breached', 'SLA breaches'], ['case_sla_due_soon', 'SLA due soon'], ['alert_sla_breached', 'Alert SLA breaches'], ['alert_sla_due_soon', 'Alert SLA due soon']] as Array<[string, string]>).map(([kind, label]) => (
-                <label key={kind} className="flex items-center gap-3 py-1 text-sm text-surface-200">
-                  <input
-                    type="checkbox"
-                    checked={!notifMutedKinds.includes(kind)}
-                    onChange={event => setNotifMutedKinds(current =>
-                      event.target.checked ? current.filter(k => k !== kind) : [...current, kind]
-                    )}
-                    className="h-4 w-4 rounded border-surface-600 bg-surface-950 text-primary-500 focus:ring-2 focus:ring-primary-500"
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-            <div>
-              <label className="flex items-center gap-3 text-sm text-surface-200">
-                <input
-                  type="checkbox"
-                  checked={digestEnabled}
-                  onChange={event => setDigestEnabled(event.target.checked)}
-                  disabled={!notifEnabled}
-                  className="h-4 w-4 rounded border-surface-600 bg-surface-950 text-primary-500 focus:ring-2 focus:ring-primary-500"
-                />
-                Send me a daily digest
-              </label>
-              <div className="mt-2">
-                <label htmlFor="digest-hour" className="mb-1.5 block text-xs font-medium text-surface-300">Send at (UTC hour)</label>
-                <select
-                  id="digest-hour"
-                  value={digestHour}
-                  onChange={event => setDigestHour(event.target.value)}
-                  disabled={!notifEnabled || !digestEnabled}
-                  className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 disabled:opacity-50"
-                >
-                  {Array.from({ length: 24 }, (_, h) => (
-                    <option key={h} value={String(h)}>{`${String(h).padStart(2, '0')}:00 UTC`}</option>
-                  ))}
-                </select>
-                <p className="mt-1.5 text-xs text-surface-500">A morning summary of open and overdue investigations plus fresh critical and high alerts. Quiet days get no email.</p>
-              </div>
-            </div>
-            <div>
-              <p className="mb-1.5 text-sm font-medium text-surface-300">Quiet hours (UTC)</p>
-              <p className="mb-2 text-xs text-surface-500">No emails inside this window, even above the minimum severity. Critical alerts always come through.</p>
-              <div className="flex items-center gap-3">
-                <label htmlFor="quiet-start" className="text-xs text-surface-400">From</label>
-                <input
-                  id="quiet-start"
-                  type="time"
-                  value={quietStart}
-                  onChange={event => setQuietStart(event.target.value)}
-                  disabled={!notifEnabled}
-                  className="rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 disabled:opacity-50"
-                />
-                <label htmlFor="quiet-end" className="text-xs text-surface-400">Until</label>
-                <input
-                  id="quiet-end"
-                  type="time"
-                  value={quietEnd}
-                  onChange={event => setQuietEnd(event.target.value)}
-                  disabled={!notifEnabled}
-                  className="rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 disabled:opacity-50"
-                />
-                {(quietStart || quietEnd) && (
-                  <button type="button" onClick={() => { setQuietStart(''); setQuietEnd(''); }} className="text-xs text-surface-400 hover:text-surface-200">
-                    Clear
-                  </button>
-                )}
-              </div>
-            </div>
-            {notifMessage && (
-              <p role={notifMessage.error ? 'alert' : 'status'} className={notifMessage.error ? 'text-sm text-danger' : 'text-sm text-primary-400'}>{notifMessage.text}</p>
-            )}
-            <div className="flex items-center justify-end gap-4 border-t border-surface-800 pt-4">
-              <button type="submit" disabled={notifSaving} className="min-h-9 rounded-md bg-primary-500 px-4 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">{notifSaving ? 'Saving…' : 'Save preferences'}</button>
-            </div>
-          </form>
-        </Panel>
+        <NotificationPreferencesPanel />
 
         <NotificationPolicyPreview />
 
