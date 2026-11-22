@@ -41,11 +41,11 @@ beforeEach(() => {
   vi.resetAllMocks();
   mockGet.mockImplementation(async (url: string) => {
     if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
-    if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low', digest_enabled: false, digest_hour_utc: 7 } };
+    if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low', muted_kinds: [], quiet_hours_start: null, quiet_hours_end: null, digest_enabled: false, digest_hour_utc: 7 } };
     if (url === '/auth/me/automation-preferences') return { data: { auto_escalate_incidents: false, auto_escalate_min_alerts: 3, auto_escalate_min_severity: 'high', sla_due_dates_enabled: false, auto_assign_new_alerts: false, sla_days_critical: 1, sla_days_high: 3, sla_days_medium: 7, sla_days_low: 14, sla_days_info: 30 } };
     return notFound();
   });
-  mockPatch.mockResolvedValue({ data: { email_notifications_enabled: false, notify_min_severity: 'high' } });
+  mockPatch.mockImplementation(async (_url, data) => ({ data }));
   useAuthStore.setState({
     user: { ...analyst } as never,
     isAuthenticated: true,
@@ -243,7 +243,7 @@ describe('Organization creation', () => {
 describe('Email notification preferences', () => {
   it('loads current preferences into the form', async () => {
     mockGet.mockImplementation(async (url: string) => {
-      if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: false, notify_min_severity: 'high', digest_enabled: false, digest_hour_utc: 7 } };
+      if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: false, notify_min_severity: 'high', muted_kinds: [], quiet_hours_start: null, quiet_hours_end: null, digest_enabled: false, digest_hour_utc: 7 } };
       if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
       return notFound();
     });
@@ -259,7 +259,9 @@ describe('Email notification preferences', () => {
     const toggle = await screen.findByRole('checkbox', { name: /email me about new alerts/i });
     fireEvent.click(toggle);
     fireEvent.change(screen.getByLabelText(/minimum severity/i), { target: { value: 'high' } });
-    fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review notification changes' }));
+    expect(mockPatch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm reviewed notification preferences' }));
     await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/auth/me/notification-preferences', {
       email_notifications_enabled: false,
       notify_min_severity: 'high',
@@ -269,7 +271,7 @@ describe('Email notification preferences', () => {
       digest_enabled: false,
       digest_hour_utc: 7,
     }));
-    await screen.findByText('Notification preferences saved.');
+    await screen.findByText(/The save response matches your reviewed notification preferences/);
   });
 
   it('saves muted in-app notification kinds', async () => {
@@ -277,7 +279,9 @@ describe('Email notification preferences', () => {
     const caseAssignments = await screen.findByRole('checkbox', { name: /case assignments/i });
     fireEvent.click(caseAssignments);
     fireEvent.click(screen.getByRole('checkbox', { name: /alert assignments/i }));
-    fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review notification changes' }));
+    expect(mockPatch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm reviewed notification preferences' }));
     await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/auth/me/notification-preferences', {
       email_notifications_enabled: true,
       notify_min_severity: 'low',
@@ -292,8 +296,11 @@ describe('Email notification preferences', () => {
   it('surfaces a save failure', async () => {
     mockPatch.mockRejectedValueOnce(new Error('boom'));
     render(<Settings />);
-    await screen.findByRole('checkbox', { name: /email me about new alerts/i });
-    fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
+    const toggle = await screen.findByRole('checkbox', { name: /email me about new alerts/i });
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole('button', { name: 'Review notification changes' }));
+    expect(mockPatch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm reviewed notification preferences' }));
     await screen.findByRole('alert');
   });
 
@@ -309,7 +316,9 @@ describe('Email notification preferences', () => {
     expect(from.value).toBe('22:00');
     expect(until.value).toBe('06:00');
     fireEvent.change(from, { target: { value: '23:00' } });
-    fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review notification changes' }));
+    expect(mockPatch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm reviewed notification preferences' }));
     await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/auth/me/notification-preferences', {
       email_notifications_enabled: true,
       notify_min_severity: 'low',
@@ -326,7 +335,9 @@ describe('Email notification preferences', () => {
     const digestToggle = await screen.findByRole('checkbox', { name: /send me a daily digest/i });
     fireEvent.click(digestToggle);
     fireEvent.change(screen.getByLabelText(/send at/i), { target: { value: '6' } });
-    fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review notification changes' }));
+    expect(mockPatch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm reviewed notification preferences' }));
     await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/auth/me/notification-preferences', expect.objectContaining({
       digest_enabled: true,
       digest_hour_utc: 6,
@@ -337,8 +348,8 @@ describe('Email notification preferences', () => {
     render(<Settings />);
     const from = await screen.findByLabelText('From');
     fireEvent.change(from, { target: { value: '22:00' } });
-    fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
-    expect(await screen.findByText(/both a start and an end time/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Review notification changes' }));
+    expect(await screen.findByText(/either two complete UTC quiet times or neither/)).toBeTruthy();
     expect(mockPatch).not.toHaveBeenCalledWith('/auth/me/notification-preferences', expect.anything());
   });
 
@@ -350,7 +361,9 @@ describe('Email notification preferences', () => {
     });
     render(<Settings />);
     fireEvent.click(await screen.findByRole('button', { name: 'Clear' }));
-    fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review notification changes' }));
+    expect(mockPatch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm reviewed notification preferences' }));
     await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/auth/me/notification-preferences', {
       email_notifications_enabled: true,
       notify_min_severity: 'low',
@@ -380,7 +393,7 @@ describe('Email notification preferences', () => {
     mockGet.mockImplementation(async (url: string) => {
       if (url === '/auth/me') return { data: { ...analyst, full_name: 'New Name', company: 'New Co' } };
       if (url === '/integrations/types' || url === '/integrations/') return { data: { data: [] } };
-      if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low', digest_enabled: false, digest_hour_utc: 7 } };
+      if (url === '/auth/me/notification-preferences') return { data: { email_notifications_enabled: true, notify_min_severity: 'low', muted_kinds: [], quiet_hours_start: null, quiet_hours_end: null, digest_enabled: false, digest_hour_utc: 7 } };
     if (url === '/auth/me/automation-preferences') return { data: { auto_escalate_incidents: false, auto_escalate_min_alerts: 3, auto_escalate_min_severity: 'high', sla_due_dates_enabled: false, auto_assign_new_alerts: false, sla_days_critical: 1, sla_days_high: 3, sla_days_medium: 7, sla_days_low: 14, sla_days_info: 30 } };
       return notFound();
     });
