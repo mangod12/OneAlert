@@ -113,16 +113,21 @@ def test_invalid_source_ids_do_not_reach_database(client, leaf, identity):
     assert client.get(f'/api/v1/events/sources/{identity}/{leaf}', headers=h, params=PARAMS).status_code == 422
 
 
-def test_fractional_boundary_rows_and_pre_utc_overflow_are_safe(client):
+@pytest.mark.parametrize('hours', [1, 6, 24])
+def test_fractional_boundary_rows_and_pre_utc_overflow_are_safe(client, hours):
     h = _register_and_login(client, 'time-fraction@example.com')
     identity = source_id(client, h)
-    _make_event(client, h, source_id=identity, timestamp=START + timedelta(hours=1, microseconds=-1))
-    _make_event(client, h, source_id=identity, timestamp=START + timedelta(hours=1))
+    _make_event(client, h, source_id=identity, timestamp=START + timedelta(hours=hours, microseconds=-1))
+    _make_event(client, h, source_id=identity, timestamp=START + timedelta(hours=hours))
     path = f'/api/v1/events/sources/{identity}'
-    data = client.get(f'{path}/recorded-timeline', headers=h, params=PARAMS).json()
-    assert [row['count'] for row in data['buckets']][:3] == [1, 1, 0]
+    params = {**PARAMS, 'ended_before': (START + timedelta(days=2)).isoformat()}
+    data = client.get(f'{path}/recorded-timeline', headers=h,
+                      params={**params, 'bucket_hours': hours}).json()
+    counts = [row['count'] for row in data['buckets']]
+    assert counts[:2] == [1, 1] and all(count == 0 for count in counts[2:])
+    assert data['total'] == 2
     page = client.get(f'{path}/recorded-window-events', headers=h,
-                     params={**PARAMS, 'ended_before': '2026-11-01T01:00:00Z'}).json()
+                     params={**PARAMS, 'ended_before': (START + timedelta(hours=hours)).isoformat()}).json()
     assert page['total'] == 1
     assert client.get(f'{path}/recorded-timeline', headers=h,
                      params={**PARAMS, 'started_at': '0001-01-01T00:00:00+14:00'}).status_code == 422

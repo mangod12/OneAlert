@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import AwareDatetime
-from sqlalchemy import func, select
+from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
@@ -50,7 +50,12 @@ async def recorded_source_timeline(
     hours = int(bucket_hours)
     start, end = window(started_at, ended_before, hours)
     seconds = hours * 3600
-    bucket = func.floor(func.extract('epoch', SecurityEvent.timestamp) / seconds)
+    epoch = func.extract('epoch', SecurityEvent.timestamp)
+    if db.bind.dialect.name == 'sqlite':
+        # Older SQLite rounds fractional seconds into the next second/hour during strftime.
+        # Stored timestamps use SQLAlchemy's fixed ISO representation. Discard fractions first.
+        epoch = cast(func.strftime('%s', func.substr(SecurityEvent.timestamp, 1, 19)), Integer)
+    bucket = func.floor(epoch / seconds)
     result = (await db.execute(select(bucket, func.count(SecurityEvent.id)).where(
         SecurityEvent.user_id == current_user.id, SecurityEvent.source_id == source_id,
         SecurityEvent.timestamp >= start, SecurityEvent.timestamp < end).group_by(bucket))).all()
