@@ -597,6 +597,18 @@ describe('Source-parser preview attached to an explicit event import', () => {
     await selectFile(); fireEvent.change(screen.getByLabelText('Source type'), { target: { value: 'windows_security' } });
     fireEvent.click(previewButton()); await screen.findByText(/Parser preview could not be verified/); expect(screen.queryByLabelText('Loaded parser-preview counters')).toBeNull(); expect(mockPost).toHaveBeenCalledTimes(1);
   });
+  it('keeps the exact attached preview and reconciles completed response counters after the dialog closes', async () => {
+    await selectFile(); fireEvent.click(previewButton()); await screen.findByLabelText('Loaded parser-preview counters');
+    mockPost.mockResolvedValueOnce({ data: { success: true, data: { received: 2, ingested: 1, skipped: 1, redacted: 0, source_id: 4, skip_reasons: { invalid_fields: 1 } } } });
+    fireEvent.click(uploadButton()); await screen.findByText(/All recorded counters and skip-reason counts match/);
+    expect(screen.queryByRole('dialog')).toBeNull(); expect(screen.getByLabelText('Attached preview and import response comparison').textContent).toContain(hash); expect(mockPost).toHaveBeenCalledTimes(2);
+  });
+  it('does not launder contradictory raw reason metadata into a matching allowlisted receipt', async () => {
+    await selectFile(); fireEvent.click(previewButton()); await screen.findByLabelText('Loaded parser-preview counters');
+    mockPost.mockResolvedValueOnce({ data: { success: true, data: { received: 2, ingested: 1, skipped: 1, redacted: 0, skip_reasons: { invalid_fields: 1, PRIVATE_REASON: 1 } } } });
+    fireEvent.click(uploadButton()); await screen.findByText(/Preview-to-import comparison could not be verified/);
+    expect(screen.queryByText(/PRIVATE_REASON/)).toBeNull(); expect(screen.queryByText(/All recorded counters/)).toBeNull(); expect(mockPost).toHaveBeenCalledTimes(2);
+  });
   it('closing and reopening does not restore an old in-flight preview', async () => {
     let resolve!: (value: unknown) => void; mockPost.mockReturnValueOnce(new Promise(done => { resolve = done; }));
     await selectFile(); fireEvent.click(previewButton()); await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1)); fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));

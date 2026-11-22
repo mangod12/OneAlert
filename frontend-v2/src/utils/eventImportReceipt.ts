@@ -1,7 +1,10 @@
+import type { EventParserPreview } from './eventParserPreview';
 export interface ImportReceipt {
   filename: string;
   parser: string;
   received_at: string;
+  parser_preview?: EventParserPreview;
+  preview_response_unverifiable?: boolean;
   result: { received?: number; ingested?: number; skipped?: number; redacted?: number; source_id?: number; skip_reasons?: Record<string, number> };
 }
 export const reasonLabels: Record<string, string> = {

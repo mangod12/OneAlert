@@ -41,3 +41,12 @@ describe('Event import response integration', () => {
     expect(screen.getByRole('dialog')).toBeTruthy();
   });
 });
+
+it('does not turn an omitted imported counter into a recorded zero', async () => {
+  post.mockResolvedValue({ data: { data: { received: 1, skipped: 0 } } }); setup(); await screen.findByText('No events ingested yet'); await upload();
+  expect(await screen.findByText('Imported count was not recorded in this response.')).toBeTruthy(); expect(screen.queryByText('No events were imported.')).toBeNull(); expect(post).toHaveBeenCalledOnce();
+});
+it('does not accept an explicitly non-success upload envelope as a completed import', async () => {
+  post.mockResolvedValue({ data: { success: false, data: { received: 1, ingested: 1, skipped: 0 } } }); setup(); await screen.findByText('No events ingested yet'); await upload();
+  await screen.findByText(/Import was not confirmed/); expect(screen.queryByRole('region', { name: 'Last event import response' })).toBeNull(); expect(screen.getByRole('dialog')).toBeTruthy(); expect(post).toHaveBeenCalledOnce();
+});
