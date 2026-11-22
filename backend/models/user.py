@@ -228,6 +228,7 @@ class UserResponse(BaseModel):
     full_name: str | None = None
     company: str | None = None
     is_active: bool
+    role: str
     is_verified: bool
     created_at: datetime
     updated_at: datetime | None = None
