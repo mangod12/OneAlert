@@ -9,7 +9,7 @@ def _text(value, limit):
     return str(value or '')[:limit]
 
 
-def build_detection_receipt(run_id, cutoff, until, stats, rules, generated, ai_status):
+def build_detection_receipt(run_id, cutoff, until, stats, rules, generated, ai_status, input_context=None):
     """Keep bounded fields with explicit omission/truncation and method labels."""
     all_findings = [('rule', finding) for finding in rules] + [('ai', finding) for finding in generated]
     findings = []
@@ -20,7 +20,7 @@ def build_detection_receipt(run_id, cutoff, until, stats, rules, generated, ai_s
             'affected_ips': [_text(ip, 64) for ip in finding.get('affected_ips', [])[:10]],
             'recommended_actions': [_text(action, 240) for action in finding.get('recommended_actions', [])[:5]],
         })
-    return {'format': 'onealert-detection-review', 'version': 1, 'run_id': run_id,
+    return {'input_context': input_context, 'format': 'onealert-detection-review', 'version': 1, 'run_id': run_id,
             'window_from': cutoff.isoformat(), 'window_until': until.isoformat(),
             'total_events': stats['total_events'], 'alert_events': stats['alert_events'],
             'rule_count': len(rules), 'ai_count': len(generated), 'ai_status': ai_status,
