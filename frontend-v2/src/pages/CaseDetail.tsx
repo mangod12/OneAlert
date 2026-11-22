@@ -1,3 +1,4 @@
+import { EvidenceNoteSourceIndex } from '../components/EvidenceNoteSourceIndex';
 import { CaseEvidenceChronology } from '../components/CaseEvidenceChronology';
 import { TriageCoverageReceipt } from '../components/TriageCoverageReceipt';
 import { CaseEvidenceOverlap } from '../components/CaseEvidenceOverlap';
@@ -970,6 +971,7 @@ export function CaseDetail() {
                 {addingNote ? 'Adding…' : 'Add note'}
               </button>
             </form>
+            <EvidenceNoteSourceIndex caseId={caseData.id} entries={caseData.timeline} onSelect={noteId => { const params = new URLSearchParams(searchParams); params.set('note', String(noteId)); navigate(`/cases/${caseId}?${params}`, { replace: true }); }} />
             <TimelineExplorer key={caseData.id} entries={caseData.timeline} pinnedIds={[highlightedNoteId, editingNoteId].filter((id): id is number => id !== null)}>
                 {(entry) => {
                   const Icon = timelineIcons[entry.entry_type] || Clock;

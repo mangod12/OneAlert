@@ -1207,3 +1207,30 @@ it('explains lexical ranking separately from recorded shared technique evidence'
   mockLoad(); renderDetail(); const link = await screen.findByRole('link', { name: 'Prepare a hunt hypothesis from this investigation' });
   expect(link.getAttribute('href')).toBe('/hunt?source_case=7'); expect(mockPost).not.toHaveBeenCalled();
  });
+
+
+describe('Loaded analyst source reference index', () => {
+  const metadata = { kind: 'reviewed_evidence_note', schema_version: 1, case_id: 7, record_kind: 'event', record_id: 21, record_fingerprint: 'a'.repeat(64), reviewed_fingerprint: 'b'.repeat(64), record_snapshot: { label_at_review: 'Saved indexed source label', label_truncated: false, severity: 'high', recorded_at: null, processing_label: 'in_case' } };
+  const note = { id: 99, timestamp: '2026-11-22T12:00:00Z', entry_type: 'note', source: 'human', content: 'Indexed interpretation to locate', author_email: 'owner@example.com', metadata_json: metadata };
+  it.each([5, 9, null])('finds and pins the exact note outside timeline filters without source reads or writes for user %s', async userId => {
+    const owner = useAuthStore.getState().user!;
+    useAuthStore.setState({ user: userId === null ? null : { ...owner, id: userId } });
+    mockLoadWithTimeline([note]); renderDetail('/cases/7?task=71');
+    await screen.findByText(note.content);
+    const index = screen.getByRole('region', { name: 'Analyst source reference index' });
+    expect(within(index).queryByRole('list')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Find timeline evidence'), { target: { value: 'not matching any timeline entry' } });
+    expect(screen.queryByText(note.content)).toBeNull();
+    const before = mockGet.mock.calls.length;
+    fireEvent.click(within(index).getByRole('button', { name: 'Explore saved source notes' }));
+    expect(within(index).getByText(note.content)).toBeTruthy();
+    fireEvent.click(within(index).getByRole('button', { name: 'Show note #99 in timeline' }));
+    await waitFor(() => expect(document.getElementById('case-note-99')).toBeTruthy());
+    expect(screen.getByText(/1 linked or edited entry is kept visible/)).toBeTruthy();
+    expect(document.getElementById('case-note-99')!.className).toContain('ring-2');
+    expect(mockGet.mock.calls.length).toBe(before);
+    expect(mockGet.mock.calls.some(([url]) => url.includes('/source-comparison'))).toBe(false);
+    expect(within(index).queryByRole('link')).toBeNull();
+    expect(mockPost).not.toHaveBeenCalled(); expect(mockPatch).not.toHaveBeenCalled(); expect(mockDelete).not.toHaveBeenCalled();
+  });
+});
