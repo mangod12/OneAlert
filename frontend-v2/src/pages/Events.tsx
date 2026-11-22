@@ -17,6 +17,7 @@ import { reviewEventFile, type EventFileReview } from '../utils/eventFileReview'
 import { EventParserPreviewPanel } from '../components/EventParserPreviewPanel';
 import { WindowsSecurityFormatHelp } from '../components/WindowsSecurityFormatHelp';
 import { eventSourceParserLabels, type EventParserPreview } from '../utils/eventParserPreview';
+import { compareImportPreview, snapshotImportPreview } from '../utils/eventImportComparison';
 import { EventImportReceipt } from '../components/EventImportReceipt';
 import { importResponseMetadata, type ImportReceipt } from '../utils/eventImportReceipt';
 import { eventSeverityTones } from '../components/ui/tones';
@@ -198,28 +199,31 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
     apiClient.get('/events/types').then(res => setEventTypes(res.data.types ?? [])).catch(() => {});
   }, []);
 
-  const handleUpload = async (file: File, sourceType: string, previewFingerprint?: string): Promise<EventUploadOutcome> => {
+  const handleUpload = async (file: File, sourceType: string, parserPreview?: EventParserPreview): Promise<EventUploadOutcome> => {
     if (uploadInFlight.current) return;
     uploadInFlight.current = true;
     setUploading(true);
     try {
+      const preview = snapshotImportPreview(parserPreview, file, sourceType);
       const form = new FormData();
       form.append('file', file);
       const res = await apiClient.post('/events/upload', form, {
-        params: { source_type: sourceType, ...(previewFingerprint ? { preview_fingerprint: previewFingerprint } : {}) },
+        params: { source_type: sourceType, ...(preview ? { preview_fingerprint: preview.fingerprint } : {}) },
         headers: { 'Content-Type': 'multipart/form-data' },
       });
+      if (res.data?.success !== undefined && res.data.success !== true) throw new Error('The import response was not confirmed. Check existing events before retrying.');
       const result = importResponseMetadata(res.data?.data);
-      const ingested = result.ingested ?? 0;
+      const ingested = result.ingested;
       const skipped = result.skipped ?? 0;
-      setImportReceipt({ filename: file.name, parser: sourceType, received_at: new Date().toISOString(), result });
-      toast(`Ingested ${ingested} event${ingested === 1 ? '' : 's'} from ${file.name}${skipped ? ` (${skipped} skipped)` : ''}.`, ingested === 0 || skipped > 0 ? 'warning' : 'success');
+      setImportReceipt({ filename: file.name, parser: sourceType, received_at: new Date().toISOString(), result, ...(preview ? { parser_preview: preview, preview_response_unverifiable: compareImportPreview(preview, sourceType, res.data?.data).status === 'unverifiable' } : {}) });
+      if (ingested === undefined) toast('Import response received without a recorded imported count. Review the response and existing events before any retry.', 'warning');
+      else toast(`Ingested ${ingested} event${ingested === 1 ? '' : 's'} from ${file.name}${skipped ? ` (${skipped} skipped)` : ''}.`, ingested === 0 || skipped > 0 || result.skipped === undefined ? 'warning' : 'success');
       setShowUpload(false);
       await fetchEvents();
       return 'uploaded';
     } catch (err: unknown) {
       toast(getApiErrorMessage(err, 'The file could not be ingested. Use Suricata EVE JSON, Zeek JSON logs or Windows Security-channel JSON.'), 'error');
-      return previewFingerprint && (err as { response?: { status?: number } } | null)?.response?.status === 409 ? 'preview_changed' : 'failed';
+      return parserPreview && (err as { response?: { status?: number } } | null)?.response?.status === 409 ? 'preview_changed' : 'failed';
     } finally {
       uploadInFlight.current = false;
       setUploading(false);
@@ -550,7 +554,7 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
 function EventUploadDialog({ uploading, onClose, onUpload }: {
   uploading: boolean;
   onClose: () => void;
-  onUpload: (file: File, sourceType: string, previewFingerprint?: string) => Promise<EventUploadOutcome>;
+  onUpload: (file: File, sourceType: string, parserPreview?: EventParserPreview) => Promise<EventUploadOutcome>;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [sourceType, setSourceType] = useState('suricata');
@@ -589,7 +593,7 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
     }
     setFormError('');
     const version = readVersion.current;
-    const outcome = await onUpload(file, sourceType, parserPreview?.fingerprint);
+    const outcome = await onUpload(file, sourceType, parserPreview ?? undefined);
     if (version === readVersion.current && (outcome === 'failed' || outcome === 'preview_changed')) {
       setParserPreview(null); setPreviewGeneration(value => value + 1);
       setFormError(outcome === 'preview_changed' ? 'The server refused the preview binding before importing. Preview was cleared. Choose the file or parser again and request a fresh preview; no automatic retry.' : 'Import was not confirmed. Preview was cleared. Check your events before retrying; repeated imports can create duplicates.');
