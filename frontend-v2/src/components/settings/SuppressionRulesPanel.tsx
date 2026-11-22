@@ -6,6 +6,7 @@ import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { Panel } from '../ui/Panel';
 import { StatusBadge } from '../ui/StatusBadge';
 import { toast } from '../Toast';
+import { SuppressionEditReview } from './SuppressionEditReview';
 import { SuppressionStatusReview } from './SuppressionStatusReview';
 import { type SuppressionRuleSnapshot } from '../../utils/suppressionStatusReview';
 import { SuppressionDraftPreview, type SuppressionDraft } from './SuppressionDraftPreview';
@@ -44,6 +45,7 @@ export function SuppressionRulesPanel() {
   const [creating, setCreating] = useState(false);
   const [previewDraft, setPreviewDraft] = useState<SuppressionDraft | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [pendingEdit, setPendingEdit] = useState<number | null>(null);
   const [pendingStatus, setPendingStatus] = useState<{ id: number; enabled: boolean } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<SuppressionRule | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -152,12 +154,13 @@ export function SuppressionRulesPanel() {
                     {rule.matching_active_alerts > 0 && ` · matches ${rule.matching_active_alerts} active alert${rule.matching_active_alerts === 1 ? '' : 's'} now`}
                   </p>
                 </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
+                  <button type="button" disabled={pendingEdit !== null || pendingStatus !== null || pendingDelete !== null} onClick={() => setPendingEdit(rule.id)} aria-label={`Edit saved rule ${rule.name}`} className="rounded-md border border-surface-600 px-2.5 py-1.5 text-xs text-primary-300 disabled:opacity-40">Edit with review</button>
                   <a href={`/app/settings/suppression-rules/${rule.id}/overlap`} className="rounded-md border border-surface-600 px-2.5 py-1.5 text-xs text-primary-300">Review current overlap for rule #{rule.id}</a>
                   <a href={`/app/settings/suppression-rules/${rule.id}`} className="rounded-md border border-surface-600 px-2.5 py-1.5 text-xs text-primary-300">Review matching alerts for rule #{rule.id}</a>
                   <button
                     type="button"
-                    disabled={pendingStatus !== null}
+                    disabled={pendingStatus !== null || pendingEdit !== null}
                     onClick={() => setPendingStatus({ id: rule.id, enabled: !rule.enabled })}
                     className="rounded-md border border-surface-600 px-2.5 py-1.5 text-xs text-surface-300 transition-colors hover:text-surface-100"
                   >
@@ -165,6 +168,7 @@ export function SuppressionRulesPanel() {
                   </button>
                   <button
                     type="button"
+                    disabled={pendingEdit !== null}
                     onClick={() => setPendingDelete(rule)}
                     aria-label={`Delete rule ${rule.name}`}
                     className="rounded-md border border-surface-600 p-1.5 text-surface-400 transition-colors hover:border-danger/50 hover:text-danger"
@@ -229,6 +233,7 @@ export function SuppressionRulesPanel() {
       </div>
 
       {pendingStatus && <SuppressionStatusReview key={`${pendingStatus.id}:${pendingStatus.enabled}`} ruleId={pendingStatus.id} enabled={pendingStatus.enabled} onClose={() => setPendingStatus(null)} onSaved={rule => { setRules(current => current.map(saved => saved.id === rule.id ? { ...saved, ...rule } : saved)); void loadRules(); }} />}
+      {pendingEdit !== null && <SuppressionEditReview key={pendingEdit} ruleId={pendingEdit} onClose={() => setPendingEdit(null)} onSaved={rule => { setRules(current => current.map(saved => saved.id === rule.id ? { ...saved, ...rule } : saved)); void loadRules(); }} />}
       {previewDraft && <SuppressionDraftPreview proposal={previewDraft} onClose={() => setPreviewDraft(null)} />}
       {pendingDelete && (
         <ConfirmDialog
