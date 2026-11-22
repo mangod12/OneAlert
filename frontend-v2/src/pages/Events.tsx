@@ -15,6 +15,7 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import { SavedViewsMenu } from '../components/SavedViewsMenu';
 import { reviewEventFile, type EventFileReview } from '../utils/eventFileReview';
 import { EventParserPreviewPanel } from '../components/EventParserPreviewPanel';
+import { GitHubAuditFormatHelp } from '../components/GitHubAuditFormatHelp';
 import { EntraSigninFormatHelp } from '../components/EntraSigninFormatHelp';
 import { CloudTrailFormatHelp } from '../components/CloudTrailFormatHelp';
 import { LinuxJournalFormatHelp } from '../components/LinuxJournalFormatHelp';
@@ -635,6 +636,7 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
           </div>
           {sourceType === 'windows_security' && <WindowsSecurityFormatHelp />}
           {sourceType === 'linux_journal' && <LinuxJournalFormatHelp />}
+          {sourceType === 'github_audit' && <GitHubAuditFormatHelp />}
           {sourceType === 'entra_signin' && <EntraSigninFormatHelp />}
           {sourceType === 'aws_cloudtrail' && <CloudTrailFormatHelp />}
           {reviewing && <p role="status" className="text-xs text-surface-400">Reading and validating the selected file locally...</p>}
