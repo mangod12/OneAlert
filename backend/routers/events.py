@@ -24,11 +24,13 @@ from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.routers.event_evidence import router as evidence_router
 from backend.routers.event_investigation import router as investigation_router
+from backend.routers.event_recorded_neighbors import router as recorded_neighbors_router
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 router.include_router(evidence_router)
+router.include_router(recorded_neighbors_router)
 router.include_router(investigation_router)
 
 MAX_EVENT_UPLOAD_BYTES = 10 * 1024 * 1024
