@@ -47,3 +47,10 @@ it('treats failure as unavailable, not no events, and supports retry', async () 
 it('reports download failures without losing loaded coverage or rereading', async () => {
   render(<EventSourceEvidence sourceId={7} />); await read(); save.mockImplementationOnce(() => { throw Error('failed'); }); fireEvent.click(screen.getByRole('button', { name: 'Download loaded source profile JSON' })); expect(screen.getByRole('alert')).toHaveTextContent('could not be downloaded'); expect(screen.getByText('Retained owned events: 11')).toBeInTheDocument(); expect(get).toHaveBeenCalledTimes(1);
 });
+it('opens an explicit exact-label event read from the loaded profile without changing its count', async () => {
+  render(<EventSourceEvidence sourceId={7} />); await read(); get.mockRejectedValueOnce(Error('no drilldown')); fireEvent.click(screen.getAllByRole('button', { name: "Read this exact label's events" })[0]); expect(get).toHaveBeenLastCalledWith('/events/sources/7/group-events', { params: { group: 'severity', value: 'custom', page: 1, size: 10 } }); expect(await screen.findByRole('alert')).toHaveTextContent('No absence'); expect(screen.getByText('Retained owned events: 11')).toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Close source group events' })); expect(screen.queryByRole('region', { name: 'Exact source label event records' })).not.toBeInTheDocument();
+});
+
+it('rereads the same exact group on another explicit click rather than reusing the prior drilldown', async () => {
+  render(<EventSourceEvidence sourceId={7} />); await read(); get.mockRejectedValue(Error('no drilldown')); const button = screen.getAllByRole('button', { name: "Read this exact label's events" })[0]; fireEvent.click(button); await screen.findByRole('alert'); expect(get).toHaveBeenCalledTimes(2); fireEvent.click(button); await screen.findByRole('alert'); expect(get).toHaveBeenCalledTimes(3);
+});
