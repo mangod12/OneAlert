@@ -6,7 +6,7 @@ import { FileCode } from 'lucide-react';
 type HuntRow = Record<string, unknown>;
 export interface HuntQueryResult {
   outcome?: 'completed' | 'rejected' | 'failed';
-  query?: { description?: string; sql?: string; params?: Record<string, unknown> };
+  query?: { description?: string; sql?: string; params?: Record<string, unknown>; reviewed_query_number?: number };
   execution?: { contract: string; selected_columns: string[]; order_by: string; direction: string; requested_limit: number | null; row_limit: number; tie_breaker?: { column: string; direction: string } | null };
   time_window?: { since?: string; before?: string };
   row_count?: number;
@@ -18,7 +18,7 @@ function cellText(value: unknown): string {
   return typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
-export function HuntQueryEvidence({ result, index, savedReview }: { result: HuntQueryResult; index: number; savedReview?: { sessionId: number; fingerprint: string; onRefresh: () => void } }) {
+export function HuntQueryEvidence({ result, index, savedReview, originalDraftQuery }: { result: HuntQueryResult; index: number; originalDraftQuery?: number; savedReview?: { sessionId: number; fingerprint: string; onRefresh: () => void } }) {
   const [selected, setSelected] = useState<{ rowNumber: number; eventId: number } | null>(null);
   const canReview = savedReview && Number.isSafeInteger(savedReview.sessionId) && savedReview.sessionId > 0 && /^[0-9a-f]{64}$/.test(savedReview.fingerprint) && result.outcome === 'completed' && result.execution?.contract === 'scoped_select_v1' && result.execution.selected_columns.includes('id') && new Set(result.execution.selected_columns).size === result.execution.selected_columns.length;
   const [page, setPage] = useState(1), [search, setSearch] = useState(''), [field, setField] = useState('');
@@ -30,6 +30,7 @@ export function HuntQueryEvidence({ result, index, savedReview }: { result: Hunt
   const currentPage = Math.min(page, pages);
   const visible = matches.slice((currentPage - 1) * 20, currentPage * 20);
   return <section aria-label={`Query ${index + 1} evidence`} className="mb-4 min-w-0 rounded-lg border border-surface-700 p-3 last:mb-0">
+    {Number.isInteger(originalDraftQuery) && Number(originalDraftQuery) >= 1 && Number(originalDraftQuery) <= 3 && <p className="mb-3 text-xs text-surface-400">Original saved draft query #{originalDraftQuery}, shown as result position {index + 1} in this selected-query execution.</p>}
     <div className="mb-2 flex flex-wrap items-center gap-2">
       <FileCode className="h-4 w-4 shrink-0 text-primary-400" aria-hidden="true" />
       <h3 className="min-w-0 break-words text-sm font-medium text-surface-50">{result.query?.description || `Query ${index + 1}`}</h3>

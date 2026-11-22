@@ -11,10 +11,12 @@ from backend.database.db import get_async_db
 from backend.models.detection_rule import DetectionRule, DetectionRuleResponse, HuntSession, HuntSessionResponse
 from backend.models.user import User
 from backend.routers.auth import get_active_user
+from backend.routers.hunt_query_drafts import router as query_drafts_router
 from backend.routers.hunt_retained_rows import router as retained_rows_router
 from backend.services.hunt_retained_review import retained_fingerprint
 
 router = APIRouter()
+router.include_router(query_drafts_router)
 router.include_router(retained_rows_router)
 
 
@@ -107,7 +109,7 @@ async def hunt_history(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     search: str | None = Query(None, max_length=200),
-    state: str | None = Query(None, pattern="^(running|completed|partial|failed)$"),
+    state: str | None = Query(None, pattern="^(running|prepared|completed|partial|failed)$"),
     with_findings: bool = Query(False),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),

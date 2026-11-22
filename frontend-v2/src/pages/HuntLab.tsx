@@ -1,3 +1,5 @@
+import { isReviewedHuntOrigin } from '../utils/huntQueryDraft';
+import { HuntQueryDraftWorkflow } from '../components/HuntQueryDraftWorkflow';
 import { EventHuntDraft } from '../components/EventHuntDraft';
 import { CaseHuntDraft } from '../components/CaseHuntDraft';
 import { HuntRunLink } from '../components/HuntRunLink';
@@ -62,7 +64,11 @@ export function HuntLabRoute() {
   const sourceId = /^[1-9][0-9]*$/.test(sourceRaw) && Number.isSafeInteger(Number(sourceRaw)) && Number(sourceRaw) <= 2147483647 ? Number(sourceRaw) : null;
   const eventSources = params.getAll('source_event'), eventRaw = eventSources.length === 1 ? eventSources[0] : '';
   const eventSourceId = /^[1-9][0-9]*$/.test(eventRaw) && Number.isSafeInteger(Number(eventRaw)) && Number(eventRaw) <= 2147483647 ? Number(eventRaw) : null;
+  const draftValues = params.getAll('query_draft'), draftRaw = draftValues.length === 1 ? draftValues[0] : '';
+  const queryDraftId = /^[1-9][0-9]*$/.test(draftRaw) && Number.isSafeInteger(Number(draftRaw)) && Number(draftRaw) <= 2147483647 ? Number(draftRaw) : null;
+  const conflictingDraftSource = draftValues.length > 0 && (sources.length > 0 || eventSources.length > 0);
   const conflictingSources = sources.length > 0 && eventSources.length > 0;
+  const closeQueryDraft = () => setParams(current => { const next = new URLSearchParams(current); next.delete('query_draft'); return next; }, { replace: true });
   const clearEventSource = () => setParams(current => { const next = new URLSearchParams(current); next.delete('source_event'); return next; }, { replace: true });
   const clearSource = () => setParams(current => { const next = new URLSearchParams(current); next.delete('source_case'); return next; }, { replace: true });
   return <>
@@ -73,12 +79,20 @@ export function HuntLabRoute() {
     {eventSources.length > 0 && eventSourceId === null && <p role="alert" className="mb-4 text-sm text-danger">Invalid source event handoff. Use one positive whole-number event ID. No event was read and your hypothesis is unchanged. <button type="button" className="text-primary-300" onClick={clearEventSource}>Clear invalid event handoff</button></p>}
     {conflictingSources && <p role="alert" className="mb-4 text-sm text-danger">This link names both an investigation and event source. Neither source draft is opened. Close one handoff before reading a draft.</p>}
     {eventSourceId !== null && <button type="button" className="mb-3 text-xs text-primary-300 underline" onClick={clearEventSource}>Close event-to-hunt handoff</button>}
-    <HuntLab sourceCaseId={conflictingSources ? null : sourceId} sourceEventId={conflictingSources ? null : eventSourceId} />
+    {draftValues.length > 0 && queryDraftId === null && <p role="alert" className="mb-4 text-sm text-danger">This saved query-draft link needs exactly one positive whole-number draft ID. No query draft was read or executed. <button type="button" className="text-primary-300" onClick={closeQueryDraft}>Clear invalid query-draft link</button></p>}
+    {conflictingDraftSource && <p role="alert" className="mb-4 text-sm text-danger">This link combines a saved query draft with another hypothesis source. Neither source is opened. <button type="button" className="text-primary-300" onClick={closeQueryDraft}>Close conflicting query-draft link</button></p>}
+    {queryDraftId !== null && !conflictingDraftSource && <button type="button" className="mb-3 text-xs text-primary-300 underline" onClick={closeQueryDraft}>Close saved query-draft link</button>}
+    <HuntLab sourceCaseId={conflictingSources || conflictingDraftSource ? null : sourceId} sourceEventId={conflictingSources || conflictingDraftSource ? null : eventSourceId} initialSavedDraftId={conflictingDraftSource ? null : queryDraftId} />
   </>;
 }
 
-export function HuntLab({ sourceCaseId = null, sourceEventId = null }: { sourceCaseId?: number | null; sourceEventId?: number | null } = {}) {
+export function HuntLab({ sourceCaseId = null, sourceEventId = null, initialSavedDraftId = null }: { sourceCaseId?: number | null; sourceEventId?: number | null; initialSavedDraftId?: number | null } = {}) {
   const [hypothesis, setHypothesis] = useState('');
+  const [draftBusy, setDraftBusy] = useState(false);
+  const [savedDraftId, setSavedDraftId] = useState<number | null>(initialSavedDraftId);
+  const originalDraftId = useRef(initialSavedDraftId);
+  useEffect(() => { if (originalDraftId.current !== initialSavedDraftId) { originalDraftId.current = initialSavedDraftId; setSavedDraftId(initialSavedDraftId); } }, [initialSavedDraftId]);
+  const fillSavedHypothesis = useCallback((value: string) => setHypothesis(current => current || value), []);
   const [sessions, setSessions] = useState<HuntSession[]>([]);
   const [resultVersion, setResultVersion] = useState(0);
   const [activeResult, setActiveResult] = useState<HuntResult | null>(null);
@@ -133,7 +147,7 @@ export function HuntLab({ sourceCaseId = null, sourceEventId = null }: { sourceC
   useEffect(() => { void fetchSessions(); return () => { historyRequest.current += 1; }; }, [fetchSessions]);
 
   const startHunt = async () => {
-    if (huntInFlight.current || loadingSessionId !== null || !hypothesis.trim()) return;
+    if (huntInFlight.current || draftBusy || loadingSessionId !== null || !hypothesis.trim()) return;
     huntInFlight.current = true;
     setHunting(true);
     setActiveResult(null);
@@ -153,13 +167,17 @@ export function HuntLab({ sourceCaseId = null, sourceEventId = null }: { sourceC
   const [loadingSessionId, setLoadingSessionId] = useState<number | null>(null);
 
   const viewSession = async (sessionId: number) => {
-    if (loadingSessionId !== null || hunting) return;
+    if (loadingSessionId !== null || hunting || draftBusy) return;
     setLoadingSessionId(sessionId);
     try {
       const res = await apiClient.get(`/hunt/${sessionId}`);
       const detail = res.data;
+      if (detail.id !== sessionId || typeof detail.hypothesis !== 'string') throw Error('The saved hunt response did not match this exact requested record.');
+      if (detail.status === 'prepared') { setHypothesis(detail.hypothesis ?? ''); setSavedDraftId(detail.id); setActiveResult(null); return; }
+      setSavedDraftId(null);
       const resultData: HuntResult = Array.isArray(detail.result_data)
         ? { query_results: detail.result_data } : detail.result_data ?? {};
+      if (resultData.reviewed_draft !== undefined && !isReviewedHuntOrigin(resultData.reviewed_draft)) throw Error('The saved query source receipt is unsupported. No source relationship was inferred.');
       setHypothesis(detail.hypothesis ?? '');
       setResultVersion(value => value + 1);
       setActiveResult({
@@ -300,8 +318,8 @@ export function HuntLab({ sourceCaseId = null, sourceEventId = null }: { sourceC
     <div className="space-y-6">
       <PageHeader eyebrow="Analyze" title="Threat Hunt Lab" description="Turn an investigation hypothesis into reviewable queries, evidence, and detection content." />
 
-      {sourceEventId !== null && <EventHuntDraft key={sourceEventId} eventId={sourceEventId} hasDraft={!!hypothesis.trim()} busy={hunting || loadingSessionId !== null} onApply={setHypothesis} />}
-      {sourceCaseId !== null && <CaseHuntDraft key={sourceCaseId} caseId={sourceCaseId} hasDraft={!!hypothesis.trim()} busy={hunting || loadingSessionId !== null} onApply={setHypothesis} />}
+      {sourceEventId !== null && <EventHuntDraft key={sourceEventId} eventId={sourceEventId} hasDraft={!!hypothesis.trim()} busy={hunting || draftBusy || loadingSessionId !== null} onApply={setHypothesis} />}
+      {sourceCaseId !== null && <CaseHuntDraft key={sourceCaseId} caseId={sourceCaseId} hasDraft={!!hypothesis.trim()} busy={hunting || draftBusy || loadingSessionId !== null} onApply={setHypothesis} />}
 
       {/* Hunt Input */}
       <div className="oa-panel p-6">
@@ -311,6 +329,7 @@ export function HuntLab({ sourceCaseId = null, sourceEventId = null }: { sourceC
             type="text"
             id="hunt-hypothesis"
             value={hypothesis}
+            disabled={draftBusy}
             onChange={e => setHypothesis(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && startHunt()}
             placeholder="e.g. Look for lateral movement from engineering workstation to PLC subnet"
@@ -318,7 +337,7 @@ export function HuntLab({ sourceCaseId = null, sourceEventId = null }: { sourceC
           />
           <button
             onClick={startHunt}
-            disabled={hunting || loadingSessionId !== null || !hypothesis.trim()}
+            disabled={hunting || draftBusy || loadingSessionId !== null || !hypothesis.trim()}
             className="flex items-center gap-2 px-6 py-3 bg-primary-500 hover:bg-primary-400 disabled:opacity-50 text-surface-950 rounded-lg font-medium transition-colors"
           >
             <Play className="w-4 h-4" />
@@ -331,6 +350,7 @@ export function HuntLab({ sourceCaseId = null, sourceEventId = null }: { sourceC
             <button
               key={example}
               onClick={() => setHypothesis(example)}
+              disabled={draftBusy}
               className="px-3 py-1 text-xs bg-surface-700 text-surface-400 rounded-full hover:bg-surface-600 hover:text-surface-300 transition-colors"
             >
               {example}
@@ -338,6 +358,8 @@ export function HuntLab({ sourceCaseId = null, sourceEventId = null }: { sourceC
           ))}
         </div>
       </div>
+
+      <HuntQueryDraftWorkflow key={savedDraftId ?? 'new-draft'} hypothesis={hypothesis} savedDraftId={savedDraftId} onSavedHypothesis={fillSavedHypothesis} disabled={hunting || loadingSessionId !== null} onBusyChange={setDraftBusy} onSaved={() => setHistoryRefresh(value => value + 1)} onExecuted={value => { setResultVersion(version => version + 1); setActiveResult(value); setHistoryRefresh(version => version + 1); }} />
 
       {/* Active Result */}
       {activeResult && (
@@ -349,6 +371,7 @@ export function HuntLab({ sourceCaseId = null, sourceEventId = null }: { sourceC
             </div>
             <p className="mb-3 text-xs text-surface-400">Exports contain the currently retained evidence, including errors and applied metadata where recorded. They do not run a hunt or fetch additional rows. Exports may contain sensitive telemetry and parameters.</p>
             <HuntRunLink runId={activeResult.agent_run_id} />
+            {activeResult.reviewed_draft && <p className="mb-3 text-xs text-surface-400">Executed from saved query draft #{activeResult.reviewed_draft.session_id}, original queries {activeResult.reviewed_draft.query_numbers.join(', ')}. No second AI call or time-window advance. Reopen the source draft through Hunt History.</p>}
             {activeResult.execution_summary ? <section aria-label="Recorded hunt execution summary" className="mb-4 space-y-2 rounded border border-surface-700 p-3 text-sm text-surface-300">
               <p className="font-semibold text-surface-100">Recorded outcome: {activeResult.status ?? 'not recorded'}</p>
               <p>{activeResult.execution_summary.completed} completed · {activeResult.execution_summary.rejected} rejected before execution · {activeResult.execution_summary.failed} execution errors</p>
@@ -362,7 +385,7 @@ export function HuntLab({ sourceCaseId = null, sourceEventId = null }: { sourceC
             )}
 
             {activeResult.query_results?.map((result, index) => (
-              <HuntQueryEvidence key={index} result={result} index={index} />
+              <HuntQueryEvidence key={index} result={result} index={index} originalDraftQuery={activeResult.reviewed_draft?.query_numbers[index]} />
             ))}
           </div>
 
@@ -548,7 +571,8 @@ export function HuntLab({ sourceCaseId = null, sourceEventId = null }: { sourceC
         <form onSubmit={event => { event.preventDefault(); setHistoryKeyword(historySearch.trim()); setHistoryPage(1); }} className="flex flex-wrap gap-2">
           <input aria-label="Search hunt history" maxLength={200} value={historySearch} onChange={event => setHistorySearch(event.target.value)} placeholder="Hypothesis or session ID" className="min-w-0 basis-full sm:basis-0 sm:flex-1 rounded border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100" />
           <button type="submit" className="rounded border border-surface-600 px-3 py-2 text-xs text-primary-300">Search hunts</button>
-          <select aria-label="Hunt history status" value={historyState} onChange={event => { setHistoryState(event.target.value); setHistoryPage(1); }} className="max-w-full rounded border border-surface-600 bg-surface-950 px-2 py-2 text-xs text-surface-200"><option value="">All statuses</option>{['running','completed','partial','failed'].map(value => <option key={value} value={value}>{value}</option>)}</select>
+          <button type="button" disabled={loading} onClick={() => setHistoryRefresh(value => value + 1)} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200 disabled:opacity-40">Refresh hunt history</button>
+          <select aria-label="Hunt history status" value={historyState} onChange={event => { setHistoryState(event.target.value); setHistoryPage(1); }} className="max-w-full rounded border border-surface-600 bg-surface-950 px-2 py-2 text-xs text-surface-200"><option value="">All statuses</option>{['running','prepared','completed','partial','failed'].map(value => <option key={value} value={value}>{value}</option>)}</select>
           <label className="flex items-center gap-2 text-xs text-surface-300"><input type="checkbox" checked={historyFindings} onChange={event => { setHistoryFindings(event.target.checked); setHistoryPage(1); }} />With recorded findings</label>
           {(historyKeyword || historyState || historyFindings) && <button type="button" onClick={() => { setHistorySearch(''); setHistoryKeyword(''); setHistoryState(''); setHistoryFindings(false); setHistoryPage(1); }} className="rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">Clear hunt history filters</button>}
         </form>
@@ -563,7 +587,7 @@ export function HuntLab({ sourceCaseId = null, sourceEventId = null }: { sourceC
               <div key={s.id} className="flex items-start gap-2">
                 <button
                   type="button"
-                  disabled={loadingSessionId !== null || hunting}
+                  disabled={loadingSessionId !== null || hunting || draftBusy}
                   onClick={() => void viewSession(s.id)}
                   aria-label={`Reopen hunt: ${s.hypothesis}`}
                   className="flex flex-1 min-w-0 flex-wrap items-start gap-2 rounded-lg bg-surface-900/50 p-3 text-left transition-colors hover:bg-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-40"
@@ -572,7 +596,7 @@ export function HuntLab({ sourceCaseId = null, sourceEventId = null }: { sourceC
                   <div className="flex-1 min-w-0 basis-40">
                     <p className="break-words text-sm text-surface-50 [overflow-wrap:anywhere]">#{s.id}: {s.hypothesis}</p>
                     <p className="text-xs text-surface-500">
-                      {s.queries_run} queries · {s.findings_count} findings · {new Date(s.created_at).toLocaleDateString()}
+                      {s.status === 'prepared' ? 'Query draft only, no event query executed' : `${s.queries_run} queries · ${s.findings_count} findings`} · {new Date(s.created_at).toLocaleDateString()}
                     </p>
                   </div>
                   <span className={clsx('text-xs px-2 py-0.5 rounded',
@@ -580,10 +604,11 @@ export function HuntLab({ sourceCaseId = null, sourceEventId = null }: { sourceC
                     {s.status}
                   </span>
                 </button>
-                <a href={`/app/hunt?session=${s.id}`} className="max-w-32 rounded border border-surface-600 px-2 py-2 text-xs text-primary-300">Open saved hunt #{s.id} evidence</a>
+                <a href={s.status === 'prepared' ? `/app/hunt?query_draft=${s.id}` : `/app/hunt?session=${s.id}`} className="max-w-32 rounded border border-surface-600 px-2 py-2 text-xs text-primary-300">{s.status === 'prepared' ? `Review saved query draft #${s.id}` : `Open saved hunt #${s.id} evidence`}</a>
                 <button
                   type="button"
                   aria-label={`Delete hunt: ${s.hypothesis}`}
+                  disabled={draftBusy}
                   title="Delete this hunt session"
                   onClick={() => setDeletingSession(s)}
                   className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-surface-600 text-surface-300 hover:bg-surface-800 hover:text-danger"

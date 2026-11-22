@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HuntLab } from './HuntLab';
+import { HuntLab, HuntLabRoute } from './HuntLab';
+import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('../api/client', () => ({
   default: {
@@ -501,5 +502,20 @@ describe('Exact hunt run continuity', () => {
     mockPost.mockResolvedValue({ data: { data: { session_id: 20, agent_run_id: 81, status: 'failed', error: 'No complete query results are retained. This is not a zero-finding result.' } } });
     render(<HuntLab />); fireEvent.change(await screen.findByLabelText('Hunting Hypothesis'), { target: { value: 'Review gateway' } }); fireEvent.click(screen.getByRole('button', { name: 'Hunt' }));
     await screen.findByRole('link', { name: 'Inspect recorded hunt run #81' }); expect(screen.getByRole('alert').textContent).toContain('not a zero-finding result'); expect(screen.queryByRole('region', { name: 'Recorded hunt execution summary' })).toBeNull(); expect(mockPost).toHaveBeenCalledOnce();
+  });
+});
+
+describe('exact saved query-draft links', () => {
+  it.each(['query_draft=', 'query_draft=0', 'query_draft=-1', 'query_draft=1.5', 'query_draft=2147483648', 'query_draft=7&query_draft=8', 'query_draft=abc'])('rejects an invalid draft selector without a fallback draft read %s', async query => {
+    mockGet.mockImplementation(async url => ({ data: url.endsWith('/detections') ? [] : { sessions: [], total: 0 } }));
+    render(<MemoryRouter initialEntries={[`/app/hunt?${query}`]}><HuntLabRoute /></MemoryRouter>);
+    expect(screen.getByRole('alert').textContent).toContain('exactly one positive');
+    await screen.findByText('No hunts yet'); expect(mockGet.mock.calls.some(([url]) => url.includes('/query-drafts/'))).toBe(false); expect(mockPost).not.toHaveBeenCalled();
+  });
+  it.each(['source_case=7', 'source_event=11'])('does not combine an exact query draft with another hypothesis source %s', async other => {
+    mockGet.mockImplementation(async url => ({ data: url.endsWith('/detections') ? [] : { sessions: [], total: 0 } }));
+    render(<MemoryRouter initialEntries={[`/app/hunt?query_draft=7&${other}`]}><HuntLabRoute /></MemoryRouter>);
+    expect(screen.getByRole('alert').textContent).toContain('Neither source is opened'); await screen.findByText('No hunts yet');
+    expect(mockGet.mock.calls.some(([url]) => /query-drafts|events\/|cases\//.test(url))).toBe(false); expect(mockPost).not.toHaveBeenCalled();
   });
 });

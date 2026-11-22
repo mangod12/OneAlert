@@ -120,32 +120,7 @@ class HuntAgent(BaseAgent):
         if not hypothesis:
             return {"error": "No hunting hypothesis provided"}
 
-        # Step 1: Generate hunting queries via LLM
-        start = time.time()
-        try:
-            provider = get_ai_provider(TASK_HUNT)
-            response = await provider.complete_json(
-                [
-                    AIMessage(role="system", content=HUNT_SYSTEM_PROMPT),
-                    AIMessage(
-                        role="user",
-                        content=f"Current UTC time: {datetime.now(UTC).isoformat()}\nHunting hypothesis: {hypothesis}",
-                    ),
-                ]
-            )
-            self._last_model = provider.model
-            await self.log_step(
-                "generate_queries",
-                f"Hypothesis: {hypothesis}",
-                output_summary=json.dumps(response)[:500],
-                tool_used="ai_provider",
-                duration_ms=int((time.time() - start) * 1000),
-            )
-        except Exception as e:
-            logger.error(f"LLM query generation failed: {e}")
-            # Fallback: basic keyword search
-            response = self._fallback_queries(hypothesis)
-            await self.log_step("fallback_queries", f"LLM unavailable: {e}")
+        response = await self._generate_response(hypothesis)
 
         # Step 2: Execute queries (read-only)
         if not isinstance(response, dict):
@@ -216,6 +191,38 @@ class HuntAgent(BaseAgent):
 
         return self._finish_result(hypothesis, response, results)
 
+    async def _generate_response(self, hypothesis):
+        """Generate or fall back without executing an event SELECT."""
+        self._generation_method = "provider_response"
+        start = time.time()
+        try:
+            provider = get_ai_provider(TASK_HUNT)
+            response = await provider.complete_json(
+                [
+                    AIMessage(role="system", content=HUNT_SYSTEM_PROMPT),
+                    AIMessage(
+                        role="user",
+                        content=f"Current UTC time: {datetime.now(UTC).isoformat()}\nHunting hypothesis: {hypothesis}",
+                    ),
+                ]
+            )
+            self._last_model = provider.model
+            await self.log_step(
+                "generate_queries",
+                f"Hypothesis: {hypothesis}",
+                output_summary=json.dumps(response)[:500],
+                tool_used="ai_provider",
+                duration_ms=int((time.time() - start) * 1000),
+            )
+        except Exception as e:
+            logger.error(f"LLM query generation failed: {e}")
+            self._generation_method = "keyword_fallback"
+            # Fallback: basic keyword search
+            response = self._fallback_queries(hypothesis)
+            await self.log_step("fallback_queries", f"LLM unavailable: {e}")
+
+        return response
+
     def _finish_result(self, hypothesis, response, results, error=None):
         completed = sum(result.get("outcome") == "completed" for result in results)
         rejected = sum(result.get("outcome") == "rejected" for result in results)
@@ -257,7 +264,8 @@ class HuntAgent(BaseAgent):
         async with self.db.begin_nested():
             result = await self.db.execute(query)
             columns = result.keys()
-            return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+            return [{name: value.isoformat() if isinstance(value, datetime) else value
+                     for name, value in zip(columns, row, strict=True)} for row in result.fetchall()]
 
     def _build_safe_query(self, sql: str, params: dict) -> object:
         """Build a constrained SQLAlchemy query from validated hunt SQL."""
