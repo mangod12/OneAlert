@@ -5,7 +5,7 @@ import { TriageCorrelationPreview } from './TriageCorrelationPreview';
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 const get = vi.mocked(apiClient.get);
 const sample = { id: 7, label: 'Saved gateway event', severity: 'high', recorded_at: null };
-const group = { position: 1, basis: 'shared_ip_component', alert_count: 0, event_count: 52, alert_ai_input_count: 0, event_ai_input_count: 50, alert_sample: [], event_sample: Array.from({ length: 5 }, (_, i) => ({ ...sample, id: i + 1 })) };
+const group = { membership_fingerprint: 'a'.repeat(64), position: 1, basis: 'shared_ip_component', alert_count: 0, event_count: 52, alert_ai_input_count: 0, event_ai_input_count: 50, alert_sample: [], event_sample: Array.from({ length: 5 }, (_, i) => ({ ...sample, id: i + 1 })) };
 const fixture = { hours_back: 72, cutoff: '2026-11-18T12:00:00Z', retrieved_at: '2026-11-21T12:00:00Z', page: 1, size: 10, groups_total: 1, alerts_selected: 0, events_selected: 53, events_excluded_info_only: 1, records: [group] };
 const open = () => fireEvent.click(screen.getByRole('button', { name: 'Preview triage correlation groups' }));
 beforeEach(() => { vi.resetAllMocks(); get.mockResolvedValue({ data: fixture }); });
