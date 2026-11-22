@@ -1,6 +1,7 @@
+import { expandEventGzip } from './eventGzip';
 export const MAX_EVENT_FILE_BYTES = 10 * 1024 * 1024;
 export const MAX_EVENT_FILE_RECORDS = 50_000;
-export interface EventFileReview { format: string; records: number; sampleFields: string[]; }
+export interface EventFileReview { format: string; records: number; sampleFields: string[]; decodedByteSize?: number; }
 
 const objectRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -58,7 +59,13 @@ export async function reviewEventFile(file: File, sourceType = ''): Promise<Even
       reader.readAsArrayBuffer(file);
     });
   } catch { throw new Error('File could not be read. Choose it again.'); }
+  const signature = new Uint8Array(bytes); const compressed = signature[0] === 31 && signature[1] === 139;
+  if (compressed) {
+    if (sourceType !== 'aws_cloudtrail') throw Error('Gzip input requires the AWS CloudTrail parser. Choose it to review the file locally; no new preview or import was requested.');
+    bytes = await expandEventGzip(bytes, MAX_EVENT_FILE_BYTES);
+  }
   let text: string;
   try { text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { throw new Error('Event file must be valid UTF-8 JSON.'); }
-  return reviewEventText(text, sourceType);
+  const review = reviewEventText(text, sourceType);
+  return compressed ? { ...review, format: `Gzip / ${review.format}`, decodedByteSize: bytes.byteLength } : review;
 }

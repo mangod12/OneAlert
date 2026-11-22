@@ -1,10 +1,12 @@
 """Strict file-envelope validation before creating event sources or records."""
 
 import json
+import zlib
 
 from fastapi import HTTPException
 
 MAX_UPLOAD_RECORDS = 50000
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
 def _reject_non_json_number(value):
@@ -42,6 +44,19 @@ def _validate_nesting(records):
 
 
 def parse_event_upload(content: bytes, source_type: str | None = None) -> list[dict]:
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Event file exceeds the 10 MiB limit")
+    if source_type == "aws_cloudtrail" and content.startswith(b"\x1f\x8b"):
+        decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        try:
+            expanded = decoder.decompress(content, MAX_UPLOAD_BYTES + 1)
+        except zlib.error as exc:
+            raise HTTPException(status_code=400, detail="CloudTrail gzip could not be decoded or verified") from exc
+        if len(expanded) > MAX_UPLOAD_BYTES or decoder.unconsumed_tail:
+            raise HTTPException(status_code=413, detail="Expanded event file exceeds the 10 MiB limit")
+        if not decoder.eof or decoder.unused_data:
+            raise HTTPException(status_code=400, detail="Gzip must be one complete member without trailing data")
+        content = expanded
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
