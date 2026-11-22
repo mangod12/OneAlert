@@ -29,6 +29,7 @@ const Settings = lazy(() => import('./pages/Settings').then(module => ({ default
 const AuditLog = lazy(() => import('./pages/AuditLog').then(module => ({ default: module.AuditLogRoute })));
 const Compliance = lazy(() => import('./pages/Compliance').then(module => ({ default: module.Compliance })));
 const SbomComponentSearch = lazy(() => import('./pages/SbomComponentSearch').then(module => ({ default: module.SbomComponentSearch })));
+const SuppressionOverlapReview = lazy(() => import('./pages/SuppressionOverlapReview').then(module => ({ default: module.SuppressionOverlapReview })));
 const SuppressionMatchEvidence = lazy(() => import('./pages/SuppressionMatchEvidence').then(module => ({ default: module.SuppressionMatchEvidence })));
 const Sbom = lazy(() => import('./pages/Sbom').then(module => ({ default: module.Sbom })));
 const Topology = lazy(() => import('./pages/Topology').then(module => ({ default: module.Topology })));
@@ -82,6 +83,7 @@ function App() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/topology" element={<Topology />} />
           <Route path="/sbom/components" element={<SbomComponentSearch />} />
+          <Route path="/settings/suppression-rules/:ruleId/overlap" element={<SuppressionOverlapReview />} />
           <Route path="/settings/suppression-rules/:ruleId" element={<SuppressionMatchEvidence />} />
           <Route path="/sbom" element={<Sbom />} />
           <Route path="/compliance" element={<Compliance />} />
