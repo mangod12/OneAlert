@@ -301,7 +301,7 @@ describe('Email notification preferences', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Review notification changes' }));
     expect(mockPatch).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm reviewed notification preferences' }));
-    await screen.findByRole('alert');
+    await screen.findByText(/The save outcome could not be verified. It may already have applied. Read current notification preferences/);
   });
 
   it('loads and saves quiet hours', async () => {
