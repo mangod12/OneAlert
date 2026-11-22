@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Bell, KeyRound, Pencil, Settings as SettingsIcon, Shield, UserRound, Users } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
 import { PageHeader } from '../components/ui/PageHeader';
-import { TeamMembershipReview } from '../components/settings/TeamMembershipReview';
-import type { TeamSnapshot } from '../utils/teamMembershipReview';
+import { OrganizationIdentityReview } from '../components/settings/OrganizationIdentityReview';
 import { SiemIntegrationsPanel } from '../components/settings/SiemIntegrationsPanel';
 import { ApiTokensPanel } from '../components/settings/ApiTokensPanel';
 import { NotificationPreferencesPanel } from '../components/settings/NotificationPreferencesPanel';
@@ -14,21 +13,6 @@ import { SuppressionRulesPanel } from '../components/settings/SuppressionRulesPa
 import { AutomationPanel } from '../components/settings/AutomationPanel';
 import { Panel } from '../components/ui/Panel';
 import { StatusBadge } from '../components/ui/StatusBadge';
-
-interface Org {
-  id: number;
-  name: string;
-  slug: string;
-  plan: string;
-  max_users: number;
-}
-
-interface OrgMember {
-  id: number;
-  email: string;
-  full_name: string | null;
-  is_active: boolean;
-}
 
 export function Settings() {
   const { user, fetchUser } = useAuthStore();
@@ -42,10 +26,6 @@ export function Settings() {
   const [disableVerifying, setDisableVerifying] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
-  const [org, setOrg] = useState<Org | null>(null);
-  const [noOrg, setNoOrg] = useState(false);
-  const [members, setMembers] = useState<OrgMember[]>([]);
-  const [teamMessage, setTeamMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [pwCurrent, setPwCurrent] = useState('');
   const [pwNew, setPwNew] = useState('');
   const [pwConfirm, setPwConfirm] = useState('');
@@ -56,82 +36,6 @@ export function Settings() {
   const [profileCompany, setProfileCompany] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMessage, setProfileMessage] = useState<{ text: string; error: boolean } | null>(null);
-  const [creatingOrg, setCreatingOrg] = useState(false);
-  const [orgName, setOrgName] = useState('');
-  const [orgSlug, setOrgSlug] = useState('');
-  const [editingName, setEditingName] = useState(false);
-  const [newOrgName, setNewOrgName] = useState('');
-  const [renaming, setRenaming] = useState(false);
-
-  const applyVerifiedMembership = useCallback((snapshot: TeamSnapshot) => {
-    if (org?.id !== snapshot.org.id) return;
-    setMembers(snapshot.members);
-    setOrg(current => current?.id === snapshot.org.id ? { ...current, ...snapshot.org } : current);
-  }, [org?.id]);
-
-  const fetchTeam = async () => {
-    try {
-      const orgResponse = await apiClient.get<Org>('/orgs/me');
-      setOrg(orgResponse.data);
-      setNoOrg(false);
-      const membersResponse = await apiClient.get<OrgMember[]>('/orgs/me/members');
-      setMembers(membersResponse.data);
-    } catch (error: unknown) {
-      const status = (error as { response?: { status?: number } })?.response?.status;
-      if (status === 404) {
-        setNoOrg(true);
-        setOrg(null);
-        setMembers([]);
-      } else {
-        setTeamMessage({ text: getApiErrorMessage(error, 'Team information could not be loaded.'), error: true });
-      }
-    }
-  };
-
-  useEffect(() => {
-    void fetchTeam();
-  }, []);
-
-  const handleCreateOrg = async () => {
-    const name = orgName.trim();
-    const slug = orgSlug.trim().toLowerCase();
-    if (!name || !slug || creatingOrg) return;
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
-      setTeamMessage({ text: 'The slug can only use lowercase letters, numbers and hyphens, and must start with a letter or number.', error: true });
-      return;
-    }
-    setCreatingOrg(true);
-    setTeamMessage(null);
-    try {
-      await apiClient.post('/orgs/', { name, slug });
-      setOrgName('');
-      setOrgSlug('');
-      setTeamMessage({ text: `${name} created. You are its admin.`, error: false });
-      await Promise.all([fetchTeam(), fetchUser()]);
-    } catch (error: unknown) {
-      setTeamMessage({ text: getApiErrorMessage(error, 'The organization could not be created.'), error: true });
-    } finally {
-      setCreatingOrg(false);
-    }
-  };
-
-  const handleRenameOrg = async () => {
-    const name = newOrgName.trim();
-    if (!org || !name || name === org.name || renaming) return;
-    setRenaming(true);
-    setTeamMessage(null);
-    try {
-      await apiClient.patch('/orgs/me', { name });
-      setEditingName(false);
-      setTeamMessage({ text: `Organization renamed to ${name}.`, error: false });
-      await fetchTeam();
-    } catch (error: unknown) {
-      setTeamMessage({ text: getApiErrorMessage(error, 'The organization could not be renamed.'), error: true });
-    } finally {
-      setRenaming(false);
-    }
-  };
-
   const handleSaveIntegrations = async () => {
     if (!slackUrl && !webhookUrl) {
       setMessage({ text: 'Enter at least one HTTPS webhook URL to update.', error: true });
@@ -333,60 +237,8 @@ export function Settings() {
             </div>
           </Panel>
 
-          <Panel title="Team" description={org ? `${org.name} · ${members.length} of ${org.max_users} seats used` : 'People with access to this workspace.'} action={<Users className="h-4 w-4 text-primary-300" />}>
-            <div className="p-5">
-              {teamMessage && <div role={teamMessage.error ? 'alert' : 'status'} className={`mb-3 rounded-md border px-3 py-2 text-xs ${teamMessage.error ? 'border-danger/30 bg-danger/10 text-danger' : 'border-success/30 bg-success/10 text-success'}`}>{teamMessage.text}</div>}
-              {noOrg && (
-                <div>
-                  <p className="text-sm text-surface-400">This account does not belong to an organization yet. Create one to share the workspace with your team.</p>
-                  <form className="mt-3 space-y-2" onSubmit={event => { event.preventDefault(); void handleCreateOrg(); }}>
-                    <div>
-                      <label htmlFor="org-name" className="sr-only">Organization name</label>
-                      <input id="org-name" type="text" autoComplete="off" placeholder="Organization name" value={orgName} onChange={event => setOrgName(event.target.value)} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
-                    </div>
-                    <div>
-                      <label htmlFor="org-slug" className="sr-only">Organization slug</label>
-                      <input id="org-slug" type="text" autoComplete="off" placeholder="url-slug" value={orgSlug} onChange={event => setOrgSlug(event.target.value)} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
-                    </div>
-                    <button type="submit" disabled={creatingOrg || !orgName.trim() || !orgSlug.trim()} className="min-h-9 rounded-md bg-primary-500 px-4 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">{creatingOrg ? 'Creating…' : 'Create organization'}</button>
-                  </form>
-                </div>
-              )}
-              {!noOrg && (
-                <>
-                  {org && <div className="mb-3 flex items-center gap-2"><StatusBadge tone="info">{org.plan}</StatusBadge></div>}
-                  {org && user?.role === 'admin' && (
-                    editingName ? (
-                      <form className="mb-3 flex items-center gap-2" onSubmit={event => { event.preventDefault(); void handleRenameOrg(); }}>
-                        <label htmlFor="org-rename" className="sr-only">New organization name</label>
-                        <input id="org-rename" type="text" autoComplete="off" value={newOrgName} onChange={event => setNewOrgName(event.target.value)} className="min-w-0 flex-1 rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
-                        <button type="submit" disabled={renaming || !newOrgName.trim() || newOrgName.trim() === org.name} className="min-h-9 rounded-md bg-primary-500 px-3 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">{renaming ? 'Saving…' : 'Save'}</button>
-                        <button type="button" onClick={() => setEditingName(false)} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-300 hover:bg-surface-800">Cancel</button>
-                      </form>
-                    ) : (
-                      <button type="button" onClick={() => { setNewOrgName(org.name); setEditingName(true); }} className="mb-3 inline-flex min-h-9 items-center gap-1.5 rounded-md border border-surface-600 px-3 text-sm text-surface-300 hover:bg-surface-800">
-                        <Pencil className="h-4 w-4" /> Rename organization
-                      </button>
-                    )
-                  )}
-                  <ul className="divide-y divide-surface-800">
-                    {members.map(member => (
-                      <li key={member.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                        <div className="min-w-0">
-                          <p className="truncate font-medium text-surface-200">{member.full_name || member.email}</p>
-                          {member.full_name && <p className="truncate text-xs text-surface-500">{member.email}</p>}
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <StatusBadge tone={member.is_active ? 'success' : 'neutral'}>{member.is_active ? 'Active' : 'Inactive'}</StatusBadge>
-
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                  <TeamMembershipReview onVerified={applyVerifiedMembership} />
-                </>
-              )}
-            </div>
+          <Panel title="Team" description="Verified organization identity and separately reviewed membership changes." action={<Users className="h-4 w-4 text-primary-300" />}>
+            <div className="p-5"><OrganizationIdentityReview /></div>
           </Panel>
 
           <Panel title="Multi-factor authentication" description="TOTP adds a second verification step to password sign-in." action={<Shield className="h-4 w-4 text-success" />}>
