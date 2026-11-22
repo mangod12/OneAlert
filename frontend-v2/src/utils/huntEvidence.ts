@@ -1,6 +1,7 @@
 import type { HuntQueryResult } from '../components/HuntQueryEvidence';
 
 export interface HuntEvidenceResult {
+  reviewed_draft?: { session_id: number; fingerprint: string; query_numbers: number[]; scope: string };
   session_id?: number;
   agent_run_id?: number | null;
   hypothesis?: string;

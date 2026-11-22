@@ -1,3 +1,4 @@
+import { isReviewedHuntOrigin } from './huntQueryDraft';
 import type { HuntEvidenceResult } from './huntEvidence';
 import type { HuntQueryResult } from '../components/HuntQueryEvidence';
 export interface SavedHuntSession { retained_evidence_fingerprint?: string | null; id: number; hypothesis: string; status: string; queries_run: number; findings_count: number; created_at: string; result_data: HuntEvidenceResult | HuntQueryResult[] | null; sigma_rule: string | null; }
@@ -9,6 +10,7 @@ export function savedHuntEvidence(value: unknown, id: number): { session: SavedH
   if (value.retained_evidence_fingerprint !== undefined && value.retained_evidence_fingerprint !== null && (typeof value.retained_evidence_fingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(value.retained_evidence_fingerprint))) throw Error('Saved hunt review fingerprint is unsupported. Refresh saved evidence.');
   if (raw !== null && !Array.isArray(raw) && !object(raw)) throw Error('Saved hunt evidence has an unsupported format. No results were inferred.');
   const evidence = (Array.isArray(raw) ? { query_results: raw } : raw ?? {}) as HuntEvidenceResult;
+  if (evidence.reviewed_draft !== undefined && !isReviewedHuntOrigin(evidence.reviewed_draft)) throw Error('Saved reviewed-query source receipt is unsupported. No source relationship was inferred.');
   if (['explanation','error','summary','recorded_at','status','sigma_rule'].some(key => !optionalText((evidence as Record<string, unknown>)[key]))) throw Error('Saved hunt metadata is malformed. No results were inferred.');
   if (evidence.execution_summary && (!object(evidence.execution_summary) || ['completed','rejected','failed','attempted','skipped'].some(key => !Number.isSafeInteger((evidence.execution_summary as unknown as Record<string, unknown>)[key]) || ((evidence.execution_summary as unknown as Record<string, number>)[key] < 0)))) throw Error('Saved hunt execution counts are malformed.');
   if (evidence.query_results !== undefined && (!Array.isArray(evidence.query_results) || evidence.query_results.some(result => {

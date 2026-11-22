@@ -47,3 +47,12 @@ it('shows the verified exact hunt run from a saved-session link without running 
   get.mockResolvedValueOnce({ data: { ...session, result_data: { ...session.result_data, agent_run_id: 81 } } }); show();
   expect((await screen.findByRole('link', { name: 'Inspect recorded hunt run #81' })).getAttribute('href')).toBe('/app/audit-log?run=81'); expect(apiClient.post).not.toHaveBeenCalled();
 });
+
+it('routes an exact prepared record to its saved compiler review without inventing an executed result', async () => {
+  get.mockResolvedValueOnce({ data: { ...session, status: 'prepared', queries_run: 0, findings_count: 0, result_data: { status: 'prepared' } } }); show();
+  const link = await screen.findByRole('link', { name: 'Review this exact saved query draft' }); expect(link.getAttribute('href')).toBe('/app/hunt?query_draft=99');
+  expect(screen.queryByText(/Detailed execution outcome was not recorded/)).toBeNull(); expect(screen.queryByText(/No query evidence was retained/)).toBeNull(); expect(apiClient.post).not.toHaveBeenCalled();
+});
+it('rejects malformed new reviewed-draft provenance without a false source link or result label', () => {
+  expect(() => savedHuntEvidence({ ...session, result_data: { reviewed_draft: { session_id: 7, query_numbers: 'not an array' } } }, 99)).toThrow();
+});
