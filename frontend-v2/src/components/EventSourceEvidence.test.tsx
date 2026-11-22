@@ -54,3 +54,8 @@ it('opens an explicit exact-label event read from the loaded profile without cha
 it('rereads the same exact group on another explicit click rather than reusing the prior drilldown', async () => {
   render(<EventSourceEvidence sourceId={7} />); await read(); get.mockRejectedValue(Error('no drilldown')); const button = screen.getAllByRole('button', { name: "Read this exact label's events" })[0]; fireEvent.click(button); await screen.findByRole('alert'); expect(get).toHaveBeenCalledTimes(2); fireEvent.click(button); await screen.findByRole('alert'); expect(get).toHaveBeenCalledTimes(3);
 });
+
+it('exports only validated profile metadata, not unexpected root/source/group payload fields', async () => {
+  const value = data(); Object.assign(value, { raw_data: 'PRIVATE_EXTRA', scope: 'PRIVATE_EXTRA' }); Object.assign(value.source, { credentials: 'PRIVATE_EXTRA' }); Object.assign(value.groups.severity[0], { payload: 'PRIVATE_EXTRA' }); Object.assign(value.nonempty_field_counts, { secret: 'PRIVATE_EXTRA' });
+  get.mockResolvedValueOnce({ data: value }); render(<EventSourceEvidence sourceId={7} />); await read(); fireEvent.click(screen.getByRole('button', { name: 'Download loaded source profile JSON' })); expect(save.mock.calls[0][0]).not.toContain('PRIVATE_EXTRA'); expect(JSON.parse(save.mock.calls[0][0]).retained_event_count).toBe(11); expect(get).toHaveBeenCalledTimes(1);
+});

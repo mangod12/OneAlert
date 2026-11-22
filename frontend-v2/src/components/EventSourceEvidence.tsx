@@ -1,3 +1,4 @@
+import { sourceProfileMetadata, type SourceProfile as Profile } from '../utils/sourceEvidenceMetadata';
 import { SourceRecordedTimeline } from './SourceRecordedTimeline';
 import { SourceGroupEvents, type SourceGroupSelection } from './SourceGroupEvents';
 import { useEffect, useRef, useState } from 'react';
@@ -7,7 +8,6 @@ import { saveHuntDownload } from '../utils/huntEvidence';
 const coverageFields = ['source_ip', 'dest_ip', 'hostname', 'username', 'domain'] as const;
 const groupFields = ['severity', 'event_type', 'source_type', 'processed'] as const;
 type Group = typeof groupFields[number];
-interface Profile { source: { id: number; name: string; source_type: string; status: string | null; event_count: number | null; last_event_at: string | null; created_at: string }; retained_event_count: number; first_observed_at: string | null; last_observed_at: string | null; first_created_at: string | null; last_created_at: string | null; nonempty_field_counts: Record<typeof coverageFields[number], number>; groups: Record<Group, { value: string | null; count: number }[]>; retrieved_at: string; scope: string }
 const count = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0;
 const time = (value: unknown): value is string => typeof value === 'string' && Number.isFinite(Date.parse(value));
 const nullableTime = (value: unknown) => value === null || time(value);
@@ -35,7 +35,7 @@ export function EventSourceEvidence({ sourceId }: { sourceId: number }) {
   const rows = data ? data.groups[group].filter(row => !query.trim() || display(row.value).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) : [], current = Math.min(page, Math.max(1, Math.ceil(rows.length / 8)));
   const download = () => {
     if (!data) return; setDownloadError('');
-    try { saveHuntDownload(JSON.stringify({ format: 'onealert_source_recorded_evidence_v1', exported_at: new Date().toISOString(), ...data, download_scope: 'Complete loaded source profile and all recorded-label groups, independent of display filters. No event payloads or source configuration. Source names may be sensitive; downloaded copies have no application access controls. No extra read or message.' }, null, 2) + '\n', `source-${sourceId}-recorded-evidence.json`, 'application/json'); }
+    try { saveHuntDownload(JSON.stringify({ format: 'onealert_source_recorded_evidence_v1', exported_at: new Date().toISOString(), ...sourceProfileMetadata(data), download_scope: 'Complete loaded source profile and all recorded-label groups, independent of display filters. No event payloads or source configuration. Source names may be sensitive; downloaded copies have no application access controls. No extra read or message.' }, null, 2) + '\n', `source-${sourceId}-recorded-evidence.json`, 'application/json'); }
     catch { setDownloadError('The loaded source profile could not be downloaded. No records changed.'); }
   };
   return <section aria-label="Recorded source evidence profile" className="oa-panel space-y-3 p-4">

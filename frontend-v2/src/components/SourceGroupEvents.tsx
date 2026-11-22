@@ -1,3 +1,4 @@
+import { sourceGroupMetadata } from '../utils/sourceEvidenceMetadata';
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
@@ -24,7 +25,7 @@ export function SourceGroupEvents({ sourceId, selection, onClose }: { sourceId: 
   }, [sourceId, selection.group, selection.value, page, retry]);
   const download = () => {
     if (!data) return; setDownloadError('');
-    try { saveHuntDownload(JSON.stringify({ format: 'onealert_source_group_event_page_v1', exported_at: new Date().toISOString(), ...data, prior_profile_count: selection.profileCount, prior_profile_read_at: selection.profileReadAt, download_scope: 'Only this loaded exact source/label event page, not all matching events. Profile count is a prior separate read. Potentially sensitive recorded addresses and host names; downloaded copies have no application access controls. No raw payload, extra read, message or permission change.' }, null, 2) + '\n', `source-${sourceId}-${selection.group}-events-page-${page}.json`, 'application/json'); }
+    try { saveHuntDownload(JSON.stringify({ format: 'onealert_source_group_event_page_v1', exported_at: new Date().toISOString(), ...sourceGroupMetadata(data), prior_profile_count: selection.profileCount, prior_profile_read_at: selection.profileReadAt, download_scope: 'Only this loaded exact source/label event page, not all matching events. Profile count is a prior separate read. Potentially sensitive recorded addresses and host names; downloaded copies have no application access controls. No raw payload, extra read, message or permission change.' }, null, 2) + '\n', `source-${sourceId}-${selection.group}-events-page-${page}.json`, 'application/json'); }
     catch { setDownloadError('The loaded group event page could not be downloaded. No records changed.'); }
   };
   return <section aria-label="Exact source label event records" className="space-y-3 rounded border border-primary-700 p-3">
