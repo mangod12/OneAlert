@@ -1,3 +1,4 @@
+import { reviewedAuditFixture } from '../utils/huntReviewedExecutionAudit.fixture';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -55,4 +56,18 @@ it('routes an exact prepared record to its saved compiler review without inventi
 });
 it('rejects malformed new reviewed-draft provenance without a false source link or result label', () => {
   expect(() => savedHuntEvidence({ ...session, result_data: { reviewed_draft: { session_id: 7, query_numbers: 'not an array' } } }, 99)).toThrow();
+});
+
+it('opens a saved execution audit only on demand and drops its old source match when saved evidence refreshes', async () => {
+  const { source, result } = reviewedAuditFixture();
+  const saved = { id: 81, hypothesis: source.hypothesis, status: 'completed', queries_run: 1, findings_count: 1, created_at: '2026-11-22T03:15:00Z', sigma_rule: null, result_data: result };
+  get.mockImplementation(async url => ({ data: url === '/hunt/81' ? saved : source }));
+  show('?session=81'); await screen.findByRole('button', { name: 'Audit exact reviewed draft' });
+  expect(get).toHaveBeenCalledExactlyOnceWith('/hunt/81');
+  fireEvent.click(screen.getByRole('button', { name: 'Audit exact reviewed draft' }));
+  await screen.findByRole('heading', { name: 'Original draft query 2' }); expect(get).toHaveBeenLastCalledWith('/hunt/query-drafts/7');
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh saved hunt evidence' }));
+  await screen.findByRole('button', { name: 'Audit exact reviewed draft' });
+  expect(screen.queryByRole('heading', { name: 'Original draft query 2' })).toBeNull();
+  expect(get.mock.calls.filter(([url]) => url === '/hunt/query-drafts/7')).toHaveLength(1); expect(apiClient.post).not.toHaveBeenCalled();
 });
