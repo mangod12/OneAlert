@@ -8,6 +8,7 @@ from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.types import JSON
 
 from backend.database.db import Base
+from backend.services.recorded_event_filter import RecordedEventField, validate_recorded_filter
 
 
 class SavedView(Base):
@@ -57,6 +58,8 @@ class EventViewFilters(BaseModel):
     event_type: str | None = None
     source_type: str | None = None
     source_id: int | None = Field(None, ge=1)
+    recorded_field: RecordedEventField | None = None
+    recorded_value: str | None = Field(None, min_length=1, max_length=1024)
     ip: str | None = None
     signature: str | None = None
     sort: str | None = None
@@ -65,6 +68,7 @@ class EventViewFilters(BaseModel):
 
     @model_validator(mode="after")
     def validate_time_window(self):
+        validate_recorded_filter(self.recorded_field, self.recorded_value)
         if self.started_at and self.ended_before and self.started_at >= self.ended_before:
             raise ValueError("Start must be before the exclusive end time")
         return self
