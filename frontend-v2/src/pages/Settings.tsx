@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
-import { Bell, KeyRound, Pencil, Settings as SettingsIcon, Shield, UserPlus, UserRound, Users } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Bell, KeyRound, Pencil, Settings as SettingsIcon, Shield, UserRound, Users } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
 import { PageHeader } from '../components/ui/PageHeader';
-import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { TeamMembershipReview } from '../components/settings/TeamMembershipReview';
+import type { TeamSnapshot } from '../utils/teamMembershipReview';
 import { SiemIntegrationsPanel } from '../components/settings/SiemIntegrationsPanel';
 import { ApiTokensPanel } from '../components/settings/ApiTokensPanel';
 import { NotificationPreferencesPanel } from '../components/settings/NotificationPreferencesPanel';
@@ -44,10 +45,6 @@ export function Settings() {
   const [org, setOrg] = useState<Org | null>(null);
   const [noOrg, setNoOrg] = useState(false);
   const [members, setMembers] = useState<OrgMember[]>([]);
-  const [pendingRemove, setPendingRemove] = useState<OrgMember | null>(null);
-  const [removing, setRemoving] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviting, setInviting] = useState(false);
   const [teamMessage, setTeamMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [pwCurrent, setPwCurrent] = useState('');
   const [pwNew, setPwNew] = useState('');
@@ -65,6 +62,12 @@ export function Settings() {
   const [editingName, setEditingName] = useState(false);
   const [newOrgName, setNewOrgName] = useState('');
   const [renaming, setRenaming] = useState(false);
+
+  const applyVerifiedMembership = useCallback((snapshot: TeamSnapshot) => {
+    if (org?.id !== snapshot.org.id) return;
+    setMembers(snapshot.members);
+    setOrg(current => current?.id === snapshot.org.id ? { ...current, ...snapshot.org } : current);
+  }, [org?.id]);
 
   const fetchTeam = async () => {
     try {
@@ -126,39 +129,6 @@ export function Settings() {
       setTeamMessage({ text: getApiErrorMessage(error, 'The organization could not be renamed.'), error: true });
     } finally {
       setRenaming(false);
-    }
-  };
-
-  const handleRemoveMember = async () => {
-    if (!pendingRemove || removing) return;
-    setRemoving(true);
-    setTeamMessage(null);
-    try {
-      await apiClient.delete(`/orgs/me/members/${pendingRemove.id}`);
-      setMembers(prev => prev.filter(m => m.id !== pendingRemove.id));
-      setTeamMessage({ text: `${pendingRemove.email} was removed from the organization.`, error: false });
-      setPendingRemove(null);
-    } catch (error: unknown) {
-      setTeamMessage({ text: getApiErrorMessage(error, 'The member could not be removed.'), error: true });
-    } finally {
-      setRemoving(false);
-    }
-  };
-
-  const handleInvite = async () => {
-    const email = inviteEmail.trim();
-    if (!email || inviting) return;
-    setInviting(true);
-    setTeamMessage(null);
-    try {
-      await apiClient.post('/orgs/me/invite', null, { params: { email } });
-      setInviteEmail('');
-      setTeamMessage({ text: `${email} was added to ${org?.name ?? 'the organization'}.`, error: false });
-      await fetchTeam();
-    } catch (error: unknown) {
-      setTeamMessage({ text: getApiErrorMessage(error, 'The invite could not be completed.'), error: true });
-    } finally {
-      setInviting(false);
     }
   };
 
@@ -408,41 +378,12 @@ export function Settings() {
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
                           <StatusBadge tone={member.is_active ? 'success' : 'neutral'}>{member.is_active ? 'Active' : 'Inactive'}</StatusBadge>
-                          {user?.role === 'admin' && member.id !== user?.id && (
-                            <button
-                              type="button"
-                              aria-label={`Remove ${member.email} from the organization`}
-                              onClick={() => setPendingRemove(member)}
-                              className="min-h-8 rounded-md border border-surface-600 px-2.5 text-xs text-surface-300 hover:bg-surface-800"
-                            >
-                              Remove
-                            </button>
-                          )}
+
                         </div>
                       </li>
                     ))}
                   </ul>
-                  {user?.role === 'admin' && (
-                    <form className="mt-4 flex items-center gap-2 border-t border-surface-800 pt-4" onSubmit={event => { event.preventDefault(); void handleInvite(); }}>
-                      <label htmlFor="invite-email" className="sr-only">Email to invite</label>
-                      <input
-                        id="invite-email"
-                        type="email"
-                        autoComplete="off"
-                        placeholder="teammate@example.com"
-                        value={inviteEmail}
-                        onChange={event => setInviteEmail(event.target.value)}
-                        className="min-w-0 flex-1 rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500"
-                      />
-                      <button
-                        type="submit"
-                        disabled={inviting || !inviteEmail.trim()}
-                        className="inline-flex min-h-9 items-center gap-1.5 rounded-md bg-primary-500 px-3 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50"
-                      >
-                        <UserPlus className="h-4 w-4" /> {inviting ? 'Adding…' : 'Add member'}
-                      </button>
-                    </form>
-                  )}
+                  <TeamMembershipReview onVerified={applyVerifiedMembership} />
                 </>
               )}
             </div>
@@ -608,17 +549,6 @@ export function Settings() {
         </div>
       </div>
 
-      {pendingRemove && (
-        <ConfirmDialog
-          title="Remove member?"
-          description={`${pendingRemove.email} will lose access to this organization's workspace. Their account is not deleted.`}
-          confirmLabel="Remove member"
-          tone="danger"
-          busy={removing}
-          onCancel={() => { if (!removing) setPendingRemove(null); }}
-          onConfirm={() => { void handleRemoveMember(); }}
-        />
-      )}
     </div>
   );
 }

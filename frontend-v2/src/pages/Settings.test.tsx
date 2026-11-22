@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Settings } from './Settings';
 import { useAuthStore } from '../stores/authStore';
@@ -132,29 +132,74 @@ describe('Team panel', () => {
     expect(screen.getByText('Inactive')).toBeTruthy();
   });
 
-  it('removes a member through the confirm dialog', async () => {
+  it('uses the independent reviewed membership entry instead of immediate removal controls', async () => {
     useAuthStore.setState({ user: { ...admin } as never });
     mockTeam();
-    mockDelete.mockResolvedValue({ data: { success: true } });
-    render(<Settings />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Remove idle@example.com from the organization' }));
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove member' }));
-    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/orgs/me/members/2'));
-    await waitFor(() => expect(screen.queryByText('idle@example.com')).toBeNull());
-    expect(screen.queryByRole('button', { name: 'Remove analyst@example.com from the organization' })).toBeNull();
-  });
-
-  it('invites a member by email and refreshes the list', async () => {
-    useAuthStore.setState({ user: { ...admin } as never });
-    mockTeam();
-    mockPost.mockResolvedValue({ data: { success: true } });
     render(<Settings />);
     await screen.findByText('Analyst One');
-    fireEvent.change(screen.getByLabelText('Email to invite'), { target: { value: 'new@example.com' } });
-    fireEvent.click(screen.getByRole('button', { name: /add member/i }));
-    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/orgs/me/invite', null, { params: { email: 'new@example.com' } }));
-    expect(await screen.findByText(/new@example.com was added to Acme SOC/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open reviewed team membership' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Remove idle@example.com from the organization' })).toBeNull();
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+
+  it('keeps membership writes behind their own verified read and review', async () => {
+    useAuthStore.setState({ user: { ...admin } as never });
+    mockTeam();
+    render(<Settings />);
+    await screen.findByText('Analyst One');
+    expect(screen.queryByLabelText('Email to invite')).toBeNull();
+    expect(screen.queryByLabelText('Exact account email')).toBeNull();
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it('syncs the main seat count only from a verified current membership roster', async () => {
+    useAuthStore.setState({ user: { ...admin } as never });
+    let roster = members.map(member => ({ ...member, role: member.id === 1 ? 'admin' : 'viewer', org_id: org.id }));
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/auth/me') return { data: { ...admin, org_id: org.id } };
+      if (url === '/orgs/me') return { data: org };
+      if (url === '/orgs/me/members') return { data: roster };
+      return notFound();
+    });
+    mockPost.mockImplementation(async (url: string) => {
+      if (url === '/orgs/me/invite') {
+        roster = [...roster, { id: 3, email: 'new@example.test', full_name: 'New member', is_active: false, role: 'viewer', org_id: org.id }];
+        return { status: 200, data: { success: true } };
+      }
+      throw new Error('Unexpected write');
+    });
+    render(<Settings />);
+    await screen.findByText(/Acme SOC · 2 of 5 seats used/);
+    fireEvent.click(screen.getByRole('button', { name: 'Open reviewed team membership' }));
+    await screen.findByRole('region', { name: 'Verified membership roster' });
+    fireEvent.change(screen.getByLabelText('Exact account email'), { target: { value: 'new@example.test' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Review member addition' }));
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(screen.getByText(/Acme SOC · 2 of 5 seats used/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm reviewed member addition' }));
+    await screen.findByText(/The current roster now includes new@example.test/);
+    expect(await screen.findByText(/Acme SOC · 3 of 5 seats used/)).toBeTruthy();
+    expect(mockPost).toHaveBeenCalledExactlyOnceWith('/orgs/me/invite', null, { params: { email: 'new@example.test' } });
+  });
+
+  it('does not relabel another organization roster with the original organization name', async () => {
+    useAuthStore.setState({ user: { ...admin } as never });
+    let changed = false;
+    mockGet.mockImplementation(async (url: string) => {
+      const orgId = changed ? 8 : org.id;
+      if (url === '/auth/me') return { data: { ...admin, org_id: orgId } };
+      if (url === '/orgs/me') return { data: changed ? { ...org, id: orgId, name: 'Other team', slug: 'other-team' } : org };
+      if (url === '/orgs/me/members') return { data: changed ? [{ ...members[0], role: 'admin', org_id: orgId }] : members };
+      return notFound();
+    });
+    render(<Settings />);
+    await screen.findByText(/Acme SOC · 2 of 5 seats used/);
+    changed = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Open reviewed team membership' }));
+    await screen.findByRole('region', { name: 'Verified membership roster' });
+    expect(screen.getByText(/Acme SOC · 2 of 5 seats used/)).toBeTruthy();
+    expect(screen.queryByText(/Acme SOC · 1 of 5 seats used/)).toBeNull();
+    expect(mockPost).not.toHaveBeenCalled();
   });
 
   it('hides the invite form for non-admins', async () => {
