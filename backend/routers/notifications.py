@@ -14,8 +14,10 @@ from backend.database.db import get_async_db
 from backend.models.notification import Notification, NotificationResponse
 from backend.models.user import User
 from backend.routers.auth import get_active_user
+from backend.routers.notification_policy import router as policy_router
 
 router = APIRouter()
+router.include_router(policy_router)
 
 
 @router.get("/")
