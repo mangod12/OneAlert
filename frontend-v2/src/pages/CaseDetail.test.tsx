@@ -423,6 +423,43 @@ describe('Unlinking related items', () => {
   });
 });
 
+describe('Source-bound evidence notes', () => {
+  const sourceMetadata = { kind: 'reviewed_evidence_note', schema_version: 1, case_id: 7, record_kind: 'event', record_id: 21, record_fingerprint: 'b'.repeat(64), reviewed_fingerprint: 'a'.repeat(64), record_snapshot: { label_at_review: 'Saved source label', label_truncated: false, severity: 'high', recorded_at: null, processing_label: 'in_case' } };
+  function loadEvidence() {
+    let timeline: Array<Record<string, unknown>> = [];
+    mockGet.mockImplementation(url => {
+      if (url.endsWith('/note-preview')) return Promise.resolve({ data: { case: { id: 7, title: caseData.title, summary: caseData.summary, status: 'open', severity: 'high', due_date: null, closed_at: null }, kind: 'event', record: { id: 21, label: 'Saved source label', severity: 'high', recorded_at: null, processing_label: 'in_case' }, link_count: 1, other_owned_case_count: 0, record_fingerprint: 'b'.repeat(64), reviewed_fingerprint: 'a'.repeat(64), note_count: 0, recent_notes: [] } });
+      if (url === '/cases/7') return Promise.resolve({ data: { ...caseData, timeline } });
+      if (url.endsWith('/events')) return Promise.resolve({ data: [{ id: 21, event_type: 'auth', severity: 'high', signature: 'Saved source label' }] });
+      if (url.endsWith('/alerts')) return Promise.resolve({ data: [{ id: 11, title: 'Saved alert', severity: 'high' }] });
+      if (url.endsWith('/blast-radius') || url.endsWith('/similar')) return Promise.resolve({ data: { success: true, data: null } });
+      return Promise.resolve({ data: [] });
+    });
+    mockPost.mockImplementation(async (url, payload) => {
+      if (url !== '/cases/7/evidence/event/21/notes') throw Error('Unexpected mutation');
+      const { content } = payload as { content: string };
+      timeline = [{ id: 99, timestamp: '2026-01-02T00:00:00Z', entry_type: 'note', source: 'human', author_email: 'owner@example.com', content, metadata_json: sourceMetadata }];
+      return { data: { case_id: 7, kind: 'event', record_id: 21, note_id: 99, content, created: true, record_fingerprint: 'b'.repeat(64), reviewed_fingerprint: 'a'.repeat(64) } };
+    });
+  }
+  it('starts from linked evidence, reviews exact source, saves once and refreshes to a highlighted readable source reference', async () => {
+    loadEvidence(); renderDetail(); await screen.findByRole('button', { name: 'Note about event Saved source label' });
+    expect(screen.getByRole('button', { name: 'Note about alert Saved alert' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Note about event Saved source label' })); await screen.findByLabelText('Evidence note'); expect(mockPost).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Evidence note'), { target: { value: 'Analyst interpretation of this source' } }); fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'Save reviewed evidence note' }));
+    await screen.findByText('Analyst interpretation of this source'); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByText('Saved source reference: event #21')).toBeTruthy(); expect(screen.getByRole('link', { name: /Open current original event #21/ }).getAttribute('href')).toBe('/app/events/21'); await waitFor(() => expect(document.getElementById('case-note-99')?.className).toContain('primary'));
+    expect(mockPost).toHaveBeenCalledExactlyOnceWith('/cases/7/evidence/event/21/notes', { content: 'Analyst interpretation of this source', reviewed_fingerprint: 'a'.repeat(64) }); expect(mockPatch).not.toHaveBeenCalled(); expect(mockDelete).not.toHaveBeenCalled(); expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2);
+  });
+  it('closing a failed note refreshes the case without repeating a save or silently discarding source state', async () => {
+    loadEvidence(); mockPost.mockRejectedValueOnce(new Error('Unknown outcome')); renderDetail(); fireEvent.click(await screen.findByRole('button', { name: 'Note about event Saved source label' })); await screen.findByLabelText('Evidence note'); fireEvent.change(screen.getByLabelText('Evidence note'), { target: { value: 'Kept draft' } }); fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'Save reviewed evidence note' })); await screen.findByText(/No automatic retry was made/); fireEvent.click(screen.getByRole('button', { name: 'Cancel and refresh case' })); await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2)); expect(mockPost).toHaveBeenCalledTimes(1); expect(screen.queryByRole('dialog')).toBeNull();
+  });
+  it('watchers can read historical reference metadata but cannot start owner-only evidence annotations or open owner source links', async () => {
+    mockLoadWithTimeline([{ id: 99, timestamp: '2026-01-02T00:00:00Z', entry_type: 'note', source: 'human', content: 'Retained analyst interpretation', metadata_json: sourceMetadata }]);
+    useAuthStore.setState({ user: { ...useAuthStore.getState().user!, id: 6 } }); renderDetail(); await screen.findByText('Retained analyst interpretation'); expect(screen.getByText('Saved source reference: event #21')).toBeTruthy(); expect(screen.queryByRole('button', { name: /Note about (event|alert)/ })).toBeNull(); expect(screen.queryByRole('link', { name: /Open current original event/ })).toBeNull(); expect(mockPost).not.toHaveBeenCalled();
+  });
+});
+
 describe('Case severity editing', () => {
   it('changes severity via the select and refetches', async () => {
     mockLoad();

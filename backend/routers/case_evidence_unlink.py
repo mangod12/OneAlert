@@ -1,69 +1,28 @@
 """Review exact owned case/evidence relationships before removing links, never evidence."""
-import hashlib
-import json
 import secrets
-from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.db import get_async_db
-from backend.models.alert import Alert
-from backend.models.case import Case, CaseAlert, CaseEvent, CaseTimeline
-from backend.models.security_event import SecurityEvent
+from backend.models.case import CaseAlert, CaseEvent, CaseTimeline
 from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.services.audit import add_audit_log
+from backend.services.case_evidence_review import EvidenceKind as Kind
+from backend.services.case_evidence_review import evidence_pair_preview as _preview
+from backend.services.case_evidence_review import owned_evidence_record as _owned_record
 from backend.services.reviewed_case_link import ExactEvidenceId, owned_existing_case
 
 router = APIRouter()
-Kind = Literal['alert', 'event']
 
 
 class ReviewedEvidenceUnlink(BaseModel):
     reviewed_fingerprint: str = Field(pattern='^[a-f0-9]{64}$')
     reason: str = Field(min_length=1, max_length=1000)
     model_config = {'extra': 'forbid'}
-
-
-async def _owned_record(db, user_id, kind, record_id, *, lock=False):
-    model = Alert if kind == 'alert' else SecurityEvent
-    if lock and db.bind.dialect.name == 'sqlite':
-        values = {'id': model.id}
-        if hasattr(model, 'updated_at'):
-            values['updated_at'] = model.updated_at
-        await db.execute(update(model).where(model.id == record_id, model.user_id == user_id).values(**values))
-    statement = select(model).where(model.id == record_id, model.user_id == user_id)
-    if lock:
-        statement = statement.with_for_update().execution_options(populate_existing=True)
-    record = (await db.execute(statement)).scalar_one_or_none()
-    if record is None:
-        raise HTTPException(status_code=404, detail='Owned evidence record not found')
-    return record
-
-
-async def _preview(db, case, record, kind):
-    link = CaseAlert if kind == 'alert' else CaseEvent
-    reference = link.alert_id if kind == 'alert' else link.event_id
-    count = (await db.execute(select(func.count(link.id)).where(
-        link.case_id == case.id, reference == record.id))).scalar_one()
-    other = (await db.execute(select(func.count(func.distinct(Case.id))).join(link).where(
-        reference == record.id, Case.id != case.id, Case.user_id == case.user_id))).scalar_one()
-    full_record = {column.name: getattr(record, column.name) for column in record.__table__.columns}
-    digest = hashlib.sha256(json.dumps(full_record, sort_keys=True, default=str,
-                                     separators=(',', ':')).encode()).hexdigest()
-    proposal = {'case': {field: getattr(case, field) for field in (
-        'id', 'title', 'summary', 'status', 'severity', 'due_date', 'closed_at')},
-        'kind': kind, 'record': {'id': record.id,
-            'label': record.title if kind == 'alert' else record.signature or record.event_type,
-            'severity': record.severity,
-            'recorded_at': record.created_at if kind == 'alert' else record.timestamp,
-            'processing_label': record.status if kind == 'alert' else record.processed},
-        'record_fingerprint': digest, 'link_count': count, 'other_owned_case_count': other}
-    encoded = json.dumps(proposal, sort_keys=True, default=str, separators=(',', ':'))
-    return dict(proposal, reviewed_fingerprint=hashlib.sha256(encoded.encode()).hexdigest())
 
 
 @router.get('/{case_id}/evidence/{kind}/{record_id}/unlink-preview')
