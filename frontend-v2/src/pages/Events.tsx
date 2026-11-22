@@ -1,3 +1,5 @@
+import { recordedEventFields, recordedEventFilter, recordedEventFilterLink, type RecordedEventFilter, type RecordedEventField } from '../utils/recordedEventFilter';
+import { EventRecordedFieldLinks } from '../components/EventRecordedFieldLinks';
 import { EventSourceEvidence } from '../components/EventSourceEvidence';
 import { recordedEndpoint } from '../utils/topologyAddress';
 import { TopologyAddressLink } from '../components/TopologyAddressLink';
@@ -38,6 +40,8 @@ interface EventViewFilters {
   event_type?: string;
   source_type?: string;
   source_id?: number;
+  recorded_field?: RecordedEventField;
+  recorded_value?: string;
   ip?: string;
   signature?: string;
   sort?: string;
@@ -92,7 +96,11 @@ interface EventSource {
   created_at: string;
 }
 
-export function Events({ initialSourceId = '' }: { initialSourceId?: string } = {}) {
+export function Events({ initialSourceId = '', initialRecordedFilter = null }: { initialSourceId?: string; initialRecordedFilter?: RecordedEventFilter | null } = {}) {
+  const [exactFilter, setExactFilter] = useState<RecordedEventFilter | null>(initialRecordedFilter);
+  const [exactDraft, setExactDraft] = useState<RecordedEventFilter>(initialRecordedFilter ?? { field: 'username', value: '' });
+  const [exactError, setExactError] = useState('');
+  const exactDirty = exactFilter !== null ? exactDraft.field !== exactFilter.field || exactDraft.value !== exactFilter.value : exactDraft.value !== '';
   const eventRequestId = useRef(0);
   const [eventError, setEventError] = useState('');
   const [events, setEvents] = useState<SecurityEvent[]>([]);
@@ -139,6 +147,7 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
       if (eventTypeFilter) params.event_type = eventTypeFilter;
       if (sourceTypeFilter) params.source_type = sourceTypeFilter;
       if (sourceIdFilter) params.source_id = sourceIdFilter;
+      if (exactFilter) { params.recorded_field = exactFilter.field; params.recorded_value = exactFilter.value; }
       if (ipSearch.trim()) params.ip = ipSearch.trim();
       if (signatureSearch.trim()) params.signature = signatureSearch.trim();
       const res = await apiClient.get('/events/export', { params, responseType: 'blob' });
@@ -173,6 +182,7 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
       if (signatureSearch.trim()) params.signature = signatureSearch.trim();
       if (sourceTypeFilter) params.source_type = sourceTypeFilter;
       if (sourceIdFilter) params.source_id = sourceIdFilter;
+      if (exactFilter) { params.recorded_field = exactFilter.field; params.recorded_value = exactFilter.value; }
       params.sort = sort;
       const [evtResult, statsResult, sourcesResult] = await Promise.allSettled([
         apiClient.get('/events/', { params }),
@@ -193,7 +203,7 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
     } finally {
       if (request === eventRequestId.current) setLoading(false);
     }
-  }, [page, severityFilter, eventTypeFilter, ipSearch, signatureSearch, sourceTypeFilter, sourceIdFilter, sort, timeWindow]);
+  }, [page, severityFilter, eventTypeFilter, ipSearch, signatureSearch, sourceTypeFilter, sourceIdFilter, sort, timeWindow, exactFilter]);
 
   useEffect(() => {
     void fetchEvents();
@@ -235,7 +245,7 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
     }
   };
 
-  const hasEventFilters = !!(severityFilter || eventTypeFilter || sourceTypeFilter || sourceIdFilter || ipSearch.trim() || signatureSearch.trim() || timeWindow.started_at || timeWindow.ended_before);
+  const hasEventFilters = !!(exactFilter || severityFilter || eventTypeFilter || sourceTypeFilter || sourceIdFilter || ipSearch.trim() || signatureSearch.trim() || timeWindow.started_at || timeWindow.ended_before);
 
   return (
     <div className="space-y-6">
@@ -312,6 +322,22 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
         <p className="break-words text-xs text-surface-400 [overflow-wrap:anywhere]">Applied window: {timeWindow.started_at ?? 'No start limit'} to {timeWindow.ended_before ?? 'No end limit'} (end excluded). Filters use event timestamps, not upload times. Severity counts and sensor totals above cover all recorded events.</p>
       </section>
 
+      <section aria-label="Exact recorded-field search" className="oa-panel min-w-0 space-y-3 p-4">
+        <h2 className="text-sm font-semibold text-surface-200">Find an exact recorded identity or label</h2>
+        <p className="text-xs text-surface-400">Search saved username, hostname, domain or action text across your recorded sources. Equality is case-sensitive and preserves spaces, punctuation, percent and underscore characters. No substring, wildcard, alias resolution, domain inference or external lookup. Matching labels do not prove the same person, system, incident or outcome.</p>
+        <form className="flex flex-wrap items-end gap-3" onSubmit={event => { event.preventDefault(); try { const next = recordedEventFilter(exactDraft.field, exactDraft.value); setExactFilter(next); setExactError(''); setPage(1); } catch { setExactError('Choose nonblank exact text of at most 1,024 characters. Applied scope was not changed.'); } }}>
+          <label className="min-w-0 space-y-1 text-xs text-surface-400"><span className="block">Recorded field</span><select aria-label="Exact recorded field" className="max-w-full rounded border border-surface-600 bg-surface-900 px-3 py-2 text-sm text-surface-200" value={exactDraft.field} onChange={event => setExactDraft(value => ({ ...value, field: event.target.value as RecordedEventField }))}>{recordedEventFields.map(field => <option key={field} value={field}>{field}</option>)}</select></label>
+          <label className="min-w-0 flex-1 basis-56 space-y-1 text-xs text-surface-400"><span className="block">Exact text, spaces preserved</span><input aria-label="Exact recorded text" maxLength={2048} value={exactDraft.value} onChange={event => setExactDraft(value => ({ ...value, value: event.target.value }))} className="w-full rounded border border-surface-600 bg-surface-900 px-3 py-2 text-sm text-surface-200" /></label>
+          <button type="submit" className="rounded border border-surface-600 px-3 py-2 text-sm text-primary-300">Apply exact recorded field</button>
+          <button type="button" onClick={() => { setExactFilter(null); setExactDraft({ field: 'username', value: '' }); setExactError(''); setPage(1); }} className="rounded border border-surface-600 px-3 py-2 text-sm text-surface-200">Clear exact recorded field</button>
+        </form>
+        {exactError && <p role="alert" className="text-xs text-danger">{exactError}</p>}
+        {exactDirty && <p role="status" className="text-xs text-warning">Exact-field draft not applied. Results, pagination, saved views and CSV export still use the applied scope below.</p>}
+        <p aria-label="Applied exact recorded scope" className="whitespace-pre-wrap break-words text-xs text-surface-300 [overflow-wrap:anywhere]">{exactFilter ? `Applied exact ${exactFilter.field} = ${exactFilter.value}` : 'No exact recorded-field filter applied.'}</p>
+        <p className="text-xs text-surface-400">Other applied filters still narrow these results. Empty results mean no currently matching saved records, not no activity. CSV includes the recorded identity fields; counts above still cover all saved events.</p>
+        {exactFilter && <p className="text-xs text-surface-400"><a href={recordedEventFilterLink(exactFilter.field, exactFilter.value)} className="inline-block max-w-full rounded border border-surface-600 px-3 py-2 text-primary-300">Open exact-field-only event link</a> This link includes the sensitive recorded label in its address. Keep private. It carries no other filters, results or account access.</p>}
+      </section>
+
       <section aria-label="Recorded source filter" className="oa-panel space-y-2 p-4">
         <label htmlFor="recorded-event-source" className="block text-xs text-surface-400">Recorded source</label>
         <select id="recorded-event-source" value={sourceIdFilter} onChange={event => { setSourceIdFilter(event.target.value); setPage(1); }} className="w-full min-w-0 rounded border border-surface-600 bg-surface-900 px-2 py-2 text-sm text-surface-200 sm:max-w-lg">
@@ -334,12 +360,17 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
           ...(eventTypeFilter ? { event_type: eventTypeFilter } : {}),
           ...(sourceTypeFilter ? { source_type: sourceTypeFilter } : {}),
           ...(sourceIdFilter ? { source_id: Number(sourceIdFilter) } : {}),
+          ...(exactFilter ? { recorded_field: exactFilter.field, recorded_value: exactFilter.value } : {}),
           ...(ipSearch.trim() ? { ip: ipSearch.trim() } : {}),
           ...(signatureSearch.trim() ? { signature: signatureSearch.trim() } : {}),
           sort,
           ...timeWindow,
         }}
         onApply={(filters: EventViewFilters) => {
+          let nextExact;
+          try { nextExact = recordedEventFilter(filters.recorded_field, filters.recorded_value); }
+          catch { setExactError('The saved view has invalid exact-field scope. No filters changed and no unfiltered read was substituted.'); return; }
+          setExactFilter(nextExact); setExactDraft(nextExact ?? { field: 'username', value: '' }); setExactError('');
           setTimeWindow({ ...(filters.started_at ? { started_at: filters.started_at } : {}), ...(filters.ended_before ? { ended_before: filters.ended_before } : {}) });
           setStartInput(utcInput(filters.started_at)); setEndInput(utcInput(filters.ended_before)); setTimeError('');
           setSeverityFilter(filters.severity ?? '');
@@ -520,6 +551,7 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
                             </div>
                           ))}
                         </dl>
+                        <EventRecordedFieldLinks event={e as unknown as Record<string, unknown>} />
                         {e.raw_data && (
                           <pre aria-label="Raw event payload" className="mt-3 max-h-56 overflow-auto rounded-md border border-surface-700 bg-surface-950 p-3 text-[11px] text-surface-300">{JSON.stringify(e.raw_data, null, 2)}</pre>
                         )}

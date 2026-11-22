@@ -32,6 +32,7 @@ from backend.routers.event_recorded_neighbors import router as recorded_neighbor
 from backend.routers.event_source_evidence import router as source_evidence_router
 from backend.routers.event_source_group_events import router as source_group_events_router
 from backend.routers.event_source_timeline import router as source_timeline_router
+from backend.services.recorded_event_filter import RecordedEventField, validate_recorded_filter
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,14 @@ def _event_time_predicates(started_at: datetime | None, ended_before: datetime |
     return predicates
 
 
+def _recorded_filter_predicates(field, value):
+    try:
+        validate_recorded_filter(field, value)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    return [getattr(SecurityEvent, field) == value] if field is not None else []
+
+
 @router.get("/", response_model=EventListResponse)
 async def list_events(
     page: int = Query(1, ge=1),
@@ -173,6 +182,8 @@ async def list_events(
     source_id: int | None = Query(None, ge=1),
     ip: str | None = Query(None, description="Substring match against source or destination IP"),
     signature: str | None = Query(None, description="Substring match against the event signature"),
+    recorded_field: RecordedEventField | None = Query(None),
+    recorded_value: str | None = Query(None, min_length=1, max_length=1024),
     started_at: AwareDatetime | None = Query(None, description="Inclusive event timestamp, timezone required"),
     ended_before: AwareDatetime | None = Query(None, description="Exclusive event timestamp, timezone required"),
     sort: str = Query(
@@ -219,6 +230,10 @@ async def list_events(
         query = query.filter(sig_match)
         count_q = count_q.filter(sig_match)
 
+    exact = _recorded_filter_predicates(recorded_field, recorded_value)
+    query = query.where(*exact)
+    count_q = count_q.where(*exact)
+
     predicates = _event_time_predicates(started_at, ended_before)
     query = query.where(*predicates)
     count_q = count_q.where(*predicates)
@@ -251,6 +266,8 @@ async def export_events(
     source_id: int | None = Query(None, ge=1),
     ip: str | None = Query(None, description="Substring match against source or destination IP"),
     signature: str | None = Query(None, description="Substring match against the event signature"),
+    recorded_field: RecordedEventField | None = Query(None),
+    recorded_value: str | None = Query(None, min_length=1, max_length=1024),
     started_at: AwareDatetime | None = Query(None, description="Inclusive event timestamp, timezone required"),
     ended_before: AwareDatetime | None = Query(None, description="Exclusive event timestamp, timezone required"),
     current_user: User = Depends(get_active_user),
@@ -279,6 +296,7 @@ async def export_events(
     if signature:
         query = query.filter(SecurityEvent.signature.ilike(f"%{signature}%"))
 
+    query = query.where(*_recorded_filter_predicates(recorded_field, recorded_value))
     query = query.where(*_event_time_predicates(started_at, ended_before))
     query = query.order_by(SecurityEvent.timestamp.desc(), SecurityEvent.id.desc()).limit(10001)
     rows = (await db.execute(query)).scalars().all()
@@ -293,6 +311,7 @@ async def export_events(
     writer.writerow([
         "id", "timestamp", "event_type", "severity", "signature", "category",
         "source_ip", "source_port", "dest_ip", "dest_port", "protocol", "action",
+        "username", "hostname", "domain", "source_type", "source_id",
     ])
     # CSV quoting does not stop spreadsheet formula evaluation of telemetry.
     for event in rows:
@@ -309,6 +328,11 @@ async def export_events(
             event.dest_port if event.dest_port is not None else "",
             event.protocol or "",
             event.action or "",
+            event.username or "",
+            event.hostname or "",
+            event.domain or "",
+            event.source_type or "",
+            event.source_id if event.source_id is not None else "",
         ]
         writer.writerow([
             "'" + value if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@")) else value
