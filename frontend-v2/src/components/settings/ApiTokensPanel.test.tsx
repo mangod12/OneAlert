@@ -1,86 +1,33 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import apiClient from '../../api/client';
 import { ApiTokensPanel } from './ApiTokensPanel';
-
-vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }));
-vi.mock('../Toast', () => ({ toast: vi.fn() }));
-
-const get = vi.mocked(apiClient.get);
-const post = vi.mocked(apiClient.post);
-const del = vi.mocked(apiClient.delete);
-
-const tokens = [
-  { id: 1, name: 'CI pipeline', prefix: 'oa_ab12cd34ef', created_at: '2026-11-10T00:00:00Z', last_used_at: '2026-11-17T00:00:00Z', expires_at: null, revoked_at: null, read_only: true },
-  { id: 2, name: 'Old laptop', prefix: 'oa_ff00ee11dd', created_at: '2026-10-01T00:00:00Z', last_used_at: null, expires_at: '2026-11-01T00:00:00Z', revoked_at: '2026-11-05T00:00:00Z', read_only: false },
-];
-
-beforeEach(() => {
-  vi.resetAllMocks();
-  get.mockResolvedValue({ data: tokens });
-});
-
-afterEach(cleanup);
-
-describe('ApiTokensPanel', () => {
-  it('lists tokens with status details', async () => {
-    render(<ApiTokensPanel />);
-    expect(await screen.findByText('CI pipeline')).toBeTruthy();
-    expect(screen.getByText('Old laptop')).toBeTruthy();
-    expect(screen.getByText('revoked')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Revoke token CI pipeline' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Revoke token Old laptop' })).toBeNull();
-  });
-
-  it('creates a token and reveals it once', async () => {
-    const created = { ...tokens[0], id: 3, name: 'Deploy bot', token: 'oa_secretvalue123' };
-    post.mockResolvedValue({ data: created });
-    render(<ApiTokensPanel />);
-    await screen.findByText('CI pipeline');
-
-    fireEvent.change(screen.getByLabelText('Token name'), { target: { value: 'Deploy bot' } });
-    fireEvent.change(screen.getByLabelText('Expires'), { target: { value: '30' } });
-    fireEvent.click(screen.getByRole('button', { name: /create token/i }));
-
-    await waitFor(() => expect(post).toHaveBeenCalledWith('/api-tokens/', { name: 'Deploy bot', expires_in_days: 30 }));
-    expect(await screen.findByText('oa_secretvalue123')).toBeTruthy();
-    expect(screen.getByText(/will not be shown again/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
-    expect(screen.queryByText('oa_secretvalue123')).toBeNull();
-  });
-
-  it('creates a read-only token when the checkbox is set', async () => {
-    const created = { ...tokens[0], id: 4, name: 'Reporting', token: 'oa_readonlyvalue9' };
-    post.mockResolvedValue({ data: created });
-    render(<ApiTokensPanel />);
-    await screen.findByText('CI pipeline');
-
-    fireEvent.change(screen.getByLabelText('Token name'), { target: { value: 'Reporting' } });
-    fireEvent.click(screen.getByLabelText(/read-only/i));
-    fireEvent.click(screen.getByRole('button', { name: /create token/i }));
-
-    await waitFor(() => expect(post).toHaveBeenCalledWith('/api-tokens/', { name: 'Reporting', read_only: true }));
-  });
-
-  it('shows a read-only badge on read-only tokens', async () => {
-    render(<ApiTokensPanel />);
-    await screen.findByText('CI pipeline');
-    expect(screen.getByText('read-only')).toBeTruthy();
-  });
-
-  it('revokes a token after confirmation', async () => {
-    del.mockResolvedValue({});
-    render(<ApiTokensPanel />);
-    await screen.findByText('CI pipeline');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke token CI pipeline' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Revoke token' }));
-    await waitFor(() => expect(del).toHaveBeenCalledWith('/api-tokens/1'));
-  });
-
-  it('shows an empty state', async () => {
-    get.mockResolvedValue({ data: [] });
-    render(<ApiTokensPanel />);
-    expect(await screen.findByText('No API tokens yet.')).toBeTruthy();
-  });
-});
+vi.mock('../../api/client',()=>({default:{get:vi.fn(),post:vi.fn(),delete:vi.fn()}}));
+const get=vi.mocked(apiClient.get),post=vi.mocked(apiClient.post),del=vi.mocked(apiClient.delete);
+let identity:Record<string,unknown>,tokens:Array<Record<string,unknown>>;
+const sample={id:1,name:'CI pipeline',prefix:'oa_abcdefghi',created_at:'2026-11-10T00:00:00',last_used_at:null,expires_at:null,revoked_at:null,read_only:false};
+const raw='oa_'+'x'.repeat(43);
+beforeEach(()=>{vi.resetAllMocks();identity={id:1,org_id:9,role:'admin',is_active:true};tokens=[{...sample}];get.mockImplementation(async url=>({data:url==='/auth/me'?identity:tokens}));post.mockImplementation(async(_url,body)=>{const proposal=body as {name:string;read_only?:boolean;expires_in_days?:number};const created={...sample,id:2,name:proposal.name,prefix:raw.slice(0,12),read_only:proposal.read_only??false,created_at:'2026-11-23T00:00:00',expires_at:proposal.expires_in_days===30?'2026-12-23T00:00:00':null};tokens=[created,...tokens];return {data:{...created,token:raw},status:201};});del.mockImplementation(async()=>{tokens=tokens.map(row=>row.id===1?{...row,revoked_at:'2026-11-23T00:00:00'}:row);return {status:204,data:undefined};});});
+afterEach(()=>{cleanup();vi.restoreAllMocks();});
+function deferred<T>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(done=>{resolve=done;});return {promise,resolve};}
+async function open(){const view=render(<ApiTokensPanel/>);await screen.findByRole('region',{name:'Verified personal token inventory'});return view;}
+function draft(){fireEvent.change(screen.getByLabelText('Token name'),{target:{value:' Reporting '}});fireEvent.change(screen.getByLabelText('Expires'),{target:{value:'30'}});fireEvent.click(screen.getByRole('checkbox',{name:/Read-only/}));fireEvent.click(screen.getByRole('button',{name:'Review token creation'}));}
+async function reviewed(){const view=await open();draft();await screen.findByRole('region',{name:'Personal API token operation review'});return view;}
+const confirm=()=>screen.getByRole('button',{name:'Confirm reviewed token creation'});
+const revoke=()=>screen.getByRole('button',{name:'Review revoke token CI pipeline #1'});
+it('shows verified metadata, UTC dates, capability and explicit expiry rather than guessing an empty list',async()=>{await open();expect(screen.getByText('CI pipeline · Token #1')).toBeTruthy();expect(screen.getByText(/2026-11-10 00:00:00.000 UTC/)).toBeTruthy();expect(screen.getByText(/Read and write: API actions/)).toBeTruthy();expect(post).not.toHaveBeenCalled();expect(del).not.toHaveBeenCalled();});
+it('reviews exact capability and expiry before creating once, then reveals only the validated one-time raw response',async()=>{await reviewed();const region=screen.getByRole('region',{name:'Personal API token operation review'});expect(region.textContent).toContain('Name: Reporting');expect(region.textContent).toContain('GET, HEAD and OPTIONS');expect(region.textContent).toContain('30 days after the server creates it');expect(post).not.toHaveBeenCalled();const button=confirm();fireEvent.click(button);fireEvent.click(button);const reveal=await screen.findByRole('region',{name:'One-time created token'});expect(post).toHaveBeenCalledExactlyOnceWith('/api-tokens/',{name:'Reporting',expires_in_days:30,read_only:true});expect(reveal.textContent).toContain(raw);expect((screen.getByRole('button',{name:'Review token creation'}) as HTMLButtonElement).disabled).toBe(true);fireEvent.click(screen.getByRole('button',{name:'Hide token permanently'}));expect(screen.queryByText(raw)).toBeNull();expect(screen.getByText('Reporting · Token #2')).toBeTruthy();});
+it('requires review for unrestricted no-expiry tokens and sends existing API defaults only after confirmation',async()=>{await open();fireEvent.change(screen.getByLabelText('Token name'),{target:{value:'Automation'}});fireEvent.click(screen.getByRole('button',{name:'Review token creation'}));expect(screen.getByRole('region',{name:'Personal API token operation review'}).textContent).toContain('No expiry: this token remains usable until revoked');fireEvent.click(confirm());await screen.findByRole('region',{name:'One-time created token'});expect(post).toHaveBeenCalledExactlyOnceWith('/api-tokens/',{name:'Automation'});});
+it('invalidates review on edits and cancels without issuing a token',async()=>{await reviewed();fireEvent.change(screen.getByLabelText('Token name'),{target:{value:'Changed'}});expect(screen.queryByRole('region',{name:'Personal API token operation review'})).toBeNull();fireEvent.click(screen.getByRole('button',{name:'Review token creation'}));fireEvent.click(screen.getByRole('button',{name:'Cancel token review'}));expect(post).not.toHaveBeenCalled();});
+it.each(['owner','role','organization','inventory'])('holds creation and keeps the draft when %s changed',async mode=>{await reviewed();if(mode==='owner')identity={...identity,id:2};if(mode==='role')identity={...identity,role:'viewer'};if(mode==='organization')identity={...identity,org_id:10};if(mode==='inventory')tokens=[...tokens,{...sample,id:3}];fireEvent.click(confirm());await screen.findByText(/Account access or reviewed token metadata changed/);expect(post).not.toHaveBeenCalled();expect((screen.getByLabelText('Token name') as HTMLInputElement).value).toBe(' Reporting ');});
+it('ignores only last-used timestamp changes during creation preflight',async()=>{await reviewed();tokens=[{...sample,last_used_at:'2026-11-23T10:00:00'}];fireEvent.click(confirm());await screen.findByRole('region',{name:'One-time created token'});expect(post).toHaveBeenCalledTimes(1);});
+it.each(['rejected','malformed','different capability','different expiry','different name'])('blocks automatic reissue after an unknown %s creation response',async mode=>{await reviewed();if(mode==='rejected')post.mockRejectedValueOnce(Error('PRIVATE'));else post.mockResolvedValueOnce({status:201,data:mode==='malformed'?{}:{...sample,id:2,name:mode==='different name'?'Other':'Reporting',read_only:mode!=='different capability',created_at:'2026-11-23T00:00:00',expires_at:mode==='different expiry'?null:'2026-12-23T00:00:00',prefix:raw.slice(0,12),token:raw}});fireEvent.click(confirm());await screen.findByText(/The token operation outcome could not be verified/);expect(post).toHaveBeenCalledTimes(1);expect(screen.queryByLabelText('Token name')).toBeNull();expect(screen.queryByText(raw)).toBeNull();expect(document.body.textContent).not.toContain('PRIVATE');fireEvent.click(screen.getByRole('button',{name:'Read current API tokens'}));await screen.findByRole('region',{name:'Verified personal token inventory'});expect(post).toHaveBeenCalledTimes(1);});
+it('does not issue a request after a failed preflight read',async()=>{await reviewed();get.mockRejectedValueOnce(Error('PRIVATE'));fireEvent.click(confirm());await screen.findByText(/No mutation was sent. Read the current tokens again/);expect(post).not.toHaveBeenCalled();});
+it.each(['incomplete identity','invalid list','duplicate IDs','offline'])('offers no create or revoke controls after %s',async mode=>{if(mode==='incomplete identity')identity={id:1};if(mode==='invalid list')tokens=[{}];if(mode==='duplicate IDs')tokens=[sample,sample];if(mode==='offline')get.mockRejectedValue(Error('PRIVATE'));render(<ApiTokensPanel/>);await screen.findByRole('alert');expect(screen.queryByLabelText('Token name')).toBeNull();expect(screen.queryByRole('button',{name:/Review revoke/})).toBeNull();expect(post).not.toHaveBeenCalled();expect(del).not.toHaveBeenCalled();});
+it('shows an empty inventory only after a complete verified read',async()=>{tokens=[];await open();expect(screen.getByText('No API tokens yet.')).toBeTruthy();});
+it('reviews exact revocation, rereads the target and verifies a retained revoked row after 204',async()=>{await open();fireEvent.click(revoke());const region=screen.getByRole('region',{name:'Personal API token operation review'});expect(region.textContent).toContain('Token #1');expect(region.textContent).toContain('cannot be undone');expect(del).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'Confirm reviewed token revocation'}));await screen.findByText(/The reviewed token is now listed as revoked/);expect(del).toHaveBeenCalledExactlyOnceWith('/api-tokens/1');expect(screen.queryByRole('button',{name:/Review revoke/})).toBeNull();expect(screen.getByRole('region',{name:'Verified personal token inventory'}).textContent).toContain('Revoked');});
+it('refuses to revoke a target whose reviewed metadata changed',async()=>{await open();fireEvent.click(revoke());tokens=[{...sample,read_only:true}];fireEvent.click(screen.getByRole('button',{name:'Confirm reviewed token revocation'}));await screen.findByText(/Account access or reviewed token metadata changed/);expect(del).not.toHaveBeenCalled();});
+it('does not block an exact target revocation for unrelated token additions or last-used changes',async()=>{await open();fireEvent.click(revoke());tokens=[{...sample,last_used_at:'2026-11-23T10:00:00'}, {...sample,id:3}];fireEvent.click(screen.getByRole('button',{name:'Confirm reviewed token revocation'}));await screen.findByText(/The reviewed token is now listed as revoked/);expect(del).toHaveBeenCalledTimes(1);});
+it.each(['rejected','wrong status','missing revoked row','postread failed'])('requires explicit reread after an unknown revocation: %s',async mode=>{await open();fireEvent.click(revoke());if(mode==='rejected')del.mockRejectedValueOnce(Error('PRIVATE'));if(mode==='wrong status')del.mockResolvedValueOnce({status:200});if(mode==='missing revoked row')del.mockResolvedValueOnce({status:204});if(mode==='postread failed')del.mockImplementationOnce(async()=>{get.mockRejectedValue(Error('PRIVATE'));return {status:204};});fireEvent.click(screen.getByRole('button',{name:'Confirm reviewed token revocation'}));await screen.findByText(/The token operation outcome could not be verified/);expect(del).toHaveBeenCalledTimes(1);expect(screen.queryByLabelText('Token name')).toBeNull();expect(document.body.textContent).not.toContain('PRIVATE');});
+it('ignores late preflight completion after unmount and blocks duplicate mutation requests',async()=>{const view=await reviewed(),pending=deferred<{data:unknown}>();get.mockImplementation(url=>url==='/api-tokens/'?pending.promise:Promise.resolve({data:identity}));const button=confirm();fireEvent.click(button);fireEvent.click(button);view.unmount();await act(async()=>pending.resolve({data:tokens}));expect(post).not.toHaveBeenCalled();});
+it('copies only the created raw token on an explicit click and clears it after hiding',async()=>{const writeText=vi.fn().mockResolvedValue(undefined);Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText}});await reviewed();fireEvent.click(confirm());await screen.findByRole('region',{name:'One-time created token'});expect(writeText).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'Copy the new token'}));await screen.findByText(/Your clipboard now contains a secret/);expect(writeText).toHaveBeenCalledExactlyOnceWith(raw);fireEvent.click(screen.getByRole('button',{name:'Hide token permanently'}));expect(screen.queryByText(raw)).toBeNull();expect(within(screen.getByRole('region',{name:'Verified personal token inventory'})).queryByText(raw)).toBeNull();});
