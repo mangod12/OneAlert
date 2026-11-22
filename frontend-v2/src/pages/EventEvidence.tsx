@@ -1,3 +1,4 @@
+import { EventExistingInvestigation } from '../components/EventExistingInvestigation';
 import { EventRecordedNeighbors } from '../components/EventRecordedNeighbors';
 import { EventFieldComparison } from '../components/EventFieldComparison';
 import { EventLinkedInvestigations } from '../components/EventLinkedInvestigations';
@@ -12,6 +13,7 @@ const recorded = (value: unknown) => value === null || value === undefined || va
 export function EventEvidence() {
   const { eventId = '' } = useParams();
   const id = /^[1-9][0-9]*$/.test(eventId) && Number.isSafeInteger(Number(eventId)) ? Number(eventId) : null;
+  const [linkRevision, setLinkRevision] = useState(0);
   const request = useRef(0); const [snapshot, setSnapshot] = useState<Snapshot | null>(null), [loading, setLoading] = useState(false), [error, setError] = useState(''), [retry, setRetry] = useState(0), [notice, setNotice] = useState('');
   useEffect(() => {
     const read = ++request.current; setSnapshot(null); setError(''); setNotice(''); if (id === null) { setLoading(false); return; } setLoading(true);
@@ -41,7 +43,8 @@ export function EventEvidence() {
         <p className="text-xs text-surface-400"><a className="inline-block rounded border border-surface-600 px-3 py-2 text-primary-300" href={`/app/hunt?source_event=${snapshot.event.id}`}>Prepare a reviewed hunt from this event</a> Opens a handoff containing only this event ID. No evidence text is put in the URL, no hypothesis is replaced and no hunt starts automatically.</p>
         <EventRecordedNeighbors key={`${snapshot.event.id}:${snapshot.retrieved_at}`} eventId={snapshot.event.id} event={snapshot.event} />
         <EventFieldComparison key={`comparison:${snapshot.event.id}:${snapshot.retrieved_at}`} eventId={snapshot.event.id} />
-        <EventLinkedInvestigations key={`investigations:${snapshot.event.id}:${snapshot.retrieved_at}`} eventId={snapshot.event.id} />
+        <EventExistingInvestigation key={`existing-link:${snapshot.event.id}:${snapshot.retrieved_at}`} eventId={snapshot.event.id} onLinkOutcome={() => setLinkRevision(value => value + 1)} />
+        <EventLinkedInvestigations key={`investigations:${snapshot.event.id}:${snapshot.retrieved_at}:${linkRevision}`} eventId={snapshot.event.id} />
         <section aria-label="Linked event source" className="oa-panel space-y-3 p-4"><h2 className="font-semibold text-surface-100">Linked source record</h2>{snapshot.source_state === 'owned' && snapshot.source ? <dl className="grid gap-3 text-xs sm:grid-cols-2">{Object.entries(snapshot.source).map(([field, value]) => <div key={field} className="min-w-0"><dt className="text-surface-400">{label(field)}</dt><dd className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{recorded(value)}</dd></div>)}</dl> : <p className="text-sm text-surface-400">{snapshot.source_state === 'not_linked' ? 'No source record is linked to this event.' : 'The linked source is unavailable to this account. Its private details are not included.'}</p>}</section>
         <section aria-label="Stored parsed event payload" className="oa-panel min-w-0 space-y-3 p-4"><h2 className="font-semibold text-surface-100">Stored parsed payload</h2><p className="text-xs text-surface-400">JSON text is generated from the stored parsed payload, not the original file's spacing, key order or bytes. Large integer literals are preserved in this text and in the download's raw_payload_json string. Nothing here is executed.</p>{snapshot.raw_payload_json === null ? <p className="text-sm text-surface-400">No raw payload was recorded.</p> : <pre aria-label="Exact stored payload JSON" className="max-h-96 max-w-full overflow-auto rounded border border-surface-700 bg-surface-950 p-3 text-xs">{snapshot.raw_payload_json}</pre>}</section>
       </>}
