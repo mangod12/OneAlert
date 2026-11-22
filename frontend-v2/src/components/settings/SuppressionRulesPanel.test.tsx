@@ -1,4 +1,6 @@
 import { webcrypto } from 'node:crypto';
+import { suppressionEditFixture } from '../../utils/suppressionEditReview.fixture';
+import { within } from '@testing-library/react';
 import { suppressionRuleFingerprint } from '../../utils/suppressionStatusReview';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -105,4 +107,30 @@ it('previews the same validated draft body without creating a rule', async () =>
 it('rejects fractional snooze windows in preview and creation', async () => {
   mockGets([]); render(<SuppressionRulesPanel />); fireEvent.change(await screen.findByLabelText('Rule name'), { target: { value: 'Draft' } }); fireEvent.change(screen.getByLabelText('Title contains (optional)'), { target: { value: 'scanner' } }); fireEvent.change(screen.getByLabelText('Snooze hours'), { target: { value: '1.5' } });
   fireEvent.click(screen.getByRole('button', { name: 'Preview draft scope' })); await screen.findByText(/Snooze duration must be a whole number/); expect(post).not.toHaveBeenCalled();
+});
+
+it('opens a canonical saved-rule edit instead of trusting stale list values and refreshes only after verified confirmation', async () => {
+  vi.stubGlobal('crypto', webcrypto);
+  const fixture = await suppressionEditFixture({ id: 1, name: 'Fresh saved name', enabled: true }); let edited = false;
+  get.mockImplementation(async (url: string) => {
+    if (url === '/suppression-rules/') return { data: edited ? [{ ...fixture.result.rule, matching_active_alerts: 2 }] : [rule] };
+    if (url === '/assets/') return { data: { assets: [], total: 0 } };
+    if (url === '/suppression-rules/1/edit-review') return { data: fixture.base };
+    throw Error('Unexpected lookup');
+  });
+  post.mockImplementation(async (url: string) => {
+    if (url === '/suppression-rules/1/edit-preview') return { data: fixture.preview };
+    if (url === '/suppression-rules/1/reviewed-edit') { edited = true; return { data: fixture.result }; }
+    throw Error('Unexpected mutation');
+  });
+  render(<SuppressionRulesPanel />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit saved rule Historian ransomware noise' }));
+  const dialog = within(await screen.findByRole('dialog'));
+  await waitFor(() => expect((dialog.getByRole('textbox', { name: 'Rule name' }) as HTMLInputElement).value).toBe('Fresh saved name'));
+  expect((dialog.getByRole('textbox', { name: 'Asset record ID, exact' }) as HTMLInputElement).value).toBe('11');
+  fireEvent.change(dialog.getByRole('textbox', { name: 'Title contains, literal and case-insensitive' }), { target: { value: fixture.proposal.title_contains } });
+  fireEvent.click(dialog.getByRole('button', { name: 'Preview exact saved-rule edit' }));
+  fireEvent.click(await dialog.findByRole('button', { name: 'Confirm reviewed rule edit' })); await dialog.findByText(/conditional edit was confirmed/);
+  expect(post).toHaveBeenCalledTimes(2); expect(post).toHaveBeenNthCalledWith(1, '/suppression-rules/1/edit-preview', { expected_fingerprint: fixture.base.rule_fingerprint, proposal: fixture.proposal }); expect(post).toHaveBeenLastCalledWith('/suppression-rules/1/reviewed-edit', { expected_fingerprint: fixture.base.rule_fingerprint, proposal: fixture.proposal }); expect(patch).not.toHaveBeenCalled(); expect(del).not.toHaveBeenCalled();
+  fireEvent.click(dialog.getByRole('button', { name: 'Close edit review' })); expect(await screen.findByRole('button', { name: 'Edit saved rule Fresh saved name' })).toBeTruthy();
 });
