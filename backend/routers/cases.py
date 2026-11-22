@@ -53,6 +53,7 @@ from backend.models.user import User
 from backend.routers.agent_recorded_health import router as agent_recorded_health_router
 from backend.routers.agent_step_search import router as agent_step_search_router
 from backend.routers.auth import get_active_user
+from backend.routers.case_evidence_analyst_history import router as evidence_analyst_history_router
 from backend.routers.case_evidence_chronology import router as evidence_chronology_router
 from backend.routers.case_evidence_note_comparison import router as evidence_note_comparison_router
 from backend.routers.case_evidence_notes import router as evidence_notes_router
@@ -100,6 +101,7 @@ router.include_router(evidence_chronology_router)
 router.include_router(evidence_unlink_router)
 router.include_router(evidence_notes_router)
 router.include_router(evidence_note_comparison_router)
+router.include_router(evidence_analyst_history_router)
 router.include_router(triage_intake_router)
 router.include_router(triage_correlation_router)
 
