@@ -11,8 +11,11 @@ from backend.database.db import get_async_db
 from backend.models.detection_rule import DetectionRule, DetectionRuleResponse, HuntSession, HuntSessionResponse
 from backend.models.user import User
 from backend.routers.auth import get_active_user
+from backend.routers.hunt_retained_rows import router as retained_rows_router
+from backend.services.hunt_retained_review import retained_fingerprint
 
 router = APIRouter()
+router.include_router(retained_rows_router)
 
 
 class HuntRequest(BaseModel):
@@ -178,6 +181,7 @@ async def get_hunt(
         "queries_run": session.queries_run,
         "findings_count": session.findings_count,
         "result_data": data,
+        "retained_evidence_fingerprint": retained_fingerprint(session.id, session.hypothesis, session.result_data),
         "sigma_rule": session.sigma_rule,
         "created_at": session.created_at,
     }

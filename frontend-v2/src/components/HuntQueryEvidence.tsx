@@ -1,3 +1,4 @@
+import { RetainedHuntCurrentEvent } from './RetainedHuntCurrentEvent';
 import { useState } from 'react';
 import { huntQueryCsv, saveHuntDownload } from '../utils/huntEvidence';
 import { FileCode } from 'lucide-react';
@@ -17,7 +18,9 @@ function cellText(value: unknown): string {
   return typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
-export function HuntQueryEvidence({ result, index }: { result: HuntQueryResult; index: number }) {
+export function HuntQueryEvidence({ result, index, savedReview }: { result: HuntQueryResult; index: number; savedReview?: { sessionId: number; fingerprint: string; onRefresh: () => void } }) {
+  const [selected, setSelected] = useState<{ rowNumber: number; eventId: number } | null>(null);
+  const canReview = savedReview && Number.isSafeInteger(savedReview.sessionId) && savedReview.sessionId > 0 && /^[0-9a-f]{64}$/.test(savedReview.fingerprint) && result.outcome === 'completed' && result.execution?.contract === 'scoped_select_v1' && result.execution.selected_columns.includes('id') && new Set(result.execution.selected_columns).size === result.execution.selected_columns.length;
   const [page, setPage] = useState(1), [search, setSearch] = useState(''), [field, setField] = useState('');
   const rows = result.rows ?? [];
   const columns = [...new Set(rows.flatMap(row => Object.keys(row)))];
@@ -65,8 +68,8 @@ export function HuntQueryEvidence({ result, index }: { result: HuntQueryResult; 
     {matches.length > 0 ? <>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
-          <thead><tr className="border-b border-surface-700">{columns.map(column => <th key={column} scope="col" className="p-2 text-left text-surface-400">{column}</th>)}</tr></thead>
-          <tbody>{visible.map((row, rowIndex) => <tr key={rowIndex} className="border-b border-surface-800">{columns.map(column => <td key={column} className="min-w-32 max-w-xs whitespace-pre-wrap break-words p-2 align-top text-surface-300">{cellText(row[column])}</td>)}</tr>)}</tbody>
+          <thead><tr className="border-b border-surface-700">{columns.map(column => <th key={column} scope="col" className="p-2 text-left text-surface-400">{column}</th>)}{canReview && <th scope="col" className="p-2 text-left text-surface-400">Current selected-field evidence</th>}</tr></thead>
+          <tbody>{visible.map((row, rowIndex) => <tr key={rowIndex} className="border-b border-surface-800">{columns.map(column => <td key={column} className="min-w-32 max-w-xs whitespace-pre-wrap break-words p-2 align-top text-surface-300">{cellText(row[column])}</td>)}{canReview && <td className="p-2 align-top">{Number.isSafeInteger(row.id) && Number(row.id) > 0 && Number(row.id) <= 2147483647 ? <button type="button" className="min-h-10 rounded border border-surface-600 px-3 py-2 text-left text-primary-300" onClick={() => setSelected({ rowNumber: rows.indexOf(row) + 1, eventId: Number(row.id) })}>Compare current event for retained row {rows.indexOf(row) + 1}</button> : <span className="text-surface-400">No supported retained event ID</span>}</td>}</tr>)}</tbody>
         </table>
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -78,6 +81,8 @@ export function HuntQueryEvidence({ result, index }: { result: HuntQueryResult; 
       </div>
     </> : <p className="text-xs text-surface-400">{rows.length ? 'No retained rows match this local search. Clear it to review the retained evidence.' : 'No retained evidence rows for this query.'}</p>}
     {typeof result.row_count === 'number' && result.row_count > rows.length && <p className="mt-3 text-xs text-warning">{result.row_count - rows.length} reported rows were not retained in this result. They are not available through paging.</p>}
+    {savedReview && !canReview && <p className="mb-3 text-xs text-surface-400">Current event comparison needs a saved completed scoped-select result with the event ID selected and a supported loaded-evidence fingerprint. No ID or execution context is inferred for older results.</p>}
+    {canReview && savedReview && selected && result.execution && <RetainedHuntCurrentEvent key={`${savedReview.fingerprint}:${selected.rowNumber}:${selected.eventId}`} sessionId={savedReview.sessionId} queryNumber={index + 1} rowNumber={selected.rowNumber} eventId={selected.eventId} fingerprint={savedReview.fingerprint} columns={result.execution.selected_columns} onClose={() => setSelected(null)} onRefreshSaved={() => { setSelected(null); savedReview.onRefresh(); }} />}
     {result.error && <p role="alert" className="mt-3 whitespace-pre-wrap break-words text-xs text-danger">{result.error}</p>}
   </section>;
 }
