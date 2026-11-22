@@ -1,3 +1,5 @@
+import { webcrypto } from 'node:crypto';
+import { suppressionRuleFingerprint } from '../../utils/suppressionStatusReview';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from '../../api/client';
@@ -10,7 +12,7 @@ const patch = vi.mocked(apiClient.patch);
 const del = vi.mocked(apiClient.delete);
 
 beforeEach(() => { vi.resetAllMocks(); });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 const rule = {
   id: 1, name: 'Historian ransomware noise', cve_id: null, asset_id: 11,
@@ -59,12 +61,28 @@ describe('SuppressionRulesPanel', () => {
     expect(await screen.findByText(/Set at least one criterion/)).toBeTruthy();
   });
 
-  it('pauses and re-enables a rule', async () => {
-    mockGets();
-    patch.mockResolvedValue({ data: { ...rule, enabled: false } });
+  it('opens a status review and only pauses after the exact conditional change is confirmed', async () => {
+    vi.stubGlobal('crypto', webcrypto);
+    const snapshot = { ...rule }; delete (snapshot as Partial<typeof rule>).matching_active_alerts;
+    const fingerprint = await suppressionRuleFingerprint(snapshot);
+    const paused = { ...snapshot, enabled: false };
+    let saved = false;
+    get.mockImplementation(async (url: string) => {
+      if (url === '/suppression-rules/') return { data: [{ ...rule, enabled: !saved }] };
+      if (url === '/assets/') return { data: { assets: [], total: 0 } };
+      return { data: { rule: snapshot, rule_fingerprint: fingerprint, page: 1, size: 10, scope: 'active', search: '', total: 0, matching_total: 0, criteria_present: true, retrieved_at: '2026-01-01T00:00:00Z', alerts: [] } };
+    });
+    post.mockImplementation(async () => { saved = true; return { data: { conditional_update_applied: true, reviewed_fingerprint: fingerprint, rule: paused, rule_fingerprint: await suppressionRuleFingerprint(paused) } }; });
     render(<SuppressionRulesPanel />);
     fireEvent.click(await screen.findByRole('button', { name: 'Pause' }));
-    await waitFor(() => expect(patch).toHaveBeenCalledWith('/suppression-rules/1', { enabled: false }));
+    const confirm = await screen.findByRole('button', { name: 'Confirm reviewed pause' });
+    expect(patch).not.toHaveBeenCalled(); expect(post).not.toHaveBeenCalled();
+    fireEvent.click(confirm);
+    await waitFor(() => expect(post).toHaveBeenCalledExactlyOnceWith('/suppression-rules/1/reviewed-status', { enabled: false, expected_fingerprint: fingerprint }));
+    await screen.findByText(/conditional status change was confirmed/);
+    expect((await screen.findByRole('button', { name: 'Enable' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Close status review' }));
+    expect((screen.getByRole('button', { name: 'Enable' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('deletes a rule after confirmation', async () => {

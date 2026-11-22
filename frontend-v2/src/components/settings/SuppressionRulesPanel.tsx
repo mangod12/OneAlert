@@ -6,18 +6,11 @@ import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { Panel } from '../ui/Panel';
 import { StatusBadge } from '../ui/StatusBadge';
 import { toast } from '../Toast';
+import { SuppressionStatusReview } from './SuppressionStatusReview';
+import { type SuppressionRuleSnapshot } from '../../utils/suppressionStatusReview';
 import { SuppressionDraftPreview, type SuppressionDraft } from './SuppressionDraftPreview';
 
-interface SuppressionRule {
-  id: number;
-  name: string;
-  cve_id: string | null;
-  asset_id: number | null;
-  severity: string | null;
-  title_contains: string | null;
-  duration_hours: number;
-  enabled: boolean;
-  created_at: string;
+interface SuppressionRule extends SuppressionRuleSnapshot {
   matching_active_alerts: number;
 }
 
@@ -51,6 +44,7 @@ export function SuppressionRulesPanel() {
   const [creating, setCreating] = useState(false);
   const [previewDraft, setPreviewDraft] = useState<SuppressionDraft | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [pendingStatus, setPendingStatus] = useState<{ id: number; enabled: boolean } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<SuppressionRule | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -120,16 +114,6 @@ export function SuppressionRulesPanel() {
     }
   };
 
-  const toggleRule = async (rule: SuppressionRule) => {
-    try {
-      const resp = await apiClient.patch<SuppressionRule>(`/suppression-rules/${rule.id}`, { enabled: !rule.enabled });
-      setRules((prev) => prev.map((r) => (r.id === rule.id ? { ...r, enabled: resp.data.enabled } : r)));
-      toast(resp.data.enabled ? 'Rule enabled.' : 'Rule paused.', 'success');
-    } catch (error) {
-      toast(getApiErrorMessage(error, 'The rule could not be updated.'), 'error');
-    }
-  };
-
   const deleteRule = async () => {
     if (!pendingDelete || deleting) return;
     setDeleting(true);
@@ -172,7 +156,8 @@ export function SuppressionRulesPanel() {
                   <a href={`/app/settings/suppression-rules/${rule.id}`} className="rounded-md border border-surface-600 px-2.5 py-1.5 text-xs text-primary-300">Review matching alerts for rule #{rule.id}</a>
                   <button
                     type="button"
-                    onClick={() => void toggleRule(rule)}
+                    disabled={pendingStatus !== null}
+                    onClick={() => setPendingStatus({ id: rule.id, enabled: !rule.enabled })}
                     className="rounded-md border border-surface-600 px-2.5 py-1.5 text-xs text-surface-300 transition-colors hover:text-surface-100"
                   >
                     {rule.enabled ? 'Pause' : 'Enable'}
@@ -242,6 +227,7 @@ export function SuppressionRulesPanel() {
         </form>
       </div>
 
+      {pendingStatus && <SuppressionStatusReview key={`${pendingStatus.id}:${pendingStatus.enabled}`} ruleId={pendingStatus.id} enabled={pendingStatus.enabled} onClose={() => setPendingStatus(null)} onSaved={rule => { setRules(current => current.map(saved => saved.id === rule.id ? { ...saved, ...rule } : saved)); void loadRules(); }} />}
       {previewDraft && <SuppressionDraftPreview proposal={previewDraft} onClose={() => setPreviewDraft(null)} />}
       {pendingDelete && (
         <ConfirmDialog
