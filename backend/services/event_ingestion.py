@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.models.security_event import EventSource, SecurityEvent
 from backend.services.normalized_event import validate_normalized_event
 from backend.services.parsers.event_time import EventTimestampError
+from backend.services.parsers.linux_journal import parse_linux_journal
 from backend.services.parsers.suricata import parse_suricata_eve
 from backend.services.parsers.windows_security import parse_windows_security
 from backend.services.parsers.zeek import parse_zeek_log
@@ -20,6 +21,7 @@ PARSERS = {
     "suricata": parse_suricata_eve,
     "zeek": parse_zeek_log,
     "windows_security": parse_windows_security,
+    "linux_journal": parse_linux_journal,
 }
 
 

@@ -615,4 +615,18 @@ describe('Source-parser preview attached to an explicit event import', () => {
     fireEvent.click(await screen.findByRole('button', { name: /upload events/i })); await act(async () => resolve({ data: { success: true, data: counters() } }));
     expect(screen.queryByLabelText('Loaded parser-preview counters')).toBeNull(); expect(screen.queryByLabelText('Selected event file review')).toBeNull(); expect(mockPost).toHaveBeenCalledTimes(1);
   });
+  it('offers explicit Linux journal JSON guidance without making a request or claiming a collector is installed', async () => {
+    await selectFile(); fireEvent.change(screen.getByLabelText('Source type'), { target: { value: 'linux_journal' } });
+    expect(screen.getByLabelText('Linux journal JSON format').textContent).toContain('classic auth.log/syslog text');
+    expect(screen.getByLabelText('Linux journal JSON format').textContent).toContain('not independently verified');
+    expect(screen.getByLabelText('Selected event file review').textContent).toContain('Linux journal (systemd JSON)');
+    fireEvent.click(screen.getByText('Show synthetic journal JSON example')); expect(screen.getByText(/Format example only, not observed evidence/)).toBeTruthy(); expect(mockPost).not.toHaveBeenCalled();
+  });
+  it('previews and explicitly imports Linux journal JSON with only its exact loaded binding', async () => {
+    await selectFile(); fireEvent.change(screen.getByLabelText('Source type'), { target: { value: 'linux_journal' } });
+    mockPost.mockResolvedValueOnce({ data: { success: true, data: counters({ source_type: 'linux_journal' }) } });
+    fireEvent.click(previewButton()); await screen.findByLabelText('Loaded parser-preview counters'); expect(mockPost.mock.calls[0][2]?.params).toEqual({ source_type: 'linux_journal' });
+    fireEvent.click(uploadButton()); await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2)); expect(mockPost.mock.calls[1][2]?.params).toEqual({ source_type: 'linux_journal', preview_fingerprint: hash });
+  });
+
 });
