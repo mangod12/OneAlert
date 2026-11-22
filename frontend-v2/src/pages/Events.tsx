@@ -14,9 +14,13 @@ import { useDialogFocus } from '../components/ui/useDialogFocus';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { SavedViewsMenu } from '../components/SavedViewsMenu';
 import { reviewEventFile, type EventFileReview } from '../utils/eventFileReview';
+import { EventParserPreviewPanel } from '../components/EventParserPreviewPanel';
+import type { EventParserPreview } from '../utils/eventParserPreview';
 import { EventImportReceipt } from '../components/EventImportReceipt';
 import { importResponseMetadata, type ImportReceipt } from '../utils/eventImportReceipt';
 import { eventSeverityTones } from '../components/ui/tones';
+
+type EventUploadOutcome = 'uploaded' | 'failed' | 'preview_changed' | undefined;
 
 const utcInput = (value?: string) => value ? new Date(value).toISOString().replace(/Z$/, '').replace(/\.000$/, '').replace(/:00$/, '') : '';
 
@@ -193,7 +197,7 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
     apiClient.get('/events/types').then(res => setEventTypes(res.data.types ?? [])).catch(() => {});
   }, []);
 
-  const handleUpload = async (file: File, sourceType: string) => {
+  const handleUpload = async (file: File, sourceType: string, previewFingerprint?: string): Promise<EventUploadOutcome> => {
     if (uploadInFlight.current) return;
     uploadInFlight.current = true;
     setUploading(true);
@@ -201,7 +205,7 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
       const form = new FormData();
       form.append('file', file);
       const res = await apiClient.post('/events/upload', form, {
-        params: { source_type: sourceType },
+        params: { source_type: sourceType, ...(previewFingerprint ? { preview_fingerprint: previewFingerprint } : {}) },
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       const result = importResponseMetadata(res.data?.data);
@@ -211,8 +215,10 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
       toast(`Ingested ${ingested} event${ingested === 1 ? '' : 's'} from ${file.name}${skipped ? ` (${skipped} skipped)` : ''}.`, ingested === 0 || skipped > 0 ? 'warning' : 'success');
       setShowUpload(false);
       await fetchEvents();
+      return 'uploaded';
     } catch (err: unknown) {
       toast(getApiErrorMessage(err, 'The file could not be ingested. Use Suricata EVE JSON or Zeek JSON logs.'), 'error');
+      return previewFingerprint && (err as { response?: { status?: number } } | null)?.response?.status === 409 ? 'preview_changed' : 'failed';
     } finally {
       uploadInFlight.current = false;
       setUploading(false);
@@ -532,7 +538,7 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
         <EventUploadDialog
           uploading={uploading}
           onClose={() => { if (!uploading) setShowUpload(false); }}
-          onUpload={(file, sourceType) => void handleUpload(file, sourceType)}
+          onUpload={handleUpload}
         />
       )}
       {escalateEvent && <EventInvestigationDialog key={escalateEvent.id} eventId={escalateEvent.id} onCancel={() => setEscalateEvent(null)} />}
@@ -543,17 +549,21 @@ export function Events({ initialSourceId = '' }: { initialSourceId?: string } = 
 function EventUploadDialog({ uploading, onClose, onUpload }: {
   uploading: boolean;
   onClose: () => void;
-  onUpload: (file: File, sourceType: string) => void;
+  onUpload: (file: File, sourceType: string, previewFingerprint?: string) => Promise<EventUploadOutcome>;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [sourceType, setSourceType] = useState('suricata');
   const [formError, setFormError] = useState('');
   const [review, setReview] = useState<EventFileReview | null>(null);
   const [reviewing, setReviewing] = useState(false);
+  const [fileIdentity, setFileIdentity] = useState(0), [previewGeneration, setPreviewGeneration] = useState(0);
+  const [parserPreview, setParserPreview] = useState<EventParserPreview | null>(null), [previewing, setPreviewing] = useState(false);
+  const selectedParser = useRef('suricata');
   const readVersion = useRef(0);
   useEffect(() => () => { readVersion.current++; }, []);
   const chooseFile = async (selected: File | null) => {
     const version = ++readVersion.current;
+    setFileIdentity(version); setParserPreview(null); setPreviewing(false);
     setFile(selected); setReview(null); setFormError(''); setReviewing(Boolean(selected));
     if (!selected) return;
     try {
@@ -566,14 +576,23 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus(dialogRef, () => { if (!uploading) onClose(); });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (uploading || previewing) return;
     if (!file || !review || reviewing) {
       setFormError(file ? 'Choose a valid file and wait for its review before uploading.' : 'Choose a file to upload.');
       return;
     }
+    if (parserPreview && (parserPreview.source_type !== sourceType || parserPreview.byte_size !== file.size || parserPreview.received !== review.records || parserPreview.accepted === 0)) {
+      setFormError('Change the file or parser and request a new preview before importing these records.'); return;
+    }
     setFormError('');
-    onUpload(file, sourceType);
+    const version = readVersion.current;
+    const outcome = await onUpload(file, sourceType, parserPreview?.fingerprint);
+    if (version === readVersion.current && (outcome === 'failed' || outcome === 'preview_changed')) {
+      setParserPreview(null); setPreviewGeneration(value => value + 1);
+      setFormError(outcome === 'preview_changed' ? 'The server refused the preview binding before importing. Preview was cleared. Choose the file or parser again and request a fresh preview; no automatic retry.' : 'Import was not confirmed. Preview was cleared. Check your events before retrying; repeated imports can create duplicates.');
+    }
   };
 
   return (
@@ -600,7 +619,7 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
               id="event-upload-type"
               disabled={uploading}
               value={sourceType}
-              onChange={e => setSourceType(e.target.value)}
+              onChange={e => { selectedParser.current = e.target.value; setSourceType(e.target.value); setParserPreview(null); setPreviewing(false); setFormError(''); }}
               className="w-full rounded-lg border border-surface-600 bg-surface-800 px-3 py-2 text-sm text-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
               <option value="suricata">Suricata (EVE JSON)</option>
@@ -614,8 +633,12 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
             <p>Selected parser: {sourceType === 'suricata' ? 'Suricata (EVE JSON)' : 'Zeek (JSON logs)'}</p>
             <p>Destination: your event stream and a source named after this file.</p>
             <p className="break-words">Sample field names (first three records, up to 20, long names shortened): {review.sampleFields.join(', ') || 'Empty objects'}</p>
-            <p className="text-surface-400">JSON validation is not source-parser acceptance. Unsupported records may still be skipped; the final import reports ingested and skipped counts. {uploading ? 'Submitting this reviewed file...' : 'No records have been sent yet.'}</p>
+            <p className="text-surface-400">JSON validation is not source-parser acceptance. Unsupported records may still be skipped; the final import reports ingested and skipped counts. {uploading ? 'Submitting this reviewed file...' : 'Only Upload requests an import. Optional parser preview below sends the file to the server without importing.'}</p>
           </section>}
+          {file && review && <EventParserPreviewPanel key={`${fileIdentity}:${sourceType}:${previewGeneration}`} file={file} sourceType={sourceType} records={review.records} disabled={uploading}
+            onPreview={value => { if (fileIdentity === readVersion.current && sourceType === selectedParser.current) setParserPreview(value); }}
+            onBusy={value => { if (fileIdentity === readVersion.current && sourceType === selectedParser.current) setPreviewing(value); }}
+          />}
           {formError && <p role="alert" className="text-xs text-danger">{formError}</p>}
           <div className="flex justify-end gap-2 pt-1">
             <button
@@ -628,7 +651,7 @@ function EventUploadDialog({ uploading, onClose, onUpload }: {
             </button>
             <button
               type="submit"
-              disabled={uploading || reviewing || (file !== null && review === null)}
+              disabled={uploading || reviewing || previewing || parserPreview?.accepted === 0 || (file !== null && review === null)}
               className="rounded-md bg-primary-500 px-3.5 py-1.5 text-xs font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-40"
             >
               {uploading ? 'Uploading...' : review ? `Upload ${review.records.toLocaleString()} ${review.records === 1 ? 'record' : 'records'}` : 'Upload'}

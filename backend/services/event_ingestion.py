@@ -21,6 +21,29 @@ PARSERS = {
 }
 
 
+def inspect_event_record(raw, parser):
+    """Share parser acceptance with previews, without ORM access or raw-value errors."""
+    try:
+        if not isinstance(raw, dict):
+            return None, "invalid_record", 0
+        parsed = parser(raw)
+        if not parsed:
+            return None, "unsupported_record", 0
+        redactions = 0
+        if "raw_data" in parsed and isinstance(parsed["raw_data"], dict):
+            parsed["raw_data"], redactions = redact_dict(parsed["raw_data"])
+        try:
+            parsed = validate_normalized_event(parsed)
+        except (ValueError, TypeError, OverflowError, RecursionError):
+            return None, "invalid_fields", 0
+        return parsed, None, redactions
+    except EventTimestampError:
+        return None, "invalid_timestamp", 0
+    except Exception as exc:
+        logger.debug(f"Skip event parse error: {type(exc).__name__}")
+        return None, "parse_error", 0
+
+
 async def ingest_events(
     db: AsyncSession,
     user_id: int,
@@ -47,26 +70,10 @@ async def ingest_events(
 
     for raw in raw_events:
         try:
-            if not isinstance(raw, dict):
+            parsed, reason, record_redactions = inspect_event_record(raw, parser)
+            if reason is not None:
                 skipped += 1
-                skip_reasons["invalid_record"] = skip_reasons.get("invalid_record", 0) + 1
-                continue
-            parsed = parser(raw)
-            if not parsed:
-                skipped += 1
-                skip_reasons["unsupported_record"] = skip_reasons.get("unsupported_record", 0) + 1
-                continue
-
-            # Redact PII/secrets from raw_data before storage
-            record_redactions = 0
-            if "raw_data" in parsed and isinstance(parsed["raw_data"], dict):
-                parsed["raw_data"], record_redactions = redact_dict(parsed["raw_data"])
-
-            try:
-                parsed = validate_normalized_event(parsed)
-            except (ValueError, TypeError, OverflowError, RecursionError):
-                skipped += 1
-                skip_reasons["invalid_fields"] = skip_reasons.get("invalid_fields", 0) + 1
+                skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
                 continue
 
             event = SecurityEvent(

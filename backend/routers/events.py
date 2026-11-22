@@ -4,6 +4,8 @@ import csv
 import io
 import logging
 from datetime import UTC, datetime
+from hmac import compare_digest
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -11,6 +13,7 @@ from pydantic import AwareDatetime
 from sqlalchemy import case as sql_case
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from backend.database.db import get_async_db
 from backend.models.security_event import (
@@ -91,10 +94,26 @@ async def ingest_events_webhook(
     return {"success": True, "data": result}
 
 
+@router.post("/upload/preview")
+async def preview_events_file(
+    file: UploadFile = File(...),
+    source_type: Literal["suricata", "zeek"] = Query("suricata"),
+    current_user: User = Depends(get_active_user),
+):
+    """Inspect parser acceptance without creating sources or importing events."""
+    from backend.services.event_parser_preview import preview_event_file
+
+    content = await _read_upload_with_limit(file)
+    return {"success": True, "data": await run_in_threadpool(preview_event_file, content, source_type)}
+
+
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
 async def upload_events_file(
     file: UploadFile = File(...),
     source_type: str = Query("suricata", description="Event source type"),
+    preview_fingerprint: Annotated[
+        str | None, Query(min_length=64, max_length=64, pattern="^[0-9a-f]{64}$")
+    ] = None,
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -106,6 +125,12 @@ async def upload_events_file(
 
     content = await _read_upload_with_limit(file)
     from backend.services.event_upload import parse_event_upload
+
+    if preview_fingerprint is not None:
+        from backend.services.event_parser_preview import event_preview_fingerprint
+
+        if not compare_digest(preview_fingerprint, event_preview_fingerprint(content, source_type)):
+            raise HTTPException(409, "File bytes or parser changed since preview. No source or event was imported.")
 
     # Validate the whole envelope before creating a source or writing any rows.
     # Source-specific parsers still report ingested/skipped outcomes separately.
