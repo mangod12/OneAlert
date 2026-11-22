@@ -580,6 +580,23 @@ describe('Source-parser preview attached to an explicit event import', () => {
     await selectFile(); fireEvent.click(previewButton()); await screen.findByLabelText('Loaded parser-preview counters'); mockPost.mockRejectedValueOnce(Error('network interrupted')); fireEvent.click(uploadButton());
     await screen.findByText(/Import was not confirmed/); expect(screen.queryByLabelText('Loaded parser-preview counters')).toBeNull(); expect(mockPost).toHaveBeenCalledTimes(2);
   });
+  it('offers explicit Windows JSON guidance without making a request or claiming a collector is installed', async () => {
+    await selectFile(); fireEvent.change(screen.getByLabelText('Source type'), { target: { value: 'windows_security' } });
+    expect(screen.getByLabelText('Windows Security JSON format').textContent).toContain('not binary EVTX or XML');
+    expect(screen.getByLabelText('Windows Security JSON format').textContent).toContain('not independently verified');
+    expect(screen.getByLabelText('Selected event file review').textContent).toContain('Windows Security (Winlogbeat JSON)');
+    fireEvent.click(screen.getByText('Show synthetic JSON format example')); expect(screen.getByText(/Format example only, not observed evidence/)).toBeTruthy(); expect(mockPost).not.toHaveBeenCalled();
+  });
+  it('previews and explicitly imports Windows JSON with only its exact loaded binding', async () => {
+    await selectFile(); fireEvent.change(screen.getByLabelText('Source type'), { target: { value: 'windows_security' } });
+    mockPost.mockResolvedValueOnce({ data: { success: true, data: counters({ source_type: 'windows_security' }) } });
+    fireEvent.click(previewButton()); await screen.findByLabelText('Loaded parser-preview counters'); expect(mockPost.mock.calls[0][2]?.params).toEqual({ source_type: 'windows_security' });
+    fireEvent.click(uploadButton()); await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2)); expect(mockPost.mock.calls[1][2]?.params).toEqual({ source_type: 'windows_security', preview_fingerprint: hash });
+  });
+  it('does not attach a Suricata receipt to a Windows file even if the fingerprint was copied', async () => {
+    await selectFile(); fireEvent.change(screen.getByLabelText('Source type'), { target: { value: 'windows_security' } });
+    fireEvent.click(previewButton()); await screen.findByText(/Parser preview could not be verified/); expect(screen.queryByLabelText('Loaded parser-preview counters')).toBeNull(); expect(mockPost).toHaveBeenCalledTimes(1);
+  });
   it('closing and reopening does not restore an old in-flight preview', async () => {
     let resolve!: (value: unknown) => void; mockPost.mockReturnValueOnce(new Promise(done => { resolve = done; }));
     await selectFile(); fireEvent.click(previewButton()); await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1)); fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));

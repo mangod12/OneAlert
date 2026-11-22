@@ -13,8 +13,8 @@ def event_preview_fingerprint(content: bytes, source_type: str) -> str:
 
 
 def preview_event_file(content: bytes, source_type: str) -> dict:
-    if source_type not in {"suricata", "zeek"}:
-        raise ValueError("Preview supports the Suricata and Zeek parsers only")
+    if source_type not in {"suricata", "zeek", "windows_security"}:
+        raise ValueError("Preview supports named Suricata, Zeek and Windows Security JSON parsers only")
     records = parse_event_upload(content)
     parser = ingestion.PARSERS[source_type]
     accepted = redactions = 0

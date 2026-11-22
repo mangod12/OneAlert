@@ -1,7 +1,9 @@
 import { MAX_EVENT_FILE_BYTES, MAX_EVENT_FILE_RECORDS } from './eventFileReview';
 import { reasonLabels } from './eventImportReceipt';
+export const eventSourceParserLabels = { suricata: 'Suricata (EVE JSON)', zeek: 'Zeek (JSON logs)', windows_security: 'Windows Security (Winlogbeat JSON)' } as const;
+export type EventSourceParser = keyof typeof eventSourceParserLabels;
 export interface EventParserPreview {
-  format: string; source_type: 'suricata' | 'zeek'; fingerprint: string; byte_size: number; previewed_at: string;
+  format: string; source_type: EventSourceParser; fingerprint: string; byte_size: number; previewed_at: string;
   received: number; accepted: number; skipped: number; redactions_in_accepted: number;
   skip_reasons: Record<string, number>;
   skipped_positions: Record<string, { record_positions: number[]; omitted_positions: number }>;
@@ -13,7 +15,7 @@ const date = (value: unknown): value is string => typeof value === 'string' && v
 export function parseEventParserPreview(value: unknown, expected: EventPreviewBinding): EventParserPreview {
   const invalid = (): never => { throw Error('The parser preview did not match the exact file bytes, parser, record count and complete bounded counters. No import was requested.'); };
   const data = value as EventParserPreview;
-  if (!object(data) || data.format !== 'onealert_event_parser_preview_v1' || !['suricata', 'zeek'].includes(data.source_type) || data.source_type !== expected.sourceType || typeof data.fingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(data.fingerprint) || data.fingerprint.length !== 64 || data.fingerprint !== expected.fingerprint || !count(data.byte_size) || data.byte_size < 1 || data.byte_size > MAX_EVENT_FILE_BYTES || data.byte_size !== expected.byteSize || !date(data.previewed_at) || !count(data.received) || data.received < 1 || data.received > MAX_EVENT_FILE_RECORDS || data.received !== expected.records || !count(data.accepted) || !count(data.skipped) || data.accepted + data.skipped !== data.received || !count(data.redactions_in_accepted) || (data.accepted === 0 && data.redactions_in_accepted !== 0) || !object(data.skip_reasons) || !object(data.skipped_positions)) invalid();
+  if (!object(data) || data.format !== 'onealert_event_parser_preview_v1' || !Object.hasOwn(eventSourceParserLabels, data.source_type) || data.source_type !== expected.sourceType || typeof data.fingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(data.fingerprint) || data.fingerprint.length !== 64 || data.fingerprint !== expected.fingerprint || !count(data.byte_size) || data.byte_size < 1 || data.byte_size > MAX_EVENT_FILE_BYTES || data.byte_size !== expected.byteSize || !date(data.previewed_at) || !count(data.received) || data.received < 1 || data.received > MAX_EVENT_FILE_RECORDS || data.received !== expected.records || !count(data.accepted) || !count(data.skipped) || data.accepted + data.skipped !== data.received || !count(data.redactions_in_accepted) || (data.accepted === 0 && data.redactions_in_accepted !== 0) || !object(data.skip_reasons) || !object(data.skipped_positions)) invalid();
   const reasons: Record<string, number> = {}, positions: EventParserPreview['skipped_positions'] = {}, seen = new Set<number>();
   if (Object.keys(data.skipped_positions).length !== Object.keys(data.skip_reasons).length) invalid();
   for (const [reason, amount] of Object.entries(data.skip_reasons)) {
@@ -27,7 +29,7 @@ export function parseEventParserPreview(value: unknown, expected: EventPreviewBi
   return { format: data.format, source_type: data.source_type, fingerprint: data.fingerprint, byte_size: data.byte_size, previewed_at: data.previewed_at, received: data.received, accepted: data.accepted, skipped: data.skipped, redactions_in_accepted: data.redactions_in_accepted, skip_reasons: reasons, skipped_positions: positions };
 }
 export async function eventFilePreviewFingerprint(file: File, sourceType: string): Promise<string> {
-  if (!['suricata', 'zeek'].includes(sourceType) || !count(file.size) || file.size < 1 || file.size > MAX_EVENT_FILE_BYTES) throw Error('Choose a bounded event file and a supported parser before requesting a preview.');
+  if (!Object.hasOwn(eventSourceParserLabels, sourceType) || !count(file.size) || file.size < 1 || file.size > MAX_EVENT_FILE_BYTES) throw Error('Choose a bounded event file and a supported parser before requesting a preview.');
   let bytes: ArrayBuffer;
   try {
     bytes = typeof file.arrayBuffer === 'function' ? await file.arrayBuffer() : await new Promise<ArrayBuffer>((resolve, reject) => {
