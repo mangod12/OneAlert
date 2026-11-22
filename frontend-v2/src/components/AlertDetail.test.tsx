@@ -615,3 +615,15 @@ it('discards a prior linked-case read arriving after an uncertain reviewed mutat
   expect(screen.queryByText('Stale late investigation')).toBeNull();
   expect(post).toHaveBeenCalledExactlyOnceWith('/alerts/1/existing-investigations/12', { reviewed_fingerprint: 'b'.repeat(64) });
 });
+
+
+it.each([5, 42, null])('mounts historical analyst discovery only for the exact source owner, not assignees or unknown identity %s', async userId => {
+  const user = { id: userId || 42, email: 'analyst@example.test', full_name: 'Analyst', company: 'Acme', role: 'analyst', is_active: true, is_verified: true, mfa_enabled: false, created_at: '2026-01-01T00:00:00Z' };
+  useAuthStore.setState({ user: userId === null ? null : user });
+  get.mockResolvedValue({ data: [] });
+  render(<AlertDetail alert={{ ...alert, assigned_to_id: 42 }} onClose={() => {}} onAcknowledge={() => {}} onResolve={() => {}} onReopen={() => {}} onSnooze={() => {}} onAssigned={() => {}} />);
+  await screen.findByText(alert.title);
+  const panel = screen.queryByRole('region', { name: 'Historical analyst references to this source' });
+  expect(!!panel).toBe(userId === 5);
+  expect(get.mock.calls.some(([url]) => url.startsWith('/cases/source-notes/'))).toBe(false);
+});

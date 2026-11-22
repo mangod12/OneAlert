@@ -1,3 +1,4 @@
+import { EvidenceAnalystHistory } from './EvidenceAnalystHistory';
 import { AlertExistingInvestigation } from './AlertExistingInvestigation';
 import { AlertInvestigationDialog } from './AlertInvestigationDialog';
 import type { Alert, EpssScore, RemediationAction } from '../api/types';
@@ -386,6 +387,8 @@ export function AlertDetail({ alert, onClose, onAcknowledge, onResolve, onReopen
           {linkedCases !== null && linkedCases.length > 0 && (
             <LinkedCasesList cases={linkedCases} onClose={onClose} />
           )}
+
+          {currentUserId !== null && isOwner && <EvidenceAnalystHistory kind="alert" recordId={alert.id} />}
 
           {isOwner && <AlertExistingInvestigation key={alert.id} alertId={alert.id} onLinkOutcome={() => { linkedCaseRequest.current++; setLinkedCases(null); }} />}
 

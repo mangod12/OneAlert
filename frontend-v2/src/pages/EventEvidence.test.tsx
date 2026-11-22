@@ -38,3 +38,7 @@ it('downloads loaded evidence with raw JSON text and counter precision intact', 
   const body = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsText(create.mock.calls[0][0]); });
   const evidence = JSON.parse(body); expect(evidence.raw_payload_json).toBe(raw); expect(evidence.event.bytes_in).toBe('9007199254740993'); expect(evidence.event.bytes_out).toBeNull();
 });
+
+it('offers explicit analyst reference discovery only after the owner-scoped exact event has loaded, and unmounts it on failed refresh', async () => {
+  let finish!: (value: unknown) => void; get.mockReturnValueOnce(new Promise(resolve => { finish = resolve; })); render(<EventEvidence />); expect(screen.queryByRole('region', { name: 'Historical analyst references to this source' })).toBeNull(); await act(async () => finish({ data: snapshot })); expect(await screen.findByRole('button', { name: 'Read analyst source references' })).toBeTruthy(); expect(get).toHaveBeenCalledExactlyOnceWith('/events/99/evidence'); get.mockRejectedValueOnce(new Error('offline')); fireEvent.click(screen.getByText('Refresh exact event evidence')); await screen.findByRole('alert'); expect(screen.queryByRole('region', { name: 'Historical analyst references to this source' })).toBeNull();
+});
