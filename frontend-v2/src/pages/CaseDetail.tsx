@@ -1045,7 +1045,7 @@ export function CaseDetail() {
                         ) : (
                           <p className="break-words text-sm text-surface-300">{entry.content}</p>
                         )}
-                        {entry.entry_type === 'note' && <EvidenceNoteReference metadata={entry.metadata_json} caseId={caseData.id} canOpenOriginal={isOwner} />}
+                        {entry.entry_type === 'note' && <EvidenceNoteReference metadata={entry.metadata_json} caseId={caseData.id} noteId={entry.id} canOpenOriginal={isOwner} />}
                         {entry.entry_type === 'ai_analysis' && <TriageCoverageReceipt metadata={entry.metadata_json} />}
                         {entry.entry_type === 'action' && <ChecklistImportRecord metadata={entry.metadata_json} caseId={caseData.id} />}
                       </div>
