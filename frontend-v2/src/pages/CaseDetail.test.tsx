@@ -428,6 +428,7 @@ describe('Source-bound evidence notes', () => {
   function loadEvidence() {
     let timeline: Array<Record<string, unknown>> = [];
     mockGet.mockImplementation(url => {
+      if (url.endsWith('/source-comparison')) return Promise.resolve({ data: { schema_version: 1, case_id: 7, note_id: 99, kind: 'event', record_id: 21, saved_fingerprint: sourceMetadata.record_fingerprint, saved_snapshot: sourceMetadata.record_snapshot, source_available: true, current_fingerprint: sourceMetadata.record_fingerprint, current_snapshot: sourceMetadata.record_snapshot, revision_matches: true, changed_snapshot_fields: [], link_count: 1, retrieved_at: '2026-01-03T00:00:00Z' } });
       if (url.endsWith('/note-preview')) return Promise.resolve({ data: { case: { id: 7, title: caseData.title, summary: caseData.summary, status: 'open', severity: 'high', due_date: null, closed_at: null }, kind: 'event', record: { id: 21, label: 'Saved source label', severity: 'high', recorded_at: null, processing_label: 'in_case' }, link_count: 1, other_owned_case_count: 0, record_fingerprint: 'b'.repeat(64), reviewed_fingerprint: 'a'.repeat(64), note_count: 0, recent_notes: [] } });
       if (url === '/cases/7') return Promise.resolve({ data: { ...caseData, timeline } });
       if (url.endsWith('/events')) return Promise.resolve({ data: [{ id: 21, event_type: 'auth', severity: 'high', signature: 'Saved source label' }] });
@@ -449,6 +450,7 @@ describe('Source-bound evidence notes', () => {
     fireEvent.change(screen.getByLabelText('Evidence note'), { target: { value: 'Analyst interpretation of this source' } }); fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'Save reviewed evidence note' }));
     await screen.findByText('Analyst interpretation of this source'); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(screen.getByText('Saved source reference: event #21')).toBeTruthy(); expect(screen.getByRole('link', { name: /Open current original event #21/ }).getAttribute('href')).toBe('/app/events/21'); await waitFor(() => expect(document.getElementById('case-note-99')?.className).toContain('primary'));
+    expect(mockGet.mock.calls.some(([url]) => url.endsWith('/source-comparison'))).toBe(false); fireEvent.click(screen.getByRole('button', { name: 'Compare saved source with current evidence' })); await screen.findByText(/fingerprints match in this read/); expect(mockGet).toHaveBeenCalledWith('/cases/7/notes/99/source-comparison');
     expect(mockPost).toHaveBeenCalledExactlyOnceWith('/cases/7/evidence/event/21/notes', { content: 'Analyst interpretation of this source', reviewed_fingerprint: 'a'.repeat(64) }); expect(mockPatch).not.toHaveBeenCalled(); expect(mockDelete).not.toHaveBeenCalled(); expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2);
   });
   it('closing a failed note refreshes the case without repeating a save or silently discarding source state', async () => {
@@ -456,7 +458,7 @@ describe('Source-bound evidence notes', () => {
   });
   it('watchers can read historical reference metadata but cannot start owner-only evidence annotations or open owner source links', async () => {
     mockLoadWithTimeline([{ id: 99, timestamp: '2026-01-02T00:00:00Z', entry_type: 'note', source: 'human', content: 'Retained analyst interpretation', metadata_json: sourceMetadata }]);
-    useAuthStore.setState({ user: { ...useAuthStore.getState().user!, id: 6 } }); renderDetail(); await screen.findByText('Retained analyst interpretation'); expect(screen.getByText('Saved source reference: event #21')).toBeTruthy(); expect(screen.queryByRole('button', { name: /Note about (event|alert)/ })).toBeNull(); expect(screen.queryByRole('link', { name: /Open current original event/ })).toBeNull(); expect(mockPost).not.toHaveBeenCalled();
+    useAuthStore.setState({ user: { ...useAuthStore.getState().user!, id: 6 } }); renderDetail(); await screen.findByText('Retained analyst interpretation'); expect(screen.getByText('Saved source reference: event #21')).toBeTruthy(); expect(screen.queryByRole('button', { name: /Note about (event|alert)/ })).toBeNull(); expect(screen.queryByRole('link', { name: /Open current original event/ })).toBeNull(); expect(screen.queryByRole('button', { name: 'Compare saved source with current evidence' })).toBeNull(); expect(mockPost).not.toHaveBeenCalled();
   });
 });
 
