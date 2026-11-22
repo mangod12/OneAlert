@@ -3,7 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +13,7 @@ from backend.models.case import AgentRun
 from backend.models.detection_rule import HuntSession
 from backend.models.user import User
 from backend.routers.auth import get_active_user
+from backend.services.hunt_draft_executions import draft_execution_page
 from backend.services.hunt_query_drafts import (
     AuthoredHuntQueryDraftAgent,
     HuntQueryDraftAgent,
@@ -204,6 +205,21 @@ async def get_queries(
     db: AsyncSession = Depends(get_async_db),
 ):
     return await draft_view(db, current_user.id, draft_id)
+
+
+@router.get("/{draft_id}/executions")
+async def list_draft_executions(
+    draft_id: Annotated[int, Path(ge=1, le=2147483647)],
+    fingerprint: Annotated[str, Query(min_length=64, max_length=64, pattern="^[0-9a-f]{64}$")],
+    offset: Annotated[int, Query(ge=0, le=10000)] = 0,
+    limit: Annotated[int, Query(ge=1, le=20)] = 10,
+    current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    source, draft, current_fingerprint, _, _ = await owned_draft(db, current_user.id, draft_id)
+    if fingerprint != current_fingerprint:
+        raise HTTPException(409, "Saved query draft changed. Reload the exact source before reading its receipts.")
+    return await draft_execution_page(db, current_user.id, source.id, fingerprint, draft, offset, limit)
 
 
 @router.post("/{draft_id}/refinements")
