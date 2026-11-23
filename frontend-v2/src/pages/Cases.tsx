@@ -1,3 +1,4 @@
+import { CaseListCloseReview } from '../components/CaseListCloseReview';
 import { RecordedRunLinks } from '../components/RecordedRunLinks';
 import { TriageCorrelationPreview } from '../components/TriageCorrelationPreview';
 import { DetectionCoveragePreview } from '../components/DetectionCoveragePreview';
@@ -67,6 +68,7 @@ interface PipelineResult {
 const CASE_STATUSES = ['open', 'investigating', 'resolved', 'closed'] as const;
 
 export function Cases() {
+  const [closeReview, setCloseReview] = useState<{ ids: number[]; target: string } | null>(null);
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -231,6 +233,7 @@ export function Cases() {
 
   const changeCaseStatus = async (c: CaseItem, status: string) => {
     if (updatingStatusId !== null || status === c.status) return;
+    if (['resolved', 'closed', 'false_positive'].includes(status)) { setCloseReview({ ids: [c.id], target: status }); return; }
     setUpdatingStatusId(c.id);
     try {
       await apiClient.patch(`/cases/${c.id}`, null, { params: { status_update: status } });
@@ -289,6 +292,9 @@ export function Cases() {
     if (status === '' || bulkBusy) return;
     const ids = visibleSelected();
     if (ids.length === 0) return;
+    if (['resolved', 'closed', 'false_positive'].includes(status)) {
+      setCloseReview({ ids, target: status }); return;
+    }
     setBulkBusy(true);
     setPendingIds(current => new Set([...current, ...ids]));
     const results = await Promise.allSettled(ids.map(id => apiClient.patch(`/cases/${id}`, null, { params: { status_update: status } })));
@@ -711,6 +717,7 @@ export function Cases() {
         />
       )}
 
+      {closeReview && <CaseListCloseReview caseIds={closeReview.ids} targetStatus={closeReview.target} onClose={() => { setCloseReview(null); void fetchCases(); }} onChanged={ids => { setSelectedIds(current => new Set([...current].filter(id => !ids.includes(id)))); void fetchCases(); }} />}
       {confirmBulkDelete && (
         <ConfirmDialog
           title={`Delete ${selectedIds.size} investigations?`}

@@ -319,17 +319,18 @@ describe('Case bulk actions', () => {
     expect(screen.getByText('2 selected')).toBeTruthy();
   };
 
-  it('marks selected investigations resolved with one PATCH per case', async () => {
-    mockGet.mockResolvedValue({ data: { cases: twoCases(), total: 2 } });
-    mockPatch.mockResolvedValue({ data: {} });
-    renderCases();
-    await selectAll();
-    fireEvent.change(screen.getByLabelText('Set status for selected investigations'), { target: { value: 'resolved' } });
-    await waitFor(() => {
-      expect(mockPatch).toHaveBeenCalledWith('/cases/1', null, { params: { status_update: 'resolved' } });
-      expect(mockPatch).toHaveBeenCalledWith('/cases/2', null, { params: { status_update: 'resolved' } });
+  it('reviews selected close-out instead of sending immediate status writes', async () => {
+    mockGet.mockImplementation(async url => {
+      if (url === '/auth/me') return { data: { id: 5, email: 'a@example.test', role: 'analyst', org_id: 7, is_active: true } };
+      if (url.endsWith('/closeout-review')) { const id = Number(url.split('/')[2]); return { data: { case_id: id, title: `Fresh case ${id}`, status: 'open', target_status: 'resolved', resolution: null, can_edit_resolution: true, task_total: 0, alert_total: 0, unavailable_alert_links: 0, reviewed_fingerprint: 'f'.repeat(64), open_tasks: [], remaining_alerts: [] } }; }
+      if (url === '/cases/') return { data: { cases: [makeCase({ id: 1 }), makeCase({ id: 2 })], total: 2 } };
+      return { data: { data: [] } };
     });
-    await waitFor(() => expect(mockToast).toHaveBeenCalledWith('2 investigations marked resolved.', 'success'));
+    renderCases();
+    fireEvent.click(await screen.findByLabelText('Select investigation 1')); fireEvent.click(screen.getByLabelText('Select investigation 2'));
+    fireEvent.change(screen.getByLabelText('Set status for selected investigations'), { target: { value: 'resolved' } });
+    expect(await screen.findByText('Investigation #1: Fresh case 1')).toBeTruthy(); expect(screen.getByText('Investigation #2: Fresh case 2')).toBeTruthy();
+    expect(mockPatch).not.toHaveBeenCalled(); expect(screen.getByRole('button', { name: 'Apply reviewed close-out statuses' })).toHaveProperty('disabled', true);
   });
 
   it('assigns selected investigations to an organization member', async () => {
