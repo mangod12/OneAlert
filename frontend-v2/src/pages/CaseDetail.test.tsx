@@ -771,20 +771,20 @@ describe('Case watchers', () => {
     });
   }
 
-  it('lists watchers and lets the owner add one from the member select', async () => {
+  it('reviews exact watcher access before adding from the member select', async () => {
     useAuthStore.setState({ user: fullUser });
     mockLoadWithWatchers([{ user_id: 6, email: 'watcher@example.com', full_name: 'Will Watch' }]);
-    mockPost.mockResolvedValue({
-      data: [
-        { user_id: 6, email: 'watcher@example.com', full_name: 'Will Watch' },
-        { user_id: 8, email: 'other@example.com', full_name: 'Olive Other' },
-      ],
-    });
+    const base = mockGet.getMockImplementation()!; let added = false;
+    mockGet.mockImplementation((url: string) => url === '/auth/me' ? Promise.resolve({ data: { id: 5, email: 'owner@example.com', role: 'analyst', org_id: 7, is_active: true } }) : url.endsWith('/watcher-addition-review') ? Promise.resolve({ data: { case_id: 7, owner_id: 5, title: 'Fresh exact watcher case', summary: null, status: 'open', severity: 'high', assigned_to_id: null, recipient: { id: 8, email: 'other@example.com', full_name: 'Olive Other', role: 'viewer', org_id: 7, is_active: true }, reviewed_fingerprint: 'a'.repeat(64) } }) : url.endsWith('/watchers') && added ? Promise.resolve({ data: [{ user_id: 8, email: 'other@example.com', full_name: 'Olive Other' }] }) : base(url));
+    mockPost.mockImplementation(async () => { added = true; return { status: 200, data: { success: true, case_id: 7, user_id: 8, email: 'other@example.com', reviewed_fingerprint: 'a'.repeat(64) } }; });
     renderDetail();
     expect(await screen.findByText('Will Watch')).toBeTruthy();
     fireEvent.change(screen.getByRole('combobox', { name: 'Add a watcher' }), { target: { value: '8' } });
-    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/watchers', { user_id: 8 }));
-    expect(await screen.findByText('Olive Other')).toBeTruthy();
+    const dialog = await screen.findByRole('dialog', { name: 'Review investigation watcher addition' });
+    fireEvent.click(await within(dialog).findByRole('checkbox')); expect(mockPost).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add reviewed watcher' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/watcher-addition-reviewed', { user_id: 8, reviewed_fingerprint: 'a'.repeat(64) }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull()); expect(await screen.findByText('Olive Other')).toBeTruthy();
   });
 
   it('toggles watching on and off for the current user', async () => {

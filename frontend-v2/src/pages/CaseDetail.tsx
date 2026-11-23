@@ -1,3 +1,4 @@
+import { CaseWatcherAdditionReview } from '../components/CaseWatcherAdditionReview';
 import { CaseStatusReview } from '../components/CaseStatusReview';
 import { CaseResolutionReview } from '../components/CaseResolutionReview';
 import { CaseDetailsReview } from '../components/CaseDetailsReview';
@@ -153,7 +154,8 @@ export function CaseDetail() {
   const navigate = useNavigate();
   const [members, setMembers] = useState<Array<{ id: number; email: string; full_name: string | null; is_active: boolean }>>([]);
   const [assignmentReview, setAssignmentReview] = useState<{ caseId: number; targetId: number | null } | null>(null);
-  useEffect(() => { setAssignmentReview(null); setConfirmingDelete(false); setPriorityReview(null); }, [caseId]);
+  const [watcherAddition, setWatcherAddition] = useState<{ caseId: number; userId: number } | null>(null);
+  useEffect(() => { setAssignmentReview(null); setConfirmingDelete(false); setPriorityReview(null); setWatcherAddition(null); }, [caseId]);
   const [watchers, setWatchers] = useState<CaseWatcher[]>([]);
   const [watchBusy, setWatchBusy] = useState(false);
   const [tasks, setTasks] = useState<CaseTask[]>([]);
@@ -341,15 +343,6 @@ export function CaseDetail() {
     finally { setWatchBusy(false); }
   };
 
-  const addWatcher = async (value: string) => {
-    if (!value) return;
-    try {
-      const res = await apiClient.post(`/cases/${caseId}/watchers`, { user_id: Number(value) });
-      setWatchers(Array.isArray(res.data) ? res.data : []);
-      toast('Watcher added.', 'success');
-    } catch (err) { toast(getApiErrorMessage(err, 'Could not add the watcher.'), 'error'); }
-  };
-
   const removeWatcher = async (userId: number) => {
     try {
       await apiClient.delete(`/cases/${caseId}/watchers/${userId}`);
@@ -531,7 +524,7 @@ export function CaseDetail() {
                 <select
                   aria-label="Add a watcher"
                   value=""
-                  onChange={e => void addWatcher(e.target.value)}
+                  onChange={e => { if (e.target.value) setWatcherAddition({ caseId: caseData.id, userId: Number(e.target.value) }); }}
                   className="min-h-7 rounded-md border border-surface-600 bg-surface-950 px-1.5 text-xs text-surface-200"
                 >
                   <option value="">Add watcher...</option>
@@ -1056,6 +1049,8 @@ export function CaseDetail() {
 
       {priorityReview && priorityReview.caseId === caseData.id && <CasePriorityReview key={`priority-${priorityReview.caseId}:${priorityReview.field}:${priorityReview.value}`} caseId={priorityReview.caseId} field={priorityReview.field} value={priorityReview.value} onClose={() => { setPriorityReview(null); void fetchAll(); }} onSaved={() => { setPriorityReview(null); toast('Reviewed investigation priority updated.', 'success'); void fetchAll(); }} />}
       {assignmentReview && assignmentReview.caseId === caseData.id && <CaseListAssignmentReview key={`${assignmentReview.caseId}:${assignmentReview.targetId}`} caseIds={[assignmentReview.caseId]} targetId={assignmentReview.targetId} onClose={() => { setAssignmentReview(null); void fetchAll(); }} onChanged={() => { /* Keep confirmed outcomes mounted; closing reloads the full investigation. */ }} />}
+      {watcherAddition && watcherAddition.caseId === caseData.id && <CaseWatcherAdditionReview key={`${watcherAddition.caseId}:${watcherAddition.userId}`} caseId={watcherAddition.caseId} userId={watcherAddition.userId} onClose={() => { setWatcherAddition(null); void fetchAll(); }} onSaved={() => { setWatcherAddition(null); toast('Reviewed watcher added.', 'success'); void fetchAll(); }} />}
+
       {pendingStatus && <CaseStatusReview key={`${caseData.id}:${pendingStatus}`} caseId={caseData.id} value={pendingStatus} onClose={() => { setPendingStatus(null); void fetchAll(); }} onSaved={() => { setPendingStatus(null); toast('Reviewed investigation status updated.', 'success'); void fetchAll(); }} />}
 
       {pendingClose && <CaseCloseReview key={`${caseData.id}:${pendingClose.status}`} caseId={caseData.id} targetStatus={pendingClose.status} label={pendingClose.label} onClose={() => { setPendingClose(null); void fetchAll(); }} onSaved={() => { setPendingClose(null); toast(`Case marked ${pendingClose.status}`, 'success'); void fetchAll(); }} />}
