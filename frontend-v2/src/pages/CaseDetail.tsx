@@ -1,3 +1,4 @@
+import { CaseListAssignmentReview } from '../components/CaseListAssignmentReview';
 import { EvidenceNoteSourceIndex } from '../components/EvidenceNoteSourceIndex';
 import { CaseEvidenceChronology } from '../components/CaseEvidenceChronology';
 import { TriageCoverageReceipt } from '../components/TriageCoverageReceipt';
@@ -149,7 +150,8 @@ export function CaseDetail() {
   const [deletingCase, setDeletingCase] = useState(false);
   const navigate = useNavigate();
   const [members, setMembers] = useState<Array<{ id: number; email: string; full_name: string | null; is_active: boolean }>>([]);
-  const [assigning, setAssigning] = useState(false);
+  const [assignmentReview, setAssignmentReview] = useState<{ caseId: number; targetId: number | null } | null>(null);
+  useEffect(() => { setAssignmentReview(null); }, [caseId]);
   const [watchers, setWatchers] = useState<CaseWatcher[]>([]);
   const [watchBusy, setWatchBusy] = useState(false);
   const [savingDueDate, setSavingDueDate] = useState(false);
@@ -179,16 +181,10 @@ export function CaseDetail() {
       .catch(() => setMembers([]));
   }, []);
 
-  const changeAssignee = async (value: string) => {
-    if (assigning) return;
-    setAssigning(true);
-    const userId = value === '' ? null : Number(value);
-    try {
-      await apiClient.post(`/cases/${caseId}/assign`, { user_id: userId });
-      toast(userId === null ? 'Case unassigned.' : 'Case assigned.', 'success');
-      await fetchAll();
-    } catch (err) { toast(getApiErrorMessage(err, 'The case could not be assigned.'), 'error'); }
-    finally { setAssigning(false); }
+  const changeAssignee = (value: string) => {
+    const targetId = value === '' ? null : Number(value);
+    if (!caseData || targetId === caseData.assigned_to_id || assignmentReview) return;
+    setAssignmentReview({ caseId: caseData.id, targetId });
   };
 
   const changeDueDate = async (value: string) => {
@@ -510,7 +506,7 @@ export function CaseDetail() {
                 <select
                   aria-label="Assign case"
                   value={caseData.assigned_to_id ?? ''}
-                  disabled={assigning}
+                  disabled={assignmentReview !== null}
                   onChange={e => void changeAssignee(e.target.value)}
                   className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200 disabled:opacity-40"
                 >
@@ -1152,6 +1148,7 @@ export function CaseDetail() {
           setTasks(current => current.map(task => task.id === editingTask.id ? response.data : task));
         }} />}
 
+      {assignmentReview && assignmentReview.caseId === caseData.id && <CaseListAssignmentReview key={`${assignmentReview.caseId}:${assignmentReview.targetId}`} caseIds={[assignmentReview.caseId]} targetId={assignmentReview.targetId} onClose={() => { setAssignmentReview(null); void fetchAll(); }} onChanged={() => { /* Keep confirmed outcomes mounted; closing reloads the full investigation. */ }} />}
       {pendingClose && <CaseCloseReview key={`${caseData.id}:${pendingClose.status}`} caseId={caseData.id} targetStatus={pendingClose.status} label={pendingClose.label} onClose={() => { setPendingClose(null); void fetchAll(); }} onSaved={() => { setPendingClose(null); toast(`Case marked ${pendingClose.status}`, 'success'); void fetchAll(); }} />}
 
       {pendingDeleteNote && (

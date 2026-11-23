@@ -526,33 +526,48 @@ describe('Case assignment', () => {
     });
   }
 
-  it('assigns the case to an active org member', async () => {
-    mockLoadWithMembers();
-    mockPost.mockResolvedValue({ data: { success: true, assigned_to_id: 2, assigned_to_email: 'soc-lead@example.com' } });
-    renderDetail();
-    const select = await screen.findByLabelText('Assign case');
-    expect(within(select as HTMLElement).queryByText(/idle@example.com/)).toBeNull();
-    fireEvent.change(select, { target: { value: '2' } });
-    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/assign', { user_id: 2 }));
+  const account = { id: 5, email: 'owner@example.com', full_name: 'Owner', role: 'analyst', org_id: 7, is_active: true };
+  const target = { id: 2, email: 'soc-lead@example.com', full_name: 'Sam Oclead', role: 'analyst', org_id: 7, is_active: true };
+  const review = (targetId: number | null) => ({ case_id: 7, owner_id: 5, title: 'Fresh exact investigation', summary: 'Fresh saved context', status: 'open', severity: 'high', due_date: null, current_assignee_id: targetId === null ? 2 : null, current_assignee: targetId === null ? target : null, target_id: targetId, target: targetId === null ? null : target, owner: account, reviewed_fingerprint: 'f'.repeat(64) });
+  function reviewedLoad(targetId: number | null = 2) {
+    mockLoadWithMembers(); const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation(async url => {
+      if (url === '/auth/me') return { data: account };
+      if (url.endsWith('/assignment-review')) return { data: review(targetId) };
+      if (url === '/cases/7' && targetId === null) return { data: { ...caseData, assigned_to_id: 2, assigned_to_email: target.email } };
+      return base(url);
+    });
+  }
+  it('does not open review or write when the current assignment is selected', async () => {
+    reviewedLoad(null); renderDetail(); fireEvent.change(await screen.findByLabelText('Assign case'), { target: { value: '2' } });
+    expect(screen.queryByRole('dialog')).toBeNull(); expect(mockPost).not.toHaveBeenCalled();
+  });
+  it('blocks the detail action when exact assignment evidence cannot load', async () => {
+    mockLoadWithMembers(); renderDetail(); fireEvent.change(await screen.findByLabelText('Assign case'), { target: { value: '2' } });
+    expect(await screen.findByText(/A complete exact assignment review or current account could not be verified/)).toBeTruthy(); expect(screen.queryByRole('button', { name: 'Apply reviewed assignments' })).toBeNull(); expect(mockPost).not.toHaveBeenCalled();
+  });
+  it('reviews fresh exact recipient before a guarded assignment and refreshes the detail', async () => {
+    reviewedLoad(); let saved = false; const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation(async url => url === '/cases/7' && saved ? { data: { ...caseData, assigned_to_id: 2, assigned_to_email: target.email } } : base(url));
+    mockPost.mockImplementation(async () => { saved = true; return { status: 200, data: { success: true, case_id: 7, assigned_to_id: 2, assigned_to_email: target.email, reviewed_fingerprint: 'f'.repeat(64) } }; });
+    renderDetail(); const select = await screen.findByLabelText('Assign case'); expect(within(select).queryByText(/idle@example.com/)).toBeNull(); fireEvent.change(select, { target: { value: '2' } });
+    expect(await screen.findByText('Investigation #7: Fresh exact investigation')).toBeTruthy(); expect(mockPost).not.toHaveBeenCalled(); expect(screen.getByRole('button', { name: 'Apply reviewed assignments' })).toHaveProperty('disabled', true);
+    fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed every investigation/ })); fireEvent.click(screen.getByRole('button', { name: 'Apply reviewed assignments' }));
+    await screen.findByText('Investigation #7: Confirmed soc-lead@example.com'); expect(mockPost).toHaveBeenCalledExactlyOnceWith('/cases/7/assign-reviewed', { user_id: 2, reviewed_fingerprint: 'f'.repeat(64) });
+    fireEvent.click(screen.getByRole('button', { name: 'Close assignment review' })); expect(screen.queryByRole('dialog')).toBeNull(); await waitFor(() => expect(screen.getByLabelText('Assign case')).toHaveProperty('value', '2'));
+  });
+  it('reviews unassignment without changing checklist assignment or implying access revocation', async () => {
+    reviewedLoad(null); renderDetail(); fireEvent.change(await screen.findByLabelText('Assign case'), { target: { value: '' } });
+    expect(await screen.findByText('New assignee: Unassigned')).toBeTruthy(); expect(screen.getByText(/does not remove access gained/)).toBeTruthy(); expect(mockPost).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Close assignment review' })); expect(mockPost).not.toHaveBeenCalled();
+  });
+  it('keeps uncertain assignment in the review without retry and reloads when closed', async () => {
+    reviewedLoad(); mockPost.mockRejectedValue(Error('PRIVATE')); renderDetail(); fireEvent.change(await screen.findByLabelText('Assign case'), { target: { value: '2' } });
+    fireEvent.click(await screen.findByRole('checkbox', { name: /I reviewed every investigation/ })); fireEvent.click(screen.getByRole('button', { name: 'Apply reviewed assignments' }));
+    await screen.findByText(/Stopped after an unconfirmed assignment change/); expect(mockPost).toHaveBeenCalledOnce(); expect(screen.queryByRole('checkbox', { name: /I reviewed every investigation/ })).toBeNull(); expect(document.body.textContent).not.toContain('PRIVATE');
+    const before = mockGet.mock.calls.filter(([url]) => url === '/cases/7').length; fireEvent.click(screen.getByRole('button', { name: 'Close assignment review' })); await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBeGreaterThan(before));
   });
 
-  it('unassigns with the empty option', async () => {
-    mockLoadWithMembers();
-    mockPost.mockResolvedValue({ data: { success: true, assigned_to_id: null, assigned_to_email: null } });
-    renderDetail();
-    const select = await screen.findByLabelText('Assign case');
-    fireEvent.change(select, { target: { value: '' } });
-    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/assign', { user_id: null }));
-  });
-
-  it('shows an error toast when assignment fails', async () => {
-    mockLoadWithMembers();
-    mockPost.mockRejectedValue({ isAxiosError: true, response: { status: 400, data: { detail: 'Assignee must be an active member of your organization' } } });
-    renderDetail();
-    const select = await screen.findByLabelText('Assign case');
-    fireEvent.change(select, { target: { value: '2' } });
-    await waitFor(() => expect(mockPost).toHaveBeenCalled());
-  });
 });
 
 describe('Deleting timeline notes', () => {
