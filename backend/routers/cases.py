@@ -2034,6 +2034,37 @@ async def add_case_watcher(
     ]
 
 
+@router.get("/{case_id}/watchers/{user_id}/removal-review")
+async def preview_watcher_removal(
+    case_id: int, user_id: int, current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_watcher_removal_review import watcher_removal_review
+    case = (await db.execute(_visible_cases(case_id, current_user))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return await watcher_removal_review(db, case, current_user, user_id)
+
+
+@router.delete("/{case_id}/watchers/{user_id}/reviewed", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_reviewed_watcher(
+    case_id: int, user_id: int,
+    reviewed_fingerprint: str = Query(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$"),
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_watcher_removal_review import watcher_removal_review
+    case = (await db.execute(_visible_cases(case_id, current_user).with_for_update().execution_options(
+        populate_existing=True))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    preview = await watcher_removal_review(db, case, current_user, user_id, lock=True)
+    if not secrets.compare_digest(reviewed_fingerprint, preview["reviewed_fingerprint"]):
+        raise HTTPException(status_code=409, detail="Watcher, access or investigation changed. Review again.")
+    add_audit_log(db, user_id=current_user.id, action="case_watcher_removal_reviewed",
+                  target_type="case", target_id=case.id, detail=f"Reviewed watcher {user_id}; {reviewed_fingerprint}")
+    await remove_case_watcher(case_id, user_id, current_user, db)
+
+
 @router.delete("/{case_id}/watchers/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_case_watcher(
     case_id: int,
