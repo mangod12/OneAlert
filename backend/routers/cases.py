@@ -66,6 +66,7 @@ from backend.routers.detection_window_events import router as detection_window_e
 from backend.routers.triage_correlation import router as triage_correlation_router
 from backend.routers.triage_intake import router as triage_intake_router
 from backend.services.audit import add_audit_log
+from backend.services.case_task_title_review import TaskTitleProposal
 from backend.services.case_visibility import visible_cases
 from backend.services.checklist_import import checklist_proposals
 from backend.services.csv_export import spreadsheet_safe_row
@@ -1100,6 +1101,32 @@ async def update_case_task(
     await db.commit()
     await db.refresh(task)
     return task
+
+
+@router.post("/{case_id}/tasks/{task_id}/title-review")
+async def preview_case_task_title(
+    case_id: int, task_id: int, payload: TaskTitleProposal,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_task_title_review import task_title_review
+    case = await _get_visible_case(db, case_id, current_user)
+    return await task_title_review(db, case, current_user, task_id, payload.title)
+
+
+@router.patch("/{case_id}/tasks/{task_id}/title-reviewed", response_model=CaseTaskResponse)
+async def update_reviewed_case_task_title(
+    case_id: int, task_id: int, payload: TaskTitleProposal,
+    reviewed_fingerprint: str = Query(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$"),
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_task_title_review import task_title_review
+    case = await _get_visible_case(db, case_id, current_user, write=True)
+    preview = await task_title_review(db, case, current_user, task_id, payload.title, lock=True)
+    if not secrets.compare_digest(reviewed_fingerprint, preview["reviewed_fingerprint"]):
+        raise HTTPException(status_code=409, detail="Exact task, account or proposed title changed. Review again.")
+    add_audit_log(db, user_id=current_user.id, action="case_task_title_reviewed", target_type="case",
+                  target_id=case.id, detail=f"Updated reviewed task title {task_id}; review {reviewed_fingerprint}")
+    return await update_case_task(case_id, task_id, CaseTaskUpdate(title=payload.title.strip()), current_user, db)
 
 
 @router.get("/{case_id}/tasks/{task_id}/deletion-review")
