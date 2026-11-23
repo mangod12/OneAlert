@@ -1,3 +1,4 @@
+import { CaseTaskCompletionReview } from '../components/CaseTaskCompletionReview';
 import { CaseTaskDueReview } from '../components/CaseTaskDueReview';
 import { CaseTaskDeletionReview } from '../components/CaseTaskDeletionReview';
 import { CaseAccessMap } from '../components/CaseAccessMap';
@@ -225,14 +226,10 @@ export function CaseDetail() {
     finally { setAddingTask(false); }
   };
 
+  const [taskCompletion, setTaskCompletion] = useState<{ caseId: number; taskId: number; done: boolean } | null>(null);
   const toggleTask = async (task: CaseTask) => {
     if (!canEditAssignedTask(task) || taskBusyId !== null || batchTaskBusy) return;
-    setTaskBusyId(task.id);
-    try {
-      await apiClient.patch(`/cases/${caseId}/tasks/${task.id}`, { done: !task.done });
-      await fetchAll();
-    } catch (err) { toast(getApiErrorMessage(err, 'The task could not be updated.'), 'error'); }
-    finally { setTaskBusyId(null); }
+    setTaskCompletion({ caseId: Number(caseId), taskId: task.id, done: !task.done });
   };
 
   const assignTask = async (task: CaseTask, assigneeId: number | null) => {
@@ -1015,6 +1012,7 @@ export function CaseDetail() {
       {assignmentReview && assignmentReview.caseId === caseData.id && <CaseListAssignmentReview key={`${assignmentReview.caseId}:${assignmentReview.targetId}`} caseIds={[assignmentReview.caseId]} targetId={assignmentReview.targetId} onClose={() => { setAssignmentReview(null); void fetchAll(); }} onChanged={() => { /* Keep confirmed outcomes mounted; closing reloads the full investigation. */ }} />}
       {noteEditReview && noteEditReview.caseId === caseData.id && <CaseNoteEditReview key={`${noteEditReview.caseId}:${noteEditReview.noteId}:${noteEditReview.content}`} caseId={noteEditReview.caseId} noteId={noteEditReview.noteId} content={noteEditReview.content} onClose={() => { setNoteEditReview(null); void fetchAll(); }} onSaved={() => { setNoteEditReview(null); setEditingNoteId(null); toast('Reviewed note updated.', 'success'); void fetchAll(); }} />}
       {noteAddition && noteAddition.caseId === caseData.id && <CaseNoteAdditionReview key={`${noteAddition.caseId}:${noteAddition.content}`} caseId={noteAddition.caseId} content={noteAddition.content} onClose={() => { setNoteAddition(null); void fetchAll(); }} onSaved={() => { setNoteAddition(null); setNoteText(''); toast('Reviewed note added to the timeline.', 'success'); void fetchAll(); }} />}
+      {taskCompletion && taskCompletion.caseId === caseData.id && <CaseTaskCompletionReview key={`task-completion:${taskCompletion.caseId}:${taskCompletion.taskId}:${taskCompletion.done}`} caseId={taskCompletion.caseId} taskId={taskCompletion.taskId} done={taskCompletion.done} onClose={() => { setTaskCompletion(null); void fetchAll(); }} onSaved={() => { setTaskCompletion(null); toast('Reviewed task completion updated.', 'success'); void fetchAll(); }} />}
       {taskDueReview && taskDueReview.caseId === caseData.id && <CaseTaskDueReview key={`task-due:${taskDueReview.caseId}:${taskDueReview.taskId}:${taskDueReview.dueDate}`} caseId={taskDueReview.caseId} taskId={taskDueReview.taskId} dueDate={taskDueReview.dueDate} onClose={() => { setTaskDueReview(null); void fetchAll(); }} onSaved={() => { setTaskDueReview(null); toast('Reviewed task due date updated.', 'success'); void fetchAll(); }} />}
       {taskDeletion && taskDeletion.caseId === caseData.id && <CaseTaskDeletionReview key={`task-delete:${taskDeletion.caseId}:${taskDeletion.taskId}`} caseId={taskDeletion.caseId} taskId={taskDeletion.taskId} onClose={() => { setTaskDeletion(null); void fetchAll(); }} onSaved={() => { setTaskDeletion(null); toast('Reviewed task permanently deleted.', 'success'); void fetchAll(); }} />}
       {accessMapCase === caseData.id && <CaseAccessMap key={`access-map:${accessMapCase}`} caseId={accessMapCase} onClose={() => setAccessMapCase(null)} />}
