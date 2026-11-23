@@ -1,0 +1,17 @@
+import { useRef } from 'react';
+import type { SnapshotAssignedTask, SnapshotTaskChange } from '../utils/taskSnapshotReview';
+import { useDialogFocus } from './ui/useDialogFocus';
+export interface SnapshotTaskReview { tasks: SnapshotAssignedTask[]; change: SnapshotTaskChange; hidden: number; account: { id: number; email: string; role: string; org_id: number | null } }
+export function TaskSnapshotReview({ review, busy, onCancel, onConfirm }: { review: SnapshotTaskReview; busy: boolean; onCancel: () => void; onConfirm: () => void }) {
+  const dialog = useRef<HTMLDivElement>(null), complete = 'done' in review.change;
+  useDialogFocus(dialog, () => { if (!busy) onCancel(); });
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-surface-950/80 p-4"><div ref={dialog} role="dialog" aria-modal="true" aria-label="Review exact assigned snapshot changes" className="max-h-[90dvh] w-full max-w-2xl space-y-4 overflow-y-auto rounded-xl border border-surface-700 bg-surface-900 p-5 [overflow-wrap:anywhere]">
+    <h2 className="text-lg font-semibold">{complete ? 'Review exact checklist completion' : 'Review exact task due-date changes'}</h2>
+    <p className="text-sm">{review.tasks.length} exact tasks from the loaded snapshot, including {review.hidden} hidden by filters. No task outside this frozen list is selected.</p>
+    <p className="text-xs">Current account #{review.account.id} · {review.account.email} · {review.account.role} · Organization {review.account.org_id ?? 'None'}.</p>
+    <ul aria-label="Exact reviewed snapshot tasks" className="space-y-3">{review.tasks.map(task => <li key={task.task_id} className="space-y-1 rounded border border-surface-700 p-3 text-xs"><p className="font-semibold">Task #{task.task_id}: {task.title}</p><p>Investigation #{task.case_id}: {task.case_title} · {task.case_status.replaceAll('_', ' ')}</p><p>{complete ? `Open → Completed. Task due date stays ${task.due_date ?? 'not set'}.` : `Task due date: ${task.due_date ?? 'not set'} → ${'due_date' in review.change ? review.change.due_date ?? 'Clear to not set' : ''}. Completion stays open.`}</p></li>)}</ul>
+    <p className="text-sm text-warning">Only these checklist records change. Investigation status, investigation due dates, assignment and other tasks stay unchanged. Completion records a server timestamp, not proof of external remediation. Reopen from the investigation or full workload explorer.</p>
+    <p className="text-xs text-surface-400">Confirmation rereads your exact account and every reviewed task in the current 200-task snapshot. The existing server conditional update also checks assignment, task title/completion/due date and investigation title/status. Other sessions can still race. Each task is a separate transaction, not an atomic batch. Processing stops on the first unknown outcome; earlier verified changes stay applied, later tasks are not sent. Refresh before any retry. Nothing has been sent yet.</p>
+    <div className="flex flex-wrap gap-2"><button type="button" disabled={busy} onClick={onCancel} className="rounded border border-surface-600 px-3 py-2 text-sm disabled:opacity-40">Cancel task review</button><button type="button" disabled={busy} onClick={onConfirm} className="rounded bg-primary-500 px-3 py-2 text-sm font-semibold text-surface-950 disabled:opacity-40">{busy ? 'Checking reviewed task changes...' : `Confirm ${review.tasks.length} reviewed task changes`}</button></div>
+  </div></div>;
+}
