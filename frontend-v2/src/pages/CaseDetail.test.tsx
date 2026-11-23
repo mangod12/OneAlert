@@ -598,16 +598,18 @@ describe('Deleting timeline notes', () => {
 
   it('offers delete only on note entries and deletes after confirmation', async () => {
     mockLoadWithTimeline([noteEntry, actionEntry]);
-    mockDelete.mockResolvedValue({ data: null });
+    const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation(url => url === '/auth/me' ? Promise.resolve({ data: { id: 5, email: 'owner@example.com', role: 'analyst', org_id: null, is_active: true } }) : url.endsWith('/deletion-review') ? Promise.resolve({ data: { case_id: 7, owner_id: 5, title: 'Fresh deletion case', status: 'open', severity: 'high', content: 'DELETE TIMELINE NOTE', note: { ...noteEntry, user_id: 5 }, reviewed_fingerprint: 'a'.repeat(64) } }) : base(url));
+    mockDelete.mockResolvedValue({ status: 204 });
     renderDetail();
     await screen.findByText('Note to remove');
     expect(screen.getAllByRole('button', { name: 'Delete note' }).length).toBe(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete note' }));
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText('Delete note?')).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete note' }));
-    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/7/notes/21'));
+    fireEvent.click(await within(dialog).findByRole('checkbox'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Permanently delete reviewed note' }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/7/notes/21/reviewed', { params: { reviewed_fingerprint: 'a'.repeat(64) } }));
     await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2));
   });
 
@@ -617,9 +619,9 @@ describe('Deleting timeline notes', () => {
     await screen.findByText('Note to remove');
     fireEvent.click(screen.getByRole('button', { name: 'Delete note' }));
     const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Keep note' }));
     expect(mockDelete).not.toHaveBeenCalled();
-    expect(screen.getByText('Note to remove')).toBeTruthy();
+    expect(await screen.findByText('Note to remove')).toBeTruthy();
   });
 });
 

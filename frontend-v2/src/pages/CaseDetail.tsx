@@ -1,3 +1,4 @@
+import { CaseNoteDeletionReview } from '../components/CaseNoteDeletionReview';
 import { CaseNoteEditReview } from '../components/CaseNoteEditReview';
 import { CaseNoteAdditionReview } from '../components/CaseNoteAdditionReview';
 import { CaseWatcherAdditionReview } from '../components/CaseWatcherAdditionReview';
@@ -37,7 +38,6 @@ import { getApiErrorMessage } from '../api/errors';
 import { toast } from '../components/Toast';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { StatusBadge } from '../components/ui/StatusBadge';
-import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { NarrativeText } from '../components/ui/NarrativeText';
 import { alertSeverityTones, caseStatusTones, eventSeverityTones } from '../components/ui/tones';
 
@@ -146,7 +146,6 @@ export function CaseDetail() {
   const [noteEditReview, setNoteEditReview] = useState<{ caseId: number; noteId: number; content: string } | null>(null);
   const savingNoteEdit = noteEditReview !== null;
   const [pendingDeleteNote, setPendingDeleteNote] = useState<TimelineEntry | null>(null);
-  const [deletingNote, setDeletingNote] = useState(false);
   const [exportingTimeline, setExportingTimeline] = useState(false);
   const [showLinkAlert, setShowLinkAlert] = useState(false);
   const [showLinkEvent, setShowLinkEvent] = useState(false);
@@ -159,7 +158,7 @@ export function CaseDetail() {
   const [members, setMembers] = useState<Array<{ id: number; email: string; full_name: string | null; is_active: boolean }>>([]);
   const [assignmentReview, setAssignmentReview] = useState<{ caseId: number; targetId: number | null } | null>(null);
   const [watcherAddition, setWatcherAddition] = useState<{ caseId: number; userId: number } | null>(null);
-  useEffect(() => { setAssignmentReview(null); setConfirmingDelete(false); setPriorityReview(null); setWatcherAddition(null); setNoteAddition(null); setNoteEditReview(null); }, [caseId]);
+  useEffect(() => { setAssignmentReview(null); setConfirmingDelete(false); setPriorityReview(null); setWatcherAddition(null); setNoteAddition(null); setNoteEditReview(null); setPendingDeleteNote(null); }, [caseId]);
   const [watchers, setWatchers] = useState<CaseWatcher[]>([]);
   const [watchBusy, setWatchBusy] = useState(false);
   const [tasks, setTasks] = useState<CaseTask[]>([]);
@@ -301,18 +300,6 @@ export function CaseDetail() {
     const content = editNoteText.trim();
     if (!content || editingNoteId === null || savingNoteEdit || !caseData) return;
     setNoteEditReview({ caseId: caseData.id, noteId: editingNoteId, content });
-  };
-
-  const deleteNote = async (entry: TimelineEntry) => {
-    if (deletingNote) return;
-    setDeletingNote(true);
-    try {
-      await apiClient.delete(`/cases/${caseId}/notes/${entry.id}`);
-      setPendingDeleteNote(null);
-      toast('Note deleted.', 'success');
-      await fetchAll();
-    } catch (err) { toast(getApiErrorMessage(err, 'The note could not be deleted.'), 'error'); }
-    finally { setDeletingNote(false); }
   };
 
   const refreshWatchers = async () => {
@@ -1047,17 +1034,7 @@ export function CaseDetail() {
 
       {pendingClose && <CaseCloseReview key={`${caseData.id}:${pendingClose.status}`} caseId={caseData.id} targetStatus={pendingClose.status} label={pendingClose.label} onClose={() => { setPendingClose(null); void fetchAll(); }} onSaved={() => { setPendingClose(null); toast(`Case marked ${pendingClose.status}`, 'success'); void fetchAll(); }} />}
 
-      {pendingDeleteNote && (
-        <ConfirmDialog
-          title="Delete note?"
-          description="This timeline note will be permanently removed from the investigation. This cannot be undone."
-          confirmLabel="Delete note"
-          tone="danger"
-          busy={deletingNote}
-          onCancel={() => { if (!deletingNote) setPendingDeleteNote(null); }}
-          onConfirm={() => { void deleteNote(pendingDeleteNote); }}
-        />
-      )}
+      {pendingDeleteNote && <CaseNoteDeletionReview key={`${caseData.id}:${pendingDeleteNote.id}`} caseId={caseData.id} noteId={pendingDeleteNote.id} onClose={() => { setPendingDeleteNote(null); void fetchAll(); }} onSaved={() => { setPendingDeleteNote(null); toast('Reviewed note permanently deleted.', 'success'); void fetchAll(); }} />}
 
       {confirmingDelete && <CaseDeletionReview key={`removal-${caseData.id}`} caseId={caseData.id} onClose={() => { setConfirmingDelete(false); void fetchAll(); }} onDeleted={() => { setConfirmingDelete(false); toast(`Case #${caseData.id} deleted.`, 'success'); navigate('/cases'); }} />}
 
