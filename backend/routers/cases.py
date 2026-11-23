@@ -54,6 +54,7 @@ from backend.models.user import User
 from backend.routers.agent_recorded_health import router as agent_recorded_health_router
 from backend.routers.agent_step_search import router as agent_step_search_router
 from backend.routers.auth import get_active_user
+from backend.routers.case_access_map import router as case_access_map_router
 from backend.routers.case_evidence_analyst_history import router as evidence_analyst_history_router
 from backend.routers.case_evidence_chronology import router as evidence_chronology_router
 from backend.routers.case_evidence_note_comparison import router as evidence_note_comparison_router
@@ -93,6 +94,7 @@ _MENTION_RE = re.compile(r"@([A-Za-z0-9._-]+)")
 
 
 router = APIRouter()
+router.include_router(case_access_map_router)
 router.include_router(agent_step_search_router)
 router.include_router(detection_window_events_router)
 router.include_router(agent_recorded_health_router)
