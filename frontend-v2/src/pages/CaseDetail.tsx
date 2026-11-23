@@ -26,7 +26,7 @@ import type { ChecklistSelection } from '../components/ChecklistImportPreview';
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { TimelineExplorer } from '../components/TimelineExplorer';
-import { TaskTitleDialog } from '../components/TaskTitleDialog';
+import { CaseTaskTitleReview } from '../components/CaseTaskTitleReview';
 import { CaseResponsePlans } from '../components/CaseResponsePlans';
 import { CaseHandoff } from '../components/CaseHandoff';
 import { CaseBriefingDrafts } from '../components/CaseBriefingDrafts';
@@ -1012,13 +1012,7 @@ export function CaseDetail() {
         </div>
       </div>
 
-      {editingTask && <TaskTitleDialog key={editingTask.id} title={editingTask.title} onClose={() => setEditingTask(null)}
-        onSave={async title => {
-          if (!canManageChecklist) throw new Error('Checklist management permission is required.');
-          const response = await apiClient.patch<CaseTask>(`/cases/${caseId}/tasks/${editingTask.id}`, { title });
-          if (response.data.id !== editingTask.id || typeof response.data.title !== 'string') throw new Error('The saved task could not be verified. Retry to refresh it.');
-          setTasks(current => current.map(task => task.id === editingTask.id ? response.data : task));
-        }} />}
+      {editingTask && <CaseTaskTitleReview key={`task-title:${caseData.id}:${editingTask.id}`} caseId={caseData.id} taskId={editingTask.id} initialTitle={editingTask.title} onClose={() => { setEditingTask(null); void fetchAll(); }} onSaved={() => { setEditingTask(null); toast('Reviewed task title updated.', 'success'); void fetchAll(); }} />}
 
       {priorityReview && priorityReview.caseId === caseData.id && <CasePriorityReview key={`priority-${priorityReview.caseId}:${priorityReview.field}:${priorityReview.value}`} caseId={priorityReview.caseId} field={priorityReview.field} value={priorityReview.value} onClose={() => { setPriorityReview(null); void fetchAll(); }} onSaved={() => { setPriorityReview(null); toast('Reviewed investigation priority updated.', 'success'); void fetchAll(); }} />}
       {assignmentReview && assignmentReview.caseId === caseData.id && <CaseListAssignmentReview key={`${assignmentReview.caseId}:${assignmentReview.targetId}`} caseIds={[assignmentReview.caseId]} targetId={assignmentReview.targetId} onClose={() => { setAssignmentReview(null); void fetchAll(); }} onChanged={() => { /* Keep confirmed outcomes mounted; closing reloads the full investigation. */ }} />}

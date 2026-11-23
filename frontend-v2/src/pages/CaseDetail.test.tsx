@@ -992,18 +992,14 @@ describe('Investigation tasks', () => {
     expect((screen.getByRole('textbox', { name: 'New task title' }) as HTMLInputElement).disabled).toBe(false);
   });
 
-  it('edits task wording without changing ownership, due date or completion', async () => {
-    const task = { ...tasks[1], assignee_id: 5, due_date: '2026-12-01' };
-    mockLoadWithTasks([task]);
-    mockPatch.mockResolvedValue({ data: { ...task, title: 'Collect memory image' } });
-    renderDetail();
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit task Collect triage image' }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'Task title' }), { target: { value: 'Collect memory image' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save task title' }));
-    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/2', { title: 'Collect memory image' }));
-    expect(await screen.findByText('Collect memory image')).toBeTruthy();
-    expect((screen.getByLabelText('Due date for task Collect memory image') as HTMLInputElement).value).toBe('2026-12-01');
-    expect(screen.getByRole('button', { name: 'Complete task Collect memory image' })).toBeTruthy();
+  it('reviews exact saved and replacement task wording before updating', async () => {
+    const task = { ...tasks[1], assignee_id: null, due_date: '2026-12-01' }; mockLoadWithTasks([task]); const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation(async url => url === '/auth/me' ? { data: { id: 5, email: 'owner@example.com', role: 'analyst', org_id: null, is_active: true } } : base(url));
+    mockPost.mockResolvedValue({ data: { case_id: 7, owner_id: 5, assigned_to_id: null, title: 'Fresh title-review investigation', status: 'open', severity: 'high', task: { ...task, case_id: 7 }, assignee: null, retained_access_reasons: [], other_assigned_tasks: [], proposed_title: 'Collect memory image', reviewed_fingerprint: 'a'.repeat(64) } });
+    mockPatch.mockResolvedValue({ status: 200, data: { ...task, case_id: 7, title: 'Collect memory image' } });
+    renderDetail(); fireEvent.click(await screen.findByRole('button', { name: 'Edit task Collect triage image' })); fireEvent.change(screen.getByRole('textbox', { name: 'Task title' }), { target: { value: 'Collect memory image' } }); fireEvent.click(screen.getByRole('button', { name: 'Save task title' }));
+    await screen.findByText('Review exact checklist wording change'); await screen.findByText('Proposed replacement:'); expect(mockPatch).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed this exact saved task/ })); fireEvent.click(screen.getByRole('button', { name: 'Save reviewed task title' }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/2/title-reviewed', { title: 'Collect memory image' }, { params: { reviewed_fingerprint: 'a'.repeat(64) } })); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('shows the empty state when the checklist is empty', async () => {
