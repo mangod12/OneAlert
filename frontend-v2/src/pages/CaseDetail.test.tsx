@@ -463,15 +463,17 @@ describe('Source-bound evidence notes', () => {
 });
 
 describe('Case severity editing', () => {
-  it('changes severity via the select and refetches', async () => {
-    mockLoad();
-    mockPatch.mockResolvedValue({ data: { success: true } });
-    renderDetail();
-    const select = await screen.findByRole('combobox', { name: 'Change case severity' });
-    fireEvent.change(select, { target: { value: 'critical' } });
-    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith(
-      '/cases/7', null, { params: { severity: 'critical' } },
-    ));
+  it('reviews severity and notification effects before a fingerprint-bound change', async () => {
+    mockLoad(); const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation(async url => {
+      if (url === '/auth/me') return { data: { id: 5, email: 'owner@example.com', role: 'analyst', org_id: null, is_active: true } };
+      if (url === '/cases/7/priority-review') return { data: { case_id: 7, owner_id: 5, title: 'Exact saved investigation', summary: null, status: 'open', severity: 'high', due_date: null, assigned_to_id: null, field: 'severity', value: 'critical', recipients: [], watchers: [], reviewed_fingerprint: 'a'.repeat(64) } };
+      return base(url);
+    });
+    mockPost.mockResolvedValue({ status: 200, data: { success: true, case_id: 7, field: 'severity', value: 'critical', reviewed_fingerprint: 'a'.repeat(64) } }); renderDetail();
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Change case severity' }), { target: { value: 'critical' } }); await screen.findByText('Investigation #7: Exact saved investigation'); expect(mockPatch).not.toHaveBeenCalled(); expect(mockPost).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed this exact investigation/ })); fireEvent.click(screen.getByRole('button', { name: 'Apply reviewed priority change' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledExactlyOnceWith('/cases/7/priority-reviewed', { field: 'severity', value: 'critical', reviewed_fingerprint: 'a'.repeat(64) })); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('does not patch when the same severity is reselected', async () => {

@@ -1,3 +1,4 @@
+import { CasePriorityReview, type PriorityField } from '../components/CasePriorityReview';
 import { CaseDeletionReview } from '../components/CaseDeletionReview';
 import { CaseListAssignmentReview } from '../components/CaseListAssignmentReview';
 import { EvidenceNoteSourceIndex } from '../components/EvidenceNoteSourceIndex';
@@ -145,16 +146,15 @@ export function CaseDetail() {
   const [showLinkEvent, setShowLinkEvent] = useState(false);
   const [noteTarget, setNoteTarget] = useState<{ kind: 'alert' | 'event'; id: number } | null>(null);
   const [unlinkTarget, setUnlinkTarget] = useState<{ kind: 'alert' | 'event'; id: number } | null>(null);
-  const [changingSeverity, setChangingSeverity] = useState(false);
+  const [priorityReview, setPriorityReview] = useState<{ caseId: number; field: PriorityField; value: string } | null>(null);
   const [showEdit, setShowEdit] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const navigate = useNavigate();
   const [members, setMembers] = useState<Array<{ id: number; email: string; full_name: string | null; is_active: boolean }>>([]);
   const [assignmentReview, setAssignmentReview] = useState<{ caseId: number; targetId: number | null } | null>(null);
-  useEffect(() => { setAssignmentReview(null); setConfirmingDelete(false); }, [caseId]);
+  useEffect(() => { setAssignmentReview(null); setConfirmingDelete(false); setPriorityReview(null); }, [caseId]);
   const [watchers, setWatchers] = useState<CaseWatcher[]>([]);
   const [watchBusy, setWatchBusy] = useState(false);
-  const [savingDueDate, setSavingDueDate] = useState(false);
   const [tasks, setTasks] = useState<CaseTask[]>([]);
   const [batchBusyCaseId, setBatchBusyCaseId] = useState<number | null>(null);
   const batchTaskBusy = batchBusyCaseId === Number(caseId);
@@ -187,15 +187,9 @@ export function CaseDetail() {
     setAssignmentReview({ caseId: caseData.id, targetId });
   };
 
-  const changeDueDate = async (value: string) => {
-    if (savingDueDate) return;
-    setSavingDueDate(true);
-    try {
-      await apiClient.patch(`/cases/${caseId}`, null, { params: { due_date: value } });
-      toast(value ? `Due date set to ${value}.` : 'Due date cleared.', 'success');
-      await fetchAll();
-    } catch (err) { toast(getApiErrorMessage(err, 'The due date could not be updated.'), 'error'); }
-    finally { setSavingDueDate(false); }
+  const reviewPriority = (field: PriorityField, value: string) => {
+    if (!caseData || priorityReview || (field === 'severity' ? caseData.severity : caseData.due_date ?? '') === value) return;
+    setPriorityReview({ caseId: caseData.id, field, value });
   };
 
   const changeStatus = async (status: string, resolution?: string) => {
@@ -221,17 +215,6 @@ export function CaseDetail() {
       await fetchAll();
     } catch (err) { toast(getApiErrorMessage(err, 'The resolution could not be updated.'), 'error'); }
     finally { setSavingResolution(false); }
-  };
-
-  const changeSeverity = async (severity: string) => {
-    if (changingSeverity || severity === caseData?.severity) return;
-    setChangingSeverity(true);
-    try {
-      await apiClient.patch(`/cases/${caseId}`, null, { params: { severity } });
-      toast(`Severity set to ${severity}`, 'success');
-      await fetchAll();
-    } catch (err) { toast(getApiErrorMessage(err, 'Case severity could not be updated.'), 'error'); }
-    finally { setChangingSeverity(false); }
   };
 
   const saveDetails = async (title: string, summary: string) => {
@@ -481,8 +464,8 @@ export function CaseDetail() {
                 <select
                   aria-label="Change case severity"
                   value={caseData.severity}
-                  disabled={changingSeverity}
-                  onChange={e => void changeSeverity(e.target.value)}
+                  disabled={priorityReview !== null}
+                  onChange={e => reviewPriority('severity', e.target.value)}
                   className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200 disabled:opacity-40"
                 >
                   {['info', 'low', 'medium', 'high', 'critical'].map(sev => <option key={sev} value={sev}>{sev}</option>)}
@@ -509,8 +492,8 @@ export function CaseDetail() {
                     type="date"
                     aria-label="Case due date"
                     value={caseData.due_date ?? ''}
-                    disabled={savingDueDate}
-                    onChange={e => void changeDueDate(e.target.value)}
+                    disabled={priorityReview !== null}
+                    onChange={e => reviewPriority('due_date', e.target.value)}
                     className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200 disabled:opacity-40"
                   />
                 </label>
@@ -1134,6 +1117,7 @@ export function CaseDetail() {
           setTasks(current => current.map(task => task.id === editingTask.id ? response.data : task));
         }} />}
 
+      {priorityReview && priorityReview.caseId === caseData.id && <CasePriorityReview key={`priority-${priorityReview.caseId}:${priorityReview.field}:${priorityReview.value}`} caseId={priorityReview.caseId} field={priorityReview.field} value={priorityReview.value} onClose={() => { setPriorityReview(null); void fetchAll(); }} onSaved={() => { setPriorityReview(null); toast('Reviewed investigation priority updated.', 'success'); void fetchAll(); }} />}
       {assignmentReview && assignmentReview.caseId === caseData.id && <CaseListAssignmentReview key={`${assignmentReview.caseId}:${assignmentReview.targetId}`} caseIds={[assignmentReview.caseId]} targetId={assignmentReview.targetId} onClose={() => { setAssignmentReview(null); void fetchAll(); }} onChanged={() => { /* Keep confirmed outcomes mounted; closing reloads the full investigation. */ }} />}
       {pendingClose && <CaseCloseReview key={`${caseData.id}:${pendingClose.status}`} caseId={caseData.id} targetStatus={pendingClose.status} label={pendingClose.label} onClose={() => { setPendingClose(null); void fetchAll(); }} onSaved={() => { setPendingClose(null); toast(`Case marked ${pendingClose.status}`, 'success'); void fetchAll(); }} />}
 
