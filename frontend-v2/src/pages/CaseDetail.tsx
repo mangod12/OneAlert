@@ -1,3 +1,4 @@
+import { CaseTaskCreationReview } from '../components/CaseTaskCreationReview';
 import { CaseTaskCompletionReview } from '../components/CaseTaskCompletionReview';
 import { CaseTaskDueReview } from '../components/CaseTaskDueReview';
 import { CaseTaskDeletionReview } from '../components/CaseTaskDeletionReview';
@@ -176,7 +177,8 @@ export function CaseDetail() {
   const [tasksUnavailable, setTasksUnavailable] = useState(false);
   const [editingTask, setEditingTask] = useState<CaseTask | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [addingTask, setAddingTask] = useState(false);
+  const [taskCreation, setTaskCreation] = useState<{ caseId: number; title: string } | null>(null);
+  const addingTask = taskCreation !== null;
   const [taskBusyId, setTaskBusyId] = useState<number | null>(null);
   const [todayStr, setTodayStr] = useState<string | null>(null);
   useEffect(() => {
@@ -213,17 +215,10 @@ export function CaseDetail() {
     setNoteAddition({ caseId: caseData.id, content });
   };
 
-  const addTask = async () => {
+  const addTask = () => {
     const title = newTaskTitle.trim();
-    if (!canManageChecklist || !title || addingTask || tasksUnavailable || batchTaskBusy) return;
-    setAddingTask(true);
-    try {
-      await apiClient.post(`/cases/${caseId}/tasks`, { title });
-      setNewTaskTitle('');
-      toast('Task added to the checklist.', 'success');
-      await fetchAll();
-    } catch (err) { toast(getApiErrorMessage(err, 'The task could not be added.'), 'error'); }
-    finally { setAddingTask(false); }
+    if (!canManageChecklist || !title || taskCreation || tasksUnavailable || batchTaskBusy || !caseData) return;
+    setTaskCreation({ caseId: caseData.id, title });
   };
 
   const [taskCompletion, setTaskCompletion] = useState<{ caseId: number; taskId: number; done: boolean } | null>(null);
@@ -1012,6 +1007,7 @@ export function CaseDetail() {
       {assignmentReview && assignmentReview.caseId === caseData.id && <CaseListAssignmentReview key={`${assignmentReview.caseId}:${assignmentReview.targetId}`} caseIds={[assignmentReview.caseId]} targetId={assignmentReview.targetId} onClose={() => { setAssignmentReview(null); void fetchAll(); }} onChanged={() => { /* Keep confirmed outcomes mounted; closing reloads the full investigation. */ }} />}
       {noteEditReview && noteEditReview.caseId === caseData.id && <CaseNoteEditReview key={`${noteEditReview.caseId}:${noteEditReview.noteId}:${noteEditReview.content}`} caseId={noteEditReview.caseId} noteId={noteEditReview.noteId} content={noteEditReview.content} onClose={() => { setNoteEditReview(null); void fetchAll(); }} onSaved={() => { setNoteEditReview(null); setEditingNoteId(null); toast('Reviewed note updated.', 'success'); void fetchAll(); }} />}
       {noteAddition && noteAddition.caseId === caseData.id && <CaseNoteAdditionReview key={`${noteAddition.caseId}:${noteAddition.content}`} caseId={noteAddition.caseId} content={noteAddition.content} onClose={() => { setNoteAddition(null); void fetchAll(); }} onSaved={() => { setNoteAddition(null); setNoteText(''); toast('Reviewed note added to the timeline.', 'success'); void fetchAll(); }} />}
+      {taskCreation && taskCreation.caseId === caseData.id && <CaseTaskCreationReview key={`task-creation:${taskCreation.caseId}:${taskCreation.title}`} caseId={taskCreation.caseId} title={taskCreation.title} onClose={() => { setTaskCreation(null); void fetchAll(); }} onSaved={() => { setTaskCreation(null); setNewTaskTitle(''); toast('Reviewed task added to the checklist.', 'success'); void fetchAll(); }} />}
       {taskCompletion && taskCompletion.caseId === caseData.id && <CaseTaskCompletionReview key={`task-completion:${taskCompletion.caseId}:${taskCompletion.taskId}:${taskCompletion.done}`} caseId={taskCompletion.caseId} taskId={taskCompletion.taskId} done={taskCompletion.done} onClose={() => { setTaskCompletion(null); void fetchAll(); }} onSaved={() => { setTaskCompletion(null); toast('Reviewed task completion updated.', 'success'); void fetchAll(); }} />}
       {taskDueReview && taskDueReview.caseId === caseData.id && <CaseTaskDueReview key={`task-due:${taskDueReview.caseId}:${taskDueReview.taskId}:${taskDueReview.dueDate}`} caseId={taskDueReview.caseId} taskId={taskDueReview.taskId} dueDate={taskDueReview.dueDate} onClose={() => { setTaskDueReview(null); void fetchAll(); }} onSaved={() => { setTaskDueReview(null); toast('Reviewed task due date updated.', 'success'); void fetchAll(); }} />}
       {taskDeletion && taskDeletion.caseId === caseData.id && <CaseTaskDeletionReview key={`task-delete:${taskDeletion.caseId}:${taskDeletion.taskId}`} caseId={taskDeletion.caseId} taskId={taskDeletion.taskId} onClose={() => { setTaskDeletion(null); void fetchAll(); }} onSaved={() => { setTaskDeletion(null); toast('Reviewed task permanently deleted.', 'success'); void fetchAll(); }} />}

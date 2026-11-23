@@ -881,13 +881,12 @@ describe('Investigation tasks', () => {
     mockPatch.mockResolvedValue({ status: 200, data: { ...task, case_id: 7, done } }); renderDetail(); fireEvent.click(await screen.findByRole('button', { name: `${done ? 'Complete' : 'Reopen'} task ${task.title}` })); await screen.findByText('Proposed completion state:'); expect(mockPatch).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed this exact task completion/ })); fireEvent.click(screen.getByRole('button', { name: 'Save reviewed task completion' })); await waitFor(() => expect(mockPatch).toHaveBeenCalledWith(`/cases/7/tasks/${task.id}/completion-reviewed`, { done }, { params: { reviewed_fingerprint: 'a'.repeat(64) } })); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
-  it('adds a new task from the input', async () => {
-    mockLoadWithTasks([]);
-    mockPost.mockResolvedValue({ data: { id: 3, title: 'Eradiate persistence', done: false, position: 0 } });
-    renderDetail();
-    fireEvent.change(await screen.findByLabelText('New task title'), { target: { value: 'Eradicate persistence' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Add task' }));
-    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/tasks', { title: 'Eradicate persistence' }));
+  it('reviews an exact task addition before creating it', async () => {
+    mockLoadWithTasks([]); const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation(async url => url === '/auth/me' ? { data: { id: 5, email: 'owner@example.com', role: 'analyst', org_id: null, is_active: true } } : base(url));
+    mockPost.mockImplementation(async url => url.endsWith('/creation-review') ? { data: { case_id: 7, owner_id: 5, assigned_to_id: null, title: 'Exact investigation', status: 'open', severity: 'high', proposed_title: 'Eradicate persistence', task_count: 0, next_position: 0, reviewed_fingerprint: 'a'.repeat(64) } } : { status: 201, data: { id: 3, case_id: 7, title: 'Eradicate persistence', done: false, position: 0, due_date: null, assignee_id: null, completed_at: null, created_by_id: 5 } });
+    renderDetail(); fireEvent.change(await screen.findByLabelText('New task title'), { target: { value: 'Eradicate persistence' } }); fireEvent.click(screen.getByRole('button', { name: 'Add task' })); await screen.findByText('Exact new task title'); expect(mockPost).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed this exact task addition/ })); fireEvent.click(screen.getByRole('button', { name: 'Add reviewed task' })); await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/tasks/creation-reviewed', { title: 'Eradicate persistence' }, { params: { reviewed_fingerprint: 'a'.repeat(64) } })); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('reviews exact permanent task deletion before sending and reloads only confirmed outcome', async () => {
