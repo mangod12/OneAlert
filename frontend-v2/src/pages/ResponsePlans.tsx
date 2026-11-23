@@ -16,7 +16,7 @@ import { getApiErrorMessage } from '../api/errors';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton, DegradedBanner } from '../components/ui/AsyncState';
 import { PageHeader } from '../components/ui/PageHeader';
 import { ResponseApprovalReview } from '../components/ResponseApprovalReview';
-import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { ResponseSimulationReview } from '../components/ResponseSimulationReview';
 
 interface ResponseAction {
   priority?: number;
@@ -37,15 +37,6 @@ interface ResponsePlan {
   approved_by: number | null;
   approved_at: string | null;
   created_at: string;
-}
-
-interface ExecutionOutcome {
-  execution_mode?: string;
-  plan_id: number;
-  status: string;
-  total_actions: number;
-  succeeded: number;
-  failed: number;
 }
 
 interface PendingApproval {
@@ -92,7 +83,6 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
   const [historyCaseDraft, setHistoryCaseDraft] = useState(''), [historyCase, setHistoryCase] = useState('');
   const [historyLevel, setHistoryLevel] = useState(''), [historySort, setHistorySort] = useState('newest');
   const invalidHistoryCase = historyCaseDraft.trim() !== '' && (!/^[1-9][0-9]*$/.test(historyCaseDraft.trim()) || !Number.isSafeInteger(Number(historyCaseDraft.trim())));
-  const [executionNotice, setExecutionNotice] = useState<{ text: string; success: boolean } | null>(null);
   const [exporting, setExporting] = useState(false);
 
   const exportBusy = useRef(false), exportReads = useRef(0);
@@ -196,30 +186,6 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
     finally { approving.current = false; setWorkingPlan(null); }
   };
 
-  const executePlan = async (planId: number) => {
-    if (workingPlan !== null) return;
-    setWorkingPlan(planId);
-    setExecutionNotice(null);
-    try {
-      const response = await apiClient.post<{ data?: ExecutionOutcome }>(`/response-plans/${planId}/execute`);
-      const outcome = response.data.data;
-      const verified = outcome?.plan_id === planId && Number.isInteger(outcome.total_actions)
-        && Number.isInteger(outcome.succeeded) && Number.isInteger(outcome.failed)
-        && outcome.total_actions > 0 && outcome.succeeded >= 0 && outcome.failed >= 0
-        && outcome.succeeded + outcome.failed === outcome.total_actions;
-      const simulated = outcome?.execution_mode === 'simulated';
-      const allSucceeded = verified && simulated && outcome.status === 'completed' && outcome.failed === 0;
-      const text = verified
-        ? `Plan #${planId} reported ${outcome.succeeded} of ${outcome.total_actions} actions succeeded; ${outcome.failed} failed or skipped. Recorded status: ${outcome.status}. ${simulated ? 'Simulation only. No external action was performed.' : 'Execution mode not verified. These counts do not establish external action.'}`
-        : `Execution request for plan #${planId} returned without a verifiable outcome. Review the refreshed plan before trying any action again.`;
-      setExecutionNotice({ text, success: !!allSucceeded });
-      toast(allSucceeded ? `Plan #${planId}: all simulated actions succeeded. No external action performed.` : `Plan #${planId}: review execution outcome.`, allSucceeded ? 'success' : 'warning');
-      setConfirmAction(null);
-      await fetchPlans();
-    } catch (err) { toast(getApiErrorMessage(err, 'Execution failed.'), 'error'); }
-    finally { setWorkingPlan(null); }
-  };
-
   useEffect(() => {
     void fetchPlans();
     return () => { requestId.current += 1; };
@@ -230,7 +196,6 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
       <PageHeader eyebrow="Act" title="Response Plans" description="Review saved plans and approval records. Built-in action handlers run simulations, not external containment or notifications." />
 
       {approvalError && <p role="alert" className="rounded border border-warning/40 p-3 text-sm text-warning">{approvalError}</p>}
-      {executionNotice && <p role={executionNotice.success ? 'status' : 'alert'} className={`rounded-md border p-4 text-sm ${executionNotice.success ? 'border-success/30 text-success' : 'border-warning/30 text-warning'}`}>{executionNotice.text}</p>}
       {errors.length > 0 && (plans.length > 0 || pending.length > 0)
         ? <DegradedBanner messages={errors} onRetry={() => void fetchPlans()} />
         : errors.length > 0 && <ErrorState title="Response plans unavailable" description={errors.join(' · ')} action={<RetryButton onClick={() => void fetchPlans()} />} />}
@@ -442,16 +407,7 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
         </div>
       )}
 
-      {confirmAction?.type === 'execute' && (
-        <ConfirmDialog
-          title={`Execute plan #${confirmAction.planId}?`}
-          description="The built-in handlers simulate actions and record results. They do not notify responders, create tickets, isolate hosts, block traffic or change accounts. Review the returned execution mode; historical results without a mode are unverified."
-          confirmLabel="Execute now"
-          busy={workingPlan !== null}
-          onCancel={() => setConfirmAction(null)}
-          onConfirm={() => void executePlan(confirmAction.planId)}
-        />
-      )}
+      {confirmAction?.type === 'execute' && <ResponseSimulationReview key={confirmAction.planId} planId={confirmAction.planId} onCancel={() => setConfirmAction(null)} onCompleted={() => { setEvidenceVersion(value => value + 1); void fetchPlans(); }} />}
       {confirmAction?.type === 'delete' && <ResponsePlanRemovalReview key={confirmAction.planId} planId={confirmAction.planId} onCancel={() => setConfirmAction(null)} onDeleted={() => { setSelectedPlanId(null); setEvidenceVersion(value => value + 1); void fetchPlans(); }} />}
       {confirmAction?.type === 'reject' && <ResponseRejectionReview key={confirmAction.planId} planId={confirmAction.planId} onCancel={() => setConfirmAction(null)} onRejected={() => { setEvidenceVersion(value => value + 1); void fetchPlans(); }} />}
     </div>

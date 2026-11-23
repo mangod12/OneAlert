@@ -372,12 +372,55 @@ async def _reject_owned_plan(plan_id, reason, current_user, db, reviewed_fingerp
     }
 
 
+class ReviewedSimulation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reviewed_fingerprint: StrictStr = Field(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")
+
+
+def _simulation_digest(plan):
+    import hashlib
+    import json
+
+    from backend.services.action_executor import ACTION_HANDLERS
+    payload = {"schema_version": 1, "plan": review_fingerprint(plan),
+               "approved_by": plan.approved_by,
+               "approved_at": plan.approved_at.isoformat() if plan.approved_at else None,
+               "handlers": sorted(ACTION_HANDLERS.items()), "mode": "simulated"}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+@router.get("/{plan_id}/simulation-review")
+async def get_simulation_review(
+    plan_id: int, current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.response_preflight import simulation_preflight
+    plan = (await db.execute(select(ResponsePlan).where(
+        ResponsePlan.id == plan_id, ResponsePlan.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Response plan not found")
+    if not isinstance(plan.actions, list) or len(plan.actions) > 5000:
+        raise HTTPException(status_code=422, detail="A complete usable action list of at most 5,000 is required")
+    return {"plan": ResponsePlanResponse.model_validate(plan), "preflight": simulation_preflight(plan),
+            "execution_mode": "simulated", "reviewed_fingerprint": _simulation_digest(plan)}
+
+
+@router.post("/{plan_id}/simulate-reviewed")
+async def simulate_reviewed_plan(
+    plan_id: int, payload: ReviewedSimulation,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    return await _execute_owned_plan(plan_id, current_user, db, payload.reviewed_fingerprint)
+
+
 @router.post("/{plan_id}/execute")
 async def execute_plan(
-    plan_id: int,
-    current_user: User = Depends(get_active_user),
-    db: AsyncSession = Depends(get_async_db),
+    plan_id: int, current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
 ):
+    return await _execute_owned_plan(plan_id, current_user, db)
+
+
+async def _execute_owned_plan(plan_id, current_user, db, reviewed_fingerprint=None):
     """Execute an approved response plan."""
     plan = (await db.execute(
         select(ResponsePlan).where(
@@ -394,6 +437,16 @@ async def execute_plan(
             status_code=400,
             detail=f"Plan must be approved before execution (current: '{plan.status}')",
         )
+
+    if reviewed_fingerprint is not None:
+        from backend.services.response_preflight import simulation_preflight
+        if not secrets.compare_digest(reviewed_fingerprint, _simulation_digest(plan)):
+            raise HTTPException(status_code=409, detail="The saved plan or handler registry changed. Review again.")
+        if not isinstance(plan.actions, list) or not plan.actions or len(plan.actions) > 5000:
+            raise HTTPException(status_code=422, detail="A nonempty complete action list of at most 5,000 is required")
+        preflight = simulation_preflight(plan)
+        if not preflight["shape_valid"] or not preflight["order_available"]:
+            raise HTTPException(status_code=422, detail="Saved actions have unusable types, targets or priorities")
 
     from backend.services.action_executor import execute_response_plan
     result = await execute_response_plan(db=db, plan=plan)
@@ -416,6 +469,7 @@ async def execute_plan(
         detail=(
             f"Plan run ({result.get('execution_mode', 'unknown')}): {result.get('succeeded', 0)} of "
             f"{result.get('total_actions', 0)} action(s) succeeded"
+            + (f"; reviewed fingerprint {reviewed_fingerprint}" if reviewed_fingerprint else "")
         ),
     )
     await db.commit()
