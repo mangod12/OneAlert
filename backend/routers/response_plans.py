@@ -22,7 +22,7 @@ from backend.models.user import User
 from backend.routers.auth import get_active_user
 from backend.services.audit import add_audit_log
 from backend.services.csv_export import spreadsheet_safe_row
-from backend.services.response_review import review_fingerprint
+from backend.services.response_review import deletion_fingerprint, review_fingerprint
 
 router = APIRouter()
 
@@ -432,6 +432,56 @@ async def execute_plan(
             "results": public_results,
         },
     }
+class ReviewedPlanDeletion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reviewed_fingerprint: StrictStr = Field(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")
+
+
+@router.get("/{plan_id}/deletion-review")
+async def get_plan_deletion_review(
+    plan_id: int, current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    plan = (await db.execute(select(ResponsePlan).where(
+        ResponsePlan.id == plan_id, ResponsePlan.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Response plan not found")
+    approvals = (await db.execute(select(ApprovalRequest).where(
+        ApprovalRequest.plan_id == plan_id).order_by(ApprovalRequest.id))).scalars().all()
+    return {"plan": ResponsePlanResponse.model_validate(plan),
+            "approval_count": len(approvals),
+            "approval_status_counts": {state: sum(row.status == state for row in approvals)
+                                       for state in sorted({row.status for row in approvals})},
+            "deletion_fingerprint": deletion_fingerprint(plan, approvals)}
+
+
+@router.post("/{plan_id}/delete-reviewed")
+async def delete_reviewed_response_plan(
+    plan_id: int, payload: ReviewedPlanDeletion,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    plan = (await db.execute(select(ResponsePlan).where(
+        ResponsePlan.id == plan_id, ResponsePlan.user_id == current_user.id,
+    ).with_for_update())).scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Response plan not found")
+    if plan.status not in ("draft", "rejected"):
+        raise HTTPException(status_code=400, detail="Only draft or rejected plans can be deleted")
+    approvals = (await db.execute(select(ApprovalRequest).where(
+        ApprovalRequest.plan_id == plan_id).order_by(ApprovalRequest.id).with_for_update())).scalars().all()
+    if not secrets.compare_digest(payload.reviewed_fingerprint, deletion_fingerprint(plan, approvals)):
+        raise HTTPException(status_code=409, detail=(
+            "The plan or approval history changed. Load a fresh deletion review."))
+    await db.execute(delete(ApprovalRequest).where(ApprovalRequest.plan_id == plan_id))
+    await db.execute(delete(ResponsePlan).where(ResponsePlan.id == plan_id))
+    add_audit_log(db, user_id=current_user.id, action="response_plan_deleted", target_type="response_plan",
+                  target_id=plan_id, detail=(f"Reviewed removal; investigation {plan.case_id}; "
+                  f"{len(approvals)} approval rows removed; fingerprint {payload.reviewed_fingerprint}"))
+    await db.commit()
+    return {"success": True, "plan_id": plan_id, "case_id": plan.case_id,
+            "deleted": True, "approvals_deleted": len(approvals)}
+
+
 @router.delete("/{plan_id}")
 async def delete_response_plan(
     plan_id: int,
