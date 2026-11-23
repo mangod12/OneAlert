@@ -70,3 +70,23 @@ it('labels date buckets unknown when local date is not usable', () => {
   expect(screen.getByText(/local date is unavailable/)).toBeTruthy();
   expect(screen.getAllByText(/Date-based counts unknown/)).toHaveLength(2);
 });
+it('exports all matching pages, never just the visible page, and holds the reviewed snapshot', () => {
+  const view = render(<ChecklistTriage {...props} caseId={12}>{row}</ChecklistTriage>);
+  fireEvent.click(screen.getByRole('button', { name: 'Next task page' }));
+  fireEvent.click(screen.getByText('Review matching checklist CSV (23 tasks)'));
+  expect(screen.getByRole('dialog').textContent).toContain('23 matching tasks of 23 loaded tasks');
+  expect(screen.getByRole('list', { name: 'Checklist export task review' }).children).toHaveLength(23);
+  view.rerender(<ChecklistTriage {...props} caseId={12} tasks={tasks.slice(0, 2)}>{row}</ChecklistTriage>);
+  expect(screen.getByRole('dialog').textContent).toContain('23 matching tasks of 23 loaded tasks');
+  fireEvent.click(screen.getByText('Cancel checklist export'));
+  fireEvent.change(screen.getByLabelText('Filter checklist task status'), { target: { value: 'done' } });
+  fireEvent.click(screen.getByText('Review matching checklist CSV (1 tasks)'));
+  expect(screen.getByRole('list', { name: 'Checklist export task review' }).textContent).toContain('#1: Task 1');
+});
+it('disables export for no matching tasks or while checklist work is busy', () => {
+  const view = render(<ChecklistTriage {...props} caseId={12} selectionBusy>{row}</ChecklistTriage>);
+  expect((screen.getByText('Review matching checklist CSV (23 tasks)') as HTMLButtonElement).disabled).toBe(true);
+  view.rerender(<ChecklistTriage {...props} caseId={12}>{row}</ChecklistTriage>);
+  fireEvent.change(screen.getByLabelText('Search investigation task titles'), { target: { value: 'none' } });
+  expect((screen.getByText('Review matching checklist CSV (0 tasks)') as HTMLButtonElement).disabled).toBe(true);
+});
