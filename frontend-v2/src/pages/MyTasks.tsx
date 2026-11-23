@@ -6,9 +6,9 @@ import { getApiErrorMessage } from '../api/errors';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
 import { StatusBadge } from '../components/ui/StatusBadge';
-import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { TaskSnapshotReview, type SnapshotTaskReview } from '../components/TaskSnapshotReview';
 import { alertSeverityTones } from '../components/ui/tones';
-import { verifiedTaskSave } from '../utils/verifiedTaskSave';
+import { checkedSnapshotTaskResult, checkedTaskAccount, checkedTaskSnapshot, reviewedTaskPayload, sameSnapshotTask, type SnapshotTaskChange } from '../utils/taskSnapshotReview';
 
 export interface AssignedTask {
   task_id: number;
@@ -33,8 +33,10 @@ export function MyTasks() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkDate, setBulkDate] = useState('');
   const [bulkMode, setBulkMode] = useState('set');
-  const [completeConfirm, setCompleteConfirm] = useState(false);
-  const [bulkConfirm, setBulkConfirm] = useState(false);
+  const [taskReview, setTaskReview] = useState<SnapshotTaskReview | null>(null);
+  const reviewPending = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [limitReached, setLimitReached] = useState(false);
   const [tasks, setTasks] = useState<AssignedTask[]>([]);
@@ -52,70 +54,54 @@ export function MyTasks() {
     setLoading(true);
     setError('');
     void apiClient.get<AssignedTask[]>('/cases/my-tasks').then(response => {
-      if (active) { setSnapshotStale(false); setTasks(response.data); setLimitReached(response.data.length >= 200); setDueDrafts({}); setActionErrors({}); setSelectedIds(new Set()); setLoadedAt(new Date().toLocaleString()); }
+      if (active) { setSnapshotStale(false); setTasks(checkedTaskSnapshot(response.data)); setLimitReached(response.data.length >= 200); setTaskReview(null); setDueDrafts({}); setActionErrors({}); setSelectedIds(new Set()); setLoadedAt(new Date().toLocaleString()); }
     }).catch(err => { if (active) setError(getApiErrorMessage(err, 'Assigned tasks could not be loaded.')); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [refresh]);
-  const saveTask = async (task: AssignedTask, payload: { done: true } | { due_date: string | null }) => {
-    if (snapshotStale || pending.current.has(task.task_id)) return;
-    pending.current.add(task.task_id);
-    setBusyIds(new Set(pending.current));
-    setActionErrors(current => ({ ...current, [task.task_id]: '' }));
-    setActionNotice('');
-    setNoticeFailed(false);
-    try {
-      const response = await apiClient.patch<{ done: boolean; due_date: string | null }>(`/cases/${task.case_id}/tasks/${task.task_id}`, payload);
-      const saved = verifiedTaskSave(response.data, task.task_id, task.case_id, payload);
-      setTasks(current => saved.done ? current.filter(row => row.task_id !== task.task_id)
-        : current.map(row => row.task_id === task.task_id ? { ...row, due_date: saved.due_date } : row));
-      setDueDrafts(current => { const next = { ...current }; delete next[task.task_id]; return next; });
-      setActionNotice(saved.done
-        ? `Completed task #${task.task_id}. Open the investigation checklist to reopen it. Refresh tasks to load any additional assigned work.`
-        : `Saved the due date for task #${task.task_id}.`);
-    } catch (err: unknown) {
-      setActionErrors(current => ({ ...current, [task.task_id]: getApiErrorMessage(err, 'Task could not be saved. Your draft is kept; try again.') }));
-    } finally {
-      pending.current.delete(task.task_id);
-      setBusyIds(new Set(pending.current));
-    }
-  };
   const selectedTasks = tasks.filter(task => selectedIds.has(task.task_id));
   const selectedHaveDrafts = selectedTasks.some(task => (dueDrafts[task.task_id] ?? task.due_date ?? '') !== (task.due_date ?? ''));
-  const applyBulkDate = async (complete = false) => {
-    if (snapshotStale || bulkBusy || !selectedTasks.length || selectedHaveDrafts || (!complete && bulkMode === 'set' && !bulkDate) || pending.current.size) return;
-    const snapshot = [...selectedTasks];
-    const dueDate = bulkMode === 'clear' ? null : bulkDate;
-    setBulkBusy(true);
-    setActionNotice('');
-    setNoticeFailed(false);
-    snapshot.forEach(task => pending.current.add(task.task_id));
-    setBusyIds(new Set(pending.current));
-    const saved = new Map<number, string | null>();
-    const failed: Record<number, string> = {};
-    // Limit concurrency rather than flooding the existing per-task endpoint.
-    for (let start = 0; start < snapshot.length; start += 5) {
-      await Promise.all(snapshot.slice(start, start + 5).map(async task => {
-        try {
-          const response = await apiClient.patch<{ id?: number; done?: boolean; due_date: string | null }>(`/cases/${task.case_id}/tasks/${task.task_id}`, complete ? { done: true } : { due_date: dueDate });
-          const verified = verifiedTaskSave(response.data, task.task_id, task.case_id, complete ? { done: true } : { due_date: dueDate });
-          saved.set(task.task_id, verified.due_date);
-        } catch (err: unknown) {
-          failed[task.task_id] = getApiErrorMessage(err, complete ? 'Task completion could not be confirmed. It remains selected; refresh to verify before retrying.' : 'Task due date could not be saved. It remains selected for retry.');
-        }
-      }));
+  const stageTasks = async (chosen: AssignedTask[], change: SnapshotTaskChange) => {
+    if (snapshotStale || bulkBusy || reviewPending.current || pending.current.size || !chosen.length) return;
+    reviewPending.current = true; setBulkBusy(true); setActionNotice('');
+    try {
+      chosen.forEach(task => reviewedTaskPayload(task, change));
+      const account = checkedTaskAccount((await apiClient.get('/auth/me')).data);
+      if (mounted.current) setTaskReview({ tasks: chosen.map(task => ({ ...task })), change: { ...change }, hidden: chosen.filter(task => !visible.some(row => row.task_id === task.task_id)).length, account });
+    } catch { if (mounted.current) { setNoticeFailed(true); setActionNotice('The exact task review or current account could not be verified. No task update was sent. Refresh tasks before reviewing again.'); setSnapshotStale(true); } }
+    finally { reviewPending.current = false; if (mounted.current) setBulkBusy(false); }
+  };
+  const confirmTasks = async () => {
+    if (!taskReview || snapshotStale || bulkBusy || reviewPending.current || pending.current.size) return;
+    reviewPending.current = true; setBulkBusy(true); setActionNotice(''); setNoticeFailed(false);
+    const review = taskReview, saved = new Map<number, { done: boolean; due_date: string | null }>();
+    let sent = false, failure = '';
+    review.tasks.forEach(task => pending.current.add(task.task_id)); setBusyIds(new Set(pending.current));
+    try {
+      const [identity, source] = await Promise.all([apiClient.get('/auth/me'), apiClient.get('/cases/my-tasks')]);
+      const account = checkedTaskAccount(identity.data), current = checkedTaskSnapshot(source.data);
+      if (!mounted.current) return;
+      if (JSON.stringify(account) !== JSON.stringify(review.account) || review.tasks.some(task => !current.some(row => sameSnapshotTask(row, task)))) throw Error('The account or a reviewed task changed or left the current snapshot.');
+      for (const task of review.tasks) {
+        if (!mounted.current) return;
+        sent = true;
+        const response = await apiClient.patch(`/cases/assigned-task-explorer/${task.task_id}`, reviewedTaskPayload(task, review.change));
+        if (!mounted.current) return;
+        const value = checkedSnapshotTaskResult(task, review.change, response.status, response.data);
+        if (response.data.assignee_id !== account.id) throw Error('Returned assignment differs from the reviewed account.');
+        saved.set(task.task_id, value);
+      }
+    } catch { failure = sent ? 'A task change outcome is unknown. It may already have applied. Processing stopped; later tasks were not sent. Refresh tasks before any retry. No automatic retry was sent.' : 'Current account or reviewed task state could not be reverified. No task mutation was sent. Refresh tasks; your drafts and selection are kept until then.'; }
+    finally {
+      reviewPending.current = false; review.tasks.forEach(task => pending.current.delete(task.task_id));
+      if (mounted.current) {
+        setTasks(current => current.filter(task => !saved.get(task.task_id)?.done).map(task => saved.has(task.task_id) ? { ...task, due_date: saved.get(task.task_id)!.due_date } : task));
+        setSelectedIds(current => new Set([...current].filter(id => !saved.has(id))));
+        setDueDrafts(current => { const next = { ...current }; saved.forEach((_, id) => { delete next[id]; }); return next; });
+        setTaskReview(null); setSnapshotStale(true); setBusyIds(new Set(pending.current)); setBulkBusy(false); setNoticeFailed(!!failure);
+        setActionNotice(`Verified ${saved.size} of ${review.tasks.length} reviewed task changes. ${failure || 'Each task was a separate transaction. Investigation status, investigation due dates and assignments were not changed. Refresh both task views before another edit.'}`);
+      }
     }
-    setTasks(current => complete ? current.filter(task => !saved.has(task.task_id)) : current.map(task => saved.has(task.task_id) ? { ...task, due_date: saved.get(task.task_id)! } : task));
-    setSelectedIds(current => new Set([...current].filter(id => !saved.has(id))));
-    setDueDrafts(current => { const next = { ...current }; saved.forEach((_, id) => { delete next[id]; }); return next; });
-    setNoticeFailed(Object.keys(failed).length > 0);
-    setActionErrors(current => { const next = { ...current }; snapshot.forEach(task => { delete next[task.task_id]; }); return { ...next, ...failed }; });
-    setActionNotice(complete ? `Confirmed completion for ${saved.size} of ${snapshot.length} selected tasks. ${Object.keys(failed).length ? `${Object.keys(failed).length} failed or unconfirmed tasks remain selected. Refresh to verify before retrying.` : 'Open the investigation checklist to reopen completed tasks. Investigation status and due dates were not changed. Refresh to load more assigned work.'}` : `Saved due dates for ${saved.size} of ${snapshot.length} selected tasks. ${Object.keys(failed).length ? `${Object.keys(failed).length} failed tasks remain selected for retry.` : 'No task completion or investigation due dates were changed.'}`);
-    snapshot.forEach(task => pending.current.delete(task.task_id));
-    setBusyIds(new Set(pending.current));
-    setBulkBusy(false);
-    setBulkConfirm(false);
-    setCompleteConfirm(false);
   };
   const needle = query.trim().toLowerCase();
   const visible = tasks.filter(task => (!needle || [task.title, task.case_title, String(task.case_id), String(task.task_id)].some(value => value.toLowerCase().includes(needle)))
@@ -129,12 +115,12 @@ export function MyTasks() {
   const filtered = !!query || due !== 'all' || severity !== 'all' || order !== 'recorded';
   return <div className="min-w-0 space-y-5">
     <PageHeader eyebrow="Command" title="My tasks" description="Review open checklist tasks assigned to you across active investigations. Complete assigned work and edit task due dates here, or open the investigation for its full checklist."
-      actions={<button type="button" disabled={loading || busyIds.size > 0} onClick={() => setRefresh(value => value + 1)} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-200 disabled:opacity-40">Refresh tasks</button>} />
-    <AssignedTaskExplorer editingBlocked={loading || !!busyIds.size || bulkBusy || Object.keys(dueDrafts).some(id => dueDrafts[Number(id)] !== (tasks.find(row => row.task_id === Number(id))?.due_date ?? ''))} onEdited={() => { setSnapshotStale(true); setCompleteConfirm(false); setBulkConfirm(false); }} />
-    {snapshotStale && <p role="alert" className="rounded border border-warning/40 p-3 text-sm text-warning">A full-workload task edit may have changed this editing snapshot. Snapshot controls are paused. Review any kept drafts, then use Refresh tasks to discard drafts and reload current work.</p>}
+      actions={<button type="button" disabled={loading || bulkBusy || !!taskReview || busyIds.size > 0} onClick={() => setRefresh(value => value + 1)} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-200 disabled:opacity-40">Refresh tasks</button>} />
+    <AssignedTaskExplorer key={refresh} editingBlocked={!!taskReview || snapshotStale || loading || !!busyIds.size || bulkBusy || Object.keys(dueDrafts).some(id => dueDrafts[Number(id)] !== (tasks.find(row => row.task_id === Number(id))?.due_date ?? ''))} onEdited={() => { setSnapshotStale(true); setTaskReview(null); }} />
+    {snapshotStale && <p role="alert" className="rounded border border-warning/40 p-3 text-sm text-warning">A reviewed task operation or an unverifiable review may have changed this editing snapshot. Snapshot controls are paused. Review any kept drafts, then use Refresh tasks to discard drafts and reload current work.</p>}
     <p className="text-sm text-surface-400">The editing snapshot below returns up to 200 assigned tasks, not a complete workload count. Use the explorer above to page through the full matching workload. Completed tasks and resolved, closed or false-positive investigations are excluded. Filters and order apply only to returned records.</p>
     {actionNotice && <p role={noticeFailed ? 'alert' : 'status'} className={`rounded border p-3 text-sm ${noticeFailed ? 'border-warning/40 text-warning' : 'border-success/40 text-success'}`}>{actionNotice}</p>}
-    <fieldset disabled={snapshotStale} className="min-w-0 space-y-5">{loading ? <LoadingSurface label="Loading assigned tasks" /> : error ? <ErrorState title="Assigned tasks unavailable" description={error} action={<RetryButton onClick={() => setRefresh(value => value + 1)} />} /> : <>
+    <fieldset disabled={snapshotStale || bulkBusy || !!taskReview} className="min-w-0 space-y-5">{loading ? <LoadingSurface label="Loading assigned tasks" /> : error ? <ErrorState title="Assigned tasks unavailable" description={error} action={<RetryButton onClick={() => setRefresh(value => value + 1)} />} /> : <>
       <div className="rounded-lg border border-surface-700 bg-surface-900 p-4">
         <p className="text-xs text-surface-400">Snapshot loaded {loadedAt}; successful task edits are reflected below. Task due dates use UTC today: {today}. Investigation due dates are shown separately.</p>
         {limitReached && <p role="status" className="mt-2 text-sm text-warning">The 200-task return limit was reached. Other assigned tasks may be missing, including after completing a task here. Refresh to load more, or open investigations to review work outside this returned set.</p>}
@@ -166,9 +152,9 @@ export function MyTasks() {
             <div className="flex flex-wrap items-center gap-2">
               <select aria-label="Selected task date action" disabled={bulkBusy} value={bulkMode} onChange={event => setBulkMode(event.target.value)} className="rounded border border-surface-600 bg-surface-950 px-2 py-2 text-sm text-surface-200"><option value="set">Set task due dates</option><option value="clear">Clear task due dates</option></select>
               {bulkMode === 'set' && <input type="date" aria-label="Due date for selected tasks" disabled={bulkBusy} value={bulkDate} onChange={event => setBulkDate(event.target.value)} className="min-w-0 rounded border border-surface-600 bg-surface-950 px-2 py-2 text-sm text-surface-100" />}
-              <button type="button" disabled={bulkBusy || !!busyIds.size || selectedHaveDrafts || (bulkMode === 'set' && !bulkDate)} onClick={() => setBulkConfirm(true)} className="rounded bg-primary-500 px-3 py-2 text-sm font-semibold text-surface-950 disabled:opacity-40">Review date change</button>
+              <button type="button" disabled={bulkBusy || !!busyIds.size || selectedHaveDrafts || (bulkMode === 'set' && !bulkDate)} onClick={() => void stageTasks(selectedTasks, { due_date: bulkMode === 'clear' ? null : bulkDate })} className="rounded bg-primary-500 px-3 py-2 text-sm font-semibold text-surface-950 disabled:opacity-40">Review date change</button>
             </div>
-            <button type="button" disabled={bulkBusy || !!busyIds.size || selectedHaveDrafts} onClick={() => setCompleteConfirm(true)} className="rounded border border-success/50 px-3 py-2 text-sm text-success disabled:opacity-40">Review selected completion</button>
+            <button type="button" disabled={bulkBusy || !!busyIds.size || selectedHaveDrafts} onClick={() => void stageTasks(selectedTasks, { done: true })} className="rounded border border-success/50 px-3 py-2 text-sm text-success disabled:opacity-40">Review selected completion</button>
             {selectedHaveDrafts && <p className="text-xs text-warning">Save or discard the selected tasks' due-date drafts before changing selected tasks in bulk.</p>}
           </>}
         </section>
@@ -178,7 +164,7 @@ export function MyTasks() {
           <h2 className="mt-3 break-words text-base font-semibold text-surface-100">{task.title}</h2>
           <Link to={`/cases/${task.case_id}?task=${task.task_id}`} className="mt-2 inline-block max-w-full break-words text-sm text-primary-300 underline-offset-4 hover:underline">{task.case_title} · Investigation #{task.case_id}</Link>
           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-surface-400"><span>Task #{task.task_id} due: {task.due_date || 'Not set'}</span><span>Investigation due: {task.case_due_date || 'Not set'}</span></div>
-          <form className="mt-4 flex flex-wrap items-end gap-2" onSubmit={event => { event.preventDefault(); void saveTask(task, { due_date: (dueDrafts[task.task_id] ?? task.due_date) || null }); }}>
+          <form className="mt-4 flex flex-wrap items-end gap-2" onSubmit={event => { event.preventDefault(); void stageTasks([task], { due_date: (dueDrafts[task.task_id] ?? task.due_date) || null }); }}>
             <label className="text-xs text-surface-300">Task due date for #{task.task_id}
               <input aria-label={`Task due date for #${task.task_id}`} type="date" value={dueDrafts[task.task_id] ?? task.due_date ?? ''}
                 disabled={busyIds.has(task.task_id)} onChange={event => setDueDrafts(current => ({ ...current, [task.task_id]: event.target.value }))}
@@ -188,7 +174,7 @@ export function MyTasks() {
               aria-label={`Save due date for task #${task.task_id}`} className="min-h-9 rounded border border-surface-600 px-3 text-xs text-surface-200 disabled:opacity-40">Save due date</button>
             {dueDrafts[task.task_id] !== undefined && <button type="button" disabled={busyIds.has(task.task_id)} onClick={() => setDueDrafts(current => { const next = { ...current }; delete next[task.task_id]; return next; })}
               aria-label={`Discard due date draft for task #${task.task_id}`} className="min-h-9 rounded border border-surface-600 px-3 text-xs text-surface-200 disabled:opacity-40">Discard draft</button>}
-            <button type="button" disabled={busyIds.has(task.task_id) || (dueDrafts[task.task_id] ?? task.due_date ?? '') !== (task.due_date ?? '')} onClick={() => void saveTask(task, { done: true })}
+            <button type="button" disabled={busyIds.has(task.task_id) || (dueDrafts[task.task_id] ?? task.due_date ?? '') !== (task.due_date ?? '')} onClick={() => void stageTasks([task], { done: true })}
               aria-label={`Complete task #${task.task_id}: ${task.title}`} className="min-h-9 rounded bg-primary-500 px-3 text-xs font-semibold text-surface-950 disabled:opacity-40">{busyIds.has(task.task_id) ? 'Saving...' : 'Mark complete'}</button>
           </form>
           {(dueDrafts[task.task_id] ?? task.due_date ?? '') !== (task.due_date ?? '') && <p className="mt-2 text-xs text-surface-400">Save or discard the due-date draft before completing this task.</p>}
@@ -197,8 +183,6 @@ export function MyTasks() {
       </>}
     </>}
     </fieldset>
-    {completeConfirm && <ConfirmDialog title="Complete selected assigned tasks" description={`Mark ${selectedTasks.length} selected loaded tasks complete, including ${selectedTasks.filter(task => !visible.some(row => row.task_id === task.task_id)).length} hidden by filters? Review the selection preview first. Investigation status and all due dates stay unchanged. Reopen tasks from their investigation checklist.`} confirmLabel={`Complete ${selectedTasks.length} selected tasks`} busy={bulkBusy} onCancel={() => { if (!bulkBusy) setCompleteConfirm(false); }} onConfirm={() => void applyBulkDate(true)} />}
-    {bulkConfirm && <ConfirmDialog title="Change selected task due dates" description={`${bulkMode === 'clear' ? 'Clear task due dates' : `Set task due dates to ${bulkDate}`} for ${selectedTasks.length} selected loaded tasks, including ${selectedTasks.filter(task => !visible.some(row => row.task_id === task.task_id)).length} hidden by filters? Investigation due dates and completion status stay unchanged.`}
-      confirmLabel={`Apply to ${selectedTasks.length} tasks`} busy={bulkBusy} onCancel={() => { if (!bulkBusy) setBulkConfirm(false); }} onConfirm={() => void applyBulkDate()} />}
+    {taskReview && <TaskSnapshotReview review={taskReview} busy={bulkBusy} onCancel={() => { if (!bulkBusy) setTaskReview(null); }} onConfirm={() => void confirmTasks()} />}
   </div>;
 }
