@@ -834,12 +834,17 @@ describe('Case watchers', () => {
   it('lets a watcher remove themselves but hides the add-watcher select from non-owners', async () => {
     useAuthStore.setState({ user: { ...fullUser, id: 6, email: 'watcher@example.com' } });
     mockLoadWithWatchers([{ user_id: 6, email: 'watcher@example.com', full_name: 'Will Watch' }]);
-    mockDelete.mockResolvedValue({ data: { success: true } });
+    const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation(url => url === '/auth/me' ? Promise.resolve({ data: { id: 6, email: 'watcher@example.com', role: 'analyst', org_id: null, is_active: true } }) : url.endsWith('/removal-review') ? Promise.resolve({ data: { case_id: 7, owner_id: 5, title: 'Fresh removal case', status: 'open', severity: 'high', watcher_id: 9, recipient: { id: 6, email: 'watcher@example.com', full_name: 'Will Watch', role: 'analyst', org_id: null, is_active: true }, retained_access_reasons: [], assigned_tasks: [], reviewed_fingerprint: 'a'.repeat(64) } }) : base(url));
+    mockDelete.mockResolvedValue({ status: 204 });
     renderDetail();
     expect(await screen.findByText('Will Watch')).toBeTruthy();
     expect(screen.queryByRole('combobox', { name: 'Add a watcher' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Remove watcher watcher@example.com' }));
-    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/7/watchers/6'));
+    const dialog = await screen.findByRole('dialog', { name: 'Review investigation watcher removal' });
+    fireEvent.click(await within(dialog).findByRole('checkbox')); expect(mockDelete).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove reviewed watcher' }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/7/watchers/6/reviewed', { params: { reviewed_fingerprint: 'a'.repeat(64) } }));
   });
 });
 

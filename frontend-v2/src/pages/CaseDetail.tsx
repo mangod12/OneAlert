@@ -1,3 +1,4 @@
+import { CaseWatcherRemovalReview } from '../components/CaseWatcherRemovalReview';
 import { CaseNoteDeletionReview } from '../components/CaseNoteDeletionReview';
 import { CaseNoteEditReview } from '../components/CaseNoteEditReview';
 import { CaseNoteAdditionReview } from '../components/CaseNoteAdditionReview';
@@ -159,6 +160,8 @@ export function CaseDetail() {
   const [assignmentReview, setAssignmentReview] = useState<{ caseId: number; targetId: number | null } | null>(null);
   const [watcherAddition, setWatcherAddition] = useState<{ caseId: number; userId: number } | null>(null);
   useEffect(() => { setAssignmentReview(null); setConfirmingDelete(false); setPriorityReview(null); setWatcherAddition(null); setNoteAddition(null); setNoteEditReview(null); setPendingDeleteNote(null); }, [caseId]);
+  const [watcherRemoval, setWatcherRemoval] = useState<{ caseId: number; userId: number } | null>(null);
+  useEffect(() => { setWatcherRemoval(null); }, [caseId]);
   const [watchers, setWatchers] = useState<CaseWatcher[]>([]);
   const [watchBusy, setWatchBusy] = useState(false);
   const [tasks, setTasks] = useState<CaseTask[]>([]);
@@ -318,13 +321,6 @@ export function CaseDetail() {
       await refreshWatchers();
     } catch (err) { toast(getApiErrorMessage(err, 'Could not update your watch.'), 'error'); }
     finally { setWatchBusy(false); }
-  };
-
-  const removeWatcher = async (userId: number) => {
-    try {
-      await apiClient.delete(`/cases/${caseId}/watchers/${userId}`);
-      setWatchers(prev => prev.filter(w => w.user_id !== userId));
-    } catch (err) { toast(getApiErrorMessage(err, 'Could not remove the watcher.'), 'error'); }
   };
 
   const fetchAll = useCallback(async () => {
@@ -489,7 +485,7 @@ export function CaseDetail() {
                     <button
                       type="button"
                       aria-label={`Remove watcher ${w.email}`}
-                      onClick={() => void removeWatcher(w.user_id)}
+                      onClick={() => setWatcherRemoval({ caseId: caseData.id, userId: w.user_id })}
                       className="text-surface-500 hover:text-danger"
                     >
                       <X className="w-3 h-3" aria-hidden="true" />
@@ -1028,6 +1024,7 @@ export function CaseDetail() {
       {assignmentReview && assignmentReview.caseId === caseData.id && <CaseListAssignmentReview key={`${assignmentReview.caseId}:${assignmentReview.targetId}`} caseIds={[assignmentReview.caseId]} targetId={assignmentReview.targetId} onClose={() => { setAssignmentReview(null); void fetchAll(); }} onChanged={() => { /* Keep confirmed outcomes mounted; closing reloads the full investigation. */ }} />}
       {noteEditReview && noteEditReview.caseId === caseData.id && <CaseNoteEditReview key={`${noteEditReview.caseId}:${noteEditReview.noteId}:${noteEditReview.content}`} caseId={noteEditReview.caseId} noteId={noteEditReview.noteId} content={noteEditReview.content} onClose={() => { setNoteEditReview(null); void fetchAll(); }} onSaved={() => { setNoteEditReview(null); setEditingNoteId(null); toast('Reviewed note updated.', 'success'); void fetchAll(); }} />}
       {noteAddition && noteAddition.caseId === caseData.id && <CaseNoteAdditionReview key={`${noteAddition.caseId}:${noteAddition.content}`} caseId={noteAddition.caseId} content={noteAddition.content} onClose={() => { setNoteAddition(null); void fetchAll(); }} onSaved={() => { setNoteAddition(null); setNoteText(''); toast('Reviewed note added to the timeline.', 'success'); void fetchAll(); }} />}
+      {watcherRemoval && watcherRemoval.caseId === caseData.id && <CaseWatcherRemovalReview key={`${watcherRemoval.caseId}:${watcherRemoval.userId}`} caseId={watcherRemoval.caseId} userId={watcherRemoval.userId} onClose={() => { setWatcherRemoval(null); void fetchAll(); }} onSaved={() => { setWatcherRemoval(null); toast('Reviewed watcher removed.', 'success'); void fetchAll(); }} />}
       {watcherAddition && watcherAddition.caseId === caseData.id && <CaseWatcherAdditionReview key={`${watcherAddition.caseId}:${watcherAddition.userId}`} caseId={watcherAddition.caseId} userId={watcherAddition.userId} onClose={() => { setWatcherAddition(null); void fetchAll(); }} onSaved={() => { setWatcherAddition(null); toast('Reviewed watcher added.', 'success'); void fetchAll(); }} />}
 
       {pendingStatus && <CaseStatusReview key={`${caseData.id}:${pendingStatus}`} caseId={caseData.id} value={pendingStatus} onClose={() => { setPendingStatus(null); void fetchAll(); }} onSaved={() => { setPendingStatus(null); toast('Reviewed investigation status updated.', 'success'); void fetchAll(); }} />}
