@@ -897,38 +897,12 @@ describe('Investigation tasks', () => {
     await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/7/tasks/1/reviewed', { params: { reviewed_fingerprint: 'a'.repeat(64) } })); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
-  it('assigns a task to an org member', async () => {
-    mockLoadWithTasks(tasks);
-    const base = mockGet.getMockImplementation()!;
-    mockGet.mockImplementation((url: string) => {
-      if (url === '/orgs/me/members') {
-        return Promise.resolve({ data: [
-          { id: 2, email: 'soc-lead@example.com', full_name: 'Sam Oclead', is_active: true },
-        ] });
-      }
-      return base(url);
-    });
-    mockPatch.mockResolvedValue({ data: { ...tasks[1], assignee_id: 2 } });
-    renderDetail();
-    fireEvent.change(await screen.findByLabelText('Assign task Collect triage image'), { target: { value: '2' } });
-    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/2', { assignee_id: 2 }));
-  });
-
-  it('unassigns a task back to nobody', async () => {
-    mockLoadWithTasks([{ ...tasks[1], assignee_id: 2 }]);
-    const base = mockGet.getMockImplementation()!;
-    mockGet.mockImplementation((url: string) => {
-      if (url === '/orgs/me/members') {
-        return Promise.resolve({ data: [
-          { id: 2, email: 'soc-lead@example.com', full_name: 'Sam Oclead', is_active: true },
-        ] });
-      }
-      return base(url);
-    });
-    mockPatch.mockResolvedValue({ data: { ...tasks[1], assignee_id: null } });
-    renderDetail();
-    fireEvent.change(await screen.findByLabelText('Assign task Collect triage image'), { target: { value: '' } });
-    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/2', { assignee_id: null }));
+  it.each([2, null])('reviews exact task assignment before saving %s', async assigneeId => {
+    const task = { ...tasks[1], assignee_id: assigneeId === null ? 2 : null, due_date: null }; mockLoadWithTasks([task]); const base = mockGet.getMockImplementation()!;
+    const member = { id: 2, email: 'soc-lead@example.com', full_name: 'Sam Oclead', is_active: true, role: 'analyst', org_id: null };
+    mockGet.mockImplementation(async url => url === '/auth/me' ? { data: { id: 5, email: 'owner@example.com', role: 'analyst', org_id: null, is_active: true } } : url === '/orgs/me/members' ? { data: [member] } : base(url));
+    mockPost.mockResolvedValue({ data: { case_id: 7, owner_id: 5, assigned_to_id: null, title: 'Fresh assignment review', status: 'open', severity: 'high', task, assignee: task.assignee_id ? member : null, retained_access_reasons: [], other_assigned_tasks: [], proposed_assignee_id: assigneeId, proposed_assignee: assigneeId ? member : null, target_existing_access_reasons: [], grants_investigation_access: assigneeId !== null, assignment_notification: assigneeId !== null, reviewed_fingerprint: 'a'.repeat(64) } });
+    mockPatch.mockResolvedValue({ status: 200, data: { ...task, case_id: 7, assignee_id: assigneeId } }); renderDetail(); await screen.findAllByRole('option', { name: /soc-lead@example.com/ }); fireEvent.change(screen.getByLabelText('Assign task Collect triage image'), { target: { value: assigneeId?.toString() ?? '' } }); await screen.findByText('Proposed assigned account:'); expect(mockPatch).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed this exact task assignment/ })); fireEvent.click(screen.getByRole('button', { name: 'Save reviewed task assignment' })); await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/2/assignment-reviewed', { assignee_id: assigneeId }, { params: { reviewed_fingerprint: 'a'.repeat(64) } })); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it.each(['2026-12-01', null])('reviews exact task due date before saving %s', async dueDate => {
