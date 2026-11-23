@@ -1420,6 +1420,52 @@ async def update_case(
     }} if reviewed_fingerprint is not None else {})}
 
 
+class CaseDetailsProposal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: StrictStr = Field(min_length=1, max_length=500)
+    summary: StrictStr = Field(max_length=20000)
+
+
+class ReviewedCaseDetails(CaseDetailsProposal):
+    reviewed_fingerprint: StrictStr = Field(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")
+
+
+@router.post("/{case_id}/details-review")
+async def get_case_details_review(
+    case_id: int, payload: CaseDetailsProposal,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_details_review import details_review
+    case = (await db.execute(select(Case).where(
+        Case.id == case_id, Case.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return details_review(case, current_user, payload.title, payload.summary)
+
+
+@router.post("/{case_id}/details-reviewed")
+async def change_reviewed_case_details(
+    case_id: int, payload: ReviewedCaseDetails,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_details_review import details_review
+    case = (await db.execute(select(Case).where(
+        Case.id == case_id, Case.user_id == current_user.id,
+    ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    preview = details_review(case, current_user, payload.title, payload.summary)
+    if not secrets.compare_digest(payload.reviewed_fingerprint, preview["reviewed_fingerprint"]):
+        raise HTTPException(status_code=409, detail="Investigation or proposal changed. Load a fresh details review.")
+    case.title, case.summary = preview["new_title"], preview["new_summary"]
+    add_audit_log(db, user_id=current_user.id, action="case_details_reviewed", target_type="case", target_id=case.id,
+                  detail=f"Reviewed title/summary change; review {payload.reviewed_fingerprint}")
+    await db.commit()
+    return {"success": True, "case_id": case_id, "title": case.title, "summary": case.summary,
+            "reviewed_fingerprint": payload.reviewed_fingerprint}
+
+
 class ReviewedCasePriority(BaseModel):
     model_config = ConfigDict(extra="forbid")
     field: Literal["severity", "due_date"]
