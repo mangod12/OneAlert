@@ -1,3 +1,4 @@
+import { CaseDetailsReview } from '../components/CaseDetailsReview';
 import { CaseChangeReceipts } from '../components/CaseChangeReceipts';
 import { CasePriorityReview, type PriorityField } from '../components/CasePriorityReview';
 import { CaseDeletionReview } from '../components/CaseDeletionReview';
@@ -30,7 +31,6 @@ import { ArrowLeft, Brain, AlertTriangle, Activity, Clock, Target, Network, GitB
 import { getApiErrorMessage } from '../api/errors';
 import { toast } from '../components/Toast';
 import { DegradedBanner, ErrorState, LoadingSurface, RetryButton } from '../components/ui/AsyncState';
-import { useDialogFocus } from '../components/ui/useDialogFocus';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { NarrativeText } from '../components/ui/NarrativeText';
@@ -216,15 +216,6 @@ export function CaseDetail() {
       await fetchAll();
     } catch (err) { toast(getApiErrorMessage(err, 'The resolution could not be updated.'), 'error'); }
     finally { setSavingResolution(false); }
-  };
-
-  const saveDetails = async (title: string, summary: string) => {
-    try {
-      await apiClient.patch(`/cases/${caseId}`, null, { params: { title, summary } });
-      setShowEdit(false);
-      toast('Case details updated.', 'success');
-      await fetchAll();
-    } catch (err) { toast(getApiErrorMessage(err, 'Case details could not be updated.'), 'error'); }
   };
 
   const addNote = async () => {
@@ -1137,14 +1128,7 @@ export function CaseDetail() {
 
       {confirmingDelete && <CaseDeletionReview key={`removal-${caseData.id}`} caseId={caseData.id} onClose={() => { setConfirmingDelete(false); void fetchAll(); }} onDeleted={() => { setConfirmingDelete(false); toast(`Case #${caseData.id} deleted.`, 'success'); navigate('/cases'); }} />}
 
-      {showEdit && (
-        <EditCaseDialog
-          initialTitle={caseData.title}
-          initialSummary={caseData.summary ?? ''}
-          onCancel={() => setShowEdit(false)}
-          onSave={(title, summary) => void saveDetails(title, summary)}
-        />
-      )}
+      {isOwner && showEdit && <CaseDetailsReview key={`details-${caseData.id}`} caseId={caseData.id} initialTitle={caseData.title} initialSummary={caseData.summary ?? ''} onClose={() => { setShowEdit(false); void fetchAll(); }} onSaved={() => { setShowEdit(false); toast('Reviewed investigation details updated.', 'success'); void fetchAll(); }} />}
 
       {isOwner && noteTarget && <CaseEvidenceNoteDialog key={`${caseId}:${noteTarget.kind}:${noteTarget.id}`} caseId={Number(caseId)} kind={noteTarget.kind} recordId={noteTarget.id} onCancel={() => { setNoteTarget(null); void fetchAll(); }} onSaved={(noteId, created) => { setNoteTarget(null); toast(created ? 'Reviewed evidence note saved. Original evidence and case state kept.' : 'Existing identical note found. No duplicate was added.', 'success'); const params = new URLSearchParams(searchParams); params.set('note', String(noteId)); navigate(`/cases/${caseId}?${params}`, { replace: true }); void fetchAll(); }} />}
 
@@ -1152,52 +1136,6 @@ export function CaseDetail() {
 
       {showLinkAlert && <CaseEvidencePicker key={`alert-${caseId}`} caseId={Number(caseId)} kind="alert" onCancel={() => { setShowLinkAlert(false); void fetchAll(); }} onLinked={created => { setShowLinkAlert(false); toast(created ? 'Alert linked to the case.' : 'Alert was already linked. Reloading the case.', 'success'); void fetchAll(); }} />}
       {showLinkEvent && <CaseEvidencePicker key={`event-${caseId}`} caseId={Number(caseId)} kind="event" onCancel={() => { setShowLinkEvent(false); void fetchAll(); }} onLinked={created => { setShowLinkEvent(false); toast(created ? 'Event linked to the case.' : 'Event was already linked. Reloading the case.', 'success'); void fetchAll(); }} />}
-    </div>
-  );
-}
-
-interface EditCaseDialogProps {
-  initialTitle: string;
-  initialSummary: string;
-  onCancel: () => void;
-  onSave: (title: string, summary: string) => void;
-}
-
-// Dialog for renaming a case and editing its summary. Own component so focus
-// management mounts with the dialog and fields reset on close.
-function EditCaseDialog({ initialTitle, initialSummary, onCancel, onSave }: EditCaseDialogProps) {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  const [title, setTitle] = useState(initialTitle);
-  const [summary, setSummary] = useState(initialSummary);
-  const [busy, setBusy] = useState(false);
-  useDialogFocus(dialogRef, onCancel);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-surface-950/70" aria-hidden="true" onClick={() => { if (!busy) onCancel(); }} />
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="edit-case-dialog-title"
-        className="relative w-full max-w-md rounded-lg border border-surface-700 bg-surface-900 p-6 shadow-[var(--oa-shadow-float)]"
-      >
-        <h2 id="edit-case-dialog-title" className="text-lg font-semibold text-surface-50">Edit case details</h2>
-        <form className="mt-4 space-y-3" onSubmit={event => { event.preventDefault(); setBusy(true); onSave(title.trim(), summary.trim()); setBusy(false); }}>
-          <div>
-            <label htmlFor="edit-case-title" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-surface-400">Title</label>
-            <input id="edit-case-title" type="text" autoComplete="off" value={title} onChange={event => setTitle(event.target.value)} className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
-          </div>
-          <div>
-            <label htmlFor="edit-case-summary" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-surface-400">Summary</label>
-            <textarea id="edit-case-summary" rows={3} value={summary} onChange={event => setSummary(event.target.value)} placeholder="Optional context for the team" className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-100 placeholder-surface-500" />
-          </div>
-          <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={onCancel} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-300 hover:bg-surface-800">Cancel</button>
-            <button type="submit" disabled={busy || !title.trim()} className="min-h-9 rounded-md bg-primary-500 px-4 text-sm font-semibold text-surface-950 hover:bg-primary-400 disabled:opacity-50">Save</button>
-          </div>
-        </form>
-      </div>
     </div>
   );
 }
