@@ -62,3 +62,33 @@ def test_empty_receipts_are_readonly(client):
                         params={'category': 'priority'}).json()
     assert result['records'] == [] and result['total'] == 0
     assert client.get(f'/api/v1/cases/{cid}', headers=headers).json() == before
+
+
+def test_literal_receipt_search_and_inclusive_utc_dates(client):
+    from datetime import UTC, datetime
+    headers, cid, owner = setup(client)
+    with _TestingSessionLocal() as db:
+        for stamp, detail in [('2026-11-21T23:59:59', 'needle 100%_exact'),
+                              ('2026-11-22T00:00:00', 'needle 100%_exact'),
+                              ('2026-11-22T23:59:59', 'needle 100%_exact'),
+                              ('2026-11-23T00:00:00', 'needle 100%_exact'),
+                              ('2026-11-22T12:00:00', 'needle 100xyzexact')]:
+            db.add(AuditLog(user_id=owner, target_type='case', target_id=cid, action='case_priority_reviewed',
+                            detail=detail, timestamp=datetime.fromisoformat(stamp).replace(tzinfo=UTC)))
+        db.commit()
+    response = client.get(f'/api/v1/cases/{cid}/change-receipts', headers=headers, params={
+        'search': ' 100%_exact ', 'from_date': '2026-11-22', 'through_date': '2026-11-22'})
+    assert response.status_code == 200
+    data = response.json()
+    assert data['search'] == '100%_exact' and data['from_date'] == data['through_date'] == '2026-11-22'
+    assert data['total'] == 2
+    assert all('100%_exact' in row['detail'] for row in data['records'])
+
+
+@pytest.mark.parametrize('params', [
+    {'from_date': '2026-11-23', 'through_date': '2026-11-22'}, {'from_date': 'bad'},
+    {'search': 'x' * 201}, {'through_date': '9999-12-31'},
+])
+def test_invalid_receipt_search_rejected(client, params):
+    headers, cid, _ = setup(client)
+    assert client.get(f'/api/v1/cases/{cid}/change-receipts', headers=headers, params=params).status_code == 422
