@@ -899,12 +899,12 @@ describe('Investigation tasks', () => {
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/tasks', { title: 'Eradicate persistence' }));
   });
 
-  it('removes a task from the checklist', async () => {
-    mockLoadWithTasks(tasks);
-    mockDelete.mockResolvedValue({ data: { success: true } });
-    renderDetail();
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete task Contain the host' }));
-    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/7/tasks/1'));
+  it('reviews exact permanent task deletion before sending and reloads only confirmed outcome', async () => {
+    mockLoadWithTasks(tasks); const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation(async url => url === '/auth/me' ? { data: { id: 5, email: 'owner@example.com', role: 'analyst', org_id: null, is_active: true } } : url.endsWith('/deletion-review') ? { data: { case_id: 7, owner_id: 5, assigned_to_id: null, title: 'Exact current investigation', status: 'open', severity: 'high', task: { id: 1, title: 'Exact fresh task', done: false, due_date: null, assignee_id: null }, assignee: null, retained_access_reasons: [], other_assigned_tasks: [], reviewed_fingerprint: 'a'.repeat(64) } } : base(url));
+    mockDelete.mockResolvedValue({ status: 204 }); renderDetail(); fireEvent.click(await screen.findByRole('button', { name: 'Delete task Contain the host' }));
+    await screen.findByText('Exact task #1: Exact fresh task'); expect(mockDelete).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed this exact task/ })); fireEvent.click(screen.getByRole('button', { name: 'Delete reviewed task permanently' }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/7/tasks/1/reviewed', { params: { reviewed_fingerprint: 'a'.repeat(64) } })); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('assigns a task to an org member', async () => {
