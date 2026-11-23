@@ -1,3 +1,4 @@
+import { CaseDeletionReview } from '../components/CaseDeletionReview';
 import { CaseListAssignmentReview } from '../components/CaseListAssignmentReview';
 import { EvidenceNoteSourceIndex } from '../components/EvidenceNoteSourceIndex';
 import { CaseEvidenceChronology } from '../components/CaseEvidenceChronology';
@@ -147,11 +148,10 @@ export function CaseDetail() {
   const [changingSeverity, setChangingSeverity] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [deletingCase, setDeletingCase] = useState(false);
   const navigate = useNavigate();
   const [members, setMembers] = useState<Array<{ id: number; email: string; full_name: string | null; is_active: boolean }>>([]);
   const [assignmentReview, setAssignmentReview] = useState<{ caseId: number; targetId: number | null } | null>(null);
-  useEffect(() => { setAssignmentReview(null); }, [caseId]);
+  useEffect(() => { setAssignmentReview(null); setConfirmingDelete(false); }, [caseId]);
   const [watchers, setWatchers] = useState<CaseWatcher[]>([]);
   const [watchBusy, setWatchBusy] = useState(false);
   const [savingDueDate, setSavingDueDate] = useState(false);
@@ -341,20 +341,6 @@ export function CaseDetail() {
       URL.revokeObjectURL(url);
     } catch (err) { toast(getApiErrorMessage(err, 'The timeline could not be exported.'), 'error'); }
     finally { setExportingTimeline(false); }
-  };
-
-  const deleteCase = async () => {
-    if (deletingCase || !caseData) return;
-    setDeletingCase(true);
-    try {
-      await apiClient.delete(`/cases/${caseData.id}`);
-      toast(`Case #${caseData.id} deleted.`, 'success');
-      navigate('/cases');
-    } catch (err: unknown) {
-      toast(getApiErrorMessage(err, 'The case could not be deleted.'), 'error');
-      setDeletingCase(false);
-      setConfirmingDelete(false);
-    }
   };
 
   const startNoteEdit = (entry: TimelineEntry) => {
@@ -1163,17 +1149,7 @@ export function CaseDetail() {
         />
       )}
 
-      {confirmingDelete && (
-        <ConfirmDialog
-          title="Delete case"
-          description={`Delete case #${caseData.id} "${caseData.title}"? Its timeline, notes, linked alerts and events, and response plans are removed and cannot be restored.`}
-          confirmLabel="Delete case"
-          tone="danger"
-          busy={deletingCase}
-          onCancel={() => { if (!deletingCase) setConfirmingDelete(false); }}
-          onConfirm={() => void deleteCase()}
-        />
-      )}
+      {confirmingDelete && <CaseDeletionReview key={`removal-${caseData.id}`} caseId={caseData.id} onClose={() => { setConfirmingDelete(false); void fetchAll(); }} onDeleted={() => { setConfirmingDelete(false); toast(`Case #${caseData.id} deleted.`, 'success'); navigate('/cases'); }} />}
 
       {showEdit && (
         <EditCaseDialog

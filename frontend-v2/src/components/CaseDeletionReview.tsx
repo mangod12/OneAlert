@@ -1,0 +1,35 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import apiClient from '../api/client';
+import { checkedTaskAccount } from '../utils/taskSnapshotReview';
+import { useDialogFocus } from './ui/useDialogFocus';
+const categories = ['tasks', 'watchers', 'alert_links', 'event_links', 'timeline', 'response_plans', 'approvals'] as const;
+type RecordRow = Record<string, unknown> & { id: number };
+interface Preview { case: RecordRow & { user_id: number; title: string; summary: string | null; status: string; severity: string }; inventory: Record<typeof categories[number], RecordRow[]>; reviewed_fingerprint: string }
+export function CaseDeletionReview({ caseId, onClose, onDeleted }: { caseId: number; onClose: () => void; onDeleted: () => void }) {
+  const [preview, setPreview] = useState<Preview | null>(null), [account, setAccount] = useState<ReturnType<typeof checkedTaskAccount> | null>(null), [busy, setBusy] = useState(true), [error, setError] = useState(''), [ack, setAck] = useState(false), [typed, setTyped] = useState(''), [attempted, setAttempted] = useState(false);
+  const ref = useRef<HTMLDivElement>(null), saving = useRef(false), version = useRef(0); useDialogFocus(ref, () => { if (!busy) onClose(); });
+  const invalidate = useCallback(() => { version.current++; }, []);
+  useEffect(() => { let active = true; const id = ++version.current; Promise.all([apiClient.get('/auth/me'), apiClient.get(`/cases/${caseId}/deletion-review`)]).then(([who, response]) => {
+    if (!active || id !== version.current) return; const account = checkedTaskAccount(who.data), value: Preview = response.data;
+    if (!value || value.case?.id !== caseId || value.case.user_id !== account.id || typeof value.case.title !== 'string' || typeof value.case.status !== 'string' || typeof value.case.severity !== 'string' || value.case.summary !== null && typeof value.case.summary !== 'string' || !/^[a-f0-9]{64}$/.test(value.reviewed_fingerprint) || !value.inventory || categories.some(key => !Array.isArray(value.inventory[key]) || value.inventory[key].length > 500 || new Set(value.inventory[key].map(row => row?.id)).size !== value.inventory[key].length || value.inventory[key].some(row => !row || !Number.isSafeInteger(row.id) || row.id < 1 || (key === 'approvals' ? !value.inventory.response_plans?.some(plan => plan.id === row.plan_id) : row.case_id !== caseId)))) throw Error('Incomplete inventory');
+    setAccount(account); setPreview(value);
+  }).catch(() => { if (active) setError('The complete investigation removal inventory or current account could not be verified. Nothing was deleted. Close and load a fresh review.'); }).finally(() => { if (active) setBusy(false); }); return () => { active = false; invalidate(); }; }, [caseId, invalidate]);
+  const remove = async () => {
+    if (saving.current || busy || attempted || error || !preview || !account || !ack || typed !== String(caseId)) return;
+    saving.current = true; setBusy(true); const id = ++version.current; let sent = false;
+    try { const who = checkedTaskAccount((await apiClient.get('/auth/me')).data); if (id !== version.current) return; if (JSON.stringify(who) !== JSON.stringify(account)) throw Error('Account changed');
+      sent = true; setAttempted(true); const response = await apiClient.delete(`/cases/${caseId}`, { params: { reviewed_fingerprint: preview.reviewed_fingerprint } }); if (id !== version.current) return; if (response.status !== 204) throw Error('Unconfirmed deletion'); onDeleted();
+    } catch { if (id === version.current) setError(sent ? 'Removal was not confirmed and may already have applied. No automatic retry was sent. Close and check fresh investigation evidence before doing anything else.' : 'Current account changed or could not be verified. Nothing was deleted. Close and load a fresh review.'); }
+    finally { if (id === version.current) { saving.current = false; setBusy(false); } }
+  };
+  const control = 'max-w-full rounded border border-surface-600 bg-surface-950 px-3 py-2 text-sm disabled:opacity-40';
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-surface-950/80 p-4"><div ref={ref} role="dialog" aria-modal="true" aria-label="Review permanent investigation removal" className="max-h-[90dvh] w-full max-w-2xl space-y-4 overflow-y-auto rounded-xl border border-surface-700 bg-surface-900 p-5 [overflow-wrap:anywhere]">
+    <h2 className="text-lg font-semibold">Permanently remove investigation #{caseId}</h2><p className="text-sm text-danger">Cannot be undone. Removes this investigation, its checklist, watches, timeline and notes, evidence relationships, response plans and their approval requests. Original alerts and security events remain. This does not resolve alerts or run or undo response actions. Audit history remains.</p>
+    {busy && <p role="status">Checking inventory or removing the reviewed investigation...</p>}{error && <p role="alert" className="text-sm text-warning">{error}</p>}
+    {account && <p className="text-xs">Account #{account.id}: {account.email} · {account.role} · Organization {account.org_id ?? 'None'}</p>}
+    {preview && <><section className="space-y-2 rounded border border-surface-700 p-3 text-sm"><h3 className="font-semibold">Investigation #{caseId}: {preview.case.title}</h3><p>{preview.case.status} · {preview.case.severity}</p><p>{preview.case.summary ?? 'No summary recorded'}</p></section><p className="text-sm">Complete saved inventory. Expand each section before confirming. Changed investigation details or inventory require a fresh review.</p>{categories.map(key => <details key={key} className="rounded border border-surface-700 p-3 text-sm"><summary>{key.replaceAll('_', ' ')}: {preview.inventory[key].length}</summary><ol className="mt-3 space-y-3">{preview.inventory[key].map(row => <li key={row.id} className="border-t border-surface-700 pt-2"><p className="font-semibold">Record #{row.id}</p><dl>{Object.entries(row).map(([field, value]) => <div key={field} className="mt-1"><dt className="text-xs text-surface-400">{field.replaceAll('_', ' ')}</dt><dd className="whitespace-pre-wrap">{value === null ? 'Not recorded' : typeof value === 'object' ? JSON.stringify(value) : String(value)}</dd></div>)}</dl></li>)}</ol></details>)}
+    {!attempted && !error && <><label className="block text-sm">Type investigation ID {caseId}<input aria-label="Confirm investigation ID" className={`${control} mt-2 block w-full`} value={typed} disabled={busy} onChange={event => setTyped(event.target.value)} /></label><label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={ack} disabled={busy} onChange={event => setAck(event.target.checked)} />I reviewed the complete inventory and permanent effects. Remove only this investigation and its listed dependent records.</label><button type="button" className={control} disabled={busy || !ack || typed !== String(caseId)} onClick={() => void remove()}>Permanently remove reviewed investigation</button></>}
+    </>}
+    <button type="button" className={control} disabled={busy} onClick={onClose}>Close removal review</button>
+  </div></div>;
+}

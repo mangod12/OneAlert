@@ -1334,26 +1334,46 @@ async def update_case(
     }} if reviewed_fingerprint is not None else {})}
 
 
+@router.get("/{case_id}/deletion-review")
+async def get_case_deletion_review(
+    case_id: int, current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_deletion_review import deletion_review
+    case = (await db.execute(select(Case).where(
+        Case.id == case_id, Case.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return await deletion_review(db, case)
+
+
 @router.delete("/{case_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_case(
     case_id: int,
+    reviewed_fingerprint: str | None = Query(None, min_length=64, max_length=64, pattern="^[a-f0-9]{64}$"),
     current_user: User = Depends(get_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Delete a case with its timeline, alert/event links and response plans."""
     case = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+        select(Case).where(Case.id == case_id, Case.user_id == current_user.id).with_for_update()
     )).scalar_one_or_none()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
 
+    if reviewed_fingerprint is not None:
+        from backend.services.case_deletion_review import deletion_review
+        preview = await deletion_review(db, case, lock=True)
+        if not secrets.compare_digest(reviewed_fingerprint, preview["reviewed_fingerprint"]):
+            raise HTTPException(status_code=409, detail="Investigation or removal inventory changed. Review again.")
+
     add_audit_log(
         db,
         user_id=current_user.id,
-        action="case_deleted",
+        action="case_deletion_reviewed" if reviewed_fingerprint else "case_deleted",
         target_type="case",
         target_id=case.id,
-        detail=f"Case '{case.title}' deleted",
+        detail=f"Case '{case.title}' deleted" + (f"; review {reviewed_fingerprint}" if reviewed_fingerprint else ""),
     )
     plan_ids = select(ResponsePlan.id).where(ResponsePlan.case_id == case_id).scalar_subquery()
     await db.execute(delete(ApprovalRequest).where(ApprovalRequest.plan_id.in_(plan_ids)))

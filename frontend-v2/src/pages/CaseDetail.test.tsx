@@ -613,27 +613,27 @@ describe('Deleting the case', () => {
     );
   }
 
-  it('deletes the case after confirmation and returns to the list', async () => {
-    mockLoad();
-    mockDelete.mockResolvedValue({ data: null });
-    renderWithList();
+  function removalLoad() {
+    mockLoad(); const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation(async url => {
+      if (url === '/auth/me') return { data: { id: 5, email: 'owner@example.com', role: 'analyst', org_id: null, is_active: true } };
+      if (url === '/cases/7/deletion-review') return { data: { case: caseData, inventory: { tasks: [], watchers: [], alert_links: [], event_links: [], timeline: [], response_plans: [], approvals: [] }, reviewed_fingerprint: 'a'.repeat(64) } };
+      return base(url);
+    });
+  }
+  it('reviews full removal inventory before one guarded delete and returns to the list', async () => {
+    removalLoad(); mockDelete.mockResolvedValue({ status: 204, data: null }); renderWithList();
     fireEvent.click(await screen.findByRole('button', { name: 'Delete case' }));
-    const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText(/Its timeline, notes, linked alerts and events/)).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete case' }));
-    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/7'));
-    await screen.findByText('Cases list');
+    expect(await screen.findByText('tasks: 0')).toBeTruthy(); expect(mockDelete).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Confirm investigation ID'), { target: { value: '7' } }); fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed the complete inventory/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Permanently remove reviewed investigation' }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledExactlyOnceWith('/cases/7', { params: { reviewed_fingerprint: 'a'.repeat(64) } })); await screen.findByText('Cases list');
+  });
+  it('cancel reloads and keeps the case without a delete', async () => {
+    removalLoad(); renderWithList(); fireEvent.click(await screen.findByRole('button', { name: 'Delete case' })); await screen.findByText('tasks: 0'); fireEvent.click(screen.getByRole('button', { name: 'Close removal review' }));
+    expect(mockDelete).not.toHaveBeenCalled(); expect(await screen.findByText('Suspicious lateral movement')).toBeTruthy();
   });
 
-  it('cancel keeps the case', async () => {
-    mockLoad();
-    renderWithList();
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete case' }));
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-    expect(mockDelete).not.toHaveBeenCalled();
-    expect(await screen.findByText('Suspicious lateral movement')).toBeTruthy();
-  });
 });
 
 describe('Timeline CSV export', () => {
