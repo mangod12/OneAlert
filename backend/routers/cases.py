@@ -1163,6 +1163,34 @@ async def seed_case_tasks_from_plan(
     return SeedTasksFromPlanResponse(created=created, skipped=skipped)
 
 
+@router.get("/{case_id}/change-receipts")
+async def get_case_change_receipts(
+    case_id: int, page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=50),
+    category: Literal["all", "assignment", "priority", "other"] = "all",
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.models.audit_log import AuditLog
+    case = (await db.execute(select(Case).where(
+        Case.id == case_id, Case.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    known = {"assignment": "case_assignment_reviewed", "priority": "case_priority_reviewed"}
+    conditions = [AuditLog.user_id == current_user.id, AuditLog.target_type == "case", AuditLog.target_id == case_id]
+    if category in known:
+        conditions.append(AuditLog.action == known[category])
+    elif category == "other":
+        conditions.append(AuditLog.action.notin_(list(known.values())))
+    total = (await db.execute(select(func.count()).select_from(AuditLog).where(*conditions))).scalar_one()
+    rows = (await db.execute(select(AuditLog).where(*conditions).order_by(
+        AuditLog.timestamp.desc(), AuditLog.id.desc(),
+    ).offset((page - 1) * size).limit(size))).scalars().all()
+    return {"case_id": case.id, "case_title": case.title, "category": category, "page": page, "size": size,
+            "total": total, "retrieved_at": datetime.now(UTC), "records": [
+                {"id": row.id, "action": row.action, "detail": row.detail, "timestamp": row.timestamp,
+                 "actor_id": row.user_id} for row in rows]}
+
+
 @router.get("/{case_id}/closeout-review")
 async def preview_case_closeout(
     case_id: int, target_status: Literal["resolved", "closed", "false_positive"],

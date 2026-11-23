@@ -1,3 +1,4 @@
+import { CaseChangeReceipts } from '../components/CaseChangeReceipts';
 import { CasePriorityReview, type PriorityField } from '../components/CasePriorityReview';
 import { CaseDeletionReview } from '../components/CaseDeletionReview';
 import { CaseListAssignmentReview } from '../components/CaseListAssignmentReview';
@@ -897,6 +898,7 @@ export function CaseDetail() {
         </div>
       )}
 
+      {isOwner && <CaseChangeReceipts key={`receipts-${caseData.id}`} caseId={caseData.id} ownerId={caseData.user_id} />}
       <CaseEvidenceChronology key={`chronology-${caseData.id}`} caseId={caseData.id} />
       <CaseEvidenceOverlap key={`overlap-${caseData.id}`} caseId={caseData.id} />
 
