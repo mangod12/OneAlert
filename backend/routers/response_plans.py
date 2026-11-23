@@ -8,6 +8,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, ConfigDict, Field, StrictStr
 from sqlalchemy import String, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -293,13 +294,29 @@ async def approve_plan(
     }
 
 
+class ReviewedPlanRejection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reviewed_fingerprint: StrictStr = Field(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")
+    reason: StrictStr = Field(max_length=2000)
+
+
+@router.post("/{plan_id}/reject-reviewed")
+async def reject_reviewed_plan(
+    plan_id: int, payload: ReviewedPlanRejection,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    return await _reject_owned_plan(plan_id, payload.reason, current_user, db, payload.reviewed_fingerprint)
+
+
 @router.post("/{plan_id}/reject")
 async def reject_plan(
-    plan_id: int,
-    reason: str = Body("", embed=True),
-    current_user: User = Depends(get_active_user),
-    db: AsyncSession = Depends(get_async_db),
+    plan_id: int, reason: str = Body("", embed=True),
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
 ):
+    return await _reject_owned_plan(plan_id, reason, current_user, db)
+
+
+async def _reject_owned_plan(plan_id, reason, current_user, db, reviewed_fingerprint=None):
     """Reject a response plan."""
     plan = (await db.execute(
         select(ResponsePlan).where(
@@ -313,6 +330,10 @@ async def reject_plan(
 
     if plan.status not in ("pending_approval", "draft"):
         raise HTTPException(status_code=400, detail=f"Plan status is '{plan.status}', cannot reject")
+
+    if reviewed_fingerprint is not None and not secrets.compare_digest(reviewed_fingerprint, review_fingerprint(plan)):
+        raise HTTPException(status_code=409, detail=(
+            "The saved plan changed after rejection review. Refresh and review it again."))
 
     now = datetime.now(UTC)
     plan.status = "rejected"
@@ -336,7 +357,8 @@ async def reject_plan(
         action="response_plan_rejected",
         target_type="response_plan",
         target_id=plan.id,
-        detail="Plan rejected" + (f": {reason[:200]}" if reason else ""),
+        detail=("Plan rejected" + (f": {reason[:200]}" if reason else "")
+                + (f"; reviewed fingerprint {reviewed_fingerprint}" if reviewed_fingerprint else "")),
     )
     await db.commit()
 
@@ -344,6 +366,9 @@ async def reject_plan(
         "success": True,
         "message": f"Plan {plan_id} rejected",
         "plan_status": plan.status,
+        "plan_id": plan.id,
+        "case_id": plan.case_id,
+        "approvals_resolved": len(approvals),
     }
 
 

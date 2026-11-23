@@ -1,4 +1,5 @@
 import { recordedValueText } from '../utils/recordedValueText';
+import { ResponseRejectionReview } from '../components/ResponseRejectionReview';
 import { ResponseDraftApproval } from '../components/ResponseDraftApproval';
 import { useSearchParams } from 'react-router-dom';
 import { ResponseDecisionEvidence } from '../components/ResponseDecisionEvidence';
@@ -192,18 +193,6 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
       if (isAxiosError(err) && err.response?.status === 409) { setReviewApprovalId(null); await fetchPlans(); }
     }
     finally { approving.current = false; setWorkingPlan(null); }
-  };
-
-  const rejectPlan = async (planId: number, reason: string) => {
-    if (workingPlan !== null) return;
-    setWorkingPlan(planId);
-    try {
-      await apiClient.post(`/response-plans/${planId}/reject`, { reason: reason || 'Manual rejection' });
-      toast('Plan rejected', 'warning');
-      setConfirmAction(null);
-      await fetchPlans();
-    } catch (err) { toast(getApiErrorMessage(err, 'Failed to reject plan.'), 'error'); }
-    finally { setWorkingPlan(null); }
   };
 
   const executePlan = async (planId: number) => {
@@ -486,19 +475,7 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
           onConfirm={() => void deletePlan(confirmAction.planId)}
         />
       )}
-      {confirmAction?.type === 'reject' && (
-        <ConfirmDialog
-          title={`Reject plan #${confirmAction.planId}?`}
-          description="Rejection closes the plan and its pending approval. The reason is recorded on the approval's decision trail."
-          confirmLabel="Reject plan"
-          tone="danger"
-          reasonLabel="Reason for rejection (optional)"
-          reasonPlaceholder="e.g. Isolation window overlaps the maintenance freeze"
-          busy={workingPlan !== null}
-          onCancel={() => setConfirmAction(null)}
-          onConfirm={reason => void rejectPlan(confirmAction.planId, reason)}
-        />
-      )}
+      {confirmAction?.type === 'reject' && <ResponseRejectionReview key={confirmAction.planId} planId={confirmAction.planId} onCancel={() => setConfirmAction(null)} onRejected={() => { setEvidenceVersion(value => value + 1); void fetchPlans(); }} />}
     </div>
   );
 }
