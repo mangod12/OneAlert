@@ -198,12 +198,18 @@ describe('Blast radius and similar investigations', () => {
 describe('Timeline notes', () => {
   it('posts a note and refreshes the timeline', async () => {
     mockLoad();
-    mockPost.mockResolvedValue({ data: { id: 99, entry_type: 'note', content: 'Host reimaged.', source: 'human', timestamp: '2026-11-17T09:00:00Z' } });
+    const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation(url => url === '/auth/me' ? Promise.resolve({ data: { id: 5, email: 'owner@example.com', role: 'analyst', org_id: null, is_active: true } }) : base(url));
+    mockPost.mockImplementation(async url => ({ status: 200, data: url.endsWith('/note-review') ? { case_id: 7, owner_id: 5, acting_account_id: 5, title: 'Fresh note case', status: 'open', severity: 'high', content: 'Host reimaged.', recipients: [], unnotified_tokens: [], reviewed_fingerprint: 'a'.repeat(64) } : { success: true, case_id: 7, note_id: 99, content: 'Host reimaged.', reviewed_fingerprint: 'a'.repeat(64) } }));
     renderDetail();
     await screen.findByText('Investigation Timeline');
     fireEvent.change(screen.getByLabelText('Add a timeline note'), { target: { value: 'Host reimaged.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
-    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/notes', { content: 'Host reimaged.' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Review investigation note and mentions' });
+    fireEvent.click(await within(dialog).findByRole('checkbox'));
+    expect(mockPost).toHaveBeenCalledExactlyOnceWith('/cases/7/note-review', { content: 'Host reimaged.' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save reviewed note' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/notes-reviewed', { content: 'Host reimaged.', reviewed_fingerprint: 'a'.repeat(64) }));
     await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2));
     expect((screen.getByLabelText('Add a timeline note') as HTMLTextAreaElement).value).toBe('');
   });

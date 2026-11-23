@@ -1,3 +1,4 @@
+import { CaseNoteAdditionReview } from '../components/CaseNoteAdditionReview';
 import { CaseWatcherAdditionReview } from '../components/CaseWatcherAdditionReview';
 import { CaseStatusReview } from '../components/CaseStatusReview';
 import { CaseResolutionReview } from '../components/CaseResolutionReview';
@@ -137,7 +138,8 @@ export function CaseDetail() {
   const [blastRadius, setBlastRadius] = useState<BlastRadius | null>(null);
   const [similarCases, setSimilarCases] = useState<SimilarCase[]>([]);
   const [noteText, setNoteText] = useState('');
-  const [addingNote, setAddingNote] = useState(false);
+  const [noteAddition, setNoteAddition] = useState<{ caseId: number; content: string } | null>(null);
+  const addingNote = noteAddition !== null;
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editNoteText, setEditNoteText] = useState('');
   const [savingNoteEdit, setSavingNoteEdit] = useState(false);
@@ -155,7 +157,7 @@ export function CaseDetail() {
   const [members, setMembers] = useState<Array<{ id: number; email: string; full_name: string | null; is_active: boolean }>>([]);
   const [assignmentReview, setAssignmentReview] = useState<{ caseId: number; targetId: number | null } | null>(null);
   const [watcherAddition, setWatcherAddition] = useState<{ caseId: number; userId: number } | null>(null);
-  useEffect(() => { setAssignmentReview(null); setConfirmingDelete(false); setPriorityReview(null); setWatcherAddition(null); }, [caseId]);
+  useEffect(() => { setAssignmentReview(null); setConfirmingDelete(false); setPriorityReview(null); setWatcherAddition(null); setNoteAddition(null); }, [caseId]);
   const [watchers, setWatchers] = useState<CaseWatcher[]>([]);
   const [watchBusy, setWatchBusy] = useState(false);
   const [tasks, setTasks] = useState<CaseTask[]>([]);
@@ -195,17 +197,10 @@ export function CaseDetail() {
     setPriorityReview({ caseId: caseData.id, field, value });
   };
 
-  const addNote = async () => {
+  const addNote = () => {
     const content = noteText.trim();
-    if (!content || addingNote) return;
-    setAddingNote(true);
-    try {
-      await apiClient.post(`/cases/${caseId}/notes`, { content });
-      setNoteText('');
-      toast('Note added to the timeline.', 'success');
-      await fetchAll();
-    } catch (err) { toast(getApiErrorMessage(err, 'The note could not be added.'), 'error'); }
-    finally { setAddingNote(false); }
+    if (!content || addingNote || noteAddition || !caseData) return;
+    setNoteAddition({ caseId: caseData.id, content });
   };
 
   const addTask = async () => {
@@ -1049,6 +1044,7 @@ export function CaseDetail() {
 
       {priorityReview && priorityReview.caseId === caseData.id && <CasePriorityReview key={`priority-${priorityReview.caseId}:${priorityReview.field}:${priorityReview.value}`} caseId={priorityReview.caseId} field={priorityReview.field} value={priorityReview.value} onClose={() => { setPriorityReview(null); void fetchAll(); }} onSaved={() => { setPriorityReview(null); toast('Reviewed investigation priority updated.', 'success'); void fetchAll(); }} />}
       {assignmentReview && assignmentReview.caseId === caseData.id && <CaseListAssignmentReview key={`${assignmentReview.caseId}:${assignmentReview.targetId}`} caseIds={[assignmentReview.caseId]} targetId={assignmentReview.targetId} onClose={() => { setAssignmentReview(null); void fetchAll(); }} onChanged={() => { /* Keep confirmed outcomes mounted; closing reloads the full investigation. */ }} />}
+      {noteAddition && noteAddition.caseId === caseData.id && <CaseNoteAdditionReview key={`${noteAddition.caseId}:${noteAddition.content}`} caseId={noteAddition.caseId} content={noteAddition.content} onClose={() => { setNoteAddition(null); void fetchAll(); }} onSaved={() => { setNoteAddition(null); setNoteText(''); toast('Reviewed note added to the timeline.', 'success'); void fetchAll(); }} />}
       {watcherAddition && watcherAddition.caseId === caseData.id && <CaseWatcherAdditionReview key={`${watcherAddition.caseId}:${watcherAddition.userId}`} caseId={watcherAddition.caseId} userId={watcherAddition.userId} onClose={() => { setWatcherAddition(null); void fetchAll(); }} onSaved={() => { setWatcherAddition(null); toast('Reviewed watcher added.', 'success'); void fetchAll(); }} />}
 
       {pendingStatus && <CaseStatusReview key={`${caseData.id}:${pendingStatus}`} caseId={caseData.id} value={pendingStatus} onClose={() => { setPendingStatus(null); void fetchAll(); }} onSaved={() => { setPendingStatus(null); toast('Reviewed investigation status updated.', 'success'); void fetchAll(); }} />}
