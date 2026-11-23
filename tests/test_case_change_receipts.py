@@ -92,3 +92,74 @@ def test_literal_receipt_search_and_inclusive_utc_dates(client):
 def test_invalid_receipt_search_rejected(client, params):
     headers, cid, _ = setup(client)
     assert client.get(f'/api/v1/cases/{cid}/change-receipts', headers=headers, params=params).status_code == 422
+
+
+def test_receipt_csv_exact_scope_safe_cells_utc_and_all_pages(client):
+    import csv
+    import io
+    from datetime import UTC, datetime
+    headers, cid, owner = setup(client)
+    other_headers = _register_and_login(client, 'csv-other@example.com')
+    other = _user_id(client, other_headers)
+    with _TestingSessionLocal() as db:
+        db.get(Case, cid).title = '=PRIVATE_TITLE'
+        for i in range(13):
+            db.add(AuditLog(user_id=owner, target_type='case', target_id=cid,
+                            action='case_priority_reviewed', detail='=100%_exact,"line"\nsecond',
+                            timestamp=datetime(2026, 11, 22, i, tzinfo=UTC)))
+        db.add_all([AuditLog(user_id=other, target_type='case', target_id=cid,
+                            action='case_priority_reviewed', detail='PRIVATE_OTHER'),
+                    AuditLog(user_id=owner, target_type='case', target_id=cid,
+                            action='case_assignment_reviewed', detail='PRIVATE_CATEGORY'),
+                    AuditLog(user_id=owner, target_type='case', target_id=cid+1,
+                            action='case_priority_reviewed', detail='PRIVATE_CASE')])
+        db.commit()
+    response = client.get(f'/api/v1/cases/{cid}/change-receipts/export', headers=headers,
+                          params={'category': 'priority', 'search': '100%_exact',
+                                  'from_date': '2026-11-22', 'through_date': '2026-11-22'})
+    assert response.status_code == 200 and response.headers['content-type'].startswith('text/csv')
+    assert response.headers['cache-control'] == 'no-store'
+    assert f'investigation-{cid}-saved-receipts.csv' in response.headers['content-disposition']
+    rows = list(csv.DictReader(io.StringIO(response.text)))
+    assert len(rows) == 13 and len({r['receipt_id'] for r in rows}) == 13
+    assert rows[0]['recorded_at_utc'].endswith('+00:00') and 'T12:00:00' in rows[0]['recorded_at_utc']
+    assert rows[0]['case_title'] == "'=PRIVATE_TITLE" and rows[0]['detail'] == "'=100%_exact,\"line\"\nsecond"
+    assert all(r['actor_id'] == str(owner) and r['literal_search'] == '100%_exact' for r in rows)
+    assert all('not complete history' in r['scope_note'] for r in rows)
+    assert all(secret not in response.text for secret in ['PRIVATE_OTHER', 'PRIVATE_CATEGORY', 'PRIVATE_CASE'])
+    assert client.get(f'/api/v1/cases/{cid}/change-receipts/export', headers=other_headers).status_code == 404
+
+
+def test_empty_receipt_csv_records_scope_without_inventing_a_receipt(client):
+    import csv
+    import io
+    headers, cid, _ = setup(client)
+    result = client.get(f'/api/v1/cases/{cid}/change-receipts/export', headers=headers,
+                        params={'category': 'priority', 'search': '=formula'})
+    rows = list(csv.DictReader(io.StringIO(result.text)))
+    assert result.status_code == 200 and len(rows) == 1
+    assert rows[0]['receipt_id'] == rows[0]['actor_id'] == rows[0]['action'] == ''
+    assert rows[0]['literal_search'] == "'=formula" and rows[0]['category'] == 'priority'
+
+
+@pytest.mark.parametrize('params', [{'category': 'private'}, {'from_date': 'bad'},
+    {'from_date': '2026-11-23', 'through_date': '2026-11-22'}, {'through_date': '9999-12-31'}])
+def test_receipt_csv_invalid_scope_has_no_file(client, params):
+    headers, cid, _ = setup(client)
+    result = client.get(f'/api/v1/cases/{cid}/change-receipts/export', headers=headers, params=params)
+    assert result.status_code == 422 and 'content-disposition' not in result.headers
+
+
+def test_receipt_csv_refuses_over_limit_and_incomplete_reads(client, monkeypatch):
+    from backend.routers import cases
+    headers, cid, _ = setup(client)
+    async def oversized(*args):
+        return {'total': 5001, 'records': []}
+    monkeypatch.setattr(cases, 'get_case_change_receipts', oversized)
+    result = client.get(f'/api/v1/cases/{cid}/change-receipts/export', headers=headers)
+    assert result.status_code == 422 and 'content-disposition' not in result.headers
+    async def incomplete(*args):
+        return {'total': 3, 'records': []}
+    monkeypatch.setattr(cases, 'get_case_change_receipts', incomplete)
+    result = client.get(f'/api/v1/cases/{cid}/change-receipts/export', headers=headers)
+    assert result.status_code == 409 and 'content-disposition' not in result.headers

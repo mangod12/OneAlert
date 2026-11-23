@@ -1209,6 +1209,46 @@ async def get_case_change_receipts(
                  "actor_id": row.user_id} for row in rows]}
 
 
+@router.get("/{case_id}/change-receipts/export")
+async def export_case_change_receipts(
+    case_id: int, category: Literal["all", "assignment", "priority", "other"] = "all",
+    search: str = Query("", max_length=200),
+    from_date: date | None = None, through_date: date | None = None,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    # Reuse the exact owner, category, literal-text and UTC-day scope of the paged read.
+    data = await get_case_change_receipts(case_id, 1, 5001, category, search, from_date,
+                                          through_date, current_user, db)
+    if data["total"] > 5000 or len(data["records"]) > 5000:
+        raise HTTPException(status_code=422, detail=(
+            "Receipt export exceeds 5,000 entries. Narrow the filters. No partial file was created."))
+    if len(data["records"]) != data["total"]:
+        raise HTTPException(status_code=409, detail=(
+            "Saved receipts changed during export. Refresh and retry. No partial file was created."))
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["case_id", "case_title", "category", "literal_search", "from_utc_date",
+                     "through_utc_date", "retrieved_at_utc", "receipt_id", "actor_id", "action",
+                     "recorded_at_utc", "detail", "scope_note"])
+    scope_note = "Saved application receipts only; not complete history, delivery proof or remediation proof."
+    # An empty export still records its scope, without inventing a receipt.
+    for row in data["records"] or [None]:
+        stamp = row["timestamp"] if row else None
+        if stamp is not None:
+            stamp = stamp.replace(tzinfo=UTC) if stamp.tzinfo is None else stamp.astimezone(UTC)
+        writer.writerow(spreadsheet_safe_row([
+            data["case_id"], data["case_title"], category, data["search"],
+            from_date.isoformat() if from_date else "", through_date.isoformat() if through_date else "",
+            data["retrieved_at"].isoformat(), row["id"] if row else "", row["actor_id"] if row else "",
+            row["action"] if row else "", stamp.isoformat() if stamp else "",
+            (row["detail"] or "") if row else "", scope_note,
+        ]))
+    return Response(buffer.getvalue(), media_type="text/csv", headers={
+        "Content-Disposition": f"attachment; filename=investigation-{case_id}-saved-receipts.csv",
+        "Cache-Control": "no-store",
+    })
+
+
 @router.get("/{case_id}/closeout-review")
 async def preview_case_closeout(
     case_id: int, target_status: Literal["resolved", "closed", "false_positive"],
