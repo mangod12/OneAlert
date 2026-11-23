@@ -231,7 +231,9 @@ describe('Editing timeline notes', () => {
 
   it('offers edit only on note entries and patches the note on save', async () => {
     mockLoadWithTimeline([noteEntry, actionEntry]);
-    mockPatch.mockResolvedValue({ data: { ...noteEntry, content: 'Rewritten note' } });
+    const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation(url => url === '/auth/me' ? Promise.resolve({ data: { id: 5, email: 'owner@example.com', role: 'analyst', org_id: null, is_active: true } }) : base(url));
+    mockPost.mockImplementation(async url => ({ status: 200, data: url.endsWith('/edit-review') ? { case_id: 7, owner_id: 5, title: 'Fresh edit case', status: 'open', severity: 'high', content: 'Rewritten note', note: { ...noteEntry, user_id: 5 }, reviewed_fingerprint: 'a'.repeat(64) } : { success: true, case_id: 7, note_id: 21, content: 'Rewritten note', reviewed_fingerprint: 'a'.repeat(64) } }));
     renderDetail();
     await screen.findByText('Original note');
     expect(screen.getAllByRole('button', { name: 'Edit note' }).length).toBe(1);
@@ -241,7 +243,11 @@ describe('Editing timeline notes', () => {
     expect(box.value).toBe('Original note');
     fireEvent.change(box, { target: { value: 'Rewritten note' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/notes/21', { content: 'Rewritten note' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Review investigation note edit' });
+    fireEvent.click(await within(dialog).findByRole('checkbox'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Replace reviewed note' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/notes/21/edit-reviewed', { content: 'Rewritten note', reviewed_fingerprint: 'a'.repeat(64) }));
+    expect(mockPatch).not.toHaveBeenCalled();
     await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/cases/7').length).toBe(2));
   });
 
