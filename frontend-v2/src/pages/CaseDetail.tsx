@@ -1,3 +1,4 @@
+import { CaseResolutionReview } from '../components/CaseResolutionReview';
 import { CaseDetailsReview } from '../components/CaseDetailsReview';
 import { CaseChangeReceipts } from '../components/CaseChangeReceipts';
 import { CasePriorityReview, type PriorityField } from '../components/CasePriorityReview';
@@ -131,8 +132,6 @@ export function CaseDetail() {
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [pendingClose, setPendingClose] = useState<{ status: string; label: string } | null>(null);
   const [editingResolution, setEditingResolution] = useState(false);
-  const [resolutionDraft, setResolutionDraft] = useState('');
-  const [savingResolution, setSavingResolution] = useState(false);
   const [blastRadius, setBlastRadius] = useState<BlastRadius | null>(null);
   const [similarCases, setSimilarCases] = useState<SimilarCase[]>([]);
   const [noteText, setNoteText] = useState('');
@@ -204,18 +203,6 @@ export function CaseDetail() {
       await fetchAll();
     } catch (err) { toast(getApiErrorMessage(err, 'Case status could not be updated.'), 'error'); }
     finally { setUpdatingStatus(false); }
-  };
-
-  const saveResolution = async () => {
-    if (savingResolution) return;
-    setSavingResolution(true);
-    try {
-      await apiClient.patch(`/cases/${caseId}`, null, { params: { resolution: resolutionDraft } });
-      toast('Resolution updated', 'success');
-      setEditingResolution(false);
-      await fetchAll();
-    } catch (err) { toast(getApiErrorMessage(err, 'The resolution could not be updated.'), 'error'); }
-    finally { setSavingResolution(false); }
   };
 
   const addNote = async () => {
@@ -618,7 +605,7 @@ export function CaseDetail() {
             {isOwner && !editingResolution && (
               <button
                 type="button"
-                onClick={() => { setResolutionDraft(caseData.resolution ?? ''); setEditingResolution(true); }}
+                onClick={() => setEditingResolution(true)}
                 className="flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300"
               >
                 <Pencil className="w-3 h-3" /> {caseData.resolution ? 'Edit resolution' : 'Add resolution'}
@@ -643,40 +630,9 @@ export function CaseDetail() {
               <span>{tasks.filter(t => t.done).length} of {tasks.length} tasks done</span>
             )}
           </div>
-          {editingResolution ? (
-            <div className="mt-3 space-y-2">
-              <textarea
-                aria-label="Resolution summary"
-                value={resolutionDraft}
-                onChange={e => setResolutionDraft(e.target.value)}
-                rows={3}
-                placeholder="What was the outcome? Root cause, containment, follow-ups."
-                className="w-full rounded-md border border-surface-600 bg-surface-950 px-3 py-2 text-sm text-surface-200 placeholder-surface-500"
-              />
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  disabled={savingResolution}
-                  onClick={() => void saveResolution()}
-                  className="rounded-md bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-500 disabled:opacity-40"
-                >
-                  Save resolution
-                </button>
-                <button
-                  type="button"
-                  disabled={savingResolution}
-                  onClick={() => setEditingResolution(false)}
-                  className="rounded-md border border-surface-700 px-3 py-1.5 text-xs text-surface-300 hover:bg-surface-800 disabled:opacity-40"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <p className={`mt-3 text-sm ${caseData.resolution ? 'text-surface-200' : 'text-surface-500'}`}>
-              {caseData.resolution ?? 'No resolution recorded.'}
-            </p>
-          )}
+          <p className={`mt-3 text-sm ${caseData.resolution ? 'text-surface-200' : 'text-surface-500'}`}>
+            {caseData.resolution ?? 'No resolution recorded.'}
+          </p>
         </div>
       )}
 
@@ -1127,6 +1083,8 @@ export function CaseDetail() {
       )}
 
       {confirmingDelete && <CaseDeletionReview key={`removal-${caseData.id}`} caseId={caseData.id} onClose={() => { setConfirmingDelete(false); void fetchAll(); }} onDeleted={() => { setConfirmingDelete(false); toast(`Case #${caseData.id} deleted.`, 'success'); navigate('/cases'); }} />}
+
+      {isOwner && editingResolution && <CaseResolutionReview key={`resolution-${caseData.id}`} caseId={caseData.id} initialResolution={caseData.resolution ?? ''} onClose={() => { setEditingResolution(false); void fetchAll(); }} onSaved={() => { setEditingResolution(false); toast('Reviewed resolution text updated.', 'success'); void fetchAll(); }} />}
 
       {isOwner && showEdit && <CaseDetailsReview key={`details-${caseData.id}`} caseId={caseData.id} initialTitle={caseData.title} initialSummary={caseData.summary ?? ''} onClose={() => { setShowEdit(false); void fetchAll(); }} onSaved={() => { setShowEdit(false); toast('Reviewed investigation details updated.', 'success'); void fetchAll(); }} />}
 

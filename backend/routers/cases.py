@@ -1420,6 +1420,52 @@ async def update_case(
     }} if reviewed_fingerprint is not None else {})}
 
 
+class CaseResolutionProposal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    resolution: StrictStr = Field(max_length=20000)
+
+
+class ReviewedCaseResolution(CaseResolutionProposal):
+    reviewed_fingerprint: StrictStr = Field(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")
+
+
+@router.post("/{case_id}/resolution-review")
+async def get_case_resolution_review(
+    case_id: int, payload: CaseResolutionProposal,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_resolution_review import resolution_review
+    case = (await db.execute(select(Case).where(
+        Case.id == case_id, Case.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return resolution_review(case, current_user, payload.resolution)
+
+
+@router.post("/{case_id}/resolution-reviewed")
+async def change_reviewed_case_resolution(
+    case_id: int, payload: ReviewedCaseResolution,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_resolution_review import resolution_review
+    case = (await db.execute(select(Case).where(
+        Case.id == case_id, Case.user_id == current_user.id,
+    ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    preview = resolution_review(case, current_user, payload.resolution)
+    if not secrets.compare_digest(payload.reviewed_fingerprint, preview["reviewed_fingerprint"]):
+        raise HTTPException(status_code=409, detail=(
+            "Investigation or proposal changed. Load a fresh resolution review."))
+    case.resolution = preview["new_resolution"]
+    add_audit_log(db, user_id=current_user.id, action="case_resolution_reviewed", target_type="case", target_id=case.id,
+                  detail=f"Reviewed resolution text change; review {payload.reviewed_fingerprint}")
+    await db.commit()
+    return {"success": True, "case_id": case_id, "resolution": case.resolution,
+            "reviewed_fingerprint": payload.reviewed_fingerprint}
+
+
 class CaseDetailsProposal(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: StrictStr = Field(min_length=1, max_length=500)
