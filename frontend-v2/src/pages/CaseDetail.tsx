@@ -1,3 +1,4 @@
+import { CaseNoteEditReview } from '../components/CaseNoteEditReview';
 import { CaseNoteAdditionReview } from '../components/CaseNoteAdditionReview';
 import { CaseWatcherAdditionReview } from '../components/CaseWatcherAdditionReview';
 import { CaseStatusReview } from '../components/CaseStatusReview';
@@ -142,7 +143,8 @@ export function CaseDetail() {
   const addingNote = noteAddition !== null;
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editNoteText, setEditNoteText] = useState('');
-  const [savingNoteEdit, setSavingNoteEdit] = useState(false);
+  const [noteEditReview, setNoteEditReview] = useState<{ caseId: number; noteId: number; content: string } | null>(null);
+  const savingNoteEdit = noteEditReview !== null;
   const [pendingDeleteNote, setPendingDeleteNote] = useState<TimelineEntry | null>(null);
   const [deletingNote, setDeletingNote] = useState(false);
   const [exportingTimeline, setExportingTimeline] = useState(false);
@@ -157,7 +159,7 @@ export function CaseDetail() {
   const [members, setMembers] = useState<Array<{ id: number; email: string; full_name: string | null; is_active: boolean }>>([]);
   const [assignmentReview, setAssignmentReview] = useState<{ caseId: number; targetId: number | null } | null>(null);
   const [watcherAddition, setWatcherAddition] = useState<{ caseId: number; userId: number } | null>(null);
-  useEffect(() => { setAssignmentReview(null); setConfirmingDelete(false); setPriorityReview(null); setWatcherAddition(null); setNoteAddition(null); }, [caseId]);
+  useEffect(() => { setAssignmentReview(null); setConfirmingDelete(false); setPriorityReview(null); setWatcherAddition(null); setNoteAddition(null); setNoteEditReview(null); }, [caseId]);
   const [watchers, setWatchers] = useState<CaseWatcher[]>([]);
   const [watchBusy, setWatchBusy] = useState(false);
   const [tasks, setTasks] = useState<CaseTask[]>([]);
@@ -295,17 +297,10 @@ export function CaseDetail() {
     setEditNoteText(entry.content);
   };
 
-  const saveNoteEdit = async () => {
+  const saveNoteEdit = () => {
     const content = editNoteText.trim();
-    if (!content || editingNoteId === null || savingNoteEdit) return;
-    setSavingNoteEdit(true);
-    try {
-      await apiClient.patch(`/cases/${caseId}/notes/${editingNoteId}`, { content });
-      setEditingNoteId(null);
-      toast('Note updated.', 'success');
-      await fetchAll();
-    } catch (err) { toast(getApiErrorMessage(err, 'The note could not be updated.'), 'error'); }
-    finally { setSavingNoteEdit(false); }
+    if (!content || editingNoteId === null || savingNoteEdit || !caseData) return;
+    setNoteEditReview({ caseId: caseData.id, noteId: editingNoteId, content });
   };
 
   const deleteNote = async (entry: TimelineEntry) => {
@@ -1044,6 +1039,7 @@ export function CaseDetail() {
 
       {priorityReview && priorityReview.caseId === caseData.id && <CasePriorityReview key={`priority-${priorityReview.caseId}:${priorityReview.field}:${priorityReview.value}`} caseId={priorityReview.caseId} field={priorityReview.field} value={priorityReview.value} onClose={() => { setPriorityReview(null); void fetchAll(); }} onSaved={() => { setPriorityReview(null); toast('Reviewed investigation priority updated.', 'success'); void fetchAll(); }} />}
       {assignmentReview && assignmentReview.caseId === caseData.id && <CaseListAssignmentReview key={`${assignmentReview.caseId}:${assignmentReview.targetId}`} caseIds={[assignmentReview.caseId]} targetId={assignmentReview.targetId} onClose={() => { setAssignmentReview(null); void fetchAll(); }} onChanged={() => { /* Keep confirmed outcomes mounted; closing reloads the full investigation. */ }} />}
+      {noteEditReview && noteEditReview.caseId === caseData.id && <CaseNoteEditReview key={`${noteEditReview.caseId}:${noteEditReview.noteId}:${noteEditReview.content}`} caseId={noteEditReview.caseId} noteId={noteEditReview.noteId} content={noteEditReview.content} onClose={() => { setNoteEditReview(null); void fetchAll(); }} onSaved={() => { setNoteEditReview(null); setEditingNoteId(null); toast('Reviewed note updated.', 'success'); void fetchAll(); }} />}
       {noteAddition && noteAddition.caseId === caseData.id && <CaseNoteAdditionReview key={`${noteAddition.caseId}:${noteAddition.content}`} caseId={noteAddition.caseId} content={noteAddition.content} onClose={() => { setNoteAddition(null); void fetchAll(); }} onSaved={() => { setNoteAddition(null); setNoteText(''); toast('Reviewed note added to the timeline.', 'success'); void fetchAll(); }} />}
       {watcherAddition && watcherAddition.caseId === caseData.id && <CaseWatcherAdditionReview key={`${watcherAddition.caseId}:${watcherAddition.userId}`} caseId={watcherAddition.caseId} userId={watcherAddition.userId} onClose={() => { setWatcherAddition(null); void fetchAll(); }} onSaved={() => { setWatcherAddition(null); toast('Reviewed watcher added.', 'success'); void fetchAll(); }} />}
 
