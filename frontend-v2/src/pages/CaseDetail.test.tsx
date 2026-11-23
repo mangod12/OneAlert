@@ -112,15 +112,19 @@ afterEach(() => {
 });
 
 describe('Case status transitions', () => {
-  it('offers the forward actions for an open case and applies one', async () => {
+  it('reviews the forward status action before a guarded write', async () => {
     mockLoad();
-    mockPatch.mockResolvedValue({ data: { success: true } });
+    const base = mockGet.getMockImplementation()!;
+    const preview = { case_id: 7, owner_id: 5, acting_account_id: 5, title: 'Fresh status case', summary: null, status: 'open', severity: 'high', due_date: null, assigned_to_id: null, resolution: null, closed_at: null, value: 'investigating', recipients: [], watchers: [], reviewed_fingerprint: 'a'.repeat(64) };
+    mockGet.mockImplementation((url: string) => url === '/auth/me' ? Promise.resolve({ data: { id: 5, email: 'owner@example.com', role: 'analyst', org_id: 7, is_active: true } }) : url.endsWith('/status-review') ? Promise.resolve({ data: preview }) : base(url));
+    mockPost.mockResolvedValue({ status: 200, data: { success: true, case_id: 7, value: 'investigating', closed_at: null, reviewed_fingerprint: 'a'.repeat(64) } });
     renderDetail();
     fireEvent.click(await screen.findByRole('button', { name: 'Start investigating' }));
-    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith(
-      '/cases/7', null, { params: { status_update: 'investigating' } },
-    ));
-    expect(screen.getByRole('button', { name: 'Resolve' })).toBeTruthy();
+    const dialog = await screen.findByRole('dialog', { name: 'Review investigation status change' });
+    await within(dialog).findByRole('checkbox'); expect(mockPatch).not.toHaveBeenCalled(); expect(mockPost).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('checkbox')); fireEvent.click(within(dialog).getByRole('button', { name: 'Apply reviewed status change' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(mockPost).toHaveBeenCalledExactlyOnceWith('/cases/7/status-reviewed', { value: 'investigating', reviewed_fingerprint: 'a'.repeat(64) });
   });
 
   it('offers close and reopen for a resolved case', async () => {
@@ -722,16 +726,19 @@ describe('Assignee view', () => {
     expect(screen.getByPlaceholderText(/Add an investigation note/)).toBeTruthy();
   });
 
-  it('lets the assignee move the status', async () => {
+  it('lets the assignee review and move the status', async () => {
     useAuthStore.setState({ user: member });
     mockLoad();
-    mockPatch.mockResolvedValue({ data: {} });
+    const base = mockGet.getMockImplementation()!;
+    const preview = { case_id: 7, owner_id: 5, acting_account_id: member.id, title: 'Shared case', summary: null, status: 'open', severity: 'high', due_date: null, assigned_to_id: member.id, resolution: null, closed_at: null, value: 'investigating', recipients: [], watchers: [], reviewed_fingerprint: 'a'.repeat(64) };
+    mockGet.mockImplementation((url: string) => url === '/auth/me' ? Promise.resolve({ data: { id: member.id, email: member.email, role: member.role, org_id: 7, is_active: true } }) : url.endsWith('/status-review') ? Promise.resolve({ data: preview }) : base(url));
+    mockPost.mockResolvedValue({ status: 200, data: { success: true, case_id: 7, value: 'investigating', closed_at: null, reviewed_fingerprint: 'a'.repeat(64) } });
     renderDetail();
-    expect(await screen.findByText('Suspicious lateral movement')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Start investigating' }));
-    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith(
-      '/cases/7', null, { params: { status_update: 'investigating' } }
-    ));
+    fireEvent.click(await screen.findByRole('button', { name: 'Start investigating' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Review investigation status change' });
+    fireEvent.click(await within(dialog).findByRole('checkbox')); fireEvent.click(within(dialog).getByRole('button', { name: 'Apply reviewed status change' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/cases/7/status-reviewed', { value: 'investigating', reviewed_fingerprint: 'a'.repeat(64) }));
+    expect(mockPatch).not.toHaveBeenCalled();
   });
 
   it('shows owner controls to the owner', async () => {

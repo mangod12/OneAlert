@@ -1,3 +1,4 @@
+import { CaseStatusReview } from '../components/CaseStatusReview';
 import { CaseResolutionReview } from '../components/CaseResolutionReview';
 import { CaseDetailsReview } from '../components/CaseDetailsReview';
 import { CaseChangeReceipts } from '../components/CaseChangeReceipts';
@@ -129,7 +130,7 @@ export function CaseDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [degraded, setDegraded] = useState<string[]>([]);
-  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState<string | null>(null);
   const [pendingClose, setPendingClose] = useState<{ status: string; label: string } | null>(null);
   const [editingResolution, setEditingResolution] = useState(false);
   const [blastRadius, setBlastRadius] = useState<BlastRadius | null>(null);
@@ -190,19 +191,6 @@ export function CaseDetail() {
   const reviewPriority = (field: PriorityField, value: string) => {
     if (!caseData || priorityReview || (field === 'severity' ? caseData.severity : caseData.due_date ?? '') === value) return;
     setPriorityReview({ caseId: caseData.id, field, value });
-  };
-
-  const changeStatus = async (status: string, resolution?: string) => {
-    if (updatingStatus) return;
-    setUpdatingStatus(true);
-    try {
-      const params: Record<string, string> = { status_update: status };
-      if (resolution && resolution.trim()) params.resolution = resolution.trim();
-      await apiClient.patch(`/cases/${caseId}`, null, { params });
-      toast(`Case marked ${status}`, 'success');
-      await fetchAll();
-    } catch (err) { toast(getApiErrorMessage(err, 'Case status could not be updated.'), 'error'); }
-    finally { setUpdatingStatus(false); }
   };
 
   const addNote = async () => {
@@ -560,10 +548,10 @@ export function CaseDetail() {
                 <button
                   key={action.status}
                   type="button"
-                  disabled={updatingStatus}
+                  disabled={!!pendingStatus || !!pendingClose}
                   onClick={() => {
                     if (DONE_CASE_STATUSES.includes(action.status)) setPendingClose(action);
-                    else void changeStatus(action.status);
+                    else setPendingStatus(action.status);
                   }}
                   className="rounded-md border border-surface-700 px-3 py-1.5 text-xs font-medium text-surface-200 transition-colors hover:bg-surface-800 disabled:cursor-not-allowed disabled:opacity-40"
                 >
@@ -1068,6 +1056,8 @@ export function CaseDetail() {
 
       {priorityReview && priorityReview.caseId === caseData.id && <CasePriorityReview key={`priority-${priorityReview.caseId}:${priorityReview.field}:${priorityReview.value}`} caseId={priorityReview.caseId} field={priorityReview.field} value={priorityReview.value} onClose={() => { setPriorityReview(null); void fetchAll(); }} onSaved={() => { setPriorityReview(null); toast('Reviewed investigation priority updated.', 'success'); void fetchAll(); }} />}
       {assignmentReview && assignmentReview.caseId === caseData.id && <CaseListAssignmentReview key={`${assignmentReview.caseId}:${assignmentReview.targetId}`} caseIds={[assignmentReview.caseId]} targetId={assignmentReview.targetId} onClose={() => { setAssignmentReview(null); void fetchAll(); }} onChanged={() => { /* Keep confirmed outcomes mounted; closing reloads the full investigation. */ }} />}
+      {pendingStatus && <CaseStatusReview key={`${caseData.id}:${pendingStatus}`} caseId={caseData.id} value={pendingStatus} onClose={() => { setPendingStatus(null); void fetchAll(); }} onSaved={() => { setPendingStatus(null); toast('Reviewed investigation status updated.', 'success'); void fetchAll(); }} />}
+
       {pendingClose && <CaseCloseReview key={`${caseData.id}:${pendingClose.status}`} caseId={caseData.id} targetStatus={pendingClose.status} label={pendingClose.label} onClose={() => { setPendingClose(null); void fetchAll(); }} onSaved={() => { setPendingClose(null); toast(`Case marked ${pendingClose.status}`, 'success'); void fetchAll(); }} />}
 
       {pendingDeleteNote && (

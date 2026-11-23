@@ -1420,6 +1420,47 @@ async def update_case(
     }} if reviewed_fingerprint is not None else {})}
 
 
+class ReviewedCaseStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    value: Literal["open", "investigating"]
+    reviewed_fingerprint: StrictStr = Field(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")
+
+
+@router.get("/{case_id}/status-review")
+async def get_case_status_review(
+    case_id: int, value: Literal["open", "investigating"],
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_status_review import status_review
+    case = await _get_visible_case(db, case_id, current_user)
+    if current_user.id not in {case.user_id, case.assigned_to_id}:
+        raise HTTPException(status_code=403, detail="Only the owner or assignee can change investigation status")
+    return await status_review(db, case, current_user, value)
+
+
+@router.post("/{case_id}/status-reviewed")
+async def change_reviewed_case_status(
+    case_id: int, payload: ReviewedCaseStatus,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_status_review import status_review
+    case = (await db.execute(_visible_cases(case_id, current_user).with_for_update()
+                            .execution_options(populate_existing=True))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if current_user.id not in {case.user_id, case.assigned_to_id}:
+        raise HTTPException(status_code=403, detail="Only the owner or assignee can change investigation status")
+    preview = await status_review(db, case, current_user, payload.value, lock=True)
+    if not secrets.compare_digest(payload.reviewed_fingerprint, preview["reviewed_fingerprint"]):
+        raise HTTPException(status_code=409, detail="Investigation or watcher audience changed. Review status again.")
+    add_audit_log(db, user_id=current_user.id, action="case_status_reviewed", target_type="case", target_id=case.id,
+                  detail=f"Reviewed status change to {payload.value}; review {payload.reviewed_fingerprint}")
+    await update_case(case_id, status_update=payload.value, severity=None, title=None, summary=None,
+                      due_date=None, resolution=None, reviewed_fingerprint=None, current_user=current_user, db=db)
+    return {"success": True, "case_id": case_id, "value": payload.value,
+            "closed_at": case.closed_at, "reviewed_fingerprint": payload.reviewed_fingerprint}
+
+
 class CaseResolutionProposal(BaseModel):
     model_config = ConfigDict(extra="forbid")
     resolution: StrictStr = Field(max_length=20000)
