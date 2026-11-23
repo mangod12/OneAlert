@@ -42,3 +42,31 @@ it('does not infer an exact task match from a missing record', () => {
   expect(screen.getByRole('alert').textContent).toContain('not in this loaded investigation checklist');
   expect(screen.queryByRole('button', { name: 'Show linked task #99' })).toBeNull();
 });
+
+it('summarizes whole loaded workload and drills into exact open assignee scope from any page or filters', () => {
+  render(<ChecklistTriage {...props}>{row}</ChecklistTriage>);
+  expect(screen.getByRole('list', { name: 'Assignee checklist workload' }).textContent).toContain('Reviewer (#5)');
+  expect(screen.getByRole('list', { name: 'Assignee checklist workload' }).textContent).toContain('11 open · 0 completed · 11 total');
+  fireEvent.click(screen.getByRole('button', { name: 'Next task page' }));
+  fireEvent.change(screen.getByLabelText('Search investigation task titles'), { target: { value: 'nothing' } });
+  fireEvent.click(screen.getByText('Show open tasks: Reviewer (#5)'));
+  expect((screen.getByLabelText('Filter checklist task status') as HTMLInputElement).value).toBe('open');
+  expect((screen.getByLabelText('Filter checklist assignee') as HTMLInputElement).value).toBe('5');
+  expect((screen.getByLabelText('Search investigation task titles') as HTMLInputElement).value).toBe('');
+  expect((screen.getByLabelText('Filter checklist due date') as HTMLInputElement).value).toBe('all');
+  expect((screen.getByLabelText('Sort investigation tasks') as HTMLInputElement).value).toBe('due');
+  expect(screen.getByText('Task 2')).toBeTruthy(); expect(screen.queryByText('Task 1')).toBeNull();
+  expect(screen.getByText(/Page 1 of 1/)).toBeTruthy();
+});
+it('drills into unassigned open tasks without conflating completed tasks or missing members', () => {
+  render(<ChecklistTriage {...props} tasks={[...tasks, { ...tasks[0], id: 99, assignee_id: 99 }]}>{row}</ChecklistTriage>);
+  expect((screen.getByText('Show open tasks: Member (#99)') as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByText('Show open tasks: Unassigned'));
+  expect((screen.getByLabelText('Filter checklist assignee') as HTMLInputElement).value).toBe('unassigned');
+  expect(screen.queryByText('Task 1')).toBeNull(); expect(screen.getByText('Task 3')).toBeTruthy();
+});
+it('labels date buckets unknown when local date is not usable', () => {
+  render(<ChecklistTriage {...props} today="">{row}</ChecklistTriage>);
+  expect(screen.getByText(/local date is unavailable/)).toBeTruthy();
+  expect(screen.getAllByText(/Date-based counts unknown/)).toHaveLength(2);
+});
