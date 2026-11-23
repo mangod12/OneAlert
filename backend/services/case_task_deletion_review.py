@@ -9,8 +9,9 @@ from backend.models.case import CaseTask, CaseWatcher
 from backend.models.user import User
 
 
-async def task_deletion_review(db, case, actor, task_id, *, lock=False):
-    if actor.id not in {case.user_id, case.assigned_to_id}:
+async def task_deletion_review(db, case, actor, task_id, *, lock=False, allow_assigned=False):
+    manager = actor.id in {case.user_id, case.assigned_to_id}
+    if not manager and not allow_assigned:
         raise HTTPException(status_code=403, detail='Only checklist managers may delete a task')
     query = select(CaseTask).where(CaseTask.id == task_id, CaseTask.case_id == case.id)
     if lock:
@@ -18,6 +19,8 @@ async def task_deletion_review(db, case, actor, task_id, *, lock=False):
     task = (await db.execute(query)).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=409, detail='This exact task is no longer present')
+    if not manager and task.assignee_id != actor.id:
+        raise HTTPException(status_code=403, detail='You can only edit tasks currently assigned to you')
     person, tasks, watched = None, [], False
     if task.assignee_id is not None:
         query = select(User).where(User.id == task.assignee_id)
