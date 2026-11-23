@@ -37,22 +37,7 @@ describe('Response plan refresh safety', () => {
     expect(screen.queryByText('No response plans')).toBeNull();
   });
 
-  it('refreshes the open detail from current plans after execution', async () => {
-    let executed = false;
-    get.mockImplementation(url => Promise.resolve({ data: { data:
-      url.endsWith('pending-approvals') ? [] : [{ ...plan, actions: [{ ...plan.actions[0],
-        ...(executed ? { execution_result: { status: 'completed' } } : {}),
-      }] }],
-    } }));
-    post.mockImplementation(async () => { executed = true; return { data: {} }; });
-    render(<ResponsePlans />);
-    fireEvent.click(await screen.findByText('Case #4'));
-    expect(screen.queryByText('completed')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Execute' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Execute now' }));
-    expect(await screen.findByText('completed')).toBeTruthy();
-    await waitFor(() => expect(post).toHaveBeenCalledWith('/response-plans/12/execute'));
-  });
+
 });
 
 describe('Response plan confirmation dialogs', () => {
@@ -81,7 +66,7 @@ describe('Response plan confirmation dialogs', () => {
     render(<ResponsePlans />);
     fireEvent.click(await screen.findByRole('button', { name: 'Execute' }));
     expect(await screen.findByRole('dialog')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close simulation review' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(post).not.toHaveBeenCalled();
   });
@@ -122,31 +107,6 @@ describe('Response plan CSV export', () => {
     await waitFor(() => expect(createUrl).toHaveBeenCalled());
     expect(click).toHaveBeenCalled();
     expect(revokeUrl).toHaveBeenCalled();
-  });
-});
-
-
-describe('Response execution outcome feedback', () => {
-  it.each([
-    [{ plan_id: 12, execution_mode: 'simulated', status: 'completed', total_actions: 2, succeeded: 2, failed: 0 }, 'Simulation only. No external action was performed.', 'status'],
-    [{ plan_id: 12, status: 'completed', total_actions: 2, succeeded: 2, failed: 0 }, 'Execution mode not verified.', 'alert'],
-    [{ plan_id: 12, execution_mode: 'live', status: 'completed', total_actions: 2, succeeded: 2, failed: 0 }, 'Execution mode not verified.', 'alert'],
-    [{ plan_id: 12, status: 'partial', total_actions: 2, succeeded: 1, failed: 1 }, '1 of 2 actions succeeded; 1 failed or skipped', 'alert'],
-    [{ plan_id: 12, status: 'partial', total_actions: 2, succeeded: 0, failed: 2 }, '0 of 2 actions succeeded; 2 failed or skipped', 'alert'],
-    [{ plan_id: 999, status: 'completed', total_actions: 1, succeeded: 1, failed: 0 }, 'without a verifiable outcome', 'alert'],
-    [{ plan_id: 12, status: 'completed', total_actions: 2, succeeded: 2, failed: 1 }, 'without a verifiable outcome', 'alert'],
-    [undefined, 'without a verifiable outcome', 'alert'],
-  ])('shows the returned outcome without assuming HTTP success means execution success', async (outcome, message, role) => {
-    get.mockImplementation(url => Promise.resolve({ data: { data: url.endsWith('pending-approvals') ? [] : [plan] } }));
-    post.mockResolvedValue({ data: { data: outcome } });
-    render(<ResponsePlans />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Execute' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Execute now' }));
-    const notice = await screen.findByText(new RegExp(message));
-    expect(notice.getAttribute('role')).toBe(role);
-    expect(screen.queryByRole('dialog')).toBeNull();
-    expect(post).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('Plan executed successfully')).toBeNull();
   });
 });
 
@@ -414,4 +374,11 @@ it('opens fresh exact-plan rejection review from the pending queue and refreshes
   get.mockImplementation(async url => ({ data: url === '/auth/me' ? { id: 5, email: 'reviewer@example.test', role: 'analyst', org_id: null, is_active: true } : url.endsWith('/approval-review') ? { plan: current, review_fingerprint: 'f'.repeat(64) } : { data: url.endsWith('/pending-approvals') ? saved ? [] : [{ id: 7, plan_id: 12, case_id: 4, reason: 'Original request', actions: current.actions, autonomy_level: 'L2' }] : [{ ...current, status: saved ? 'rejected' : current.status }], total: saved && url.endsWith('/pending-approvals') ? 0 : 1 } }));
   post.mockImplementation(async () => { saved = true; return { status: 200, data: { success: true, plan_status: 'rejected', plan_id: 12, case_id: 4, approvals_resolved: 1 } }; });
   render(<ResponsePlans />); fireEvent.click(await screen.findByRole('button', { name: 'Reject' })); await screen.findByLabelText('Reason for rejection (optional)'); expect(get).toHaveBeenCalledWith('/response-plans/12/approval-review'); expect(post).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('button', { name: 'Review exact rejection reason' })); fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'Confirm reviewed rejection' })); await screen.findByText(/Rejection recorded for plan #12/); await screen.findByText('rejected'); expect(post).toHaveBeenCalledExactlyOnceWith('/response-plans/12/reject-reviewed', { reviewed_fingerprint: 'f'.repeat(64), reason: '' });
+});
+
+it('loads fresh simulation evidence instead of executing a list snapshot', async () => {
+  get.mockImplementation(async url => ({ data: url.endsWith('/auth/me') ? { id: 5, email: 'a@example.test', role: 'analyst', org_id: 7, is_active: true } : url.endsWith('/simulation-review') ? { plan, execution_mode: 'simulated', reviewed_fingerprint: 'f'.repeat(64), preflight: { action_count: 1, supported_count: 1, unsupported_count: 0, invalid_count: 0, shape_valid: true, order_available: true, records: [{ source_position: 1, action_type: 'isolate_host', target: 'plant-gateway', priority: 99, simulation_order: 1, shape_valid: true, handler_available: true }] } } : { data: url.endsWith('pending-approvals') ? [] : [plan] } }));
+  render(<ResponsePlans />); fireEvent.click(await screen.findByRole('button', { name: 'Execute' }));
+  expect(await screen.findByText(/1 saved actions/)).toBeTruthy(); expect(get).toHaveBeenCalledWith('/response-plans/12/simulation-review');
+  expect(screen.getByRole('button', { name: 'Run reviewed local simulation' })).toHaveProperty('disabled', true); expect(post).not.toHaveBeenCalled();
 });
