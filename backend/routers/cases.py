@@ -852,6 +852,39 @@ async def update_case_note(
     return entry
 
 
+@router.get("/{case_id}/notes/{entry_id}/deletion-review")
+async def preview_case_note_deletion(
+    case_id: int, entry_id: int, current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_note_edit_review import note_edit_review
+    case = (await db.execute(select(Case).where(
+        Case.id == case_id, Case.user_id == current_user.id))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return await note_edit_review(db, case, current_user, entry_id, "DELETE TIMELINE NOTE")
+
+
+@router.delete("/{case_id}/notes/{entry_id}/reviewed", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_reviewed_case_note(
+    case_id: int, entry_id: int,
+    reviewed_fingerprint: str = Query(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$"),
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_note_edit_review import note_edit_review
+    case = (await db.execute(select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+        .with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    preview = await note_edit_review(db, case, current_user, entry_id, "DELETE TIMELINE NOTE", lock=True)
+    if not secrets.compare_digest(reviewed_fingerprint, preview["reviewed_fingerprint"]):
+        raise HTTPException(status_code=409, detail="Saved note or investigation changed. Review again.")
+    add_audit_log(db, user_id=current_user.id, action="case_note_deletion_reviewed",
+                  target_type="case", target_id=case.id,
+                  detail=f"Reviewed note deletion {entry_id}; review {reviewed_fingerprint}")
+    await delete_case_note(case_id, entry_id, current_user, db)
+
+
 @router.delete("/{case_id}/notes/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_case_note(
     case_id: int,
