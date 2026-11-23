@@ -1,3 +1,4 @@
+import { checklistOutcomeCsv, checklistOutcomeReceipt, type ChecklistOutcomeReceipt } from '../utils/checklistOutcomeReceipt';
 import { useDialogFocus } from './ui/useDialogFocus';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import apiClient from '../api/client';
@@ -14,6 +15,7 @@ export function ChecklistBatchTools({ readOnly = false, caseId, tasks, members, 
   const [review, setReview] = useState<{ tasks: BatchTask[]; patch: ChecklistPatch; label: string; rows: ReviewedBatchTask[]; account: ReturnType<typeof checkedTaskAccount> } | null>(null);
   const [busy, setBusy] = useState(false), [notice, setNotice] = useState(''), [errors, setErrors] = useState<Record<number, string>>({});
   const lock = useRef(false), mounted = useRef(true);
+  const [receipt, setReceipt] = useState<ChecklistOutcomeReceipt | null>(null);
   const [stopped, setStopped] = useState(false);
   const version = useRef(0);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -44,18 +46,20 @@ export function ChecklistBatchTools({ readOnly = false, caseId, tasks, members, 
   const apply = async () => {
     if (readOnly || !review || lock.current || externalBusy) return;
     lock.current = true; setBusy(true); onBusyChange(true); setNotice(''); setErrors({});
-    const snapshot = review, saved: BatchTask[] = [], failures: Record<number, string> = {};
+    const snapshot = review, saved: BatchTask[] = [], failures: Record<number, string> = {}, attempted = new Set<number>();
     const started = version.current;
     try {
       const account = checkedTaskAccount((await apiClient.get('/auth/me')).data);
       if (JSON.stringify(account) !== JSON.stringify(snapshot.account)) throw Error('Account changed');
       for (const row of snapshot.rows) {
         if (!mounted.current || version.current !== started) break;
+        attempted.add(row.task.id);
         try { saved.push(await saveReviewedBatchTask(row, caseId)); }
         catch { failures[row.task.id] = 'Change unconfirmed and may already have applied. No retry or further task saves were sent. Reload the investigation to verify.'; break; }
       }
     } catch { failures[snapshot.tasks[0].id] = 'The acting account changed or could not be verified. No task saves were sent.'; }
     if (mounted.current) {
+      setReceipt(checklistOutcomeReceipt(caseId, snapshot.account, snapshot.label, snapshot.tasks, saved, attempted, new Date().toISOString()));
       onSaved(saved);
       setSelected(current => new Set([...current].filter(id => !saved.some(task => task.id === id))));
       setStopped(Object.keys(failures).length > 0); setErrors(failures); setNotice(`Confirmed changes for ${saved.length} of ${snapshot.tasks.length} reviewed tasks. ${Object.keys(failures).length ? 'Stopped at an unconfirmed change. Remaining tasks were not attempted. Reload the checklist before another review.' : 'No investigation status or response plan was changed. Reload the investigation to refresh its timeline.'}`);
@@ -76,6 +80,7 @@ export function ChecklistBatchTools({ readOnly = false, caseId, tasks, members, 
           <button type="button" className={control} disabled={blocked || !valid || !assignmentValid} onClick={() => void prepare()}>Review selected checklist change</button>
         </div>
       </>}
+      {receipt && <section aria-label="Reviewed checklist save receipt" className="space-y-3 rounded border border-surface-700 p-3 [overflow-wrap:anywhere]"><h4 className="text-sm font-semibold">Checklist save receipt</h4><p className="text-xs">Investigation #{receipt.caseId} · {receipt.action} · Acting account #{receipt.account.id}: {receipt.account.email} · Recorded {receipt.recordedAt}</p><p className="text-xs text-warning">This records local save responses, not current state, complete audit history, notification delivery or remediation. Unconfirmed changes may already have applied. Not attempted means this batch sent no save for that task. The receipt lasts only in this open workspace; export before leaving if you need a copy.</p><ul aria-label="Task save outcomes" className="max-h-72 space-y-2 overflow-y-auto text-sm">{receipt.rows.map(row => <li key={row.id} className="rounded border border-surface-700 p-2">#{row.id}: {row.title} · {row.outcome === 'confirmed' ? 'Confirmed' : row.outcome === 'unconfirmed' ? 'Unconfirmed, may have applied' : 'Not attempted'}{row.after && <p className="text-xs">Confirmed response: {row.after.done ? 'Completed' : 'Open'} · Due {row.after.due_date ?? 'not set'} · {row.after.assignee_id === null ? 'Unassigned' : `Assignee #${row.after.assignee_id}`}</p>}</li>)}</ul><button className={control} disabled={busy} onClick={() => { const blob = new Blob([checklistOutcomeCsv(receipt)], { type: 'text/csv;charset=utf-8' }); const url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = `investigation-${receipt.caseId}-checklist-save-receipt.csv`; link.click(); URL.revokeObjectURL(url); }}>Export checklist save receipt CSV</button></section>}
       {notice && <p role={Object.keys(errors).length ? 'alert' : 'status'} className="text-sm text-surface-200">{notice}</p>}
       {notice && onRefresh && <button type="button" className={control} disabled={busy || externalBusy} onClick={() => { setSelected(new Set()); setReview(null); setStopped(false); setNotice(''); setErrors({}); onRefresh(); }}>Reload investigation to verify results (clears selection)</button>}
       {Object.keys(errors).length > 0 && <ul className="space-y-1 text-xs text-danger">{Object.entries(errors).map(([id, error]) => <li key={id}>Task #{id}: {error}</li>)}</ul>}
