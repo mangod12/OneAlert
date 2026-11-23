@@ -84,41 +84,6 @@ describe('Response plan confirmation dialogs', () => {
     expect(screen.queryByRole('button', { name: /Delete plan/ })).toBeNull();
   });
 
-  it('sends the typed reason when rejecting a plan', async () => {
-    mockLoad();
-    post.mockResolvedValue({ data: {} });
-    render(<ResponsePlans />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.change(screen.getByLabelText('Reason for rejection (optional)'), {
-      target: { value: 'Freeze window conflict' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Reject plan' }));
-    await waitFor(() => expect(post).toHaveBeenCalledWith('/response-plans/12/reject', { reason: 'Freeze window conflict' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(dialog).toBeTruthy();
-  });
-
-  it('falls back to a default reason when none is typed', async () => {
-    mockLoad();
-    post.mockResolvedValue({ data: {} });
-    render(<ResponsePlans />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Reject plan' }));
-    await waitFor(() => expect(post).toHaveBeenCalledWith('/response-plans/12/reject', { reason: 'Manual rejection' }));
-  });
-
-  it('closes on Escape without calling the API', async () => {
-    mockLoad();
-    post.mockResolvedValue({ data: {} });
-    render(<ResponsePlans />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
-    expect(await screen.findByRole('dialog')).toBeTruthy();
-    fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(post).not.toHaveBeenCalled();
-  });
-
   it('cancelling the execute dialog leaves the plan untouched', async () => {
     mockLoad('approved');
     post.mockResolvedValue({ data: {} });
@@ -448,4 +413,10 @@ it('renders structured legacy action values without crashing or inventing priori
   expect(screen.getByText('Position 1, recorded priority: 0')).toBeTruthy();
   expect(screen.getByText('Position 2, recorded priority: Not recorded')).toBeTruthy();
   expect(screen.getAllByText(JSON.stringify(unusual)).length).toBeGreaterThan(3);
+});
+it('opens fresh exact-plan rejection review from the pending queue and refreshes after verified rejection', async () => {
+  const current = { ...plan, status: 'pending_approval' }; let saved = false;
+  get.mockImplementation(async url => ({ data: url === '/auth/me' ? { id: 5, email: 'reviewer@example.test', role: 'analyst', org_id: null, is_active: true } : url.endsWith('/approval-review') ? { plan: current, review_fingerprint: 'f'.repeat(64) } : { data: url.endsWith('/pending-approvals') ? saved ? [] : [{ id: 7, plan_id: 12, case_id: 4, reason: 'Original request', actions: current.actions, autonomy_level: 'L2' }] : [{ ...current, status: saved ? 'rejected' : current.status }], total: saved && url.endsWith('/pending-approvals') ? 0 : 1 } }));
+  post.mockImplementation(async () => { saved = true; return { status: 200, data: { success: true, plan_status: 'rejected', plan_id: 12, case_id: 4, approvals_resolved: 1 } }; });
+  render(<ResponsePlans />); fireEvent.click(await screen.findByRole('button', { name: 'Reject' })); await screen.findByLabelText('Reason for rejection (optional)'); expect(get).toHaveBeenCalledWith('/response-plans/12/approval-review'); expect(post).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('button', { name: 'Review exact rejection reason' })); fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'Confirm reviewed rejection' })); await screen.findByText(/Rejection recorded for plan #12/); await screen.findByText('rejected'); expect(post).toHaveBeenCalledExactlyOnceWith('/response-plans/12/reject-reviewed', { reviewed_fingerprint: 'f'.repeat(64), reason: '' });
 });
