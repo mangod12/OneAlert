@@ -333,20 +333,17 @@ describe('Case bulk actions', () => {
     expect(mockPatch).not.toHaveBeenCalled(); expect(screen.getByRole('button', { name: 'Apply reviewed close-out statuses' })).toHaveProperty('disabled', true);
   });
 
-  it('assigns selected investigations to an organization member', async () => {
-    mockGet.mockImplementation((url: string) => Promise.resolve(
-      url === '/orgs/me/members'
-        ? { data: [{ id: 5, email: 'priya@example.com', is_active: true }] }
-        : { data: { cases: twoCases(), total: 2 } }
-    ));
-    renderCases();
-    await selectAll();
-    fireEvent.change(screen.getByLabelText('Assign selected investigations'), { target: { value: '5' } });
-    await waitFor(() => {
-      expect(mockPost).toHaveBeenCalledWith('/cases/1/assign', { user_id: 5 });
-      expect(mockPost).toHaveBeenCalledWith('/cases/2/assign', { user_id: 5 });
+  it('reviews exact recipients before selected investigation assignment', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/orgs/me/members') return { data: [{ id: 5, email: 'priya@example.com', is_active: true }] };
+      if (url === '/auth/me') return { data: { id: 1, email: 'owner@example.test', role: 'analyst', org_id: 7, is_active: true } };
+      if (url.endsWith('/assignment-review')) { const id = Number(url.split('/')[2]); return { data: { case_id: id, owner_id: 1, title: `Fresh ${id}`, summary: null, status: 'open', severity: 'high', due_date: null, current_assignee_id: null, current_assignee: null, target_id: 5, target: { id: 5, email: 'priya@example.com', full_name: 'Priya', role: 'analyst', org_id: 7, is_active: true }, owner: { id: 1, email: 'owner@example.test', full_name: null, role: 'analyst', org_id: 7, is_active: true }, reviewed_fingerprint: 'f'.repeat(64) } }; }
+      return { data: { cases: twoCases(), total: 2 } };
     });
-    await waitFor(() => expect(mockToast).toHaveBeenCalledWith('2 investigations assigned to priya@example.com.', 'success'));
+    renderCases(); await selectAll();
+    fireEvent.change(screen.getByLabelText('Assign selected investigations'), { target: { value: '5' } });
+    expect(await screen.findByText('Investigation #1: Fresh 1')).toBeTruthy(); expect(mockPost).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Apply reviewed assignments' })).toHaveProperty('disabled', true);
   });
 
   it('watches selected investigations with one POST per case', async () => {

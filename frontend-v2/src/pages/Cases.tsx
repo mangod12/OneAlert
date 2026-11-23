@@ -1,3 +1,4 @@
+import { CaseListAssignmentReview } from '../components/CaseListAssignmentReview';
 import { CaseListCloseReview } from '../components/CaseListCloseReview';
 import { RecordedRunLinks } from '../components/RecordedRunLinks';
 import { TriageCorrelationPreview } from '../components/TriageCorrelationPreview';
@@ -68,6 +69,7 @@ interface PipelineResult {
 const CASE_STATUSES = ['open', 'investigating', 'resolved', 'closed'] as const;
 
 export function Cases() {
+  const [assignmentReview, setAssignmentReview] = useState<{ ids: number[]; targetId: number | null } | null>(null);
   const [closeReview, setCloseReview] = useState<{ ids: number[]; target: string } | null>(null);
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
@@ -272,20 +274,10 @@ export function Cases() {
     setSelectedIds(allVisibleSelected ? new Set() : new Set(cases.map(c => c.id)));
   };
 
-  const handleBulkAssign = async (value: string) => {
+  const handleBulkAssign = (value: string) => {
     if (value === '' || bulkBusy) return;
-    const assigneeId = value === 'none' ? null : Number(value);
-    const member = members.find(m => m.id === assigneeId) ?? null;
     const ids = visibleSelected();
-    if (ids.length === 0) return;
-    setBulkBusy(true);
-    setPendingIds(current => new Set([...current, ...ids]));
-    const results = await Promise.allSettled(ids.map(id => apiClient.post(`/cases/${id}/assign`, { user_id: assigneeId })));
-    setBulkBusy(false);
-    const target = member ? member.email : 'Unassigned';
-    await finishBulk(ids, results,
-      assigneeId === null ? `${ids.length} investigations unassigned.` : `${ids.length} investigations assigned to ${target}.`,
-      'investigations could not be assigned and remain selected.');
+    if (ids.length) setAssignmentReview({ ids, targetId: value === 'none' ? null : Number(value) });
   };
 
   const handleBulkStatus = async (status: string) => {
@@ -717,6 +709,7 @@ export function Cases() {
         />
       )}
 
+      {assignmentReview && <CaseListAssignmentReview caseIds={assignmentReview.ids} targetId={assignmentReview.targetId} onClose={() => { setAssignmentReview(null); void fetchCases(); }} onChanged={ids => { setSelectedIds(current => new Set([...current].filter(id => !ids.includes(id)))); void fetchCases(); }} />}
       {closeReview && <CaseListCloseReview caseIds={closeReview.ids} targetStatus={closeReview.target} onClose={() => { setCloseReview(null); void fetchCases(); }} onChanged={ids => { setSelectedIds(current => new Set([...current].filter(id => !ids.includes(id)))); void fetchCases(); }} />}
       {confirmBulkDelete && (
         <ConfirmDialog
