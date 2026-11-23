@@ -1167,6 +1167,9 @@ async def seed_case_tasks_from_plan(
 async def get_case_change_receipts(
     case_id: int, page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=50),
     category: Literal["all", "assignment", "priority", "other"] = "all",
+    search: str = Query("", max_length=200),
+    from_date: date | None = None, through_date: date | None = None,
+
     current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
 ):
     from backend.models.audit_log import AuditLog
@@ -1181,12 +1184,27 @@ async def get_case_change_receipts(
         conditions.append(AuditLog.action == known[category])
     elif category == "other":
         conditions.append(AuditLog.action.notin_(list(known.values())))
+    search = search.strip()
+    if from_date is not None and through_date is not None and from_date > through_date:
+        raise HTTPException(status_code=422, detail="The receipt start date must not follow its end date")
+    if search:
+        conditions.append(or_(AuditLog.action.icontains(search, autoescape=True),
+                              AuditLog.detail.icontains(search, autoescape=True)))
+    if from_date is not None:
+        conditions.append(AuditLog.timestamp >= datetime.combine(from_date, datetime.min.time(), tzinfo=UTC))
+    if through_date is not None:
+        from datetime import timedelta
+        if through_date == date.max:
+            raise HTTPException(status_code=422, detail="Choose an end date before year 9999 ends")
+        conditions.append(AuditLog.timestamp < datetime.combine(
+            through_date + timedelta(days=1), datetime.min.time(), tzinfo=UTC))
     total = (await db.execute(select(func.count()).select_from(AuditLog).where(*conditions))).scalar_one()
     rows = (await db.execute(select(AuditLog).where(*conditions).order_by(
         AuditLog.timestamp.desc(), AuditLog.id.desc(),
     ).offset((page - 1) * size).limit(size))).scalars().all()
     return {"case_id": case.id, "case_title": case.title, "category": category, "page": page, "size": size,
-            "total": total, "retrieved_at": datetime.now(UTC), "records": [
+            "total": total, "search": search, "from_date": from_date, "through_date": through_date,
+            "retrieved_at": datetime.now(UTC), "records": [
                 {"id": row.id, "action": row.action, "detail": row.detail, "timestamp": row.timestamp,
                  "actor_id": row.user_id} for row in rows]}
 
