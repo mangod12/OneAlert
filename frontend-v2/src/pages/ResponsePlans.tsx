@@ -1,4 +1,5 @@
 import { recordedValueText } from '../utils/recordedValueText';
+import { ResponsePlanRemovalReview } from '../components/ResponsePlanRemovalReview';
 import { ResponseRejectionReview } from '../components/ResponseRejectionReview';
 import { ResponseDraftApproval } from '../components/ResponseDraftApproval';
 import { useSearchParams } from 'react-router-dom';
@@ -216,19 +217,6 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
       setConfirmAction(null);
       await fetchPlans();
     } catch (err) { toast(getApiErrorMessage(err, 'Execution failed.'), 'error'); }
-    finally { setWorkingPlan(null); }
-  };
-
-  const deletePlan = async (planId: number) => {
-    if (workingPlan !== null) return;
-    setWorkingPlan(planId);
-    try {
-      await apiClient.delete(`/response-plans/${planId}`);
-      toast('Plan deleted', 'success');
-      setConfirmAction(null);
-      if (selectedPlanId === planId) setSelectedPlanId(null);
-      await fetchPlans();
-    } catch (err) { toast(getApiErrorMessage(err, 'Failed to delete plan.'), 'error'); }
     finally { setWorkingPlan(null); }
   };
 
@@ -464,17 +452,7 @@ export function ResponsePlans({ linkedPlanId = null, compareFrom = null, compare
           onConfirm={() => void executePlan(confirmAction.planId)}
         />
       )}
-      {confirmAction?.type === 'delete' && (
-        <ConfirmDialog
-          title={`Delete plan #${confirmAction.planId}?`}
-          description="This permanently removes the draft or rejected plan and its approval history. This cannot be undone."
-          confirmLabel="Delete plan"
-          tone="danger"
-          busy={workingPlan !== null}
-          onCancel={() => setConfirmAction(null)}
-          onConfirm={() => void deletePlan(confirmAction.planId)}
-        />
-      )}
+      {confirmAction?.type === 'delete' && <ResponsePlanRemovalReview key={confirmAction.planId} planId={confirmAction.planId} onCancel={() => setConfirmAction(null)} onDeleted={() => { setSelectedPlanId(null); setEvidenceVersion(value => value + 1); void fetchPlans(); }} />}
       {confirmAction?.type === 'reject' && <ResponseRejectionReview key={confirmAction.planId} planId={confirmAction.planId} onCancel={() => setConfirmAction(null)} onRejected={() => { setEvidenceVersion(value => value + 1); void fetchPlans(); }} />}
     </div>
   );

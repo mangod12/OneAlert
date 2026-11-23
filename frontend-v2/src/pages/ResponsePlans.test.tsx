@@ -68,15 +68,6 @@ describe('Response plan confirmation dialogs', () => {
     } }));
   };
 
-  it('deletes a draft plan after confirmation', async () => {
-    mockLoad('draft');
-    del.mockResolvedValue({ data: {} });
-    render(<ResponsePlans />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete plan 12' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete plan' }));
-    await waitFor(() => expect(del).toHaveBeenCalledWith('/response-plans/12'));
-  });
-
   it('shows no delete button for a completed plan', async () => {
     mockLoad('completed');
     render(<ResponsePlans />);
@@ -205,16 +196,20 @@ describe('Response plan pagination', () => {
   it('returns to the last existing page when the current final page disappears', async () => {
     let count = 21;
     get.mockImplementation(async (url, config) => {
+      if (url === '/auth/me') return { data: { id: 5, email: 'reviewer@example.test', role: 'analyst', org_id: null, is_active: true } };
+      if (url.endsWith('/deletion-review')) return { data: { plan: { ...plan, status: 'draft' }, approval_count: 0, approval_status_counts: {}, deletion_fingerprint: 'f'.repeat(64) } };
       if (url.endsWith('pending-approvals')) return { data: { data: [] } };
       const page = (config?.params as { page: number }).page;
       return { data: { data: count === 20 && page === 2 ? [] : [{ ...plan, status: 'draft' }], total: count } };
     });
-    del.mockImplementation(async () => { count = 20; return { data: {} }; });
+    post.mockImplementation(async () => { count = 20; return { status: 200, data: { success: true, deleted: true, plan_id: 12, case_id: 4, approvals_deleted: 0 } }; });
     render(<ResponsePlans />);
     fireEvent.click(await screen.findByRole('button', { name: 'Next plans' }));
     await screen.findByText('Showing 21–21 of 21 matching plans · Page 2 of 2');
     fireEvent.click(screen.getByRole('button', { name: 'Delete plan 12' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete plan' }));
+    fireEvent.change(await screen.findByLabelText('Type DELETE 12'), { target: { value: 'DELETE 12' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Permanently remove reviewed plan' }));
     expect(await screen.findByText('Showing 1–20 of 20 matching plans · Page 1 of 1')).toBeTruthy();
   });
 });
