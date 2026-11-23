@@ -66,6 +66,7 @@ from backend.routers.detection_window_events import router as detection_window_e
 from backend.routers.triage_correlation import router as triage_correlation_router
 from backend.routers.triage_intake import router as triage_intake_router
 from backend.services.audit import add_audit_log
+from backend.services.case_task_completion_review import TaskCompletionProposal
 from backend.services.case_task_due_review import TaskDueProposal
 from backend.services.case_task_title_review import TaskTitleProposal
 from backend.services.case_visibility import visible_cases
@@ -1102,6 +1103,32 @@ async def update_case_task(
     await db.commit()
     await db.refresh(task)
     return task
+
+
+@router.post("/{case_id}/tasks/{task_id}/completion-review")
+async def preview_case_task_completion(
+    case_id: int, task_id: int, payload: TaskCompletionProposal,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_task_completion_review import task_completion_review
+    case = await _get_visible_case(db, case_id, current_user)
+    return await task_completion_review(db, case, current_user, task_id, payload.done)
+
+
+@router.patch("/{case_id}/tasks/{task_id}/completion-reviewed", response_model=CaseTaskResponse)
+async def update_reviewed_case_task_completion(
+    case_id: int, task_id: int, payload: TaskCompletionProposal,
+    reviewed_fingerprint: str = Query(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$"),
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_task_completion_review import task_completion_review
+    case = await _get_visible_case(db, case_id, current_user, write=True)
+    preview = await task_completion_review(db, case, current_user, task_id, payload.done, lock=True)
+    if not secrets.compare_digest(reviewed_fingerprint, preview["reviewed_fingerprint"]):
+        raise HTTPException(status_code=409, detail="Task, account or proposed completion changed. Review again.")
+    add_audit_log(db, user_id=current_user.id, action="case_task_completion_reviewed", target_type="case",
+                  target_id=case.id, detail=f"Reviewed completion task {task_id}; review {reviewed_fingerprint}")
+    return await update_case_task(case_id, task_id, CaseTaskUpdate(done=payload.done), current_user, db)
 
 
 @router.post("/{case_id}/tasks/{task_id}/due-review")

@@ -874,20 +874,11 @@ describe('Investigation tasks', () => {
     expect(screen.getByText('1 of 2 done')).toBeTruthy();
   });
 
-  it('completes an open task from the checklist', async () => {
-    mockLoadWithTasks(tasks);
-    mockPatch.mockResolvedValue({ data: { ...tasks[1], done: true } });
-    renderDetail();
-    fireEvent.click(await screen.findByRole('button', { name: 'Complete task Collect triage image' }));
-    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/2', { done: true }));
-  });
-
-  it('reopens a completed task from the checklist', async () => {
-    mockLoadWithTasks(tasks);
-    mockPatch.mockResolvedValue({ data: { ...tasks[0], done: false } });
-    renderDetail();
-    fireEvent.click(await screen.findByRole('button', { name: 'Reopen task Contain the host' }));
-    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/1', { done: false }));
+  it.each([true, false])('reviews exact task completion before saving %s', async done => {
+    const task = { ...tasks[done ? 1 : 0], assignee_id: null, due_date: null }; mockLoadWithTasks([task]); const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation(async url => url === '/auth/me' ? { data: { id: 5, email: 'owner@example.com', role: 'analyst', org_id: null, is_active: true } } : base(url));
+    mockPost.mockResolvedValue({ data: { case_id: 7, owner_id: 5, assigned_to_id: null, title: 'Fresh completion review', status: 'open', severity: 'high', task, assignee: null, retained_access_reasons: [], other_assigned_tasks: [], proposed_done: done, reviewed_fingerprint: 'a'.repeat(64) } });
+    mockPatch.mockResolvedValue({ status: 200, data: { ...task, case_id: 7, done } }); renderDetail(); fireEvent.click(await screen.findByRole('button', { name: `${done ? 'Complete' : 'Reopen'} task ${task.title}` })); await screen.findByText('Proposed completion state:'); expect(mockPatch).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed this exact task completion/ })); fireEvent.click(screen.getByRole('button', { name: 'Save reviewed task completion' })); await waitFor(() => expect(mockPatch).toHaveBeenCalledWith(`/cases/7/tasks/${task.id}/completion-reviewed`, { done }, { params: { reviewed_fingerprint: 'a'.repeat(64) } })); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('adds a new task from the input', async () => {
@@ -1206,7 +1197,7 @@ describe('Checklist permissions', () => {
     expect(screen.getByLabelText(`Due date for task ${other.title}`)).toHaveProperty('disabled', true);
     expect(screen.getByRole('button', { name: `Edit task ${mine.title}` })).toHaveProperty('disabled', true);
     expect(screen.getByLabelText(`Assign task ${mine.title}`)).toHaveProperty('disabled', true);
-    fireEvent.click(screen.getByRole('button', { name: `Complete task ${mine.title}` })); await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/101', { done: true }));
+    fireEvent.click(screen.getByRole('button', { name: `Complete task ${mine.title}` })); await screen.findByText('Review exact checklist completion change'); expect(mockPatch).not.toHaveBeenCalled();
   });
   it('preserves full checklist management for the investigation assignee', async () => {
     useAuthStore.setState({ user }); load(42); renderDetail(); await screen.findByText(mine.title);
