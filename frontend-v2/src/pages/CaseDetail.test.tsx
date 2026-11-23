@@ -1068,18 +1068,23 @@ describe('Case close-out', () => {
     }));
   });
 
-  it('lets the owner edit the resolution from the close-out panel', async () => {
+  it('reviews exact resolution text before guarded save', async () => {
     mockClosed();
-    mockPatch.mockResolvedValue({ data: { success: true } });
+    const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation((url: string) => url === '/auth/me' ? Promise.resolve({ data: { id: 1, email: 'analyst@example.com', role: 'analyst', org_id: 7, is_active: true } }) : base(url));
+    const preview = { case_id: 7, owner_id: 1, title: 'Saved case', summary: null, status: 'resolved', severity: 'high', due_date: null, assigned_to_id: null, resolution: 'Contained and re-imaged.', closed_at: '2026-11-23T00:00:00Z', new_resolution: 'Updated close-out notes.', reviewed_fingerprint: 'a'.repeat(64) };
+    mockPost.mockImplementation(async (url: string) => ({ status: 200, data: url.endsWith('/resolution-review') ? preview : { success: true, case_id: 7, resolution: preview.new_resolution, reviewed_fingerprint: preview.reviewed_fingerprint } }));
     renderDetail();
     fireEvent.click(await screen.findByRole('button', { name: 'Edit resolution' }));
-    fireEvent.change(screen.getByLabelText('Resolution summary'), {
-      target: { value: 'Updated close-out notes.' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Save resolution' }));
-    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7', null, {
-      params: { resolution: 'Updated close-out notes.' },
-    }));
+    const dialog = await screen.findByRole('dialog', { name: 'Review investigation resolution' });
+    fireEvent.change(within(dialog).getByLabelText('Resolution summary'), { target: { value: 'Updated close-out notes.' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Review resolution changes' }));
+    await within(dialog).findByText('Updated close-out notes.');
+    expect(mockPatch).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('checkbox'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply reviewed resolution change' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Review investigation resolution' })).toBeNull());
+    expect(mockPost).toHaveBeenLastCalledWith('/cases/7/resolution-reviewed', { resolution: preview.new_resolution, reviewed_fingerprint: preview.reviewed_fingerprint });
   });
 
   it('hides the close-out panel while the case is open', async () => {
