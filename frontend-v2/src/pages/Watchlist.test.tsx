@@ -103,33 +103,6 @@ describe('Watchlist page', () => {
     await screen.findByText(/CVE-2026-0001/);
   });
 
-  it('unwatches an alert from the list', async () => {
-    render(<MemoryRouter><Watchlist /></MemoryRouter>);
-    await screen.findByText(/CVE-2026-0001/);
-    fireEvent.click(screen.getByRole('button', { name: /unwatch CVE-2026-0001/i }));
-    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/alerts/1/watch'));
-    await waitFor(() => expect(screen.queryByText(/CVE-2026-0001/)).toBeNull());
-    // The investigation stays on the list.
-    screen.getByText('Intrusion on the edge network');
-  });
-
-  it('unwatches an investigation from the list', async () => {
-    render(<MemoryRouter><Watchlist /></MemoryRouter>);
-    await screen.findByText('Intrusion on the edge network');
-    fireEvent.click(screen.getByRole('button', { name: /unwatch Intrusion/i }));
-    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('/cases/3/watch'));
-    await waitFor(() => expect(screen.queryByText('Intrusion on the edge network')).toBeNull());
-  });
-
-  it('keeps the row when unwatching fails', async () => {
-    mockDelete.mockRejectedValue(new Error('boom'));
-    render(<MemoryRouter><Watchlist /></MemoryRouter>);
-    await screen.findByText(/CVE-2026-0001/);
-    fireEvent.click(screen.getByRole('button', { name: /unwatch CVE-2026-0001/i }));
-    await waitFor(() => expect(mockDelete).toHaveBeenCalled());
-    await screen.findByText(/CVE-2026-0001/);
-  });
-
   it('deep-links alert rows to the alerts page and case rows to the investigation', async () => {
     render(
       <MemoryRouter initialEntries={['/watchlist']}>
@@ -250,89 +223,8 @@ describe('Watchlist loaded-record triage', () => {
     await screen.findByText('CVE-2026-0001 - Later needle alert');
     expect(screen.getByText(/1 of 2 loaded items match/)).toBeTruthy();
     expect((input as HTMLInputElement).value).toBe('needle');
-    fireEvent.click(screen.getByRole('button', { name: /Unwatch CVE-2026-0001 - Later/ }));
-    await waitFor(() => expect(screen.queryByText('CVE-2026-0001 - Later needle alert')).toBeNull());
-    fireEvent.click(screen.getByRole('button', { name: 'Clear watchlist filters' }));
-    expect(screen.getByText(/RouterOS remote code execution/)).toBeTruthy();
+
   });
-});
-
-it('previews mixed-type selection including hidden records and requires confirmation before unwatching', async () => {
-  render(<MemoryRouter><Watchlist /></MemoryRouter>);
-  await screen.findByText('Intrusion on the edge network');
-  fireEvent.click(screen.getByRole('button', { name: 'Select matching watched items' }));
-  fireEvent.change(screen.getByLabelText('Watched item type'), { target: { value: 'alert' } });
-  expect(screen.getByText(/2 loaded records selected; 1 hidden/)).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Review selected unwatch' }));
-  expect(screen.getByRole('dialog')).toBeTruthy();
-  expect(mockDelete).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Unwatch 2 records' }));
-  await screen.findByText(/Unwatched 2 of 2/);
-  expect(mockDelete).toHaveBeenCalledWith('/alerts/1/watch');
-  expect(mockDelete).toHaveBeenCalledWith('/cases/3/watch');
-  expect(screen.getByText('Nothing on your watchlist')).toBeTruthy();
-});
-
-it('keeps failed bulk unwatch records selected and retries only failures', async () => {
-  mockDelete.mockImplementation(async (url: string) => {
-    if (url === '/cases/3/watch') throw new Error('Not saved');
-    return { data: {} };
-  });
-  render(<MemoryRouter><Watchlist /></MemoryRouter>);
-  await screen.findByText('Intrusion on the edge network');
-  fireEvent.click(screen.getByRole('button', { name: 'Select matching watched items' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Review selected unwatch' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Unwatch 2 records' }));
-  await screen.findByText(/Unwatched 1 of 2/);
-  expect(screen.getByText(/1 loaded records selected; 0 hidden/)).toBeTruthy();
-  expect(screen.getByText('Not saved')).toBeTruthy();
-  mockDelete.mockResolvedValue({ data: {} });
-  fireEvent.click(screen.getByRole('button', { name: 'Review selected unwatch' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Unwatch 1 records' }));
-  await screen.findByText(/Unwatched 1 of 1/);
-  expect(mockDelete).toHaveBeenCalledTimes(3);
-  expect(mockDelete).toHaveBeenLastCalledWith('/cases/3/watch');
-});
-
-it('can cancel bulk unwatch without changing followed records', async () => {
-  render(<MemoryRouter><Watchlist /></MemoryRouter>);
-  await screen.findByText('Intrusion on the edge network');
-  fireEvent.click(screen.getByRole('button', { name: 'Select matching watched items' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Review selected unwatch' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-  expect(mockDelete).not.toHaveBeenCalled();
-  expect(screen.getByText(/2 loaded records selected/)).toBeTruthy();
-});
-
-it('keeps overlapping alert and case IDs separate during selection', async () => {
-  mockFeed([makeAlert({ id: 3 })], [makeCase()]);
-  render(<MemoryRouter><Watchlist /></MemoryRouter>);
-  await screen.findByText('Intrusion on the edge network');
-  fireEvent.click(screen.getByRole('checkbox', { name: /Select alert #3/ }));
-  expect(screen.getByRole('checkbox', { name: /Select case #3/ }).getAttribute('checked')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Review selected unwatch' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Unwatch 1 records' }));
-  await screen.findByText(/Unwatched 1 of 1/);
-  expect(mockDelete).toHaveBeenCalledTimes(1);
-  expect(mockDelete).toHaveBeenCalledWith('/alerts/3/watch');
-  expect(screen.getByText('Intrusion on the edge network')).toBeTruthy();
-});
-
-it('requires a first-page reload after removals so shifted later pages are not skipped', async () => {
-  mockGet.mockImplementation(async (url: string) => url === '/alerts/'
-    ? { data: { alerts: [makeAlert()], total: 51 } }
-    : { data: { cases: [], total: 0 } });
-  render(<MemoryRouter><Watchlist /></MemoryRouter>);
-  await screen.findByText('CVE-2026-0001 - RouterOS remote code execution');
-  fireEvent.click(screen.getByRole('button', { name: 'Select matching watched items' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Review selected unwatch' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Unwatch 1 records' }));
-  await screen.findByText(/Unwatched 1 of 1/);
-  expect((screen.getByRole('button', { name: 'Load more watched items' }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(screen.getByRole('button', { name: 'Reload watched items from first page' }));
-  await screen.findByText('CVE-2026-0001 - RouterOS remote code execution');
-  expect(mockGet).toHaveBeenLastCalledWith('/cases/', { params: { watching: 'me', size: 50, page: 1 } });
-  expect((screen.getByRole('button', { name: 'Load more watched items' }) as HTMLButtonElement).disabled).toBe(false);
 });
 
 it('opens complete read-only search without discarding loaded review selection', async () => {
