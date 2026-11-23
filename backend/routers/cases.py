@@ -1334,6 +1334,52 @@ async def update_case(
     }} if reviewed_fingerprint is not None else {})}
 
 
+class ReviewedCasePriority(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    field: Literal["severity", "due_date"]
+    value: StrictStr
+    reviewed_fingerprint: StrictStr = Field(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")
+
+
+@router.get("/{case_id}/priority-review")
+async def get_case_priority_review(
+    case_id: int, field: Literal["severity", "due_date"], value: str,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_priority_review import priority_review
+    case = (await db.execute(select(Case).where(
+        Case.id == case_id, Case.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return await priority_review(db, case, current_user, field, value)
+
+
+@router.post("/{case_id}/priority-reviewed")
+async def change_reviewed_case_priority(
+    case_id: int, payload: ReviewedCasePriority,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_priority_review import priority_review
+    case = (await db.execute(select(Case).where(
+        Case.id == case_id, Case.user_id == current_user.id,
+    ).with_for_update())).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    preview = await priority_review(db, case, current_user, payload.field, payload.value, lock=True)
+    if not secrets.compare_digest(payload.reviewed_fingerprint, preview["reviewed_fingerprint"]):
+        raise HTTPException(status_code=409, detail=(
+            "Investigation priority or notification audience changed. Review again."))
+    add_audit_log(db, user_id=current_user.id, action="case_priority_reviewed", target_type="case", target_id=case.id,
+                  detail=f"Reviewed {payload.field} change; review {payload.reviewed_fingerprint}")
+    await update_case(case_id, status_update=None,
+                      severity=payload.value if payload.field == "severity" else None,
+                      title=None, summary=None, due_date=payload.value if payload.field == "due_date" else None,
+                      resolution=None, reviewed_fingerprint=None, current_user=current_user, db=db)
+    return {"success": True, "case_id": case_id, "field": payload.field, "value": payload.value,
+            "reviewed_fingerprint": payload.reviewed_fingerprint}
+
+
 @router.get("/{case_id}/deletion-review")
 async def get_case_deletion_review(
     case_id: int, current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
