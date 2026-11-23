@@ -67,6 +67,7 @@ from backend.routers.triage_correlation import router as triage_correlation_rout
 from backend.routers.triage_intake import router as triage_intake_router
 from backend.services.audit import add_audit_log
 from backend.services.case_task_completion_review import TaskCompletionProposal
+from backend.services.case_task_creation_review import TaskCreationProposal
 from backend.services.case_task_due_review import TaskDueProposal
 from backend.services.case_task_title_review import TaskTitleProposal
 from backend.services.case_visibility import visible_cases
@@ -985,6 +986,32 @@ async def list_case_tasks(
         .where(CaseTask.case_id == case.id)
         .order_by(CaseTask.position, CaseTask.id)
     )).scalars().all()
+
+
+@router.post("/{case_id}/tasks/creation-review")
+async def preview_case_task_creation(
+    case_id: int, payload: TaskCreationProposal,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_task_creation_review import task_creation_review
+    case = await _get_visible_case(db, case_id, current_user)
+    return await task_creation_review(db, case, current_user, payload.title)
+
+
+@router.post("/{case_id}/tasks/creation-reviewed", response_model=CaseTaskResponse, status_code=status.HTTP_201_CREATED)
+async def create_reviewed_case_task(
+    case_id: int, payload: TaskCreationProposal,
+    reviewed_fingerprint: str = Query(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$"),
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_task_creation_review import task_creation_review
+    case = await _get_visible_case(db, case_id, current_user, write=True)
+    preview = await task_creation_review(db, case, current_user, payload.title, lock=True)
+    if not secrets.compare_digest(reviewed_fingerprint, preview["reviewed_fingerprint"]):
+        raise HTTPException(status_code=409, detail="Checklist, account or proposed task changed. Review again.")
+    add_audit_log(db, user_id=current_user.id, action="case_task_creation_reviewed", target_type="case",
+                  target_id=case.id, detail=f"Reviewed task addition; review {reviewed_fingerprint}")
+    return await create_case_task(case_id, CaseTaskCreate(title=preview["proposed_title"]), current_user, db)
 
 
 @router.post("/{case_id}/tasks", response_model=CaseTaskResponse, status_code=status.HTTP_201_CREATED)
