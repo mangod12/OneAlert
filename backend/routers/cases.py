@@ -1827,6 +1827,48 @@ async def unwatch_case(
     return {"success": True, "watching": False}
 
 
+class ReviewedCaseWatcher(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    user_id: StrictInt = Field(gt=0)
+    reviewed_fingerprint: StrictStr = Field(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")
+
+
+@router.get("/{case_id}/watcher-addition-review")
+async def get_case_watcher_review(
+    case_id: int, user_id: int = Query(gt=0), current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_watcher_review import watcher_review
+    case = (await db.execute(select(Case).where(
+        Case.id == case_id, Case.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return await watcher_review(db, case, current_user, user_id)
+
+
+@router.post("/{case_id}/watcher-addition-reviewed")
+async def add_reviewed_case_watcher(
+    case_id: int, payload: ReviewedCaseWatcher, current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_watcher_review import watcher_review
+    case = (await db.execute(select(Case).where(
+        Case.id == case_id, Case.user_id == current_user.id,
+    ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    preview = await watcher_review(db, case, current_user, payload.user_id, lock=True)
+    if not secrets.compare_digest(payload.reviewed_fingerprint, preview["reviewed_fingerprint"]):
+        raise HTTPException(status_code=409, detail="Investigation or exact watcher changed. Review again.")
+    add_audit_log(db, user_id=current_user.id, action="case_watcher_addition_reviewed",
+                  target_type="case", target_id=case.id,
+                  detail=f"Reviewed watcher account {payload.user_id}; review {payload.reviewed_fingerprint}")
+    await add_case_watcher(case_id, CaseWatcherAdd(user_id=payload.user_id), current_user, db)
+    return {"success": True, "case_id": case_id, "user_id": payload.user_id,
+            "email": preview["recipient"]["email"], "reviewed_fingerprint": payload.reviewed_fingerprint}
+
+
 @router.post("/{case_id}/watchers", response_model=list[CaseWatcherResponse])
 async def add_case_watcher(
     case_id: int,
