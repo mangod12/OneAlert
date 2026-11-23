@@ -11,6 +11,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response, StreamingResponse
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
 from sqlalchemy import String, cast, delete, func, or_, select, update
 from sqlalchemy import case as sql_case
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1364,20 +1365,56 @@ async def delete_case(
     await db.commit()
 
 
+class ReviewedCaseAssignment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    user_id: StrictInt | None
+    reviewed_fingerprint: StrictStr = Field(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")
+
+
+@router.get("/{case_id}/assignment-review")
+async def get_case_assignment_review(
+    case_id: int, target_id: int | None = Query(None, ge=1),
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_assignment_review import assignment_review
+    case = (await db.execute(select(Case).where(
+        Case.id == case_id, Case.user_id == current_user.id,
+    ))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return await assignment_review(db, case, current_user, target_id)
+
+
+@router.post("/{case_id}/assign-reviewed")
+async def assign_reviewed_case(
+    case_id: int, assignment: ReviewedCaseAssignment,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    return await _assign_owned_case(case_id, assignment, current_user, db, assignment.reviewed_fingerprint)
+
+
 @router.post("/{case_id}/assign")
 async def assign_case(
-    case_id: int,
-    assignment: CaseAssign,
-    current_user: User = Depends(get_active_user),
-    db: AsyncSession = Depends(get_async_db),
+    case_id: int, assignment: CaseAssign,
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
 ):
+    return await _assign_owned_case(case_id, assignment, current_user, db)
+
+
+async def _assign_owned_case(case_id, assignment, current_user, db, reviewed_fingerprint=None):
     """Assign a case to an organization member (null user_id unassigns)."""
     case = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.user_id == current_user.id)
+        select(Case).where(Case.id == case_id, Case.user_id == current_user.id).with_for_update()
     )).scalar_one_or_none()
 
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+
+    if reviewed_fingerprint is not None:
+        from backend.services.case_assignment_review import assignment_review
+        preview = await assignment_review(db, case, current_user, assignment.user_id, lock=True)
+        if not secrets.compare_digest(reviewed_fingerprint, preview["reviewed_fingerprint"]):
+            raise HTTPException(status_code=409, detail="The investigation or recipient changed. Review again.")
 
     if assignment.user_id is not None:
         assignee = (await db.execute(
@@ -1404,6 +1441,10 @@ async def assign_case(
             body=case.title,
             link=f"/app/cases/{case.id}",
         ))
+    if reviewed_fingerprint is not None:
+        add_audit_log(db, user_id=current_user.id, action="case_assignment_reviewed", target_type="case",
+                      target_id=case.id, detail=(f"Assigned to {assignment.user_id}; "
+                                                f"reviewed fingerprint {reviewed_fingerprint}"))
     await db.commit()
     if (
         assignment.user_id is not None
@@ -1430,6 +1471,7 @@ async def assign_case(
         "success": True,
         "assigned_to_id": case.assigned_to_id,
         "assigned_to_email": assignee_email,
+        **({"case_id": case.id, "reviewed_fingerprint": reviewed_fingerprint} if reviewed_fingerprint else {}),
     }
 
 
