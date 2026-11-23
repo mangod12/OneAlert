@@ -740,6 +740,47 @@ async def add_case_note(
     return entry
 
 
+class CaseNoteProposal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content: StrictStr = Field(min_length=1, max_length=20000)
+
+
+class ReviewedCaseNote(CaseNoteProposal):
+    reviewed_fingerprint: StrictStr = Field(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")
+
+
+@router.post("/{case_id}/note-review")
+async def preview_case_note(
+    case_id: int, payload: CaseNoteProposal, current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_note_review import note_review
+    case = (await db.execute(_visible_cases(case_id, current_user))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return await note_review(db, case, current_user, payload.content)
+
+
+@router.post("/{case_id}/notes-reviewed")
+async def add_reviewed_case_note(
+    case_id: int, payload: ReviewedCaseNote, current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_note_review import note_review
+    case = (await db.execute(_visible_cases(case_id, current_user).with_for_update().execution_options(
+        populate_existing=True))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    preview = await note_review(db, case, current_user, payload.content, lock=True)
+    if not secrets.compare_digest(payload.reviewed_fingerprint, preview["reviewed_fingerprint"]):
+        raise HTTPException(status_code=409, detail="Note, investigation or mention audience changed. Review again.")
+    add_audit_log(db, user_id=current_user.id, action="case_note_addition_reviewed",
+                  target_type="case", target_id=case.id, detail=f"Reviewed note {payload.reviewed_fingerprint}")
+    entry = await add_case_note(case_id, CaseNoteCreate(content=payload.content), current_user, db)
+    return {"success": True, "case_id": case_id, "note_id": entry.id, "content": entry.content,
+            "reviewed_fingerprint": payload.reviewed_fingerprint}
+
+
 @router.patch("/{case_id}/notes/{entry_id}", response_model=TimelineEntryResponse)
 async def update_case_note(
     case_id: int,
