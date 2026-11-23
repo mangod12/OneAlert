@@ -941,20 +941,11 @@ describe('Investigation tasks', () => {
     await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/2', { assignee_id: null }));
   });
 
-  it('sets a due date on a task', async () => {
-    mockLoadWithTasks(tasks);
-    mockPatch.mockResolvedValue({ data: { ...tasks[1], due_date: '2026-12-01' } });
-    renderDetail();
-    fireEvent.change(await screen.findByLabelText('Due date for task Collect triage image'), { target: { value: '2026-12-01' } });
-    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/2', { due_date: '2026-12-01' }));
-  });
-
-  it('clears a task due date back to none', async () => {
-    mockLoadWithTasks([{ ...tasks[1], due_date: '2026-12-01' }]);
-    mockPatch.mockResolvedValue({ data: { ...tasks[1], due_date: null } });
-    renderDetail();
-    fireEvent.change(await screen.findByLabelText('Due date for task Collect triage image'), { target: { value: '' } });
-    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/2', { due_date: null }));
+  it.each(['2026-12-01', null])('reviews exact task due date before saving %s', async dueDate => {
+    const task = { ...tasks[1], assignee_id: null, due_date: dueDate ? null : '2026-12-01' }; mockLoadWithTasks([task]); const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation(async url => url === '/auth/me' ? { data: { id: 5, email: 'owner@example.com', role: 'analyst', org_id: null, is_active: true } } : base(url));
+    mockPost.mockResolvedValue({ data: { case_id: 7, owner_id: 5, assigned_to_id: null, title: 'Fresh due-date review', status: 'open', severity: 'high', task, assignee: null, retained_access_reasons: [], other_assigned_tasks: [], proposed_due_date: dueDate, reviewed_fingerprint: 'a'.repeat(64) } });
+    mockPatch.mockResolvedValue({ status: 200, data: { ...task, case_id: 7, due_date: dueDate } }); renderDetail(); fireEvent.change(await screen.findByLabelText('Due date for task Collect triage image'), { target: { value: dueDate ?? '' } }); await screen.findByText('Review exact checklist due-date change'); await screen.findByText('Proposed due date:'); expect(mockPatch).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed this exact task due date/ })); fireEvent.click(screen.getByRole('button', { name: 'Save reviewed task due date' })); await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/cases/7/tasks/2/due-reviewed', { due_date: dueDate }, { params: { reviewed_fingerprint: 'a'.repeat(64) } })); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('badges an open task past its due date as overdue', async () => {
