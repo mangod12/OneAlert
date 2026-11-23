@@ -1286,3 +1286,14 @@ describe('Loaded analyst source reference index', () => {
     expect(mockPost).not.toHaveBeenCalled(); expect(mockPatch).not.toHaveBeenCalled(); expect(mockDelete).not.toHaveBeenCalled();
   });
 });
+
+ describe('Investigation access map', () => {
+  it('opens owner-only access evidence without mutating relationships', async () => {
+    useAuthStore.setState({ user: { ...useAuthStore.getState().user!, id: 5 } }); mockLoad(); const base = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation(async url => url === '/auth/me' ? { data: { id: 5, email: 'owner@example.com', org_id: null, role: 'analyst', is_active: true } } : url.endsWith('/access-map') ? { data: { case_id: 7, owner_id: 5, title: 'Fresh complete access', retrieved_at: '2026-11-23T12:00:00Z', records: [{ id: 5, email: 'owner@example.com', full_name: null, role: 'analyst', org_id: null, is_active: true, reasons: ['Investigation owner'], can_manage_investigation: true, can_manage_checklist: true, can_add_notes: true, receives_watcher_updates: false, assigned_tasks: [] }] } } : base(url));
+    renderDetail(); fireEvent.click(await screen.findByRole('button', { name: 'Review investigation access' })); await screen.findByText('Investigation #7: Fresh complete access'); expect(mockPost).not.toHaveBeenCalled(); expect(mockDelete).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('button', { name: 'Close access map' })); expect(screen.queryByRole('dialog')).toBeNull();
+  });
+  it('does not expose the owner roster control to a non-owner', async () => {
+    useAuthStore.setState({ user: { ...useAuthStore.getState().user!, id: 99 } }); mockLoad(); renderDetail(); await screen.findByText('Investigation Timeline'); expect(screen.queryByRole('button', { name: 'Review investigation access' })).toBeNull();
+  });
+ });

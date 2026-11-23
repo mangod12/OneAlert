@@ -1,3 +1,4 @@
+import { CaseAccessMap } from '../components/CaseAccessMap';
 import { CaseWatcherRemovalReview } from '../components/CaseWatcherRemovalReview';
 import { CaseNoteDeletionReview } from '../components/CaseNoteDeletionReview';
 import { CaseNoteEditReview } from '../components/CaseNoteEditReview';
@@ -139,6 +140,8 @@ export function CaseDetail() {
   const [editingResolution, setEditingResolution] = useState(false);
   const [blastRadius, setBlastRadius] = useState<BlastRadius | null>(null);
   const [similarCases, setSimilarCases] = useState<SimilarCase[]>([]);
+  const [accessMapCase, setAccessMapCase] = useState<number | null>(null);
+  useEffect(() => { setAccessMapCase(null); }, [caseId]);
   const [noteText, setNoteText] = useState('');
   const [noteAddition, setNoteAddition] = useState<{ caseId: number; content: string } | null>(null);
   const addingNote = noteAddition !== null;
@@ -493,6 +496,7 @@ export function CaseDetail() {
                   )}
                 </span>
               ))}
+              {isOwner && <button type="button" className="min-h-8 rounded border border-surface-600 px-2 text-xs" onClick={() => setAccessMapCase(caseData.id)}>Review investigation access</button>}
               {isOwner && watchCandidates.length > 0 && (
                 <select
                   aria-label="Add a watcher"
@@ -1024,6 +1028,7 @@ export function CaseDetail() {
       {assignmentReview && assignmentReview.caseId === caseData.id && <CaseListAssignmentReview key={`${assignmentReview.caseId}:${assignmentReview.targetId}`} caseIds={[assignmentReview.caseId]} targetId={assignmentReview.targetId} onClose={() => { setAssignmentReview(null); void fetchAll(); }} onChanged={() => { /* Keep confirmed outcomes mounted; closing reloads the full investigation. */ }} />}
       {noteEditReview && noteEditReview.caseId === caseData.id && <CaseNoteEditReview key={`${noteEditReview.caseId}:${noteEditReview.noteId}:${noteEditReview.content}`} caseId={noteEditReview.caseId} noteId={noteEditReview.noteId} content={noteEditReview.content} onClose={() => { setNoteEditReview(null); void fetchAll(); }} onSaved={() => { setNoteEditReview(null); setEditingNoteId(null); toast('Reviewed note updated.', 'success'); void fetchAll(); }} />}
       {noteAddition && noteAddition.caseId === caseData.id && <CaseNoteAdditionReview key={`${noteAddition.caseId}:${noteAddition.content}`} caseId={noteAddition.caseId} content={noteAddition.content} onClose={() => { setNoteAddition(null); void fetchAll(); }} onSaved={() => { setNoteAddition(null); setNoteText(''); toast('Reviewed note added to the timeline.', 'success'); void fetchAll(); }} />}
+      {accessMapCase === caseData.id && <CaseAccessMap key={accessMapCase} caseId={accessMapCase} onClose={() => setAccessMapCase(null)} />}
       {watcherRemoval && watcherRemoval.caseId === caseData.id && <CaseWatcherRemovalReview key={`${watcherRemoval.caseId}:${watcherRemoval.userId}`} caseId={watcherRemoval.caseId} userId={watcherRemoval.userId} onClose={() => { setWatcherRemoval(null); void fetchAll(); }} onSaved={() => { setWatcherRemoval(null); toast('Reviewed watcher removed.', 'success'); void fetchAll(); }} />}
       {watcherAddition && watcherAddition.caseId === caseData.id && <CaseWatcherAdditionReview key={`${watcherAddition.caseId}:${watcherAddition.userId}`} caseId={watcherAddition.caseId} userId={watcherAddition.userId} onClose={() => { setWatcherAddition(null); void fetchAll(); }} onSaved={() => { setWatcherAddition(null); toast('Reviewed watcher added.', 'success'); void fetchAll(); }} />}
 
