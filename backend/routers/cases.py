@@ -1102,6 +1102,32 @@ async def update_case_task(
     return task
 
 
+@router.get("/{case_id}/tasks/{task_id}/deletion-review")
+async def preview_case_task_deletion(
+    case_id: int, task_id: int, current_user: User = Depends(get_active_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_task_deletion_review import task_deletion_review
+    case = await _get_visible_case(db, case_id, current_user)
+    return await task_deletion_review(db, case, current_user, task_id)
+
+
+@router.delete("/{case_id}/tasks/{task_id}/reviewed", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_reviewed_case_task(
+    case_id: int, task_id: int,
+    reviewed_fingerprint: str = Query(min_length=64, max_length=64, pattern="^[a-f0-9]{64}$"),
+    current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
+):
+    from backend.services.case_task_deletion_review import task_deletion_review
+    case = await _get_visible_case(db, case_id, current_user, write=True)
+    preview = await task_deletion_review(db, case, current_user, task_id, lock=True)
+    if not secrets.compare_digest(reviewed_fingerprint, preview["reviewed_fingerprint"]):
+        raise HTTPException(status_code=409, detail="Exact task, assigned account or access changed. Review again.")
+    add_audit_log(db, user_id=current_user.id, action="case_task_deletion_reviewed", target_type="case",
+                  target_id=case.id, detail=f"Deleted reviewed task {task_id}; review {reviewed_fingerprint}")
+    await delete_case_task(case_id, task_id, current_user, db)
+
+
 @router.delete("/{case_id}/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_case_task(
     case_id: int,
