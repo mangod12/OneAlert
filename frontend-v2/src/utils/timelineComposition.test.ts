@@ -1,0 +1,5 @@
+import { expect, it } from 'vitest';
+import { timelineComposition } from './timelineComposition';
+it('groups exact recorded facets and distinguishes missing authors from source categories', () => { const groups = timelineComposition([{ entry_type: 'note', source: 'human', author_email: 'A@test' }, { entry_type: 'note', source: 'human', author_email: null }, { entry_type: 'alert', source: 'agent', author_email: 'a@test' }]); expect(groups[0].rows).toEqual([{ value: 'note', label: 'note', count: 2 }, { value: 'alert', label: 'alert', count: 1 }]); expect(groups[2].rows).toHaveLength(3); expect(groups[2].rows).toContainEqual({ value: 'unrecorded', label: 'Author not recorded', count: 1 }); });
+it('sorts by count then label without mutating entries', () => { const entries = [{ entry_type: 'z', source: 'human', author_email: null }, { entry_type: 'a', source: 'human', author_email: null }]; const original = structuredClone(entries); expect(timelineComposition(entries)[0].rows.map(row => row.value)).toEqual(['a', 'z']); expect(entries).toEqual(original); });
+it('does not invent categories for empty results', () => { expect(timelineComposition([])).toEqual([]); });

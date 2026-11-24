@@ -1,3 +1,4 @@
+import { timelineComposition } from '../utils/timelineComposition';
 import { timelineReviewCsv, type TimelineExportSnapshot } from '../utils/timelineReviewExport';
 import { timelineReviewMatch, timelineWindowValid } from '../utils/timelineReview';
 import { useMemo, useState, type ReactNode } from 'react';
@@ -19,6 +20,8 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
 }) {
   const [snapshot, setSnapshot] = useState<TimelineExportSnapshot | null>(null);
   const [page, setPage] = useState(0);
+  const [compositionOpen, setCompositionOpen] = useState(false);
+  const [returnPoint, setReturnPoint] = useState<null | { query: string; kind: string; source: string; order: string; author: string; from: string; through: string; page: number }>(null);
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState('');
   const [source, setSource] = useState('');
@@ -33,6 +36,12 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
     return entries.filter(entry => timelineReviewMatch(entry, { author, from, through }) && (!kind || entry.entry_type === kind) && (!source || entry.source === source)
       && (!needle || [entry.content, entry.author_email, entry.source, entry.entry_type, String(entry.id)].some(value => value?.toLowerCase().includes(needle))));
   }, [entries, query, kind, source, author, from, through]);
+  const composition = timelineComposition(matches);
+  const narrow = (facet: 'kind' | 'source' | 'author', value: string) => {
+    setReturnPoint({ query, kind, source, order, author, from, through, page: current }); setPage(0);
+    if (facet === 'kind') setKind(value); else if (facet === 'source') setSource(value); else setAuthor(value);
+  };
+  const restore = () => { if (!returnPoint) return; const r = returnPoint; setQuery(r.query); setKind(r.kind); setSource(r.source); setOrder(r.order); setAuthor(r.author); setFrom(r.from); setThrough(r.through); setPage(r.page); setReturnPoint(null); };
   const pinned = entries.filter(entry => pinnedIds.includes(entry.id) && !matches.some(match => match.id === entry.id));
   const shown = [...matches, ...pinned];
   if (order !== 'original') shown.sort((a, b) => {
@@ -60,8 +69,8 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
   const visibleIds = new Set([...pageMatches, ...outsidePinned].map(entry => entry.id));
   const visible = shown.filter(entry => visibleIds.has(entry.id));
   const filtered = !!query || !!kind || !!source || !!author || !!from || !!through || order !== 'original';
-  const clear = () => { setPage(0); setQuery(''); setKind(''); setSource(''); setOrder('original'); setAuthor(''); setFrom(''); setThrough(''); };
-  if (!entries.length && !snapshot) return <p className="text-surface-500">No timeline entries yet.</p>;
+  const clear = () => { setReturnPoint(null); setPage(0); setQuery(''); setKind(''); setSource(''); setOrder('original'); setAuthor(''); setFrom(''); setThrough(''); };
+  if (!entries.length && !snapshot && !returnPoint) return <p className="text-surface-500">No timeline entries yet.</p>;
   return <>
     <div className="mb-4 rounded-md border border-surface-700 bg-surface-950/50 p-3">
       <label htmlFor="timeline-query" className="block text-xs font-medium text-surface-300">Find timeline evidence</label>
@@ -82,6 +91,14 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
         <label className="flex min-w-0 max-w-full flex-col gap-1 text-xs text-surface-400">Through UTC date<input type="date" aria-label="Timeline through UTC date" value={through} onChange={event => { setPage(0); setThrough(event.target.value); }} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200" /></label>
         {filtered && <button type="button" onClick={clear} className="min-h-9 rounded-md border border-surface-600 px-2 text-xs text-surface-200">Clear timeline filters</button>}
       </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" aria-expanded={compositionOpen} onClick={() => setCompositionOpen(!compositionOpen)} className="min-h-9 rounded-md border border-surface-600 px-2 text-xs text-surface-200">{compositionOpen ? 'Hide matching timeline composition' : 'Explore matching timeline composition'}</button>
+        {returnPoint && <button type="button" onClick={restore} className="min-h-9 rounded-md border border-surface-600 px-2 text-xs text-surface-200">Return to prior timeline criteria</button>}
+      </div>
+      {compositionOpen && <section aria-label="Matching timeline composition" className="mt-3 space-y-3 rounded-md border border-surface-700 p-3 text-xs text-surface-300">
+        <p>{matches.length} matching loaded entries across all matching pages. Counts include each entry once within each category, not unique evidence sources, current team members or activity outside this loaded timeline. Outside-filter linked or edited entries are excluded. Choose a count to narrow the current criteria; a single prior criteria return point is retained, not historical results.</p>
+        {composition.length ? composition.map(group => <div key={group.facet}><h4 className="mb-1 font-medium text-surface-100">{group.label}</h4><div className="flex flex-wrap gap-2">{group.rows.map(row => <button type="button" key={row.value} onClick={() => narrow(group.facet, row.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 px-2 text-left [overflow-wrap:anywhere]">{row.label}: {row.count} {row.count === 1 ? 'entry' : 'entries'}</button>)}</div></div>) : <p>No matching entries to summarize. No wider timeline scope was substituted.</p>}
+      </section>}
       {exportContext && <button type="button" disabled={!validWindow || !matches.length} onClick={capture} className="mt-3 min-h-9 rounded-md border border-surface-600 px-2 text-xs text-surface-200 disabled:opacity-50">Review matching timeline CSV</button>}
       {snapshot && <section aria-label="Matching timeline CSV review" className="mt-3 space-y-2 rounded-md border border-primary-700 p-3 text-xs text-surface-200">
         <p>Captured review for investigation #{snapshot.caseId}: {snapshot.title}</p>
