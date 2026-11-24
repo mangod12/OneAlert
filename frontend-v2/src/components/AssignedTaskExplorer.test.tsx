@@ -149,3 +149,27 @@ it('keeps global investigation counts separate from the loaded task page and dra
   fireEvent.change(screen.getByLabelText('Search full assigned workload'), { target: { value: 'draft not applied' } });
   expect(screen.getByText(/201 matching tasks · 201 open/)).toBeTruthy(); expect(get).toHaveBeenCalledTimes(2);
 });
+it('drills into exact matching investigation using applied filters, not pending drafts, and can remove only that scope', async () => {
+  get.mockImplementation(async (_url, config) => {
+    const p = config?.params as { today: string; page: number; investigation_id?: number };
+    return { data: { ...result(p.page), ...(p.investigation_id ? { investigation_id: p.investigation_id } : {}), filter_date: p.today, by_investigation: [{ case_id: 7, total: 201, open: 201, completed: 0, without_due_date: 0 }], investigation_groups_total: 1, investigation_group_limit: 50 } };
+  });
+  show(); await screen.findByText(/201 matching tasks · 201 open/);
+  fireEvent.click(screen.getByRole('button', { name: 'Next workload page' })); await screen.findByText(/Page 2 of 9/);
+  fireEvent.change(screen.getByLabelText('Search full assigned workload'), { target: { value: 'unsaved draft' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Explore matching tasks in investigation #7' }));
+  await screen.findByText(/exact investigation #7/);
+  expect(get).toHaveBeenLastCalledWith('/cases/assigned-task-explorer', { params: expect.objectContaining({ investigation_id: 7, page: 1, query: '' }) });
+  expect(screen.getByText(/Filter edits are not applied/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Review this workload page CSV (1 records only)' })); expect(screen.getByRole('dialog').textContent).toContain('exact investigation #7'); fireEvent.click(screen.getByText('Cancel workload page export'));
+  fireEvent.click(screen.getByRole('button', { name: 'Remove applied investigation scope' }));
+  await waitFor(() => expect(get).toHaveBeenLastCalledWith('/cases/assigned-task-explorer', { params: expect.not.objectContaining({ investigation_id: expect.anything() }) }));
+  expect((screen.getByLabelText('Search full assigned workload') as HTMLInputElement).value).toBe('unsaved draft');
+});
+it.each(['echo', 'row'])('rejects wrong exact-investigation evidence %s', async kind => {
+  get.mockImplementationOnce(async (_url, config) => ({ data: { ...result(), filter_date: (config?.params as { today: string }).today, by_investigation: [{ case_id: 7, total: 201, open: 201, completed: 0, without_due_date: 0 }], investigation_groups_total: 1, investigation_group_limit: 50 } }));
+  show(); await screen.findByText(/201 matching tasks · 201 open/);
+  get.mockImplementationOnce(async (_url, config) => ({ data: { ...result(), filter_date: (config?.params as { today: string }).today, investigation_id: kind === 'echo' ? 8 : 7, data: [{ ...task, case_id: kind === 'row' ? 8 : 7 }] } }));
+  fireEvent.click(screen.getByRole('button', { name: 'Explore matching tasks in investigation #7' }));
+  await screen.findByRole('alert'); expect(screen.queryByRole('link')).toBeNull();
+});
