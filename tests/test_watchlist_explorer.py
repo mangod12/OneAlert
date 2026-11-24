@@ -7,7 +7,7 @@ from backend.models.alert import Alert, AlertWatcher
 from backend.models.asset import Asset
 from backend.models.case import Case, CaseWatcher
 from tests.test_case_watchers import (
-    _register_and_login,
+    _seed_watchlist_actor,
     _TestingSessionLocal,
     _user_id,
 )
@@ -17,9 +17,9 @@ URL = "/api/v1/cases/watched-record-explorer"
 
 
 def seed(client):
-    owner = _register_and_login(client, "owner@example.com")
-    follower = _register_and_login(client, "follower@example.com")
-    stranger = _register_and_login(client, "stranger@example.com")
+    owner = _seed_watchlist_actor(client, "owner@example.com")
+    follower = _seed_watchlist_actor(client, "follower@example.com")
+    stranger = _seed_watchlist_actor(client, "stranger@example.com")
     uid, fid, sid = (_user_id(client, h) for h in (owner, follower, stranger))
     today = datetime.now(UTC).date()
     when = datetime(2026, 1, 1, tzinfo=UTC)
@@ -128,7 +128,7 @@ def test_unwatch_removes_current_search_evidence_without_touching_record(client)
                                      {"kind": "users"}, {"scope": "everything"}, {"severity": "unknown"},
                                      {"sort": "id; DROP"}])
 def test_validation_and_auth(client, params):
-    headers = _register_and_login(client, "reader@example.com")
+    headers = _seed_watchlist_actor(client, "reader@example.com")
     assert client.get(URL, params=params, headers=headers).status_code == 422
     client.cookies.clear()
     assert client.get(URL).status_code in (401, 403)
