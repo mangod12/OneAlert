@@ -1,3 +1,4 @@
+import { ChecklistTaskHandoff } from '../components/ChecklistTaskHandoff';
 import { CaseTaskAssignmentReview } from '../components/CaseTaskAssignmentReview';
 import { CaseTaskCreationReview } from '../components/CaseTaskCreationReview';
 import { CaseTaskCompletionReview } from '../components/CaseTaskCompletionReview';
@@ -624,6 +625,7 @@ export function CaseDetail() {
                   {task.title}
                 </span>
                 <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto">
+                  <ChecklistTaskHandoff caseId={caseData.id} task={task} />
                   {task.due_date && !task.done && (
                     task.due_date < (todayStr ?? '')
                       ? <span className="shrink-0 rounded-full bg-danger/20 px-2 py-0.5 text-[10px] font-medium text-danger">Overdue · due {task.due_date}</span>
