@@ -1,3 +1,4 @@
+import { loadedWatchlistSearch } from '../utils/loadedWatchlistSearch';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { WatchlistExplorer } from '../components/WatchlistExplorer';
@@ -144,6 +145,7 @@ export function Watchlist() {
     return (order === 'newest' ? time(b) - time(a) : time(a) - time(b)) || a.id - b.id;
   });
   const activeFilters = !!query || kind !== 'all' || severity !== 'all' || scope !== 'all' || order !== 'severity';
+  const fullSearch = loadedWatchlistSearch({ query, kind, severity, scope, order });
   const clearFilters = () => { setQuery(''); setKind('all'); setSeverity('all'); setScope('all'); setOrder('severity'); };
 
   const selectedRows = rows.filter(row => selectedKeys.has(watchKey(row)));
@@ -233,6 +235,7 @@ export function Watchlist() {
           {activeFilters && <button type="button" disabled={bulkBusy || !!review} onClick={clearFilters} className="min-h-9 rounded-md border border-surface-600 px-3 text-sm text-surface-200">Clear watchlist filters</button>}
         </div>
         <p role="status" className="text-xs text-surface-300">{visible.length} of {rows.length} loaded items match. Search, filters and order apply only to loaded records, not your entire watchlist.</p>
+        <div className="space-y-2 rounded border border-primary-500/30 p-3"><button type="button" disabled={bulkBusy || !!review || !!pendingKeys.size || loadingMore || !fullSearch} onClick={() => { if (fullSearch) setSearchParams(fullSearch); }} className="min-h-11 rounded border border-surface-600 px-3 py-2 text-sm text-primary-300 disabled:opacity-40">Search entire watchlist with these filters</button><p className="text-xs text-surface-400">Starts a current server search from page 1 using these keywords, record type, severity, work scope and order. Searches titles, CVEs, assets and IDs, so results can differ from loaded name matching. No selected records, pagination or unwatch action is carried over. Your loaded selection stays here for review on return.</p>{scope === 'overdue' && <p className="text-xs text-warning">Loaded overdue means investigations only. The full search keeps that investigation-only scope, not alert due dates.{kind === 'alert' ? ' Alerts with investigation-only overdue is incompatible. Choose Investigations or All types before opening the full search.' : ''}</p>}{query.trim().length > 200 && <p className="text-xs text-warning">Full-watchlist search accepts at most 200 keyword characters. Shorten this query before opening it. No keywords were truncated.</p>}</div>
         {scope === 'overdue' && <p className="text-xs text-surface-400">Overdue uses investigation due dates before today in UTC, excluding resolved, closed and false-positive records. Alert due dates are not included.</p>}
       </section>}
       {!loading && !error && rows.length > 0 && <section aria-label="Watchlist selection" className="space-y-3 rounded-lg border border-surface-700 p-4">
