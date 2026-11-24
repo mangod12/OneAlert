@@ -1,4 +1,4 @@
-import { timelineComposition } from '../utils/timelineComposition';
+import { timelineComposition, timelineDayComposition } from '../utils/timelineComposition';
 import { timelineReviewCsv, type TimelineExportSnapshot } from '../utils/timelineReviewExport';
 import { timelineReviewMatch, timelineWindowValid } from '../utils/timelineReview';
 import { useMemo, useState, type ReactNode } from 'react';
@@ -36,10 +36,10 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
     return entries.filter(entry => timelineReviewMatch(entry, { author, from, through }) && (!kind || entry.entry_type === kind) && (!source || entry.source === source)
       && (!needle || [entry.content, entry.author_email, entry.source, entry.entry_type, String(entry.id)].some(value => value?.toLowerCase().includes(needle))));
   }, [entries, query, kind, source, author, from, through]);
-  const composition = timelineComposition(matches);
-  const narrow = (facet: 'kind' | 'source' | 'author', value: string) => {
+  const composition = timelineComposition(matches), dayComposition = timelineDayComposition(matches);
+  const narrow = (facet: 'kind' | 'source' | 'author' | 'day', value: string) => {
     setReturnPoint({ query, kind, source, order, author, from, through, page: current }); setPage(0);
-    if (facet === 'kind') setKind(value); else if (facet === 'source') setSource(value); else setAuthor(value);
+    if (facet === 'kind') setKind(value); else if (facet === 'source') setSource(value); else if (facet === 'author') setAuthor(value); else { setFrom(value); setThrough(value); }
   };
   const restore = () => { if (!returnPoint) return; const r = returnPoint; setQuery(r.query); setKind(r.kind); setSource(r.source); setOrder(r.order); setAuthor(r.author); setFrom(r.from); setThrough(r.through); setPage(r.page); setReturnPoint(null); };
   const pinned = entries.filter(entry => pinnedIds.includes(entry.id) && !matches.some(match => match.id === entry.id));
@@ -98,6 +98,7 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
       {compositionOpen && <section aria-label="Matching timeline composition" className="mt-3 space-y-3 rounded-md border border-surface-700 p-3 text-xs text-surface-300">
         <p>{matches.length} matching loaded entries across all matching pages. Counts include each entry once within each category, not unique evidence sources, current team members or activity outside this loaded timeline. Outside-filter linked or edited entries are excluded. Choose a count to narrow the current criteria; a single prior criteria return point is retained, not historical results.</p>
         {composition.length ? composition.map(group => <div key={group.facet}><h4 className="mb-1 font-medium text-surface-100">{group.label}</h4><div className="flex flex-wrap gap-2">{group.rows.map(row => <button type="button" key={row.value} onClick={() => narrow(group.facet, row.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 px-2 text-left [overflow-wrap:anywhere]">{row.label}: {row.count} {row.count === 1 ? 'entry' : 'entries'}</button>)}</div></div>) : <p>No matching entries to summarize. No wider timeline scope was substituted.</p>}
+        <div><h4 className="mb-1 font-medium text-surface-100">Recorded UTC days</h4><p className="mb-2">Newest UTC day first, using the same recorded timestamp rules as date filters, not displayed local dates. Choose a day to set both inclusive UTC boundaries while retaining other criteria. This does not establish an event sequence or elapsed response time.</p><div className="flex flex-wrap gap-2">{dayComposition.days.map(row => <button type="button" key={row.day} onClick={() => narrow('day', row.day)} className="min-h-9 rounded-md border border-surface-600 px-2">UTC {row.day}: {row.count} {row.count === 1 ? 'entry' : 'entries'}</button>)}</div>{dayComposition.undated > 0 && <p className="mt-2 text-warning">{dayComposition.undated} matching {dayComposition.undated === 1 ? 'entry has' : 'entries have'} no usable recorded UTC day. These remain in the current matching count only when no date boundary is set, and are not assigned to a calendar day.</p>}{!dayComposition.days.length && <p>No usable UTC day in these matching entries.</p>}</div>
       </section>}
       {exportContext && <button type="button" disabled={!validWindow || !matches.length} onClick={capture} className="mt-3 min-h-9 rounded-md border border-surface-600 px-2 text-xs text-surface-200 disabled:opacity-50">Review matching timeline CSV</button>}
       {snapshot && <section aria-label="Matching timeline CSV review" className="mt-3 space-y-2 rounded-md border border-primary-700 p-3 text-xs text-surface-200">
