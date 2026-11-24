@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { timelineReviewMatch, timelineWindowValid } from './timelineReview';
+import { timelineRecordedTime, timelineUtcDay, timelineReviewMatch, timelineWindowValid } from './timelineReview';
 const entry = { author_email: 'analyst@example.test', timestamp: '2026-11-24T00:30:00+05:30' };
 const filters = { author: '', from: '', through: '' };
 it('uses UTC date rather than local spelling and includes both date endpoints', () => { expect(timelineReviewMatch(entry, { ...filters, from: '2026-11-23', through: '2026-11-23' })).toBe(true); expect(timelineReviewMatch(entry, { ...filters, from: '2026-11-24' })).toBe(false); });
@@ -8,3 +8,5 @@ it.each([{ from: '2026-02-30', through: '' }, { from: '2026-11-24', through: '20
 it('matches exact recorded authors, not case-insensitive substrings, with explicit no-author scope', () => { expect(timelineReviewMatch(entry, { ...filters, author: 'analyst' })).toBe(false); expect(timelineReviewMatch(entry, { ...filters, author: entry.author_email })).toBe(true); expect(timelineReviewMatch(entry, { ...filters, author: 'unrecorded' })).toBe(false); expect(timelineReviewMatch({ ...entry, author_email: null }, { ...filters, author: 'unrecorded' })).toBe(true); });
 
 it('treats unzoned server timestamps as UTC and rejects invalid or ambiguous timestamp dates under boundaries', () => { expect(timelineReviewMatch({ ...entry, timestamp: '2026-11-24T00:30:00' }, { ...filters, from: '2026-11-24', through: '2026-11-24' })).toBe(true); for (const timestamp of ['2026-02-30T12:00:00Z', '11/24/2026', '2026-11-24']) expect(timelineReviewMatch({ ...entry, timestamp }, { ...filters, from: '2026-01-01' })).toBe(false); });
+
+it.each(['2026-11-24T24:00:00Z', '2026-11-24T12:60:00Z', '2026-11-24T12:00:60Z', '2026-11-24T12:00:00+24:00', '2026-11-24T12:00:00+05:60'])('rejects normalized or impossible clock fields consistently for day groups and filtering: %s', timestamp => { expect(timelineRecordedTime(timestamp)).toBeNull(); expect(timelineUtcDay(timestamp)).toBeNull(); expect(timelineReviewMatch({ ...entry, timestamp }, { ...filters, from: '2026-11-24' })).toBe(false); });

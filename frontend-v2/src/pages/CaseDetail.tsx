@@ -1,3 +1,4 @@
+import { TimelineRecordedTime } from '../components/TimelineRecordedTime';
 import { ChecklistTaskHandoff } from '../components/ChecklistTaskHandoff';
 import { CaseTaskAssignmentReview } from '../components/CaseTaskAssignmentReview';
 import { CaseTaskCreationReview } from '../components/CaseTaskCreationReview';
@@ -847,7 +848,7 @@ export function CaseDetail() {
                       </div>
                       <div className="min-w-0 flex-1 pb-4">
                         <div className="mb-1 flex flex-wrap items-center gap-2">
-                          <span className="text-xs text-surface-500">{new Date(entry.timestamp).toLocaleString()}</span>
+                          <TimelineRecordedTime timestamp={entry.timestamp} />
                           <span className="text-xs px-1.5 py-0.5 rounded bg-surface-700 text-surface-400">{entry.entry_type}</span>
                           <span className="text-xs text-surface-600">{entry.author_email ?? entry.source}</span>
                           {entry.metadata_json?.edited ? <span className="text-xs text-surface-600">(edited)</span> : null}
