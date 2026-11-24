@@ -1,13 +1,13 @@
 """Exact owner-only title and summary review, with stale-context rejection."""
 # ruff: noqa: F401, F811
 import pytest
-from test_case_assignment import _create_case, _register_and_login, _TestingSessionLocal, client
+from test_case_assignment import _create_case, _seed_case_actor, _TestingSessionLocal, client
 
 from backend.models.case import Case
 
 
 def setup(client):
-    headers = _register_and_login(client, 'owner@example.com')
+    headers = _seed_case_actor(client, 'owner@example.com')
     cid = _create_case(client, headers)
     proposal = {'title': '  Reviewed title  ', 'summary': '  Reviewed summary  '}
     response = client.post(f'/api/v1/cases/{cid}/details-review', headers=headers, json=proposal)
@@ -74,7 +74,7 @@ def test_invalid_details_fail_before_write(client, proposal):
 def test_nonowner_and_assignee_cannot_preview_or_apply(client):
     from test_case_assignment import _user_id
     _headers, cid, proposal, preview = setup(client)
-    other = _register_and_login(client, 'other@example.com')
+    other = _seed_case_actor(client, 'other@example.com')
     with _TestingSessionLocal() as db:
         db.get(Case, cid).assigned_to_id = _user_id(client, other)
         db.commit()

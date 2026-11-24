@@ -1,14 +1,14 @@
 """Exact owner-only resolution text review, preserving completion state."""
 # ruff: noqa: F401, F811
 import pytest
-from test_case_assignment import _create_case, _register_and_login, _TestingSessionLocal, client
+from test_case_assignment import _create_case, _seed_case_actor, _TestingSessionLocal, client
 
 from backend.models.case import Case
 
 
 def setup(client):
     from datetime import UTC, datetime
-    headers = _register_and_login(client, 'owner@example.com')
+    headers = _seed_case_actor(client, 'owner@example.com')
     cid = _create_case(client, headers)
     with _TestingSessionLocal() as db:
         case = db.get(Case, cid)
@@ -80,7 +80,7 @@ def test_invalid_resolution_fails_before_write(client, proposal):
 def test_nonowner_and_assignee_cannot_preview_or_apply(client):
     from test_case_assignment import _user_id
     _headers, cid, proposal, preview = setup(client)
-    other = _register_and_login(client, 'other@example.com')
+    other = _seed_case_actor(client, 'other@example.com')
     with _TestingSessionLocal() as db:
         db.get(Case, cid).assigned_to_id = _user_id(client, other)
         db.commit()

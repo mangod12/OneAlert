@@ -1,14 +1,14 @@
 """Review active/reopen status changes and exact watcher notification audience."""
 # ruff: noqa: F401, F811
 import pytest
-from test_case_assignment import _create_case, _register_and_login, _TestingSessionLocal, client
+from test_case_assignment import _create_case, _seed_case_actor, _TestingSessionLocal, client
 
 from backend.models.case import Case, CaseWatcher
 
 
 def setup(client, old='resolved', new='investigating'):
     from datetime import UTC, datetime
-    headers = _register_and_login(client, 'owner@example.com')
+    headers = _seed_case_actor(client, 'owner@example.com')
     cid = _create_case(client, headers)
     with _TestingSessionLocal() as db:
         case = db.get(Case, cid)
@@ -63,8 +63,8 @@ def test_exact_watcher_audience_stale_settings_block_and_assignee_can_review(cli
         pass
     monkeypatch.setattr('backend.routers.cases.notify_investigation_event', no_delivery)
     headers, cid, _ = setup(client)
-    assignee_headers = _register_and_login(client, 'assignee@example.com')
-    watcher_headers = _register_and_login(client, 'watcher@example.com')
+    assignee_headers = _seed_case_actor(client, 'assignee@example.com')
+    watcher_headers = _seed_case_actor(client, 'watcher@example.com')
     owner, assignee, watcher = [_user_id(client, h) for h in [headers, assignee_headers, watcher_headers]]
     _share_org(owner, assignee)
     with _TestingSessionLocal() as db:
@@ -93,7 +93,7 @@ def test_exact_watcher_audience_stale_settings_block_and_assignee_can_review(cli
 def test_watcher_cannot_change_status_and_invalid_transition_rejected(client):
     from test_case_assignment import _user_id
     headers, cid, preview = setup(client)
-    other = _register_and_login(client, 'watcher@example.com')
+    other = _seed_case_actor(client, 'watcher@example.com')
     with _TestingSessionLocal() as db:
         db.add(CaseWatcher(case_id=cid, user_id=_user_id(client, other)))
         db.commit()

@@ -3,7 +3,7 @@
 import pytest
 from test_case_assignment import (
     _create_case,
-    _register_and_login,
+    _seed_case_actor,
     _share_org,
     _TestingSessionLocal,
     _user_id,
@@ -17,8 +17,8 @@ from backend.models.user import User
 
 
 def setup(client):
-    headers = _register_and_login(client, 'owner@example.com')
-    other = _register_and_login(client, 'recipient@example.com')
+    headers = _seed_case_actor(client, 'owner@example.com')
+    other = _seed_case_actor(client, 'recipient@example.com')
     owner, target = _user_id(client, headers), _user_id(client, other)
     _share_org(owner, target)
     cid = _create_case(client, headers)
@@ -101,5 +101,5 @@ def test_owner_only_and_target_id_cannot_be_swapped(client):
     {'user_id': '1', 'reviewed_fingerprint': 'f' * 64}, {'user_id': None, 'reviewed_fingerprint': 'bad'},
     {'user_id': 1, 'reviewed_fingerprint': 'f' * 64, 'notify': False}])
 def test_strict_payload(client, body):
-    headers = _register_and_login(client, 'owner@example.com')
+    headers = _seed_case_actor(client, 'owner@example.com')
     assert client.post('/api/v1/cases/1/assign-reviewed', headers=headers, json=body).status_code == 422
