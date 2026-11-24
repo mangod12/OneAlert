@@ -20,7 +20,7 @@ it('saves only applied filters, not draft query/date/scope or page evidence', as
   fireEvent.change(screen.getByLabelText('Full workload calendar date'), { target: { value: '2020-01-01' } });
   fireEvent.click(screen.getByRole('button', { name: 'Saved views' })); fireEvent.change(screen.getByLabelText('Name for the saved view'), { target: { value: 'My current workload' } });
   post.mockResolvedValueOnce({ data: { id: 2, name: 'My current workload', filters: {} } }); fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-  await waitFor(() => expect(post).toHaveBeenCalledTimes(1)); expect(post).toHaveBeenCalledWith('/cases/workload-views/', { name: 'My current workload', filters: { query: '', severity: 'all', due: 'all', today: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), completion: 'open', investigations: 'active' } });
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1)); expect(post).toHaveBeenCalledWith('/cases/workload-views/', { name: 'My current workload', filters: { sort: 'priority', query: '', severity: 'all', due: 'all', today: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), completion: 'open', investigations: 'active' } });
   expect(JSON.stringify(post.mock.calls)).not.toContain('unapplied'); expect(apiClient.patch).not.toHaveBeenCalled(); expect(apiClient.delete).not.toHaveBeenCalled();
 });
 it('applies exact saved criteria from page 1, replaces drafts and rechecks current server scope without task writes', async () => {

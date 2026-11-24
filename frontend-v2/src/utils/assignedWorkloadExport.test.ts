@@ -21,3 +21,7 @@ it('keeps the exact investigation drilldown in reviewed CSV scope', () => {
   const csv = workloadPageCsv(workloadPageSnapshot([task], { ...filters, investigationId: 7 }, 1, 1, '', ''));
   expect(csv).toContain('"exact_investigation_filter"'); expect(csv).toContain('"2026-11-20","","7"');
 });
+it('includes the applied server ordering in CSV metadata rather than a draft reorder', () => {
+  const csv = workloadPageCsv(workloadPageSnapshot([task], { ...filters, sort: 'completed_newest' }, 1, 1, '', ''));
+  expect(csv).toContain('"sort_order"'); expect(csv).toContain('"completed_newest"');
+});

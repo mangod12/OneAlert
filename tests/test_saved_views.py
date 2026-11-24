@@ -338,7 +338,7 @@ def test_event_time_window_saved_view_validates_and_round_trips(client):
 
 class TestAssignedWorkloadViews:
     path = '/api/v1/cases/workload-views/'
-    filters: ClassVar[dict] = {'query': 'gateway', 'severity': 'high', 'due': 'range',
+    filters: ClassVar[dict] = {'sort': 'priority', 'query': 'gateway', 'severity': 'high', 'due': 'range',
                'today': '2026-11-24', 'completion': 'all', 'investigations': 'inactive',
                'dueFrom': '2026-11-20', 'dueThrough': '2026-11-24', 'investigationId': 7}
 
@@ -364,7 +364,7 @@ class TestAssignedWorkloadViews:
         assert client.get(self.path, headers=owner).json() == []
 
     @pytest.mark.parametrize('override', [
-        {'page': 2}, {'task_ids': [1]}, {'user_id': 2}, {'selection': []},
+        {'sort': 'arbitrary'}, {'page': 2}, {'task_ids': [1]}, {'user_id': 2}, {'selection': []},
         {'today': '2026-02-30'}, {'dueFrom': '2026-02-30'}, {'dueThrough': '2026-11-19'},
         {'due': 'all'}, {'severity': 'urgent'}, {'completion': 'yes'}, {'investigations': 'hidden'},
         {'investigationId': 0}, {'investigationId': '7'}, {'investigationId': True}, {'query': 'x' * 201},

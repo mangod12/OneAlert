@@ -993,3 +993,45 @@ def test_assigned_workload_exact_investigation_scope_composes_before_counts_and_
     assert client.get(path, params={'investigation_id': 999999}, headers=headers).json()['total'] == 0
     for value in (0, -1, 'invalid'):
         assert client.get(path, params={'investigation_id': value}, headers=headers).status_code == 422
+
+
+def test_assigned_workload_sorts_full_matching_set_before_paging_with_stable_ties(client):
+    from datetime import UTC, datetime
+
+    from backend.models.case import CaseTask
+
+    headers, case_id = _setup(client)
+    uid = _user_id(client, headers)
+    with _TestingSessionLocal() as db:
+        rows = [CaseTask(case_id=case_id, title=f'Z task {i:02}', position=i, assignee_id=uid,
+                         due_date=None, done=False) for i in range(30)]
+        db.add_all(rows)
+        db.flush()
+        early = CaseTask(case_id=case_id, title='a first', position=40, assignee_id=uid,
+                         due_date=date(2026, 1, 1), done=True, completed_at=datetime(2026, 11, 24, tzinfo=UTC))
+        tied = CaseTask(case_id=case_id, title='A FIRST', position=41, assignee_id=uid,
+                        due_date=date(2026, 1, 1), done=True, completed_at=datetime(2026, 11, 24, tzinfo=UTC))
+        db.add_all([early, tied])
+        db.flush()
+        first_ids = [early.id, tied.id]
+        db.commit()
+    path = '/api/v1/cases/assigned-task-explorer'
+    for sort in ('task_due', 'completed_newest', 'title'):
+        params = {'sort': sort, 'completion': 'all', 'size': 1}
+        one = client.get(path, params=params, headers=headers).json()
+        two = client.get(path, params={**params, 'page': 2}, headers=headers).json()
+        assert one['sort'] == two['sort'] == sort
+        assert one['data'][0]['task_id'] == first_ids[0]
+        assert two['data'][0]['task_id'] == first_ids[1]
+        assert one['total'] == two['total'] == 32
+        assert one['summary'] == two['summary']
+        assert one['by_investigation'] == two['by_investigation']
+        remaining = client.get(path, params={**params, 'page': 3}, headers=headers).json()['data'][0]
+        assert remaining['completed_at'] is None and remaining['due_date'] is None
+        filtered = client.get(path, params={**params, 'investigation_id': case_id, 'due': 'range',
+                                           'due_from': '2026-01-01', 'due_through': '2026-01-01'},
+                              headers=headers).json()
+        assert filtered['total'] == 2 and filtered['data'][0]['task_id'] == first_ids[0]
+    outsider = _register_and_login(client, 'sort-outsider@example.com')
+    assert client.get(path, params={'sort': 'task_due'}, headers=outsider).json()['total'] == 0
+    assert client.get(path, params={'sort': 'untrusted'}, headers=headers).status_code == 422
