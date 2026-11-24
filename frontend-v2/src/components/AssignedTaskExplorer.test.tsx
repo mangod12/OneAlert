@@ -141,3 +141,11 @@ it('blocks page export when the task snapshot is known stale', async () => {
   render(<MemoryRouter><AssignedTaskExplorer editingBlocked /></MemoryRouter>); fireEvent.click(screen.getByRole('button', { name: 'Explore all assigned tasks beyond the editing snapshot' })); await screen.findByText(/201 matching/);
   expect(screen.getByRole('button', { name: 'Review this workload page CSV (1 records only)' })).toHaveProperty('disabled', true);
 });
+it('keeps global investigation counts separate from the loaded task page and draft filters', async () => {
+  get.mockImplementation(async (_url, config) => ({ data: { ...result((config?.params as { page: number }).page), filter_date: (config?.params as { today: string }).today, by_investigation: [{ case_id: 7, total: 201, open: 201, completed: 0, without_due_date: 0 }], investigation_groups_total: 1, investigation_group_limit: 50 } }));
+  show(); await screen.findByText(/201 matching tasks · 201 open/);
+  fireEvent.click(screen.getByRole('button', { name: 'Next workload page' })); await screen.findByText(/Page 2 of 9/);
+  expect(screen.getByText(/201 matching tasks · 201 open/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Search full assigned workload'), { target: { value: 'draft not applied' } });
+  expect(screen.getByText(/201 matching tasks · 201 open/)).toBeTruthy(); expect(get).toHaveBeenCalledTimes(2);
+});

@@ -926,3 +926,36 @@ def test_assigned_task_fixed_due_window_filters_before_summary_and_paging(client
 def test_assigned_task_fixed_due_window_rejects_ambiguous_dates(client, params):
     headers, _ = _setup(client)
     assert client.get('/api/v1/cases/assigned-task-explorer', params=params, headers=headers).status_code == 422
+
+
+def test_assigned_workload_investigation_breakdown_uses_global_filters_and_cap(client):
+    from backend.models.case import CaseTask
+
+    headers, case_id = _setup(client)
+    uid = _user_id(client, headers)
+    with _TestingSessionLocal() as db:
+        db.add_all([CaseTask(case_id=case_id, title=f'Grouped task {i}', position=i, assignee_id=uid,
+                            done=i >= 205, due_date=None if i < 205 else date(2026, 11, 20))
+                    for i in range(210)])
+        for i in range(51):
+            case = Case(user_id=uid, title=f'Other investigation {i}', status='open', severity='high')
+            db.add(case)
+            db.flush()
+            db.add(CaseTask(case_id=case.id, title='One task', position=0, assignee_id=uid, done=False))
+        db.commit()
+    path = '/api/v1/cases/assigned-task-explorer'
+    data = client.get(path, params={'completion': 'all', 'size': 1, 'page': 3}, headers=headers).json()
+    assert data['investigation_groups_total'] == 52 and data['investigation_group_limit'] == 50
+    assert len(data['by_investigation']) == 50 and len(data['data']) == 1
+    assert data['by_investigation'][0] == {'case_id': case_id, 'total': 210, 'open': 205, 'completed': 5,
+                                          'without_due_date': 205}
+    groups = data['by_investigation']
+    assert [row['case_id'] for row in groups[1:]] == sorted(row['case_id'] for row in groups[1:])
+    filtered = client.get(path, params={'completion': 'completed', 'due': 'range', 'due_from': '2026-11-20',
+                                       'due_through': '2026-11-20'}, headers=headers).json()
+    assert filtered['by_investigation'] == [{'case_id': case_id, 'total': 5, 'open': 0, 'completed': 5,
+                                            'without_due_date': 0}]
+    assert filtered['investigation_groups_total'] == 1
+    outsider = _register_and_login(client, 'grouped-outsider@example.com')
+    empty = client.get(path, headers=outsider).json()
+    assert empty['by_investigation'] == [] and empty['investigation_groups_total'] == 0
