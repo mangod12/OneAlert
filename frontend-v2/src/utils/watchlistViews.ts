@@ -5,7 +5,7 @@ export function checkedWatchlistView(value: unknown): WatchlistViewFilters | nul
   if (Object.keys(v).some(key => !['query', 'kind', 'severity', 'scope', 'sort'].includes(key)) || typeof v.query !== 'string' || v.query.length > 200
     || typeof v.kind !== 'string' || !['all', 'alert', 'case'].includes(v.kind)
     || typeof v.severity !== 'string' || !['all', 'critical', 'high', 'medium', 'low', 'info'].includes(v.severity)
-    || typeof v.scope !== 'string' || !['all', 'active', 'done', 'overdue'].includes(v.scope)
+    || typeof v.scope !== 'string' || !['all', 'active', 'done', 'overdue', 'today', 'future', 'undated'].includes(v.scope)
     || typeof v.sort !== 'string' || !['severity', 'newest', 'oldest', 'name', 'due'].includes(v.sort)) return null;
   return { query: v.query.trim(), kind: v.kind, severity: v.severity, scope: v.scope, sort: v.sort };
 }

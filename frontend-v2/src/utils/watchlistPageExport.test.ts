@@ -7,3 +7,11 @@ it('freezes exact loaded page and applied criteria with date basis and correct q
 it.each([null, {}, { ...result, page: 1 }, { ...result, size: 100 }, { ...result, total: 25 }, { ...result, date_basis: '2026-02-30' }, { ...result, data: [] }, { ...result, data: [row, row] }, { ...result, data: [{ ...row, id: 0 }] }, { ...result, data: [{ ...row, kind: 'private' }] }, { ...result, data: [{ ...row, created_at: 'bad' }] }, { ...result, data: [{ ...row, due_date: '2026-02-30' }] }])('blocks invalid page evidence %j', value => expect(watchlistPageSnapshot(value, 2, filters, '', '')).toBeNull());
 it('checks echoed page and row type/severity/status/due scope before export', () => { for (const f of [{ ...filters, kind: 'case' }, { ...filters, severity: 'critical' }, { ...filters, scope: 'done' }]) expect(watchlistPageSnapshot(result, 2, f, '', '')).toBeNull(); expect(watchlistPageSnapshot(result, 2, { ...filters, scope: 'overdue' }, '', '')).not.toBeNull(); expect(watchlistPageSnapshot({ ...result, data: [{ ...row, due_date: null }] }, 2, { ...filters, scope: 'overdue' }, '', '')).toBeNull(); });
 it.each(['=SUM(A1)', '\t+cmd', '\u0000@cmd', '\u00a0-cmd'])('escapes every formula-like free-text field %s', text => { const snap = watchlistPageSnapshot({ ...result, data: [{ ...row, title: text, asset_name: text, cve_id: text }] }, 2, { ...filters, query: text }, '', '')!; expect(watchlistPageCsv(snap).split('"\'' + text + '"')).toHaveLength(5); });
+it.each(['today', 'future', 'undated'])('exports only validated active records under %s date criteria', scope => {
+  const due_date = scope === 'today' ? '2026-11-24' : scope === 'future' ? '2026-11-25' : null;
+  const current = { ...result, data: [{ ...row, due_date }] }, f = { ...filters, scope };
+  const snapshot = watchlistPageSnapshot(current, 2, f, '', '')!; expect(snapshot).not.toBeNull(); expect(watchlistPageCsv(snapshot)).toContain('"' + scope + '"');
+  expect(watchlistPageSnapshot({ ...current, data: [{ ...row, due_date, status: 'closed' }] }, 2, f, '', '')).toBeNull();
+  expect(watchlistPageSnapshot({ ...current, data: [{ ...row, due_date: scope === 'undated' ? '2026-11-24' : null }] }, 2, f, '', '')).toBeNull();
+  if (scope !== 'undated') expect(watchlistPageSnapshot({ ...current, data: [{ ...row, due_date: '2026-11-23' }] }, 2, f, '', '')).toBeNull();
+});

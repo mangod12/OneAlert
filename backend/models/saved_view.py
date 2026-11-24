@@ -118,7 +118,7 @@ class WatchlistViewFilters(BaseModel):
     query: str = Field("", max_length=200)
     kind: Literal["all", "alert", "case"] = "all"
     severity: Literal["all", "critical", "high", "medium", "low", "info"] = "all"
-    scope: Literal["all", "active", "done", "overdue"] = "all"
+    scope: Literal["all", "active", "done", "overdue", "today", "future", "undated"] = "all"
     sort: Literal["severity", "newest", "oldest", "name", "due"] = "severity"
     model_config = {"extra": "forbid"}
 

@@ -45,6 +45,12 @@ async def search_watched_records(db, user_id, *, page, size, query, kind, severi
         statement = statement.where(watched.c.status.in_(done))
     elif scope == "overdue":
         statement = statement.where(active, watched.c.due_date < today)
+    elif scope == "today":
+        statement = statement.where(active, watched.c.due_date == today)
+    elif scope == "future":
+        statement = statement.where(active, watched.c.due_date > today)
+    elif scope == "undated":
+        statement = statement.where(active, watched.c.due_date.is_(None))
     # Aggregate the full filtered set before paging, never just the visible rows.
     matching = statement.subquery()
     matching_active = or_(matching.c.status.is_(None), matching.c.status.notin_(done))
