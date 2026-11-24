@@ -63,6 +63,26 @@ def _register_and_login(client: TestClient, email: str, password: str = "securep
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
+def _seed_watchlist_actor(client: TestClient, email: str):
+    """Seed a fresh workflow identity; retain production token/database checks.
+
+    Authentication endpoints keep their own registration/login tests. No shared
+    password cache, password-hash override or authorization dependency override.
+    """
+    from backend.models.user import User
+    from backend.services.auth_service import create_access_token
+
+    with _TestingSessionLocal() as db:
+        db.add(User(email=email, hashed_password=None, full_name="Analyst",
+                    is_active=True, is_verified=False))
+        db.commit()
+    headers = {"Authorization": f"Bearer {create_access_token({'sub': email})}"}
+    response = client.get("/api/v1/auth/me", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["email"] == email
+    return headers
+
+
 def _user_id(client: TestClient, headers) -> int:
     me = client.get("/api/v1/auth/me", headers=headers)
     assert me.status_code == 200, me.text
@@ -71,9 +91,9 @@ def _user_id(client: TestClient, headers) -> int:
 
 def _setup_org_with_case(client):
     # Owner and two members in one org; owner creates a case.
-    owner = _register_and_login(client, "owner@example.com")
-    member = _register_and_login(client, "member@example.com")
-    member2 = _register_and_login(client, "member2@example.com")
+    owner = _seed_watchlist_actor(client, "owner@example.com")
+    member = _seed_watchlist_actor(client, "member@example.com")
+    member2 = _seed_watchlist_actor(client, "member2@example.com")
     owner_id = _user_id(client, owner)
     member_id = _user_id(client, member)
     member2_id = _user_id(client, member2)
@@ -124,7 +144,7 @@ class TestWatchManagement:
 
     def test_watcher_must_be_org_member(self, client):
         owner, _, _, _, _, _, case_id = _setup_org_with_case(client)
-        outsider = _register_and_login(client, "outsider@example.com")
+        outsider = _seed_watchlist_actor(client, "outsider@example.com")
         outsider_id = _user_id(client, outsider)
         resp = client.post(
             f"/api/v1/cases/{case_id}/watchers", json={"user_id": outsider_id}, headers=owner,
@@ -295,7 +315,7 @@ class TestWatchedByMeFilter:
         assert resp.status_code == 200, resp.text
         assert "Beaconing host" in resp.text
 
-        other = _register_and_login(client, "nobody@example.com")
+        other = _seed_watchlist_actor(client, "nobody@example.com")
         resp = client.get("/api/v1/cases/export?watching=me", headers=other)
         assert resp.status_code == 200, resp.text
         assert "Beaconing host" not in resp.text
