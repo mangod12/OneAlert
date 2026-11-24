@@ -66,3 +66,10 @@ it('labels missing metadata and empty first page without claiming a full history
   expect(screen.getByText(/No date recorded/)).toBeTruthy(); expect(screen.getByText(/not an atomic snapshot or watch history/)).toBeTruthy();
   get.mockResolvedValueOnce({ data: result([], 0) }); fireEvent.click(screen.getByRole('button', { name: 'Refresh full watchlist results' })); await screen.findByText(/Try other filters/);
 });
+it('reviews exact loaded page with applied search, never the draft or all-matching claim', async () => {
+  mount(); await screen.findByRole('link'); fireEvent.change(screen.getByLabelText('Search all watched records'), { target: { value: 'unapplied draft' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review this watchlist page CSV (1 records only)' })); const dialog = screen.getByRole('dialog'); expect(dialog.textContent).toContain('Only page 1: 1 loaded records of 268'); expect(dialog.textContent).toContain('Followed gateway'); expect(dialog.textContent).not.toContain('unapplied draft'); expect(get).toHaveBeenCalledOnce();
+});
+it('blocks export when a response belongs to a different server page', async () => {
+  get.mockResolvedValue({ data: { ...result(), page: 2 } }); mount(); await screen.findByRole('link'); expect(screen.getByRole('button', { name: 'Review this watchlist page CSV (1 records only)' })).toHaveProperty('disabled', true);
+});
