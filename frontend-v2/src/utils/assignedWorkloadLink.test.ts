@@ -1,0 +1,7 @@
+import { expect, it } from 'vitest';
+import { parseWorkloadLink, workloadSearchLink } from './assignedWorkloadLink';
+const filters = { query: 'gateway + π & 100%_', severity: 'high', due: 'range', today: '2026-11-24', completion: 'all', investigations: 'inactive', dueFrom: '2026-11-20', dueThrough: '2026-11-24', investigationId: 7, sort: 'completed_newest' };
+it('roundtrips exact applied criteria without page/record data and retains literal punctuation', () => { const url = new URL(workloadSearchLink('https://example.test', filters)); expect(url.pathname).toBe('/app/my-tasks'); expect(parseWorkloadLink(url.searchParams)).toEqual(filters); expect(url.searchParams.has('page')).toBe(false); });
+it('leaves ordinary my-tasks route unopened', () => { expect(parseWorkloadLink(new URLSearchParams('query=ordinary'))).toBeUndefined(); });
+it.each(['workload=0', 'workload=1&workload=1', 'workload=1', 'workload=1&today=2026-02-30', 'workload=1&query=a&query=b', 'workload=1&investigationId=7&investigationId=8'])('rejects invalid or ambiguous scope %s', query => { expect(parseWorkloadLink(new URLSearchParams(query))).toBeNull(); });
+it.each(['7.0', '7e1', '-1', '0', '9007199254740992', 'x'])('rejects noncanonical or unsafe exact investigation ID %s', id => { const p = new URL(workloadSearchLink('https://example.test', filters)).searchParams; p.set('investigationId', id); expect(parseWorkloadLink(p)).toBeNull(); });

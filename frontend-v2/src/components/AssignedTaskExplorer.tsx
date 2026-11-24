@@ -6,7 +6,9 @@ import { AssignedWorkloadBreakdown } from './AssignedWorkloadBreakdown';
 import { AssignedWorkloadPageExport } from './AssignedWorkloadPageExport';
 import { workloadPageSnapshot, type WorkloadPageSnapshot } from '../utils/assignedWorkloadExport';
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import { parseWorkloadLink, workloadSearchLink } from '../utils/assignedWorkloadLink';
+import type { WorkloadFilters } from '../utils/assignedWorkloadViews';
 import { validTaskDate } from '../utils/checklistTriage';
 import { AssignedTaskEditor } from './AssignedTaskEditor';
 import apiClient from '../api/client';
@@ -24,21 +26,27 @@ function summaryFrom(value: unknown, total: number, completion: string): Summary
 }
 const control = 'max-w-full rounded border border-surface-600 bg-surface-950 px-3 py-2 text-xs text-surface-200 disabled:opacity-40';
 function localDate() { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; }
-export function AssignedTaskExplorer({ onEdited, editingBlocked = false }: { onEdited?: () => void; editingBlocked?: boolean }) {
+export function AssignedTaskExplorer(props: { onEdited?: () => void; editingBlocked?: boolean }) {
+  const [params] = useSearchParams();
+  return <AssignedTaskSearch key={params.toString()} {...props} initial={parseWorkloadLink(params)} />;
+}
+function AssignedTaskSearch({ onEdited, editingBlocked = false, initial }: { onEdited?: () => void; editingBlocked?: boolean; initial: WorkloadFilters | null | undefined }) {
+  const [invalidLink, setInvalidLink] = useState(initial === null);
+  const [copyStatus, setCopyStatus] = useState(''); const copyId = useRef(0);
   const [groupExport, setGroupExport] = useState<InvestigationExportSnapshot | null>(null);
   const [exportSnapshot, setExportSnapshot] = useState<WorkloadPageSnapshot | null>(null);
   const [editing, setEditing] = useState<Task | null>(null), [notice, setNotice] = useState(''), [mustRefresh, setMustRefresh] = useState(false);
-  const [open, setOpen] = useState(false), [query, setQuery] = useState(''), [severity, setSeverity] = useState('all'), [due, setDue] = useState('all'), [today, setToday] = useState(localDate);
-  const [dueFrom, setDueFrom] = useState(''), [dueThrough, setDueThrough] = useState('');
-  const [sort, setSort] = useState('priority');
-  const [completion, setCompletion] = useState('open'), [investigations, setInvestigations] = useState('active');
-  const [filters, setFilters] = useState({ sort: 'priority', query: '', severity: 'all', due: 'all', today: localDate(), completion: 'open', investigations: 'active', dueFrom: '', dueThrough: '', investigationId: null as number | null });
+  const [open, setOpen] = useState(initial !== undefined), [query, setQuery] = useState(initial?.query ?? ''), [severity, setSeverity] = useState(initial?.severity ?? 'all'), [due, setDue] = useState(initial?.due ?? 'all'), [today, setToday] = useState(initial?.today ?? localDate);
+  const [dueFrom, setDueFrom] = useState(initial?.dueFrom ?? ''), [dueThrough, setDueThrough] = useState(initial?.dueThrough ?? '');
+  const [sort, setSort] = useState(initial?.sort ?? 'priority');
+  const [completion, setCompletion] = useState(initial?.completion ?? 'open'), [investigations, setInvestigations] = useState(initial?.investigations ?? 'active');
+  const [filters, setFilters] = useState({ sort: 'priority', query: '', severity: 'all', due: 'all', today: localDate(), completion: 'open', investigations: 'active', dueFrom: '', dueThrough: '', investigationId: null as number | null, ...(initial ?? {}) });
   const [page, setPage] = useState(1), [retry, setRetry] = useState(0), [loading, setLoading] = useState(false), [error, setError] = useState('');
   const [snapshot, setSnapshot] = useState<{ tasks: Task[]; total: number; summary: Summary | null; loadedAt: string; groups: unknown; groupCount: unknown; groupLimit: unknown } | null>(null);
   const requestId = useRef(0);
   useEffect(() => {
     const request = ++requestId.current; setSnapshot(null); setError('');
-    if (!open) { setLoading(false); return; }
+    if (!open || invalidLink) { setLoading(false); return; }
     setLoading(true);
     void apiClient.get('/cases/assigned-task-explorer', { params: { ...(filters.sort === 'priority' ? {} : { sort: filters.sort }), query: filters.query, severity: filters.severity, due: filters.due, today: filters.today, completion: filters.completion, investigations: filters.investigations, ...(filters.investigationId === null ? {} : { investigation_id: filters.investigationId }), ...(filters.due === 'range' ? { due_from: filters.dueFrom, due_through: filters.dueThrough } : {}), page, size: 25 } }).then(response => {
       if (requestId.current !== request) return;
@@ -48,7 +56,13 @@ export function AssignedTaskExplorer({ onEdited, editingBlocked = false }: { onE
       setSnapshot({ groups: value.by_investigation, groupCount: value.investigation_groups_total, groupLimit: value.investigation_group_limit, tasks: value.data, total: value.total, summary: summaryFrom(value.summary, value.total, filters.completion), loadedAt: new Date().toLocaleString() }); setMustRefresh(false);
     }).catch(err => { if (requestId.current === request) setError(getApiErrorMessage(err, 'Assigned task exploration unavailable.')); }).finally(() => { if (requestId.current === request) setLoading(false); });
     return () => { requestId.current += 1; };
-  }, [open, filters, page, retry]);
+  }, [open, filters, page, retry, invalidLink]);
+  useEffect(() => { copyId.current += 1; setCopyStatus(''); return () => { copyId.current += 1; }; }, [filters]);
+  async function copyApplied() {
+    const id = ++copyId.current; setCopyStatus('');
+    try { await navigator.clipboard.writeText(workloadSearchLink(window.location.origin, filters)); if (copyId.current === id) setCopyStatus('Applied workload search link copied. Each viewer sees only their own current assigned records, not your result snapshot.'); }
+    catch { if (copyId.current === id) setCopyStatus('Copy unavailable. Applied workload filters are unchanged.'); }
+  }
   const windowValid = due !== 'range' || (validTaskDate(dueFrom) && validTaskDate(dueThrough) && dueFrom <= dueThrough);
   const dirty = sort !== filters.sort || query !== filters.query || severity !== filters.severity || due !== filters.due || today !== filters.today || completion !== filters.completion || investigations !== filters.investigations || (due === 'range' && (dueFrom !== filters.dueFrom || dueThrough !== filters.dueThrough));
   return <section aria-label="Full assigned task explorer" className="oa-panel space-y-4 p-4 sm:p-6">
@@ -56,6 +70,8 @@ export function AssignedTaskExplorer({ onEdited, editingBlocked = false }: { onE
     {notice && <p role="status" className="text-sm text-warning">{notice}</p>}
     {open && <>
       <p className="text-xs text-surface-400">Explore and individually edit tasks currently assigned to you on currently visible investigations. Defaults to open work on active investigations. Include completed tasks or inactive investigations to find records missing from the editing snapshot. This is not past assignment history, a work log or proof of external remediation. A recorded completion may not have a timestamp. Search and filters apply before server paging, not just to the first 200 tasks. Review a task change here or open its investigation for the full checklist. This does not change selection or due-date drafts in the editing snapshot below. Refresh this explorer after edits elsewhere.</p>
+      {invalidLink && <p role="alert" className="text-sm text-danger">This assigned-workload search link is invalid or ambiguous. No explorer query was run. Choose valid filters and apply to start a new search.</p>}
+      {!invalidLink && <section aria-label="Assigned workload search handoff" className="space-y-2 text-xs text-surface-400"><button type="button" className={control} onClick={() => void copyApplied()}>Copy applied workload search link</button><p>Includes applied search, fixed calendar dates, exact investigation scope and order, not draft edits, pages, records or permissions. Query details and IDs are visible in the link. Share only with an appropriate audience. It grants no access and saves or edits no tasks. Each viewer sees only their own current assigned records. Check fixed dates before relying on due buckets.</p>{copyStatus && <p role="status">{copyStatus}</p>}</section>}
       <section aria-label="Saved assigned workload filters" className="space-y-2 rounded border border-surface-700 p-3">
         <h3 className="text-sm font-semibold text-surface-100">Your saved workload views</h3>
         <p className="text-xs text-surface-400">Save applied filters only, not draft edits, tasks, selection, pages or access. Views are private to your account. Calendar dates are fixed, not rolling: check the saved date before relying on due buckets. Applying a view replaces filter drafts and reloads current assigned records from page 1; it never edits a task or grants investigation access.</p>
@@ -63,10 +79,10 @@ export function AssignedTaskExplorer({ onEdited, editingBlocked = false }: { onE
           const next = readWorkloadView(value);
           if (!next) { setNotice('Saved workload view is invalid. Filters and current results were not changed.'); return; }
           setSort(next.sort ?? 'priority'); setQuery(next.query); setSeverity(next.severity); setDue(next.due); setToday(next.today); setCompletion(next.completion); setInvestigations(next.investigations); setDueFrom(next.dueFrom); setDueThrough(next.dueThrough);
-          setSnapshot(null); setFilters({ ...next, sort: next.sort ?? 'priority' }); setPage(1); setNotice('Applied saved workload filters. Check the fixed calendar date. Records reload with your current assignment and visibility.');
+          setInvalidLink(false); setSnapshot(null); setFilters({ ...next, sort: next.sort ?? 'priority' }); setPage(1); setNotice('Applied saved workload filters. Check the fixed calendar date. Records reload with your current assignment and visibility.');
         }} />
       </section>
-      <form className="flex flex-wrap items-end gap-2" onSubmit={event => { event.preventDefault(); if (!windowValid || !today) return; setSnapshot(null); setFilters({ sort, query, severity, due, today, completion, investigations, dueFrom, dueThrough, investigationId: filters.investigationId }); setPage(1); }}>
+      <form className="flex flex-wrap items-end gap-2" onSubmit={event => { event.preventDefault(); if (!windowValid || !validTaskDate(today)) return; setInvalidLink(false); setSnapshot(null); setFilters({ sort, query, severity, due, today, completion, investigations, dueFrom, dueThrough, investigationId: filters.investigationId }); setPage(1); }}>
         <label className="flex min-w-0 basis-full flex-col gap-1 text-xs text-surface-400 sm:basis-64 sm:flex-1">Search all assigned task titles, investigations or IDs<input aria-label="Search full assigned workload" maxLength={200} value={query} onChange={event => setQuery(event.target.value)} className={control} /></label>
         <label className="flex flex-col gap-1 text-xs text-surface-400">Investigation severity<select aria-label="Full workload severity" value={severity} onChange={event => setSeverity(event.target.value)} className={control}><option value="all">All severities</option>{['critical', 'high', 'medium', 'low', 'info'].map(value => <option key={value} value={value}>{value}</option>)}</select></label>
         <label className="flex flex-col gap-1 text-xs text-surface-400">Task completion<select aria-label="Full workload completion" value={completion} onChange={event => setCompletion(event.target.value)} className={control}><option value="open">Open tasks</option><option value="completed">Completed tasks</option><option value="all">Open and completed tasks</option></select></label>
@@ -75,7 +91,7 @@ export function AssignedTaskExplorer({ onEdited, editingBlocked = false }: { onE
         <label className="flex flex-col gap-1 text-xs text-surface-400">Calendar date for due filters<input required type="date" aria-label="Full workload calendar date" value={today} onChange={event => setToday(event.target.value)} className={control} /></label>
         {due === 'range' && <><label className="flex flex-col gap-1 text-xs text-surface-400">Task due from<input type="date" aria-label="Full workload due from" value={dueFrom} onChange={event => setDueFrom(event.target.value)} className={control} /></label><label className="flex flex-col gap-1 text-xs text-surface-400">Task due through<input type="date" aria-label="Full workload due through" value={dueThrough} onChange={event => setDueThrough(event.target.value)} className={control} /></label></>}
         <label className="flex flex-col gap-1 text-xs text-surface-400">Order all matching tasks<select aria-label="Full workload sort" value={sort} onChange={event => setSort(event.target.value)} className={control}><option value="priority">Investigation priority (default)</option><option value="task_due">Task due date, undated last</option><option value="completed_newest">Recorded completion, newest first</option><option value="title">Task title, A to Z</option></select></label>
-        <button type="submit" className={control} disabled={!today || !windowValid}>Apply full workload filters</button>
+        <button type="submit" className={control} disabled={!validTaskDate(today) || !windowValid}>Apply full workload filters</button>
       </form>
       {due === 'range' && <p role="status" className="text-xs text-warning">Fixed windows include both calendar-date boundaries, not a rolling local-day bucket. Choose valid dates in ascending order before applying. Matching counts include all server pages and the applied completion/investigation scope, not just open tasks.</p>}
       <p className="text-xs text-surface-400">Due filters compare the recorded task due date, including completed tasks. A past due date alone does not mean a completed task was late. Exploration alone changes nothing. Task edits require a separate review and confirmation.</p>
