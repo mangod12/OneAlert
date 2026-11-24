@@ -1,0 +1,21 @@
+import { expect, it } from 'vitest';
+import { checklistExportSnapshot, checklistSnapshotCsv } from './checklistSnapshotExport';
+import { defaultChecklistFilters } from './checklistTriage';
+const task = { id: 7, title: 'Endpoint, "evidence"\nreview', done: false, position: 2, due_date: null, assignee_id: 99 };
+it('freezes exact matching rows and filters without following later changes', () => {
+  const row = { ...task }, filters = { ...defaultChecklistFilters, status: 'open' };
+  const snapshot = checklistExportSnapshot(12, [row], 23, filters, '2026-11-24', 'captured');
+  row.title = 'Changed'; filters.status = 'done';
+  expect(snapshot.tasks[0].title).toBe(task.title); expect(snapshot.filters.status).toBe('open');
+  const csv = checklistSnapshotCsv(snapshot); expect(csv).toContain('Endpoint, ""evidence""\nreview'); expect(csv).toContain('"12","captured","2026-11-24","23","1"'); expect(csv).toContain('"7"'); expect(csv).toContain('"99"'); expect(csv).toContain('not freshly fetched');
+});
+it.each(['=SUM(A1)', '+12', '-5', '@cmd', '\t=cmd', '\u0000 =cmd', '\r\n@cmd', '  +cmd'])('escapes formula-like titles and filters %s', title => {
+  const csv = checklistSnapshotCsv(checklistExportSnapshot(12, [{ ...task, title }], 1, { ...defaultChecklistFilters, query: title }, '', 'now'));
+  expect(csv.split('"\'' + title + '"')).toHaveLength(3);
+});
+it('keeps unassigned null separate from named account IDs and preserves completed state', () => {
+  const csv = checklistSnapshotCsv(checklistExportSnapshot(12, [{ ...task, done: true, assignee_id: null }], 1, defaultChecklistFilters, '', 'now'));
+  expect(csv).toContain('"true","","","2"');
+});
+it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])('rejects invalid investigation scope %s', id => expect(() => checklistExportSnapshot(id, [task], 1, defaultChecklistFilters, '', 'now')).toThrow());
+it('rejects fewer loaded tasks than reviewed rows', () => expect(() => checklistExportSnapshot(12, [task], 0, defaultChecklistFilters, '', 'now')).toThrow());
