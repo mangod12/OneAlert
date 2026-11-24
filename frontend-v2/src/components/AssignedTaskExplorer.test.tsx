@@ -129,3 +129,15 @@ it.each(['missing', 'boundary', 'row'])('rejects unverifiable fixed-window evide
   fireEvent.click(screen.getByRole('button', { name: 'Apply full workload filters' }));
   await screen.findByRole('alert'); expect(screen.queryByRole('link')).toBeNull(); expect(screen.queryByText(/No assigned tasks match/)).toBeNull();
 });
+it('exports only the loaded page under applied filters, never unsaved drafts or all matching records', async () => {
+  show(); await screen.findByText(/201 matching/);
+  fireEvent.click(screen.getByRole('button', { name: 'Next workload page' })); await screen.findByText(/Page 2 of 9/);
+  fireEvent.change(screen.getByLabelText('Search full assigned workload'), { target: { value: 'unsaved draft' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review this workload page CSV (1 records only)' }));
+  const dialog = screen.getByRole('dialog'); expect(dialog.textContent).toContain('Only page 2: 1 loaded task records of 201'); expect(dialog.textContent).toContain('query ""'); expect(dialog.textContent).not.toContain('unsaved draft'); expect(dialog.textContent).toContain('Other pages are not included'); expect(get).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByText('Cancel workload page export')); expect(screen.queryByRole('dialog')).toBeNull();
+});
+it('blocks page export when the task snapshot is known stale', async () => {
+  render(<MemoryRouter><AssignedTaskExplorer editingBlocked /></MemoryRouter>); fireEvent.click(screen.getByRole('button', { name: 'Explore all assigned tasks beyond the editing snapshot' })); await screen.findByText(/201 matching/);
+  expect(screen.getByRole('button', { name: 'Review this workload page CSV (1 records only)' })).toHaveProperty('disabled', true);
+});

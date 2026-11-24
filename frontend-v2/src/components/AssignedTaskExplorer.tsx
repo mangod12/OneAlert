@@ -1,3 +1,5 @@
+import { AssignedWorkloadPageExport } from './AssignedWorkloadPageExport';
+import { workloadPageSnapshot, type WorkloadPageSnapshot } from '../utils/assignedWorkloadExport';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { validTaskDate } from '../utils/checklistTriage';
@@ -18,6 +20,7 @@ function summaryFrom(value: unknown, total: number, completion: string): Summary
 const control = 'max-w-full rounded border border-surface-600 bg-surface-950 px-3 py-2 text-xs text-surface-200 disabled:opacity-40';
 function localDate() { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; }
 export function AssignedTaskExplorer({ onEdited, editingBlocked = false }: { onEdited?: () => void; editingBlocked?: boolean }) {
+  const [exportSnapshot, setExportSnapshot] = useState<WorkloadPageSnapshot | null>(null);
   const [editing, setEditing] = useState<Task | null>(null), [notice, setNotice] = useState(''), [mustRefresh, setMustRefresh] = useState(false);
   const [open, setOpen] = useState(false), [query, setQuery] = useState(''), [severity, setSeverity] = useState('all'), [due, setDue] = useState('all'), [today, setToday] = useState(localDate);
   const [dueFrom, setDueFrom] = useState(''), [dueThrough, setDueThrough] = useState('');
@@ -73,10 +76,12 @@ export function AssignedTaskExplorer({ onEdited, editingBlocked = false }: { onE
           ].map(([label, count]) => <div key={label}><dt className="text-surface-400">{label}</dt><dd className="mt-1 text-lg font-semibold text-surface-100">{count}</dd></div>)}</dl> : <p role="status" className="text-xs text-warning">Full matching summary unavailable. Page records are still shown; totals are not inferred from this page.</p>}
         </section>
         {!snapshot.tasks.length && <p className="text-sm text-surface-400">No assigned tasks match these applied filters.</p>}
+        <button type="button" className={control} disabled={!snapshot.tasks.length || mustRefresh || editingBlocked || editing !== null} onClick={() => setExportSnapshot(workloadPageSnapshot(snapshot.tasks, filters, page, snapshot.total, snapshot.loadedAt, new Date().toISOString()))}>Review this workload page CSV ({snapshot.tasks.length} records only)</button>
         <ul aria-label="Full workload task results" className="space-y-2">{snapshot.tasks.map(task => <li key={task.task_id} className="space-y-2 rounded border border-surface-700 p-3 text-xs text-surface-300"><p className="break-words font-semibold text-surface-100">Task #{task.task_id}: {task.title}</p><Link className="inline-block max-w-full break-words text-primary-300" to={`/cases/${task.case_id}?task=${task.task_id}`}>{task.case_title} · Investigation #{task.case_id}</Link><p className="break-words font-medium">{task.done ? 'Completed checklist task' : 'Open checklist task'} · Recorded completion: {task.completed_at || 'Not recorded'}</p><button type="button" className={control} disabled={editingBlocked || mustRefresh} onClick={() => setEditing(task)}>Edit assigned task #{task.task_id}</button><p className="break-words">{task.case_severity} · {task.case_status.replaceAll('_', ' ')} · Task due: {task.due_date || 'Not set'} · Investigation due: {task.case_due_date || 'Not set'}</p></li>)}</ul>
       </>}
       <nav aria-label="Full assigned workload pages" className="flex flex-wrap gap-2"><button type="button" className={control} disabled={loading || !snapshot || page === 1} onClick={() => setPage(page - 1)}>Previous workload page</button><button type="button" className={control} disabled={loading || !snapshot || page * 25 >= snapshot.total} onClick={() => setPage(page + 1)}>Next workload page</button><button type="button" className={control} disabled={loading} onClick={() => setRetry(retry + 1)}>Refresh full workload page</button></nav>
     </>}
+    {exportSnapshot && <AssignedWorkloadPageExport snapshot={exportSnapshot} onClose={() => setExportSnapshot(null)} />}
     {editingBlocked && open && <p className="text-xs text-warning">Wait for snapshot saves and save or discard snapshot due-date drafts before opening a full-workload task review.</p>}
     {editing && <AssignedTaskEditor key={editing.task_id} task={editing} onClose={() => { setEditing(null); if (mustRefresh) setRetry(value => value + 1); }} onChanged={confirmed => { setMustRefresh(true); onEdited?.(); if (confirmed) { setEditing(null); setNotice(`Confirmed the reviewed change to task #${editing.task_id}. Workload totals are reloaded from the server. Refresh the editing snapshot below before using it again.`); setRetry(value => value + 1); } else { setNotice('A task write was attempted but not confirmed. Refresh the full workload and editing snapshot before another edit.'); } }} />}
   </section>;
