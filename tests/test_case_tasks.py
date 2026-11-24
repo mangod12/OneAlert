@@ -959,3 +959,37 @@ def test_assigned_workload_investigation_breakdown_uses_global_filters_and_cap(c
     outsider = _register_and_login(client, 'grouped-outsider@example.com')
     empty = client.get(path, headers=outsider).json()
     assert empty['by_investigation'] == [] and empty['investigation_groups_total'] == 0
+
+
+def test_assigned_workload_exact_investigation_scope_composes_before_counts_and_pages(client):
+    from backend.models.case import CaseTask
+
+    headers, case_id = _setup(client)
+    uid = _user_id(client, headers)
+    other = _register_and_login(client, 'drilldown-other@example.com')
+    with _TestingSessionLocal() as db:
+        second = Case(user_id=uid, title='Another assigned investigation', status='open', severity='high')
+        db.add(second)
+        db.flush()
+        second_id = second.id
+        db.add_all([CaseTask(case_id=case_id, title=f'Exact task {i}', position=i, assignee_id=uid,
+                            due_date=date(2026, 11, 20), done=False) for i in range(30)])
+        db.add(CaseTask(case_id=second_id, title='Other task', position=0, assignee_id=uid, done=False))
+        db.commit()
+    path = '/api/v1/cases/assigned-task-explorer'
+    params = {'investigation_id': case_id, 'page': 2, 'size': 25, 'due': 'range',
+              'due_from': '2026-11-20', 'due_through': '2026-11-20'}
+    response = client.get(path, params=params, headers=headers)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data['investigation_id'] == case_id and data['total'] == 30 and len(data['data']) == 5
+    assert {row['case_id'] for row in data['data']} == {case_id}
+    assert data['summary']['investigations'] == data['investigation_groups_total'] == 1
+    assert data['by_investigation'][0]['case_id'] == case_id
+    assert client.get(path, params={'investigation_id': second_id}, headers=headers).json()['total'] == 1
+    assert client.get(path, params={'investigation_id': case_id, 'query': 'No match'},
+                      headers=headers).json()['total'] == 0
+    assert client.get(path, params={'investigation_id': case_id}, headers=other).json()['total'] == 0
+    assert client.get(path, params={'investigation_id': 999999}, headers=headers).json()['total'] == 0
+    for value in (0, -1, 'invalid'):
+        assert client.get(path, params={'investigation_id': value}, headers=headers).status_code == 422

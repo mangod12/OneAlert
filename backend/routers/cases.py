@@ -466,6 +466,7 @@ async def explore_assigned_tasks(
     severity: Literal["all", "critical", "high", "medium", "low", "info"] = "all",
     due: Literal["all", "overdue", "today", "future", "none", "range"] = "all",
     today: date | None = None,
+    investigation_id: int | None = Query(None, ge=1),
     due_from: date | None = None, due_through: date | None = None,
     completion: Literal["open", "completed", "all"] = "open",
     investigations: Literal["active", "inactive", "all"] = "active",
@@ -478,6 +479,8 @@ async def explore_assigned_tasks(
     elif due_from is not None or due_through is not None:
         raise HTTPException(status_code=422, detail="Due-window dates require the range due filter")
     statement = _assigned_task_query(current_user, completion, investigations)
+    if investigation_id is not None:
+        statement = statement.where(CaseTask.case_id == investigation_id)
     if query.strip():
         needle = query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         pattern = f"%{needle}%"
@@ -525,6 +528,7 @@ async def explore_assigned_tasks(
             "data": records, "total": total, "summary": dict(counts), "page": page, "size": size,
             "by_investigation": [dict(row) for row in grouped],
             "investigation_groups_total": counts["investigations"], "investigation_group_limit": 50,
+            **({"investigation_id": investigation_id} if investigation_id is not None else {}),
             "filter_date": today, "completion": completion, "investigations": investigations,
             "scope": "Current records assigned to your account on currently visible investigations. "
                      "Not assignment history or proof of external remediation."}

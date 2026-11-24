@@ -17,3 +17,7 @@ it('rejects empty, duplicate, oversized or impossible page records', () => {
   expect(() => workloadPageSnapshot([task], filters, 1, 0, '', '')).toThrow(); expect(() => workloadPageSnapshot([{ ...task, case_id: 0 }], filters, 1, 1, '', '')).toThrow();
   expect(() => workloadPageSnapshot(Array.from({ length: 26 }, (_, i) => ({ ...task, task_id: i + 1 })), filters, 1, 26, '', '')).toThrow();
 });
+it('keeps the exact investigation drilldown in reviewed CSV scope', () => {
+  const csv = workloadPageCsv(workloadPageSnapshot([task], { ...filters, investigationId: 7 }, 1, 1, '', ''));
+  expect(csv).toContain('"exact_investigation_filter"'); expect(csv).toContain('"2026-11-20","","7"');
+});
