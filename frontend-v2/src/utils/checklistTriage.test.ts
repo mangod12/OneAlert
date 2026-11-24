@@ -25,3 +25,9 @@ it('sorts deterministically without persisting order and keeps undated last', ()
   expect(ids({ sort: 'position' })).toEqual([2, 1, 3, 4, 5]);
   expect(ids({ sort: 'title' })).toEqual([2, 4, 1, 3, 5]);
 });
+it('filters fixed inclusive due windows independently of local today, excluding completed and invalid dates', () => {
+  expect(ids({ due: 'range', dueFrom: '2026-11-20', dueTo: '2026-11-21' }, '')).toEqual([2, 1]);
+  expect(ids({ due: 'range', dueFrom: '2026-11-21', dueTo: '2026-11-21' }, '2030-01-01')).toEqual([2]);
+  expect(ids({ due: 'range', dueFrom: '2026-11-19', dueTo: '2026-11-22' })).toEqual([2, 1, 4]);
+});
+it.each([{ dueFrom: '', dueTo: '2026-11-22' }, { dueFrom: '2026-02-30', dueTo: '2026-11-22' }, { dueFrom: '2026-11-22', dueTo: '2026-11-20' }])('fails closed on incomplete or invalid fixed windows %s', range => expect(ids({ due: 'range', ...range })).toEqual([]));
