@@ -13,7 +13,7 @@ it('previews bounded pages in captured order including the final partial page', 
   expect(screen.getByText('Captured entry #11')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Next captured rows' }));
   expect(screen.getAllByRole('listitem')).toHaveLength(3);
-  expect(screen.getByRole('status')).toHaveTextContent('Captured rows 21-23 of 23');
+  expect(screen.getAllByRole('status')[0]).toHaveTextContent('Captured rows 21-23 of 23');
   expect(screen.getByRole('button', { name: 'Next captured rows' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Previous captured rows' }));
   expect(screen.getByText('Captured entry #11')).toBeInTheDocument();
@@ -44,22 +44,22 @@ it('keeps preview rows frozen through live filter and record changes, excludes p
   const next = screen.getByRole('region', { name: 'Matching timeline CSV review' });
   fireEvent.click(within(next).getByText('Inspect captured matching rows (1)'));
   expect(within(next).getByText('Changed live text')).toBeInTheDocument();
-  expect(within(next).getByRole('status')).toHaveTextContent('Captured rows 1-1 of 1');
+  expect(within(next).getAllByRole('status')[0]).toHaveTextContent('Captured rows 1-1 of 1');
 });
 
 it('searches only frozen rows and resets inspection pagination without changing capture count', () => {
   render(<TimelineCapturedRows rows={rows} />); fireEvent.click(screen.getByText('Inspect captured matching rows (23)'));
   fireEvent.click(screen.getByRole('button', { name: 'Next captured rows' }));
   fireEvent.change(screen.getByRole('textbox', { name: 'Find within captured rows' }), { target: { value: '  EVIDENCE 2  ' } });
-  expect(screen.getByRole('status')).toHaveTextContent('5 inspection matches of 23 captured rows');
+  expect(screen.getAllByRole('status')[0]).toHaveTextContent('5 inspection matches of 23 captured rows');
   expect(screen.getByText('Captured entry #2')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Next captured rows' })).toBeNull();
   fireEvent.change(screen.getByRole('textbox', { name: 'Find within captured rows' }), { target: { value: '2026-11-24T00:30:00+05:30' } });
-  expect(screen.getByRole('status')).toHaveTextContent('23 inspection matches of 23 captured rows');
+  expect(screen.getAllByRole('status')[0]).toHaveTextContent('23 inspection matches of 23 captured rows');
   fireEvent.change(screen.getByRole('textbox', { name: 'Find within captured rows' }), { target: { value: '%notpresent' } });
   expect(screen.queryAllByRole('listitem')).toHaveLength(0);
   expect(screen.getByText(/No captured rows match this inspection text/)).toBeInTheDocument();
   expect(screen.getByText('Inspect captured matching rows (23)')).toBeInTheDocument();
   fireEvent.change(screen.getByRole('textbox', { name: 'Find within captured rows' }), { target: { value: ' ' } });
-  expect(screen.getByRole('status')).toHaveTextContent('Captured rows 1-10 of 23');
+  expect(screen.getAllByRole('status')[0]).toHaveTextContent('Captured rows 1-10 of 23');
 });
