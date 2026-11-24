@@ -828,7 +828,7 @@ export function CaseDetail() {
               </button>
             </form>
             <EvidenceNoteSourceIndex caseId={caseData.id} entries={caseData.timeline} onSelect={noteId => { const params = new URLSearchParams(searchParams); params.set('note', String(noteId)); navigate(`/cases/${caseId}?${params}`, { replace: true }); }} />
-            <TimelineExplorer key={caseData.id} entries={caseData.timeline} pinnedIds={[highlightedNoteId, editingNoteId].filter((id): id is number => id !== null)}>
+            <TimelineExplorer key={caseData.id} exportContext={{ caseId: caseData.id, title: caseData.title }} entries={caseData.timeline} pinnedIds={[highlightedNoteId, editingNoteId].filter((id): id is number => id !== null)}>
                 {(entry) => {
                   const Icon = timelineIcons[entry.entry_type] || Clock;
                   return (
