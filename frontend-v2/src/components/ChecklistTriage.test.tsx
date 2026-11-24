@@ -101,3 +101,13 @@ it('fails closed on ambiguous incoming filter handoffs and recovers only through
   expect((screen.getByText('Copy current checklist filter link') as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByText('Clear task filters')); expect(screen.queryByRole('alert')).toBeNull(); expect(screen.getByText('Task 1')).toBeTruthy();
 });
+it('offers a fixed inclusive date window with fail-closed incomplete ranges and exact export scope', () => {
+  render(<ChecklistTriage {...props} caseId={12}>{row}</ChecklistTriage>);
+  fireEvent.change(screen.getByLabelText('Filter checklist due date'), { target: { value: 'range' } });
+  expect(screen.queryByText('Task 2')).toBeNull();
+  fireEvent.change(screen.getByLabelText('Checklist due from'), { target: { value: '2026-11-20' } });
+  fireEvent.change(screen.getByLabelText('Checklist due through'), { target: { value: '2026-11-20' } });
+  expect(screen.getByText('Task 2')).toBeTruthy(); expect(screen.queryByText('Task 1')).toBeNull();
+  fireEvent.click(screen.getByText('Review matching checklist CSV (1 tasks)'));
+  expect(screen.getByRole('dialog').textContent).toContain('2026-11-20 through 2026-11-20, inclusive');
+});

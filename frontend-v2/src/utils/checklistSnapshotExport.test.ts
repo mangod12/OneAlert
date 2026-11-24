@@ -19,3 +19,8 @@ it('keeps unassigned null separate from named account IDs and preserves complete
 });
 it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])('rejects invalid investigation scope %s', id => expect(() => checklistExportSnapshot(id, [task], 1, defaultChecklistFilters, '', 'now')).toThrow());
 it('rejects fewer loaded tasks than reviewed rows', () => expect(() => checklistExportSnapshot(12, [task], 0, defaultChecklistFilters, '', 'now')).toThrow());
+it('exports exact fixed date-window metadata alongside the reviewed filter', () => {
+  const csv = checklistSnapshotCsv(checklistExportSnapshot(12, [task], 1, { ...defaultChecklistFilters, due: 'range', dueFrom: '2026-11-20', dueTo: '2026-11-24' }, '', 'now'));
+  expect(csv).toContain('"due_window_from","due_window_through"');
+  expect(csv).toContain('"2026-11-20","2026-11-24"');
+});

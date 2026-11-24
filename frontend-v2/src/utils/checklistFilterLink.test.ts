@@ -14,3 +14,8 @@ it('uses defaults only when no filter handoff is present and permits exact unkno
 });
 it('fails rather than broadens mine when current account is unavailable', () => expect(() => checklistFilterLink('https://example.test', 7, { ...defaultChecklistFilters, assignee: 'mine' }, null)).toThrow());
 it.each([0, -1, 1.5])('rejects bad case IDs %s', id => expect(() => checklistFilterLink('https://example.test', id, defaultChecklistFilters, 5)).toThrow());
+it('roundtrips exact fixed date boundaries without converting them to a relative date bucket', () => {
+  const filters = { ...defaultChecklistFilters, due: 'range', dueFrom: '2026-11-20', dueTo: '2026-12-01' };
+  expect(readChecklistFilterLink(new URL(checklistFilterLink('https://example.test', 7, filters, 5)).search)).toEqual({ filters, invalid: false });
+});
+it.each(['checklist=1&checklist_due=range', 'checklist=1&checklist_due=range&checklist_from=2026-11-24&checklist_to=2026-11-20', 'checklist=1&checklist_due=range&checklist_from=2026-02-30&checklist_to=2026-11-20', 'checklist=1&checklist_from=2026-11-20', 'checklist=1&checklist_due=range&checklist_from=2026-11-20&checklist_from=2026-11-21&checklist_to=2026-11-24'])('rejects malformed fixed window link %s', search => expect(readChecklistFilterLink(search).invalid).toBe(true));

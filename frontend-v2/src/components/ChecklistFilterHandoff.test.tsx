@@ -17,3 +17,9 @@ it('labels copy failure and refuses unresolved mine', async () => {
   view.rerender(<ChecklistFilterHandoff caseId={7} filters={{ ...defaultChecklistFilters, assignee: 'mine' }} currentUserId={null} disabled={false} />);
   expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(true);
 });
+it('disables copying incomplete or reversed fixed date windows', () => {
+  const { rerender } = render(<ChecklistFilterHandoff caseId={7} filters={{ ...defaultChecklistFilters, due: 'range' }} currentUserId={5} disabled={false} />);
+  expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(true);
+  rerender(<ChecklistFilterHandoff caseId={7} filters={{ ...defaultChecklistFilters, due: 'range', dueFrom: '2026-11-24', dueTo: '2026-11-20' }} currentUserId={5} disabled={false} />);
+  expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(true);
+});

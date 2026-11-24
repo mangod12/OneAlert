@@ -13,7 +13,7 @@ export function checklistSnapshotCsv(snapshot: ChecklistExportSnapshot): string 
   };
   const scope = 'Local loaded checklist snapshot, all matching rows across pages, not freshly fetched, not complete audit history or remediation proof. Review before sharing. No message, upload or task save was sent.';
   const { filters: f } = snapshot;
-  const rows: unknown[][] = [['investigation_id', 'captured_at', 'local_date_for_filters', 'loaded_task_count', 'matching_task_count', 'title_query', 'status_filter', 'assignee_filter', 'due_filter', 'sort_order', 'task_id', 'task_title', 'completed', 'due_date', 'assignee_id', 'checklist_position', 'scope']];
-  for (const task of snapshot.tasks) rows.push([snapshot.caseId, snapshot.capturedAt, snapshot.localDate, snapshot.loadedCount, snapshot.tasks.length, f.query, f.status, f.assignee, f.due, f.sort, task.id, task.title, task.done, task.due_date, task.assignee_id, task.position, scope]);
+  const rows: unknown[][] = [['investigation_id', 'captured_at', 'local_date_for_filters', 'loaded_task_count', 'matching_task_count', 'title_query', 'status_filter', 'assignee_filter', 'due_filter', 'sort_order', 'task_id', 'task_title', 'completed', 'due_date', 'assignee_id', 'checklist_position', 'scope', 'due_window_from', 'due_window_through']];
+  for (const task of snapshot.tasks) rows.push([snapshot.caseId, snapshot.capturedAt, snapshot.localDate, snapshot.loadedCount, snapshot.tasks.length, f.query, f.status, f.assignee, f.due, f.sort, task.id, task.title, task.done, task.due_date, task.assignee_id, task.position, scope, f.due === 'range' ? f.dueFrom : '', f.due === 'range' ? f.dueTo : '']);
   return '\uFEFF' + rows.map(row => row.map(cell).join(',')).join('\r\n') + '\r\n';
 }
