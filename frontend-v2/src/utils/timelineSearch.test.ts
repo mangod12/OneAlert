@@ -1,0 +1,7 @@
+import { expect, it } from 'vitest';
+import { timelineSearchMatch, timelineSearchValid } from './timelineSearch';
+const entry = { id: 123, content: 'Host memory captured', author_email: 'analyst@example.test', source: 'human', entry_type: 'note' };
+it('scopes text independently of metadata with case-insensitive trimmed literal substring semantics', () => { expect(timelineSearchMatch(entry, ' HUMAN ', 'all')).toBe(true); expect(timelineSearchMatch(entry, 'human', 'content')).toBe(false); expect(timelineSearchMatch(entry, ' MEMORY ', 'content')).toBe(true); expect(timelineSearchMatch(entry, 'analyst@', 'author')).toBe(true); expect(timelineSearchMatch(entry, 'memory', 'author')).toBe(false); expect(timelineSearchMatch({ ...entry, author_email: null }, 'null', 'author')).toBe(false); });
+it('requires exact safe positive entry IDs, never partial substring IDs', () => { expect(timelineSearchMatch(entry, '123', 'id')).toBe(true); expect(timelineSearchMatch(entry, '12', 'id')).toBe(false); expect(timelineSearchMatch(entry, ' 123 ', 'id')).toBe(true); });
+it.each(['0', '-123', '+123', '0123', '1.23', '1e2', '1 23', '9007199254740992', 'note 123'])('rejects invalid ID criteria without widening: %s', query => { expect(timelineSearchValid(query, 'id')).toBe(false); expect(timelineSearchMatch(entry, query, 'id')).toBe(false); });
+it('treats an empty query as no text restriction in every field', () => { for (const field of ['all', 'content', 'author', 'id'] as const) expect(timelineSearchMatch(entry, ' ', field)).toBe(true); });

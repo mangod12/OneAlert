@@ -1,3 +1,4 @@
+import { timelineSearchMatch, timelineSearchValid, type TimelineSearchField } from '../utils/timelineSearch';
 import { timelineComposition, timelineDayComposition } from '../utils/timelineComposition';
 import { timelineReviewCsv, type TimelineExportSnapshot } from '../utils/timelineReviewExport';
 import { timelineReviewMatch, timelineWindowValid } from '../utils/timelineReview';
@@ -21,7 +22,8 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
   const [snapshot, setSnapshot] = useState<TimelineExportSnapshot | null>(null);
   const [page, setPage] = useState(0);
   const [compositionOpen, setCompositionOpen] = useState(false);
-  const [returnPoint, setReturnPoint] = useState<null | { query: string; kind: string; source: string; order: string; author: string; from: string; through: string; page: number }>(null);
+  const [returnPoint, setReturnPoint] = useState<null | { searchField: TimelineSearchField; query: string; kind: string; source: string; order: string; author: string; from: string; through: string; page: number }>(null);
+  const [searchField, setSearchField] = useState<TimelineSearchField>('all');
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState('');
   const [source, setSource] = useState('');
@@ -32,16 +34,15 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
   const kinds = [...new Set(entries.map(e => e.entry_type))].sort();
   const sources = [...new Set(entries.map(e => e.source))].sort();
   const matches = useMemo(() => {
-    const needle = query.trim().toLowerCase();
     return entries.filter(entry => timelineReviewMatch(entry, { author, from, through }) && (!kind || entry.entry_type === kind) && (!source || entry.source === source)
-      && (!needle || [entry.content, entry.author_email, entry.source, entry.entry_type, String(entry.id)].some(value => value?.toLowerCase().includes(needle))));
-  }, [entries, query, kind, source, author, from, through]);
+      && timelineSearchMatch(entry, query, searchField));
+  }, [entries, query, searchField, kind, source, author, from, through]);
   const composition = timelineComposition(matches), dayComposition = timelineDayComposition(matches);
   const narrow = (facet: 'kind' | 'source' | 'author' | 'day', value: string) => {
-    setReturnPoint({ query, kind, source, order, author, from, through, page: current }); setPage(0);
+    setReturnPoint({ searchField, query, kind, source, order, author, from, through, page: current }); setPage(0);
     if (facet === 'kind') setKind(value); else if (facet === 'source') setSource(value); else if (facet === 'author') setAuthor(value); else { setFrom(value); setThrough(value); }
   };
-  const restore = () => { if (!returnPoint) return; const r = returnPoint; setQuery(r.query); setKind(r.kind); setSource(r.source); setOrder(r.order); setAuthor(r.author); setFrom(r.from); setThrough(r.through); setPage(r.page); setReturnPoint(null); };
+  const restore = () => { if (!returnPoint) return; const r = returnPoint; setSearchField(r.searchField); setQuery(r.query); setKind(r.kind); setSource(r.source); setOrder(r.order); setAuthor(r.author); setFrom(r.from); setThrough(r.through); setPage(r.page); setReturnPoint(null); };
   const pinned = entries.filter(entry => pinnedIds.includes(entry.id) && !matches.some(match => match.id === entry.id));
   const shown = [...matches, ...pinned];
   if (order !== 'original') shown.sort((a, b) => {
@@ -51,9 +52,9 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
     return (order === 'newest' ? bTime - aTime : aTime - bTime) || a.id - b.id;
   });
   const capture = () => {
-    if (!exportContext || !validWindow || !matches.length) return;
+    if (!exportContext || !validWindow || !timelineSearchValid(query, searchField) || !matches.length) return;
     const matchingIds = new Set(matches.map(entry => entry.id));
-    setSnapshot({ ...exportContext, capturedAt: new Date().toISOString(), loadedCount: entries.length, excludedPinnedCount: pinned.length, filters: { query, kind, source, order, author, from, through }, rows: shown.filter(entry => matchingIds.has(entry.id)).map(entry => ({ id: entry.id, timestamp: entry.timestamp, entry_type: entry.entry_type, source: entry.source, content: entry.content, author_email: entry.author_email })) });
+    setSnapshot({ ...exportContext, capturedAt: new Date().toISOString(), loadedCount: entries.length, excludedPinnedCount: pinned.length, filters: { searchField, query, kind, source, order, author, from, through }, rows: shown.filter(entry => matchingIds.has(entry.id)).map(entry => ({ id: entry.id, timestamp: entry.timestamp, entry_type: entry.entry_type, source: entry.source, content: entry.content, author_email: entry.author_email })) });
   };
   const download = () => {
     if (!snapshot) return;
@@ -68,14 +69,17 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
   const matchingPinsOutsidePage = outsidePinned.filter(entry => matchingIds.has(entry.id)).length;
   const visibleIds = new Set([...pageMatches, ...outsidePinned].map(entry => entry.id));
   const visible = shown.filter(entry => visibleIds.has(entry.id));
-  const filtered = !!query || !!kind || !!source || !!author || !!from || !!through || order !== 'original';
-  const clear = () => { setReturnPoint(null); setPage(0); setQuery(''); setKind(''); setSource(''); setOrder('original'); setAuthor(''); setFrom(''); setThrough(''); };
+  const filtered = searchField !== 'all' || !!query || !!kind || !!source || !!author || !!from || !!through || order !== 'original';
+  const clear = () => { setReturnPoint(null); setPage(0); setSearchField('all'); setQuery(''); setKind(''); setSource(''); setOrder('original'); setAuthor(''); setFrom(''); setThrough(''); };
   if (!entries.length && !snapshot && !returnPoint) return <p className="text-surface-500">No timeline entries yet.</p>;
   return <>
     <div className="mb-4 rounded-md border border-surface-700 bg-surface-950/50 p-3">
       <label htmlFor="timeline-query" className="block text-xs font-medium text-surface-300">Find timeline evidence</label>
       <input id="timeline-query" type="search" value={query} onChange={event => { setPage(0); setQuery(event.target.value); }} placeholder="Search text, author or entry ID"
         className="mt-1 min-h-9 w-full min-w-0 rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-100" />
+      <label className="mt-2 flex min-w-0 max-w-full flex-col gap-1 text-xs text-surface-400">Search within<select aria-label="Timeline search field" value={searchField} onChange={event => { setPage(0); setSearchField(event.target.value as TimelineSearchField); }} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200"><option value="all">All searchable fields</option><option value="content">Saved entry text only</option><option value="author">Recorded author text only</option><option value="id">Exact entry ID only</option></select></label>
+      <p className="mt-1 text-xs text-surface-400">Text search is a case-insensitive substring in the selected field. Exact entry ID accepts one positive whole ID, not a partial ID, source ID or note text. Empty search keeps all entries within the other criteria.</p>
+      {!timelineSearchValid(query, searchField) && <p role="alert" className="mt-1 text-xs text-warning">Enter one positive whole entry ID without spaces, signs or leading zeros. No entries match this invalid ID; linked or edited entries may remain visible separately.</p>}
       <div className="mt-2 flex flex-wrap gap-2">
         <select aria-label="Timeline entry type" value={kind} onChange={event => { setPage(0); setKind(event.target.value); }} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200">
           <option value="">All entry types</option>{kinds.map(value => <option key={value} value={value}>{value}</option>)}
@@ -100,11 +104,11 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
         {composition.length ? composition.map(group => <div key={group.facet}><h4 className="mb-1 font-medium text-surface-100">{group.label}</h4><div className="flex flex-wrap gap-2">{group.rows.map(row => <button type="button" key={row.value} onClick={() => narrow(group.facet, row.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 px-2 text-left [overflow-wrap:anywhere]">{row.label}: {row.count} {row.count === 1 ? 'entry' : 'entries'}</button>)}</div></div>) : <p>No matching entries to summarize. No wider timeline scope was substituted.</p>}
         <div><h4 className="mb-1 font-medium text-surface-100">Recorded UTC days</h4><p className="mb-2">Newest UTC day first, using the same recorded timestamp rules as date filters, not displayed local dates. Choose a day to set both inclusive UTC boundaries while retaining other criteria. This does not establish an event sequence or elapsed response time.</p><div className="flex flex-wrap gap-2">{dayComposition.days.map(row => <button type="button" key={row.day} onClick={() => narrow('day', row.day)} className="min-h-9 rounded-md border border-surface-600 px-2">UTC {row.day}: {row.count} {row.count === 1 ? 'entry' : 'entries'}</button>)}</div>{dayComposition.undated > 0 && <p className="mt-2 text-warning">{dayComposition.undated} matching {dayComposition.undated === 1 ? 'entry has' : 'entries have'} no usable recorded UTC day. These remain in the current matching count only when no date boundary is set, and are not assigned to a calendar day.</p>}{!dayComposition.days.length && <p>No usable UTC day in these matching entries.</p>}</div>
       </section>}
-      {exportContext && <button type="button" disabled={!validWindow || !matches.length} onClick={capture} className="mt-3 min-h-9 rounded-md border border-surface-600 px-2 text-xs text-surface-200 disabled:opacity-50">Review matching timeline CSV</button>}
+      {exportContext && <button type="button" disabled={!validWindow || !timelineSearchValid(query, searchField) || !matches.length} onClick={capture} className="mt-3 min-h-9 rounded-md border border-surface-600 px-2 text-xs text-surface-200 disabled:opacity-50">Review matching timeline CSV</button>}
       {snapshot && <section aria-label="Matching timeline CSV review" className="mt-3 space-y-2 rounded-md border border-primary-700 p-3 text-xs text-surface-200">
         <p>Captured review for investigation #{snapshot.caseId}: {snapshot.title}</p>
         <p>{snapshot.rows.length} matching entries of {snapshot.loadedCount} loaded. {snapshot.excludedPinnedCount} outside-filter linked or edited entries excluded. All captured loaded matches, not just the visible page. Only this loaded matching review, not the full timeline, edit history or audit evidence. Captured {snapshot.capturedAt}.</p>
-        <p className="break-words">Captured criteria: text {snapshot.filters.query || 'any'}; type {snapshot.filters.kind || 'any'}; source {snapshot.filters.source || 'any'}; author {snapshot.filters.author || 'any'}; UTC dates {snapshot.filters.from || 'unbounded'} through {snapshot.filters.through || 'unbounded'}; order {snapshot.filters.order}. Later filter or record changes do not change this captured review. No unsaved note edits are included.</p>
+        <p className="break-words">Captured criteria: search field {snapshot.filters.searchField || 'all'}; text {snapshot.filters.query || 'any'}; type {snapshot.filters.kind || 'any'}; source {snapshot.filters.source || 'any'}; author {snapshot.filters.author || 'any'}; UTC dates {snapshot.filters.from || 'unbounded'} through {snapshot.filters.through || 'unbounded'}; order {snapshot.filters.order}. Later filter or record changes do not change this captured review. No unsaved note edits are included.</p>
         <button type="button" onClick={download} className="min-h-9 rounded-md bg-primary-500 px-2 text-surface-950">Download captured matching CSV</button>
         <button type="button" onClick={() => setSnapshot(null)} className="ml-2 min-h-9 rounded-md border border-surface-600 px-2">Discard captured review</button>
       </section>}
