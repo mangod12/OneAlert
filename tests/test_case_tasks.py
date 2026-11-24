@@ -868,3 +868,61 @@ def test_assigned_task_summary_counts_all_matches_before_paging_and_uses_applied
     assert all(value == 0 for value in empty.values())
     outsider = _register_and_login(client, 'task-summary-outsider@example.com')
     assert all(value == 0 for value in client.get(path, params=params, headers=outsider).json()['summary'].values())
+
+
+def test_assigned_task_fixed_due_window_filters_before_summary_and_paging(client):
+    from backend.models.case import CaseTask
+
+    headers, case_id = _setup(client)
+    uid = _user_id(client, headers)
+    other = _register_and_login(client, 'fixed-window-other@example.com')
+    other_id = _user_id(client, other)
+    with _TestingSessionLocal() as db:
+        db.add_all([CaseTask(case_id=case_id, title=f'Window task {i}', position=i, assignee_id=uid,
+                            due_date=date(2026, 11, 20) if i < 205 else date(2026, 11, 24), done=i >= 205)
+                    for i in range(210)])
+        db.add_all([CaseTask(case_id=case_id, title='Too early', position=210, assignee_id=uid,
+                            due_date=date(2026, 11, 19), done=False),
+                    CaseTask(case_id=case_id, title='Too late', position=211, assignee_id=uid,
+                            due_date=date(2026, 11, 25), done=False),
+                    CaseTask(case_id=case_id, title='No due date', position=212, assignee_id=uid, done=False),
+                    CaseTask(case_id=case_id, title='Other assignee', position=213, assignee_id=other_id,
+                            due_date=date(2026, 11, 20), done=False)])
+        db.commit()
+    path = '/api/v1/cases/assigned-task-explorer'
+    params = {'due': 'range', 'due_from': '2026-11-20', 'due_through': '2026-11-24',
+              'completion': 'all', 'size': 25, 'page': 9}
+    response = client.get(path, params=params, headers=headers)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data['total'] == 210 and len(data['data']) == 10
+    assert data['due_from'] == '2026-11-20' and data['due_through'] == '2026-11-24'
+    assert data['summary'] == {'total': 210, 'investigations': 1, 'open': 205, 'completed': 5,
+                               'without_due_date': 0, 'completed_without_timestamp': 5}
+    assert {row['due_date'] for row in data['data']} == {'2026-11-20', '2026-11-24'}
+    one_day = client.get(path, params={**params, 'page': 1, 'due_through': '2026-11-20',
+                                       'today': '2030-01-01'}, headers=headers).json()
+    assert one_day['total'] == 205 and one_day['summary']['completed'] == 0
+    literal = client.get(path, params={**params, 'page': 1, 'query': 'Window task 209'}, headers=headers).json()
+    assert literal['total'] == 1 and literal['data'][0]['done'] is True
+    mine = client.get(path, params={**params, 'page': 1}, headers=other).json()
+    assert mine['total'] == 1 and mine['data'][0]['title'] == 'Other assignee'
+    with _TestingSessionLocal() as db:
+        db.get(Case, case_id).status = 'resolved'
+        db.commit()
+    assert client.get(path, params={**params, 'page': 1}, headers=headers).json()['total'] == 0
+    assert client.get(path, params={**params, 'page': 1, 'investigations': 'inactive'},
+                      headers=headers).json()['total'] == 210
+
+
+@pytest.mark.parametrize('params', [
+    {'due': 'range'}, {'due': 'range', 'due_from': '2026-11-20'},
+    {'due': 'range', 'due_through': '2026-11-24'},
+    {'due': 'range', 'due_from': '2026-11-24', 'due_through': '2026-11-20'},
+    {'due': 'range', 'due_from': '2026-02-30', 'due_through': '2026-11-24'},
+    {'due': 'all', 'due_from': '2026-11-20'},
+    {'due': 'today', 'today': '2026-11-21', 'due_through': '2026-11-24'},
+])
+def test_assigned_task_fixed_due_window_rejects_ambiguous_dates(client, params):
+    headers, _ = _setup(client)
+    assert client.get('/api/v1/cases/assigned-task-explorer', params=params, headers=headers).status_code == 422

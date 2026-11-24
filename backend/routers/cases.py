@@ -464,13 +464,19 @@ async def explore_assigned_tasks(
     page: int = Query(1, ge=1), size: int = Query(25, ge=1, le=100),
     query: str = Query("", max_length=200),
     severity: Literal["all", "critical", "high", "medium", "low", "info"] = "all",
-    due: Literal["all", "overdue", "today", "future", "none"] = "all",
+    due: Literal["all", "overdue", "today", "future", "none", "range"] = "all",
     today: date | None = None,
+    due_from: date | None = None, due_through: date | None = None,
     completion: Literal["open", "completed", "all"] = "open",
     investigations: Literal["active", "inactive", "all"] = "active",
     current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
 ):
     """Read current assigned-task records, including explicit completed/inactive scopes."""
+    if due == "range":
+        if due_from is None or due_through is None or due_from > due_through:
+            raise HTTPException(status_code=422, detail="Supply both inclusive due-window dates in ascending order")
+    elif due_from is not None or due_through is not None:
+        raise HTTPException(status_code=422, detail="Due-window dates require the range due filter")
     statement = _assigned_task_query(current_user, completion, investigations)
     if query.strip():
         needle = query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -482,7 +488,9 @@ async def explore_assigned_tasks(
     if severity != "all":
         statement = statement.where(or_(Case.severity == "medium", Case.severity.is_(None), Case.severity == "")
                                     if severity == "medium" else Case.severity == severity)
-    if due == "none":
+    if due == "range":
+        statement = statement.where(CaseTask.due_date >= due_from, CaseTask.due_date <= due_through)
+    elif due == "none":
         statement = statement.where(CaseTask.due_date.is_(None))
     elif due != "all":
         if today is None:
@@ -506,7 +514,8 @@ async def explore_assigned_tasks(
     rows = (await db.execute(statement.offset((page - 1) * size).limit(size))).all()
     records = [dict(row.model_dump(), done=task.done, completed_at=task.completed_at)
                for row, (task, _case) in zip(_assigned_task_rows(rows), rows, strict=True)]
-    return {"data": records, "total": total, "summary": dict(counts), "page": page, "size": size,
+    return {**({"due_from": due_from, "due_through": due_through} if due == "range" else {}),
+            "data": records, "total": total, "summary": dict(counts), "page": page, "size": size,
             "filter_date": today, "completion": completion, "investigations": investigations,
             "scope": "Current records assigned to your account on currently visible investigations. "
                      "Not assignment history or proof of external remediation."}
