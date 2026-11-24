@@ -1,0 +1,7 @@
+import { expect, it } from 'vitest';
+import { watchlistDrilldown, type WatchlistMetric } from './watchlistDrilldown';
+const filters = { query: 'gateway π %_', kind: 'all', severity: 'high', scope: 'all', sort: 'due' };
+it.each([['alerts', 'kind', 'alert'], ['cases', 'kind', 'case'], ['active', 'scope', 'active'], ['done', 'scope', 'done'], ['overdue', 'scope', 'overdue'], ['active_without_due_date', 'scope', 'undated']] as const)('keeps all criteria while narrowing %s', (metric, field, value) => { expect(watchlistDrilldown(filters, metric)).toEqual({ ...filters, [field]: value }); });
+it.each(['today', 'future', 'undated', 'overdue', 'active'])('active preserves the current %s intersection rather than widening', scope => { expect(watchlistDrilldown({ ...filters, scope }, 'active')).toEqual({ ...filters, scope }); });
+it.each([['today', 'overdue'], ['future', 'active_without_due_date'], ['undated', 'done'], ['overdue', 'active_without_due_date'], ['done', 'active'], ['done', 'overdue'], ['active', 'done']] as [string, WatchlistMetric][])('does not pretend incompatible %s / %s zero counts are another query', (scope, metric) => { expect(watchlistDrilldown({ ...filters, scope }, metric)).toBeNull(); });
+it('keeps incompatible record types noninteractive, including zero counts', () => { expect(watchlistDrilldown({ ...filters, kind: 'case' }, 'alerts')).toBeNull(); expect(watchlistDrilldown({ ...filters, kind: 'alert' }, 'cases')).toBeNull(); });
