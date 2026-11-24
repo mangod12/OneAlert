@@ -1,3 +1,4 @@
+import { checklistWorkload } from '../utils/checklistWorkload';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { defaultChecklistFilters, filterChecklist, validTaskDate, type ChecklistTask } from '../utils/checklistTriage';
 const control = 'max-w-full rounded border border-surface-700 bg-surface-950 px-2 py-2 text-xs text-surface-300';
@@ -14,12 +15,24 @@ export function ChecklistTriage<T extends ChecklistTask>({ tasks, today, current
   const filtered = filterChecklist(tasks, filters, today, currentUserId);
   const totalPages = Math.max(1, Math.ceil(filtered.length / 20)), currentPage = Math.min(page, totalPages);
   const update = (key: keyof typeof filters, value: string) => { setFilters(values => ({ ...values, [key]: value })); setPage(1); };
+  const workload = checklistWorkload(tasks, today);
   const overdue = tasks.filter(task => !task.done && validTaskDate(today) && validTaskDate(task.due_date) && task.due_date < today).length;
   const assignees = new Set(tasks.map(task => task.assignee_id).filter((id): id is number => id != null));
   const active = Object.keys(defaultChecklistFilters).some(key => filters[key as keyof typeof filters] !== defaultChecklistFilters[key as keyof typeof filters]);
   return <section aria-label="Investigation checklist triage" className="mb-4 space-y-3">
     {linkedTaskId !== null && (linkedIndex < 0 ? <p role="alert" className="text-sm text-warning">Task #{linkedTaskId} is not in this loaded investigation checklist. It may have been removed or may belong to another investigation. No task was changed.</p> : <div className="flex flex-wrap items-center gap-2 text-xs text-primary-300"><span>Linked task #{linkedTaskId} is in this checklist. Filters may hide it.</span><button type="button" className={control} onClick={() => { setFilters({ ...defaultChecklistFilters }); setPage(Math.floor(linkedIndex / 20) + 1); setReveal(value => value + 1); }}>Show linked task #{linkedTaskId}</button></div>)}
     <p className="text-xs text-surface-400">{tasks.length} total tasks · {tasks.filter(task => !task.done).length} open · {overdue} overdue open · {tasks.filter(task => task.assignee_id == null).length} unassigned. Progress above always covers the whole checklist.</p>
+    <details className="rounded border border-surface-700 p-3 [overflow-wrap:anywhere]">
+      <summary className="cursor-pointer text-sm font-semibold text-surface-200">Checklist workload by assignee</summary>
+      <p className="my-2 text-xs text-surface-400">Counts cover all loaded checklist tasks, not the current filters or page. Completion is checklist state, not remediation proof. Assigned members may no longer be in the member list. No task or assignment changes here.</p>
+      {!validTaskDate(today) && <p className="text-xs text-warning">The local date is unavailable. Overdue, today and later counts are unknown, not zero.</p>}
+      <ul aria-label="Assignee checklist workload" className="max-h-80 space-y-2 overflow-y-auto">{workload.map(row => {
+        const member = members.find(person => person.id === row.assigneeId);
+        const label = row.assigneeId === null ? 'Unassigned' : `${member?.full_name || member?.email || 'Member'} (#${row.assigneeId})`;
+        return <li key={row.assigneeId ?? 'unassigned'} className="space-y-1 rounded border border-surface-800 p-2 text-xs text-surface-300"><p className="font-semibold">{label}</p><p>{row.open} open · {row.completed} completed · {row.total} total</p><p>{validTaskDate(today) ? `${row.overdue} overdue open · ${row.today} due today open · ${row.later} due later open` : 'Date-based counts unknown'} · {row.undated} open without a valid due date</p><button type="button" className={control} disabled={!row.open} onClick={() => { setFilters({ ...defaultChecklistFilters, status: 'open', assignee: row.assigneeId === null ? 'unassigned' : String(row.assigneeId), sort: 'due' }); setPage(1); }}>Show open tasks: {label}</button></li>;
+      })}</ul>
+      <p className="mt-2 text-xs text-surface-500">Show open tasks replaces title, status, assignee, due-date and order filters, then opens page 1. Selection is unchanged and may include hidden tasks. Nothing is saved.</p>
+    </details>
     <div className="flex flex-wrap items-end gap-2">
       <label className="flex min-w-0 basis-full flex-col gap-1 text-xs text-surface-400 sm:basis-56 sm:flex-1">Search task titles<input aria-label="Search investigation task titles" className={control} value={filters.query} onChange={event => update('query', event.target.value)} /></label>
       <label className="flex flex-col gap-1 text-xs text-surface-400">Task status<select aria-label="Filter checklist task status" className={control} value={filters.status} onChange={event => update('status', event.target.value)}><option value="all">All tasks</option><option value="open">Open tasks</option><option value="done">Completed tasks</option></select></label>
