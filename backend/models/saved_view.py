@@ -1,6 +1,6 @@
 """Saved filter views: named, per-user snapshots of list filters (alerts, cases or events)."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import AwareDatetime, BaseModel, Field, model_validator
@@ -87,8 +87,33 @@ class AssetViewFilters(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class WorkloadViewFilters(BaseModel):
+    """Assigned-workload criteria only, not records, drafts, page or grants."""
+
+    query: str = Field("", max_length=200)
+    severity: Literal["all", "critical", "high", "medium", "low", "info"] = "all"
+    due: Literal["all", "overdue", "today", "future", "none", "range"] = "all"
+    today: date
+    completion: Literal["open", "completed", "all"] = "open"
+    investigations: Literal["active", "inactive", "all"] = "active"
+    dueFrom: date | None = None
+    dueThrough: date | None = None
+    investigationId: int | None = Field(None, ge=1, strict=True)
+    model_config = {"extra": "forbid"}
+
+    @model_validator(mode="after")
+    def validate_window(self):
+        if self.due == "range":
+            if self.dueFrom is None or self.dueThrough is None or self.dueFrom > self.dueThrough:
+                raise ValueError("Supply both inclusive window dates in ascending order")
+        elif self.dueFrom is not None or self.dueThrough is not None:
+            raise ValueError("Window dates require the range filter")
+        return self
+
+
 FILTERS_MODELS = {"alerts": SavedViewFilters, "cases": CaseViewFilters,
-                 "events": EventViewFilters, "assets": AssetViewFilters}
+                 "events": EventViewFilters, "assets": AssetViewFilters,
+                 "workload": WorkloadViewFilters}
 
 
 class SavedViewCreate(BaseModel):

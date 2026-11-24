@@ -1,5 +1,7 @@
 """Tests for saved alerts-list filter views."""
 
+from typing import ClassVar
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -323,9 +325,63 @@ class TestRenameView:
 def test_event_time_window_saved_view_validates_and_round_trips(client):
     headers = _register_and_login(client, 'windowview@example.com')
     filters = {'started_at': '2026-11-20T10:00:00Z', 'ended_before': '2026-11-20T11:00:00Z'}
-    response = client.post('/api/v1/events/views/', headers=headers, json={'name': 'Incident window', 'filters': filters})
+    response = client.post('/api/v1/events/views/', headers=headers,
+                           json={'name': 'Incident window', 'filters': filters})
     assert response.status_code == 201, response.text
     assert response.json()['filters'] == filters
     assert client.get('/api/v1/events/views/', headers=headers).json()[0]['filters'] == filters
-    for invalid in ({'started_at': '2026-11-20T10:00:00'}, {'started_at': filters['ended_before'], 'ended_before': filters['started_at']}):
-        assert client.post('/api/v1/events/views/', headers=headers, json={'name': 'Invalid window', 'filters': invalid}).status_code == 422
+    for invalid in ({'started_at': '2026-11-20T10:00:00'},
+                    {'started_at': filters['ended_before'], 'ended_before': filters['started_at']}):
+        rejected = client.post('/api/v1/events/views/', headers=headers,
+                               json={'name': 'Invalid window', 'filters': invalid})
+        assert rejected.status_code == 422
+
+class TestAssignedWorkloadViews:
+    path = '/api/v1/cases/workload-views/'
+    filters: ClassVar[dict] = {'query': 'gateway', 'severity': 'high', 'due': 'range',
+               'today': '2026-11-24', 'completion': 'all', 'investigations': 'inactive',
+               'dueFrom': '2026-11-20', 'dueThrough': '2026-11-24', 'investigationId': 7}
+
+    def test_private_scoped_crud_and_no_investigation_grant(self, client):
+        owner = _register_and_login(client, 'workload-views@example.com')
+        other = _register_and_login(client, 'other-workload@example.com')
+        created = client.post(self.path, headers=owner, json={'name': 'Gateway', 'filters': self.filters})
+        assert created.status_code == 201, created.text
+        value = created.json()
+        assert value['scope'] == 'workload' and value['filters'] == self.filters
+        assert client.get(self.path, headers=owner).json() == [value]
+        assert client.get(self.path, headers=other).json() == []
+        assert client.get('/api/v1/cases/views/', headers=owner).json() == []
+        item = f'{self.path}{value["id"]}'
+        assert client.patch(item, headers=other, json={'name': 'Stolen'}).status_code == 404
+        assert client.delete(item, headers=other).status_code == 404
+        assert client.delete(f'/api/v1/cases/views/{value["id"]}', headers=owner).status_code == 404
+        renamed = client.patch(item, headers=owner, json={'name': 'Renamed'})
+        assert renamed.status_code == 200 and renamed.json()['filters'] == self.filters
+        # Saving an identifier is not a grant, even when no matching investigation exists.
+        assert client.get('/api/v1/cases/7', headers=owner).status_code == 404
+        assert client.delete(item, headers=owner).status_code == 204
+        assert client.get(self.path, headers=owner).json() == []
+
+    @pytest.mark.parametrize('override', [
+        {'page': 2}, {'task_ids': [1]}, {'user_id': 2}, {'selection': []},
+        {'today': '2026-02-30'}, {'dueFrom': '2026-02-30'}, {'dueThrough': '2026-11-19'},
+        {'due': 'all'}, {'severity': 'urgent'}, {'completion': 'yes'}, {'investigations': 'hidden'},
+        {'investigationId': 0}, {'investigationId': '7'}, {'investigationId': True}, {'query': 'x' * 201},
+    ])
+    def test_invalid_or_record_bearing_filters_rejected(self, client, override):
+        headers = _register_and_login(client, 'invalid-workload@example.com')
+        resp = client.post(self.path, headers=headers, json={'name': 'Bad', 'filters': {**self.filters, **override}})
+        assert resp.status_code == 422, resp.text
+        assert client.get(self.path, headers=headers).json() == []
+
+    def test_fixed_date_required_duplicate_scoped_and_unauthenticated(self, client):
+        assert client.get(self.path).status_code == 401
+        headers = _register_and_login(client, 'fixed-workload@example.com')
+        assert client.post(self.path, headers=headers, json={'name': 'Missing date', 'filters': {}}).status_code == 422
+        payload = {'name': 'Same name', 'filters': {'today': '2026-11-24'}}
+        assert client.post(self.path, headers=headers, json=payload).status_code == 201
+        assert client.post(self.path, headers=headers, json=payload).status_code == 409
+        case_view = client.post('/api/v1/cases/views/', headers=headers,
+                                json={'name': 'Same name', 'filters': {}})
+        assert case_view.status_code == 201
