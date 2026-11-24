@@ -60,3 +60,5 @@ describe('timeline explorer', () => {
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
   });
 });
+
+it('sorts unzoned timestamps as UTC and puts invalid recorded times last with stable ID ties', () => { const rows = [{ ...entries[0], id: 4, timestamp: '2026-11-24T00:30:00', content: 'unzoned' }, { ...entries[0], id: 2, timestamp: '2026-11-24T00:30:00+05:30', content: 'offset' }, { ...entries[0], id: 3, timestamp: '2026-11-24T24:00:00Z', content: 'invalid' }]; render(<TimelineExplorer entries={rows}>{entry => <p key={entry.id} data-testid="row">{entry.content}</p>}</TimelineExplorer>); fireEvent.change(screen.getByLabelText('Timeline order'), { target: { value: 'oldest' } }); expect(screen.getAllByTestId('row').map(node => node.textContent)).toEqual(['offset', 'unzoned', 'invalid']); fireEvent.change(screen.getByLabelText('Timeline order'), { target: { value: 'newest' } }); expect(screen.getAllByTestId('row').map(node => node.textContent)).toEqual(['unzoned', 'offset', 'invalid']); });

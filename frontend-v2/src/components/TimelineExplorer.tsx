@@ -1,7 +1,7 @@
 import { timelineSearchMatch, timelineSearchValid, type TimelineSearchField } from '../utils/timelineSearch';
 import { timelineComposition, timelineDayComposition } from '../utils/timelineComposition';
 import { timelineReviewCsv, type TimelineExportSnapshot } from '../utils/timelineReviewExport';
-import { timelineReviewMatch, timelineWindowValid } from '../utils/timelineReview';
+import { timelineRecordedTime, timelineReviewMatch, timelineWindowValid } from '../utils/timelineReview';
 import { useMemo, useState, type ReactNode } from 'react';
 
 export interface TimelineRecord {
@@ -46,9 +46,9 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
   const pinned = entries.filter(entry => pinnedIds.includes(entry.id) && !matches.some(match => match.id === entry.id));
   const shown = [...matches, ...pinned];
   if (order !== 'original') shown.sort((a, b) => {
-    const aTime = Date.parse(a.timestamp), bTime = Date.parse(b.timestamp);
-    if (!Number.isFinite(aTime)) return Number.isFinite(bTime) ? 1 : a.id - b.id;
-    if (!Number.isFinite(bTime)) return -1;
+    const aTime = timelineRecordedTime(a.timestamp), bTime = timelineRecordedTime(b.timestamp);
+    if (aTime === null) return bTime !== null ? 1 : a.id - b.id;
+    if (bTime === null) return -1;
     return (order === 'newest' ? bTime - aTime : aTime - bTime) || a.id - b.id;
   });
   const capture = () => {
