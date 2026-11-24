@@ -18,6 +18,7 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
   children: (entry: T) => ReactNode;
 }) {
   const [snapshot, setSnapshot] = useState<TimelineExportSnapshot | null>(null);
+  const [page, setPage] = useState(0);
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState('');
   const [source, setSource] = useState('');
@@ -50,33 +51,41 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
     const url = URL.createObjectURL(new Blob([timelineReviewCsv(snapshot)], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a'); link.href = url; link.download = `case-${snapshot.caseId}-loaded-timeline-review.csv`; link.click(); URL.revokeObjectURL(url); setSnapshot(null);
   };
+  const matchingIds = new Set(matches.map(entry => entry.id));
+  const orderedMatches = shown.filter(entry => matchingIds.has(entry.id));
+  const pages = Math.max(1, Math.ceil(orderedMatches.length / 20)), current = Math.min(page, pages - 1);
+  const pageMatches = orderedMatches.slice(current * 20, (current + 1) * 20);
+  const outsidePinned = shown.filter(entry => pinnedIds.includes(entry.id) && !pageMatches.some(match => match.id === entry.id));
+  const matchingPinsOutsidePage = outsidePinned.filter(entry => matchingIds.has(entry.id)).length;
+  const visibleIds = new Set([...pageMatches, ...outsidePinned].map(entry => entry.id));
+  const visible = shown.filter(entry => visibleIds.has(entry.id));
   const filtered = !!query || !!kind || !!source || !!author || !!from || !!through || order !== 'original';
-  const clear = () => { setQuery(''); setKind(''); setSource(''); setOrder('original'); setAuthor(''); setFrom(''); setThrough(''); };
+  const clear = () => { setPage(0); setQuery(''); setKind(''); setSource(''); setOrder('original'); setAuthor(''); setFrom(''); setThrough(''); };
   if (!entries.length && !snapshot) return <p className="text-surface-500">No timeline entries yet.</p>;
   return <>
     <div className="mb-4 rounded-md border border-surface-700 bg-surface-950/50 p-3">
       <label htmlFor="timeline-query" className="block text-xs font-medium text-surface-300">Find timeline evidence</label>
-      <input id="timeline-query" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search text, author or entry ID"
+      <input id="timeline-query" type="search" value={query} onChange={event => { setPage(0); setQuery(event.target.value); }} placeholder="Search text, author or entry ID"
         className="mt-1 min-h-9 w-full min-w-0 rounded-md border border-surface-600 bg-surface-950 px-2 text-sm text-surface-100" />
       <div className="mt-2 flex flex-wrap gap-2">
-        <select aria-label="Timeline entry type" value={kind} onChange={event => setKind(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200">
+        <select aria-label="Timeline entry type" value={kind} onChange={event => { setPage(0); setKind(event.target.value); }} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200">
           <option value="">All entry types</option>{kinds.map(value => <option key={value} value={value}>{value}</option>)}
         </select>
-        <select aria-label="Timeline source" value={source} onChange={event => setSource(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200">
+        <select aria-label="Timeline source" value={source} onChange={event => { setPage(0); setSource(event.target.value); }} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200">
           <option value="">All sources</option>{sources.map(value => <option key={value} value={value}>{value}</option>)}
         </select>
-        <select aria-label="Timeline order" value={order} onChange={event => setOrder(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200">
+        <select aria-label="Timeline order" value={order} onChange={event => { setPage(0); setOrder(event.target.value); }} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200">
           <option value="original">Recorded order</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option>
         </select>
-        <label className="flex min-w-0 max-w-full flex-col gap-1 text-xs text-surface-400">Recorded author<select aria-label="Timeline recorded author" value={author} onChange={event => setAuthor(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200"><option value="">All recorded authors</option><option value="unrecorded">Author not recorded</option>{authors.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
-        <label className="flex min-w-0 max-w-full flex-col gap-1 text-xs text-surface-400">From UTC date<input type="date" aria-label="Timeline from UTC date" value={from} onChange={event => setFrom(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200" /></label>
-        <label className="flex min-w-0 max-w-full flex-col gap-1 text-xs text-surface-400">Through UTC date<input type="date" aria-label="Timeline through UTC date" value={through} onChange={event => setThrough(event.target.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200" /></label>
+        <label className="flex min-w-0 max-w-full flex-col gap-1 text-xs text-surface-400">Recorded author<select aria-label="Timeline recorded author" value={author} onChange={event => { setPage(0); setAuthor(event.target.value); }} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200"><option value="">All recorded authors</option><option value="unrecorded">Author not recorded</option>{authors.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label className="flex min-w-0 max-w-full flex-col gap-1 text-xs text-surface-400">From UTC date<input type="date" aria-label="Timeline from UTC date" value={from} onChange={event => { setPage(0); setFrom(event.target.value); }} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200" /></label>
+        <label className="flex min-w-0 max-w-full flex-col gap-1 text-xs text-surface-400">Through UTC date<input type="date" aria-label="Timeline through UTC date" value={through} onChange={event => { setPage(0); setThrough(event.target.value); }} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2 text-xs text-surface-200" /></label>
         {filtered && <button type="button" onClick={clear} className="min-h-9 rounded-md border border-surface-600 px-2 text-xs text-surface-200">Clear timeline filters</button>}
       </div>
       {exportContext && <button type="button" disabled={!validWindow || !matches.length} onClick={capture} className="mt-3 min-h-9 rounded-md border border-surface-600 px-2 text-xs text-surface-200 disabled:opacity-50">Review matching timeline CSV</button>}
       {snapshot && <section aria-label="Matching timeline CSV review" className="mt-3 space-y-2 rounded-md border border-primary-700 p-3 text-xs text-surface-200">
         <p>Captured review for investigation #{snapshot.caseId}: {snapshot.title}</p>
-        <p>{snapshot.rows.length} matching entries of {snapshot.loadedCount} loaded. {snapshot.excludedPinnedCount} outside-filter linked or edited entries excluded. Only this loaded matching review, not the full timeline, edit history or audit evidence. Captured {snapshot.capturedAt}.</p>
+        <p>{snapshot.rows.length} matching entries of {snapshot.loadedCount} loaded. {snapshot.excludedPinnedCount} outside-filter linked or edited entries excluded. All captured loaded matches, not just the visible page. Only this loaded matching review, not the full timeline, edit history or audit evidence. Captured {snapshot.capturedAt}.</p>
         <p className="break-words">Captured criteria: text {snapshot.filters.query || 'any'}; type {snapshot.filters.kind || 'any'}; source {snapshot.filters.source || 'any'}; author {snapshot.filters.author || 'any'}; UTC dates {snapshot.filters.from || 'unbounded'} through {snapshot.filters.through || 'unbounded'}; order {snapshot.filters.order}. Later filter or record changes do not change this captured review. No unsaved note edits are included.</p>
         <button type="button" onClick={download} className="min-h-9 rounded-md bg-primary-500 px-2 text-surface-950">Download captured matching CSV</button>
         <button type="button" onClick={() => setSnapshot(null)} className="ml-2 min-h-9 rounded-md border border-surface-600 px-2">Discard captured review</button>
@@ -87,6 +96,11 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
       {author && author !== 'unrecorded' && !authors.includes(author) && <p className="mt-1 text-xs text-warning">The selected author is no longer present in the loaded timeline. No broader author scope was substituted.</p>}
       {pinned.length > 0 && <p className="mt-1 text-xs text-primary-300">{pinned.length} linked or edited {pinned.length === 1 ? 'entry is' : 'entries are'} kept visible outside these filters.</p>}
     </div>
-    {shown.length ? <div className="space-y-4">{shown.map(children)}</div> : <p className="py-4 text-sm text-surface-400">No timeline entries match. Clear filters to see the loaded timeline.</p>}
+    {matches.length > 0 && <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-surface-300" aria-label="Timeline matching pages">
+      <span>Matching entries {current * 20 + 1}-{Math.min((current + 1) * 20, matches.length)} of {matches.length}. Page {current + 1} of {pages}. Outside-filter linked or edited entries stay visible separately. CSV review includes all loaded matches, not just this page.</span>
+      {pages > 1 && <><button type="button" disabled={current === 0} onClick={() => setPage(current - 1)} className="min-h-9 rounded-md border border-surface-600 px-2 disabled:opacity-50">Previous matching entries</button><button type="button" disabled={current === pages - 1} onClick={() => setPage(current + 1)} className="min-h-9 rounded-md border border-surface-600 px-2 disabled:opacity-50">Next matching entries</button></>}
+    </div>}
+    {matchingPinsOutsidePage > 0 && <p className="mb-3 text-xs text-primary-300">{matchingPinsOutsidePage} matching linked or edited {matchingPinsOutsidePage === 1 ? 'entry is' : 'entries are'} kept visible from another matching page, without changing matching counts or export scope.</p>}
+    {visible.length ? <div className="space-y-4">{visible.map(children)}</div> : <p className="py-4 text-sm text-surface-400">No timeline entries match. Clear filters to see the loaded timeline.</p>}
   </>;
 }
