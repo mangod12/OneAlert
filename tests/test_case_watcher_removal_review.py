@@ -1,15 +1,15 @@
 """Watcher removal previews retained access and guards exact relationships."""
 # ruff: noqa: F401, F811
 import pytest
-from test_case_assignment import _create_case, _register_and_login, _share_org, _TestingSessionLocal, _user_id, client
+from test_case_assignment import _create_case, _seed_case_actor, _share_org, _TestingSessionLocal, _user_id, client
 
 from backend.models.case import Case, CaseTask, CaseWatcher
 from backend.models.user import User
 
 
 def setup(client):
-    owner = _register_and_login(client, 'owner@example.com')
-    target = _register_and_login(client, 'watcher@example.com')
+    owner = _seed_case_actor(client, 'owner@example.com')
+    target = _seed_case_actor(client, 'watcher@example.com')
     oid, uid = _user_id(client, owner), _user_id(client, target)
     cid = _create_case(client, owner)
     _share_org(oid, uid)
@@ -91,7 +91,7 @@ def test_self_removal_allowed_but_other_watcher_and_outsider_denied(client):
     oid = _user_id(client, owner)
     assert client.post(f'/api/v1/cases/{cid}/watchers', headers=owner, json={'user_id': oid}).status_code == 200
     assert client.get(f'/api/v1/cases/{cid}/watchers/{oid}/removal-review', headers=target).status_code == 403
-    outside = _register_and_login(client, 'outside@example.com')
+    outside = _seed_case_actor(client, 'outside@example.com')
     assert client.get(f'/api/v1/cases/{cid}/watchers/{uid}/removal-review', headers=outside).status_code == 404
     preview = client.get(f'/api/v1/cases/{cid}/watchers/{uid}/removal-review', headers=target).json()
     assert save(client, target, cid, uid, preview).status_code == 204

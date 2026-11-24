@@ -3,15 +3,15 @@
 from datetime import date
 
 import pytest
-from test_case_assignment import _create_case, _register_and_login, _share_org, _TestingSessionLocal, _user_id, client
+from test_case_assignment import _create_case, _seed_case_actor, _share_org, _TestingSessionLocal, _user_id, client
 
 from backend.models.case import Case, CaseTask, CaseWatcher
 from backend.models.user import User
 
 
 def setup(client):
-    owner = _register_and_login(client, 'owner@example.com')
-    target = _register_and_login(client, 'assigned@example.com')
+    owner = _seed_case_actor(client, 'owner@example.com')
+    target = _seed_case_actor(client, 'assigned@example.com')
     cid = _create_case(client, owner)
     oid, uid = _user_id(client, owner), _user_id(client, target)
     _share_org(oid, uid)
@@ -103,7 +103,7 @@ def test_changed_task_account_case_or_retained_access_prevents_deletion(client, 
 def test_task_assignee_cannot_delete_but_investigation_assignee_can(client):
     _owner, target, cid, tid, uid, _preview = setup(client)
     assert client.get(f'/api/v1/cases/{cid}/tasks/{tid}/deletion-review', headers=target).status_code == 403
-    outside = _register_and_login(client, 'outside@example.com')
+    outside = _seed_case_actor(client, 'outside@example.com')
     assert client.get(f'/api/v1/cases/{cid}/tasks/{tid}/deletion-review', headers=outside).status_code == 404
     with _TestingSessionLocal() as db:
         db.get(Case, cid).assigned_to_id = uid
