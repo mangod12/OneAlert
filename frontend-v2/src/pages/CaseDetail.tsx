@@ -1,3 +1,4 @@
+import { TimelineEntryHandoff } from '../components/TimelineEntryHandoff';
 import { TimelineRecordedTime } from '../components/TimelineRecordedTime';
 import { ChecklistTaskHandoff } from '../components/ChecklistTaskHandoff';
 import { CaseTaskAssignmentReview } from '../components/CaseTaskAssignmentReview';
@@ -904,6 +905,7 @@ export function CaseDetail() {
                         ) : (
                           <p className="break-words text-sm text-surface-300">{entry.content}</p>
                         )}
+                        <TimelineEntryHandoff key={`${caseData.id}:${entry.id}`} caseId={caseData.id} entryId={entry.id} />
                         {entry.entry_type === 'note' && <EvidenceNoteReference metadata={entry.metadata_json} caseId={caseData.id} noteId={entry.id} canOpenOriginal={isOwner} />}
                         {entry.entry_type === 'ai_analysis' && <TriageCoverageReceipt metadata={entry.metadata_json} />}
                         {entry.entry_type === 'action' && <ChecklistImportRecord metadata={entry.metadata_json} caseId={caseData.id} />}
