@@ -1,14 +1,14 @@
 """Priority review binds saved case and notification audience."""
 # ruff: noqa: F401, F811
 import pytest
-from test_case_assignment import _create_case, _register_and_login, _TestingSessionLocal, client
+from test_case_assignment import _create_case, _seed_case_actor, _TestingSessionLocal, client
 
 from backend.models.case import Case, CaseWatcher
 from backend.models.user import User
 
 
 def setup(client, field='severity', value='critical'):
-    headers = _register_and_login(client, 'owner@example.com')
+    headers = _seed_case_actor(client, 'owner@example.com')
     cid = _create_case(client, headers)
     response = client.get(f'/api/v1/cases/{cid}/priority-review', headers=headers,
                           params={'field': field, 'value': value})
@@ -64,7 +64,7 @@ def test_invalid_priority_never_saves(client, field, value):
 
 def test_nonowner_cannot_review_or_change(client):
     _headers, cid, preview = setup(client)
-    other = _register_and_login(client, 'other@example.com')
+    other = _seed_case_actor(client, 'other@example.com')
     assert client.get(f'/api/v1/cases/{cid}/priority-review', headers=other,
                       params={'field': 'severity', 'value': 'critical'}).status_code == 404
     assert save(client, other, cid, preview).status_code == 404
@@ -95,7 +95,7 @@ def test_notification_audience_is_exact_and_webhook_never_disclosed(client, monk
         pass
     monkeypatch.setattr('backend.routers.cases.notify_investigation_event', no_delivery)
     headers, cid, _ = setup(client)
-    other = _register_and_login(client, 'recipient@example.com')
+    other = _seed_case_actor(client, 'recipient@example.com')
     target = _user_id(client, other)
     owner = _user_id(client, headers)
     _share_org(owner, target)

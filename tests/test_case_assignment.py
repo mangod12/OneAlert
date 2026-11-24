@@ -68,6 +68,28 @@ def _register_and_login(client: TestClient, email: str, password: str = "securep
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
+def _seed_case_actor(client: TestClient, email: str):
+    """Seed a workflow actor, not an authentication test.
+
+    Keep registration/login tests on _register_and_login. These case-review
+    scenarios need a fresh identity and a real signed token, not repeated bcrypt
+    setup. Requests still use get_current_user and its database/active-user checks.
+    A null password marks this fixture as unable to log in with a password.
+    """
+    from backend.services.auth_service import create_access_token
+
+    with _TestingSessionLocal() as db:
+        db.add(User(email=email, hashed_password=None,
+                    full_name=f"User {email.split('@')[0]}", company="TestCorp",
+                    is_active=True, is_verified=False))
+        db.commit()
+    headers = {"Authorization": f"Bearer {create_access_token({'sub': email})}"}
+    response = client.get("/api/v1/auth/me", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["email"] == email
+    return headers
+
+
 def _user_id(client: TestClient, headers) -> int:
     me = client.get("/api/v1/auth/me", headers=headers)
     assert me.status_code == 200, me.text

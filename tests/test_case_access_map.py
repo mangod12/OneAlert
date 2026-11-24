@@ -1,14 +1,14 @@
 """Owner-only complete roster includes task-derived access without side effects."""
 # ruff: noqa: F401, F811
-from test_case_assignment import _create_case, _register_and_login, _share_org, _TestingSessionLocal, _user_id, client
+from test_case_assignment import _create_case, _seed_case_actor, _share_org, _TestingSessionLocal, _user_id, client
 
 from backend.models.case import Case, CaseTask, CaseTimeline, CaseWatcher
 from backend.models.user import User
 
 
 def setup(client):
-    owner = _register_and_login(client, 'owner@example.com')
-    other = _register_and_login(client, 'other@example.com')
+    owner = _seed_case_actor(client, 'owner@example.com')
+    other = _seed_case_actor(client, 'other@example.com')
     cid = _create_case(client, owner)
     oid, uid = _user_id(client, owner), _user_id(client, other)
     _share_org(oid, uid)

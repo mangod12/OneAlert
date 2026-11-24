@@ -1,15 +1,15 @@
 """Exact reviewed watcher grants, without silent sharing or identity drift."""
 # ruff: noqa: F401, F811
 import pytest
-from test_case_assignment import _create_case, _register_and_login, _share_org, _TestingSessionLocal, _user_id, client
+from test_case_assignment import _create_case, _seed_case_actor, _share_org, _TestingSessionLocal, _user_id, client
 
 from backend.models.case import Case, CaseWatcher
 from backend.models.user import User
 
 
 def setup(client):
-    headers = _register_and_login(client, 'owner@example.com')
-    other = _register_and_login(client, 'watcher@example.com')
+    headers = _seed_case_actor(client, 'owner@example.com')
+    other = _seed_case_actor(client, 'watcher@example.com')
     cid = _create_case(client, headers)
     owner, target = _user_id(client, headers), _user_id(client, other)
     _share_org(owner, target)
@@ -68,7 +68,7 @@ def test_nonowner_cannot_review_or_share_and_invalid_payload_rejected(client):
 
 def test_changed_recipient_proposal_cannot_use_old_fingerprint(client):
     headers, _other, cid, _target, preview = setup(client)
-    third = _register_and_login(client, 'third@example.com')
+    third = _seed_case_actor(client, 'third@example.com')
     target = _user_id(client, third)
     with _TestingSessionLocal() as db:
         db.get(User, target).org_id = db.get(User, _user_id(client, headers)).org_id

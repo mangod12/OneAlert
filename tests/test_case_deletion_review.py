@@ -1,13 +1,13 @@
 """Full deletion inventory must still match at the irreversible boundary."""
 # ruff: noqa: F401, F811
 import pytest
-from test_case_assignment import _create_case, _register_and_login, _TestingSessionLocal, client
+from test_case_assignment import _create_case, _seed_case_actor, _TestingSessionLocal, client
 
 from backend.models.case import Case, CaseTask, CaseTimeline
 
 
 def setup(client):
-    headers = _register_and_login(client, 'owner@example.com')
+    headers = _seed_case_actor(client, 'owner@example.com')
     cid = _create_case(client, headers)
     preview = client.get(f'/api/v1/cases/{cid}/deletion-review', headers=headers)
     assert preview.status_code == 200
@@ -46,7 +46,7 @@ def test_inventory_change_never_deletes(client, change):
 
 def test_nonowner_cannot_review_or_remove(client):
     _, cid, preview = setup(client)
-    other = _register_and_login(client, 'other@example.com')
+    other = _seed_case_actor(client, 'other@example.com')
     assert client.get(f'/api/v1/cases/{cid}/deletion-review', headers=other).status_code == 404
     assert client.delete(f'/api/v1/cases/{cid}', headers=other,
                          params={'reviewed_fingerprint': preview['reviewed_fingerprint']}).status_code == 404

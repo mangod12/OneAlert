@@ -1,15 +1,15 @@
 """Mention previews disclose exact notification and watcher grants before saving."""
 # ruff: noqa: F401, F811
 import pytest
-from test_case_assignment import _create_case, _register_and_login, _share_org, _TestingSessionLocal, _user_id, client
+from test_case_assignment import _create_case, _seed_case_actor, _share_org, _TestingSessionLocal, _user_id, client
 
 from backend.models.case import Case, CaseTimeline, CaseWatcher
 from backend.models.user import User
 
 
 def setup(client, content='Investigating @recipient and @missing'):
-    owner = _register_and_login(client, 'owner@example.com')
-    recipient = _register_and_login(client, 'recipient@example.com')
+    owner = _seed_case_actor(client, 'owner@example.com')
+    recipient = _seed_case_actor(client, 'recipient@example.com')
     cid = _create_case(client, owner)
     oid, uid = _user_id(client, owner), _user_id(client, recipient)
     _share_org(oid, uid)
@@ -66,7 +66,7 @@ def test_changed_identity_access_preferences_or_case_prevents_write(client, chan
 
 def test_watcher_cannot_use_mentions_to_share_with_new_people(client):
     _owner, watcher, cid, uid, _ = setup(client)
-    third = _register_and_login(client, 'third@example.com')
+    third = _seed_case_actor(client, 'third@example.com')
     tid = _user_id(client, third)
     with _TestingSessionLocal() as db:
         db.get(User, tid).org_id = db.get(User, uid).org_id
@@ -83,7 +83,7 @@ def test_watcher_cannot_use_mentions_to_share_with_new_people(client):
 
 def test_new_matching_member_and_changed_text_invalidate_review(client):
     owner, _, cid, uid, preview = setup(client)
-    third = _register_and_login(client, 'missing@example.com')
+    third = _seed_case_actor(client, 'missing@example.com')
     tid = _user_id(client, third)
     with _TestingSessionLocal() as db:
         db.get(User, tid).org_id = db.get(User, uid).org_id

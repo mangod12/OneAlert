@@ -1,14 +1,14 @@
 """Owner-scoped saved investigation change receipts, never an inferred complete history."""
 # ruff: noqa: F401, F811
 import pytest
-from test_case_assignment import _create_case, _register_and_login, _TestingSessionLocal, _user_id, client
+from test_case_assignment import _create_case, _seed_case_actor, _TestingSessionLocal, _user_id, client
 
 from backend.models.audit_log import AuditLog
 from backend.models.case import Case
 
 
 def setup(client):
-    headers = _register_and_login(client, 'owner@example.com')
+    headers = _seed_case_actor(client, 'owner@example.com')
     cid = _create_case(client, headers)
     owner = _user_id(client, headers)
     return headers, cid, owner
@@ -16,7 +16,7 @@ def setup(client):
 
 def test_exact_receipts_pagination_filter_and_scope(client):
     headers, cid, owner = setup(client)
-    other_headers = _register_and_login(client, 'other@example.com')
+    other_headers = _seed_case_actor(client, 'other@example.com')
     other = _user_id(client, other_headers)
     with _TestingSessionLocal() as db:
         for i in range(13):
@@ -42,7 +42,7 @@ def test_exact_receipts_pagination_filter_and_scope(client):
 
 def test_nonowner_and_assignee_cannot_read_owner_receipts(client):
     _, cid, _owner = setup(client)
-    other_headers = _register_and_login(client, 'other@example.com')
+    other_headers = _seed_case_actor(client, 'other@example.com')
     with _TestingSessionLocal() as db:
         db.get(Case, cid).assigned_to_id = _user_id(client, other_headers)
         db.commit()
@@ -99,7 +99,7 @@ def test_receipt_csv_exact_scope_safe_cells_utc_and_all_pages(client):
     import io
     from datetime import UTC, datetime
     headers, cid, owner = setup(client)
-    other_headers = _register_and_login(client, 'csv-other@example.com')
+    other_headers = _seed_case_actor(client, 'csv-other@example.com')
     other = _user_id(client, other_headers)
     with _TestingSessionLocal() as db:
         db.get(Case, cid).title = '=PRIVATE_TITLE'

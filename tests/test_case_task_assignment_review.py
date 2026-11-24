@@ -1,7 +1,7 @@
 """Exact task assignment review includes new access, notices and retained access."""
 # ruff: noqa: F401, F811
 import pytest
-from test_case_assignment import _register_and_login, _share_org, _TestingSessionLocal, _user_id, client
+from test_case_assignment import _seed_case_actor, _share_org, _TestingSessionLocal, _user_id, client
 from test_case_task_deletion_review import setup
 
 from backend.models.case import CaseTask, CaseWatcher
@@ -33,7 +33,7 @@ def test_unassignment_removes_only_task_access_and_preserves_completion_due(clie
 def test_replacement_grants_new_account_access_and_notifies_without_erasing_retained_access(client):
     from backend.models.notification import Notification
     owner, old, cid, tid, uid, data = setup(client)
-    new = _register_and_login(client, 'new@example.com')
+    new = _seed_case_actor(client, 'new@example.com')
     nid = _user_id(client, new)
     with _TestingSessionLocal() as db:
         db.get(User, nid).org_id = db.get(User, uid).org_id
@@ -88,5 +88,5 @@ def test_nonmanager_noop_and_cross_org_target_rejected(client):
     owner, target, cid, tid, uid, _ = setup(client)
     assert review(client, target, cid, tid, None).status_code == 403
     assert review(client, owner, cid, tid, uid).status_code == 409
-    other = _register_and_login(client, 'outside@example.com')
+    other = _seed_case_actor(client, 'outside@example.com')
     assert review(client, owner, cid, tid, _user_id(client, other)).status_code == 400

@@ -1,14 +1,14 @@
 """Guard timeline-note replacement against stale text, scope and metadata."""
 # ruff: noqa: F401, F811
 import pytest
-from test_case_assignment import _create_case, _register_and_login, _TestingSessionLocal, _user_id, client
+from test_case_assignment import _create_case, _seed_case_actor, _TestingSessionLocal, _user_id, client
 
 from backend.models.case import Case, CaseTimeline, CaseWatcher
 from backend.models.user import User
 
 
 def setup(client):
-    headers = _register_and_login(client, 'owner@example.com')
+    headers = _seed_case_actor(client, 'owner@example.com')
     cid = _create_case(client, headers)
     result = client.post(f'/api/v1/cases/{cid}/notes', headers=headers, json={'content': 'Original text'})
     assert result.status_code == 201
@@ -67,7 +67,7 @@ def test_changed_saved_note_case_or_actor_blocks_before_edit(client, change):
 
 def test_deleted_system_crosscase_and_nonowner_notes_are_not_editable(client):
     headers, cid, nid, preview = setup(client)
-    other = _register_and_login(client, 'other@example.com')
+    other = _seed_case_actor(client, 'other@example.com')
     other_case = _create_case(client, other)
     assert client.post(f'/api/v1/cases/{cid}/notes/{nid}/edit-review', headers=other,
                        json={'content': 'x'}).status_code == 404
