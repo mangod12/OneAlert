@@ -12,7 +12,7 @@ export function watchlistPageSnapshot(value: unknown, page: number, filters: Wat
       || (row.created_at !== null && (typeof row.created_at !== 'string' || !Number.isFinite(Date.parse(row.created_at))))
       || (row.due_date !== null && !validTaskDate(row.due_date)) || (filters.kind !== 'all' && row.kind !== filters.kind) || (filters.severity !== 'all' && row.severity !== filters.severity)) return true;
     const done = ['resolved', 'closed', 'false_positive'].includes(row.status ?? '');
-    return (filters.scope === 'active' && done) || (filters.scope === 'done' && !done) || (filters.scope === 'overdue' && (done || !row.due_date || row.due_date >= v.date_basis));
+    return (filters.scope === 'active' && done) || (filters.scope === 'done' && !done) || (filters.scope === 'overdue' && (done || !row.due_date || row.due_date >= v.date_basis)) || (filters.scope === 'today' && (done || row.due_date !== v.date_basis)) || (filters.scope === 'future' && (done || !row.due_date || row.due_date <= v.date_basis)) || (filters.scope === 'undated' && (done || row.due_date !== null));
   })) return null;
   return { records: v.data.map(row => ({ ...row })), page, total: v.total, dateBasis: v.date_basis, filters: { ...filters }, loadedAt, capturedAt };
 }

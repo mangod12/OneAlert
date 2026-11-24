@@ -595,7 +595,7 @@ async def explore_watched_records(
     query: str = Query("", max_length=200),
     kind: Literal["all", "alert", "case"] = "all",
     severity: Literal["all", "critical", "high", "medium", "low", "info"] = "all",
-    scope: Literal["all", "active", "done", "overdue"] = "all",
+    scope: Literal["all", "active", "done", "overdue", "today", "future", "undated"] = "all",
     sort: Literal["severity", "newest", "oldest", "name", "due"] = "severity",
     current_user: User = Depends(get_active_user), db: AsyncSession = Depends(get_async_db),
 ):

@@ -21,9 +21,16 @@ it('saves applied filters only and excludes unsubmitted search draft and current
 it('restores page one, replaces draft, fetches current followed scope and shows UTC-date caveat', async () => {
   await show(); fireEvent.click(screen.getByRole('button', { name: 'Next watched page' })); await screen.findByText(/page 2 of 2/); fireEvent.change(screen.getByLabelText('Search all watched records'), { target: { value: 'replace draft' } });
   fireEvent.click(screen.getByRole('button', { name: 'Saved views' })); fireEvent.click(await screen.findByRole('button', { name: 'Overdue gateway' })); await waitFor(() => expect(get).toHaveBeenLastCalledWith('/cases/watched-record-explorer', { params: { ...filters, page: 1, size: 25 } }));
-  expect(screen.getByLabelText('Search all watched records')).toHaveProperty('value', 'gateway'); expect(screen.getByText(/Overdue is recalculated/)).toBeTruthy(); expect(post).not.toHaveBeenCalled(); expect(apiClient.patch).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('Search all watched records')).toHaveProperty('value', 'gateway'); expect(screen.getByText(/Due scopes are recalculated/)).toBeTruthy(); expect(post).not.toHaveBeenCalled(); expect(apiClient.patch).not.toHaveBeenCalled();
 });
 it('refuses invalid saved data without changing the existing draft or applied results', async () => {
   stored = { ...filters, watcher_ids: [7] }; await show(); fireEvent.change(screen.getByLabelText('Search all watched records'), { target: { value: 'keep draft' } }); const count = get.mock.calls.length;
   fireEvent.click(screen.getByRole('button', { name: 'Saved views' })); fireEvent.click(await screen.findByRole('button', { name: 'Overdue gateway' })); expect(get).toHaveBeenCalledTimes(count); expect(screen.getByLabelText('Search all watched records')).toHaveProperty('value', 'keep draft'); expect(screen.getByText(/Saved watchlist view is invalid/)).toBeTruthy();
+});
+
+it.each(['today', 'future', 'undated'])('restores %s with current UTC scope and resets pagination without a subscription write', async scope => {
+  stored = { ...filters, scope }; await show(); fireEvent.click(screen.getByRole('button', { name: 'Next watched page' })); await screen.findByText(/page 2 of 2/);
+  fireEvent.click(screen.getByRole('button', { name: 'Saved views' })); fireEvent.click(await screen.findByRole('button', { name: 'Overdue gateway' }));
+  await waitFor(() => expect(get).toHaveBeenLastCalledWith('/cases/watched-record-explorer', { params: { ...filters, scope, page: 1, size: 25 } }));
+  expect(screen.getByLabelText('Full watchlist scope')).toHaveProperty('value', scope); expect(post).not.toHaveBeenCalled(); expect(apiClient.patch).not.toHaveBeenCalled(); expect(apiClient.delete).not.toHaveBeenCalled();
 });
