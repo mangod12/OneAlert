@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { WatchlistExplorer } from './WatchlistExplorer';
+vi.mock('./SavedViewsMenu', () => ({ SavedViewsMenu: () => null }));
 vi.mock('../api/client', () => ({ default: { get: vi.fn() } }));
 const get = vi.mocked(apiClient.get);
 const lastParams = () => get.mock.calls.at(-1)?.[1]?.params as Record<string, unknown>;
