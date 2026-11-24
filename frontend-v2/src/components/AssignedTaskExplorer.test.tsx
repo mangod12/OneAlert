@@ -105,3 +105,27 @@ it('shows full matching summary rather than counting the loaded page and preserv
 it.each([undefined, {total:201,investigations:1,open:200,completed:0,without_due_date:0,completed_without_timestamp:0}, {total:201,investigations:1,open:200,completed:1,without_due_date:0,completed_without_timestamp:0}, {total:201,investigations:1,open:201,completed:0,without_due_date:202,completed_without_timestamp:0}])('keeps page evidence separate from missing or invalid summary %j', async summary => {
   get.mockImplementation(async (_url, config) => ({ data: { ...result(), filter_date: (config?.params as { today: string }).today, summary } })); show(); await screen.findByText(/Full matching summary unavailable/); expect(screen.getByRole('link', {name:/Gateway investigation/})).toBeTruthy();
 });
+it('applies fixed inclusive windows only after both dates are valid and preserves applied scope during draft edits', async () => {
+  show(); await screen.findByText(/201 matching/);
+  fireEvent.change(screen.getByLabelText('Full workload due filter'), { target: { value: 'range' } });
+  expect(screen.getByRole('button', { name: 'Apply full workload filters' })).toHaveProperty('disabled', true);
+  fireEvent.change(screen.getByLabelText('Full workload due from'), { target: { value: '2026-11-21' } });
+  fireEvent.change(screen.getByLabelText('Full workload due through'), { target: { value: '2026-11-20' } });
+  expect(screen.getByRole('button', { name: 'Apply full workload filters' })).toHaveProperty('disabled', true);
+  fireEvent.change(screen.getByLabelText('Full workload due from'), { target: { value: '2026-11-20' } });
+  get.mockImplementationOnce(async (_url, config) => ({ data: { ...result(), filter_date: (config?.params as { today: string }).today, due_from: (config?.params as { due_from: string }).due_from, due_through: (config?.params as { due_through: string }).due_through } }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply full workload filters' }));
+  await screen.findByText(/due: range \(2026-11-20 through 2026-11-20, inclusive\)/);
+  expect(get).toHaveBeenLastCalledWith('/cases/assigned-task-explorer', { params: expect.objectContaining({ due: 'range', due_from: '2026-11-20', due_through: '2026-11-20', page: 1 }) });
+  fireEvent.change(screen.getByLabelText('Full workload due through'), { target: { value: '2026-12-01' } });
+  expect(screen.getByText(/Filter edits are not applied/)).toBeTruthy(); expect(get).toHaveBeenCalledTimes(2);
+});
+it.each(['missing', 'boundary', 'row'])('rejects unverifiable fixed-window evidence: %s', async kind => {
+  show(); await screen.findByText(/201 matching/);
+  fireEvent.change(screen.getByLabelText('Full workload due filter'), { target: { value: 'range' } });
+  fireEvent.change(screen.getByLabelText('Full workload due from'), { target: { value: '2026-11-20' } });
+  fireEvent.change(screen.getByLabelText('Full workload due through'), { target: { value: '2026-11-24' } });
+  get.mockImplementationOnce(async (_url, config) => ({ data: { ...result(), filter_date: (config?.params as { today: string }).today, ...(kind === 'missing' ? {} : { due_from: kind === 'boundary' ? '2026-11-19' : '2026-11-20', due_through: '2026-11-24' }), data: [{ ...task, due_date: kind === 'row' ? null : task.due_date }] } }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply full workload filters' }));
+  await screen.findByRole('alert'); expect(screen.queryByRole('link')).toBeNull(); expect(screen.queryByText(/No assigned tasks match/)).toBeNull();
+});
