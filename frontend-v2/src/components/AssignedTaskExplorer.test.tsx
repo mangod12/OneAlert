@@ -174,3 +174,16 @@ it.each(['echo', 'row'])('rejects wrong exact-investigation evidence %s', async 
   fireEvent.click(screen.getByRole('button', { name: 'Explore matching tasks in investigation #7' }));
   await screen.findByRole('alert'); expect(screen.queryByRole('link')).toBeNull();
 });
+
+it('applies server-wide sort only on apply, keeps it on later pages and requires echoed sort', async () => {
+  show(); await screen.findByText(/201 matching/);
+  fireEvent.change(screen.getByLabelText('Full workload sort'), { target: { value: 'task_due' } });
+  expect(get).toHaveBeenCalledTimes(1);
+  get.mockImplementation(async (_url, config) => { const p = config?.params as { page: number; today: string; sort: string }; return { data: { ...result(p.page), sort: p.sort, filter_date: p.today } }; });
+  fireEvent.click(screen.getByRole('button', { name: 'Apply full workload filters' })); await screen.findByText(/task due date ascending, undated last/);
+  expect(get).toHaveBeenLastCalledWith('/cases/assigned-task-explorer', { params: expect.objectContaining({ sort: 'task_due', page: 1 }) });
+  fireEvent.click(screen.getByRole('button', { name: 'Next workload page' })); await screen.findByText(/Page 2 of 9/);
+  expect(get).toHaveBeenLastCalledWith('/cases/assigned-task-explorer', { params: expect.objectContaining({ sort: 'task_due', page: 2 }) });
+  get.mockImplementationOnce(async (_url, config) => ({ data: { ...result(2), sort: 'title', filter_date: (config?.params as { today: string }).today } }));
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh full workload page' })); await screen.findByRole('alert'); expect(screen.queryByRole('link')).toBeNull();
+});

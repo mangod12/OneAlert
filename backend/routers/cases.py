@@ -465,6 +465,7 @@ async def explore_assigned_tasks(
     query: str = Query("", max_length=200),
     severity: Literal["all", "critical", "high", "medium", "low", "info"] = "all",
     due: Literal["all", "overdue", "today", "future", "none", "range"] = "all",
+    sort: Literal["priority", "task_due", "completed_newest", "title"] = "priority",
     today: date | None = None,
     investigation_id: int | None = Query(None, ge=1),
     due_from: date | None = None, due_through: date | None = None,
@@ -500,6 +501,14 @@ async def explore_assigned_tasks(
             raise HTTPException(status_code=422, detail="Supply the calendar date used for due filtering")
         statement = statement.where(CaseTask.due_date < today if due == "overdue" else
                                     CaseTask.due_date == today if due == "today" else CaseTask.due_date > today)
+    if sort == "task_due":
+        statement = statement.order_by(None).order_by(
+            CaseTask.due_date.is_(None), CaseTask.due_date, CaseTask.id)
+    elif sort == "completed_newest":
+        statement = statement.order_by(None).order_by(
+            CaseTask.completed_at.is_(None), CaseTask.completed_at.desc(), CaseTask.id)
+    elif sort == "title":
+        statement = statement.order_by(None).order_by(func.lower(CaseTask.title), CaseTask.id)
     matched = statement.order_by(None).with_only_columns(
         CaseTask.case_id.label("case_id"), CaseTask.done.label("done"),
         CaseTask.due_date.label("due_date"), CaseTask.completed_at.label("completed_at"),
@@ -529,7 +538,7 @@ async def explore_assigned_tasks(
             "by_investigation": [dict(row) for row in grouped],
             "investigation_groups_total": counts["investigations"], "investigation_group_limit": 50,
             **({"investigation_id": investigation_id} if investigation_id is not None else {}),
-            "filter_date": today, "completion": completion, "investigations": investigations,
+            "sort": sort, "filter_date": today, "completion": completion, "investigations": investigations,
             "scope": "Current records assigned to your account on currently visible investigations. "
                      "Not assignment history or proof of external remediation."}
 

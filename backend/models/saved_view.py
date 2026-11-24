@@ -93,6 +93,7 @@ class WorkloadViewFilters(BaseModel):
     query: str = Field("", max_length=200)
     severity: Literal["all", "critical", "high", "medium", "low", "info"] = "all"
     due: Literal["all", "overdue", "today", "future", "none", "range"] = "all"
+    sort: Literal["priority", "task_due", "completed_newest", "title"] = "priority"
     today: date
     completion: Literal["open", "completed", "all"] = "open"
     investigations: Literal["active", "inactive", "all"] = "active"
