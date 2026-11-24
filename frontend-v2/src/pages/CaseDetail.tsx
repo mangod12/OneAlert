@@ -1,3 +1,5 @@
+import { timelineEntryLink } from '../utils/timelineEntryLink';
+import { TimelineEntryLinkStatus } from '../components/TimelineEntryLinkStatus';
 import { TimelineEntryHandoff } from '../components/TimelineEntryHandoff';
 import { TimelineRecordedTime } from '../components/TimelineRecordedTime';
 import { ChecklistTaskHandoff } from '../components/ChecklistTaskHandoff';
@@ -129,7 +131,7 @@ export function CaseDetail() {
   const caseRequestId = useRef(0);
   const [caseData, setCaseData] = useState<CaseData | null>(null);
   const [searchParams] = useSearchParams();
-  const highlightedNoteId = Number(searchParams.get('note')) || null;
+  const { id: highlightedNoteId, invalid: invalidNoteLink } = timelineEntryLink(searchParams);
   const taskIds = searchParams.getAll('task');
   const linkedTaskId = taskIds.length === 1 && /^[1-9][0-9]*$/.test(taskIds[0]) && Number.isSafeInteger(Number(taskIds[0])) ? Number(taskIds[0]) : null;
   const invalidTaskLink = taskIds.length > 0 && linkedTaskId === null;
@@ -829,6 +831,7 @@ export function CaseDetail() {
                 {addingNote ? 'Adding…' : 'Add note'}
               </button>
             </form>
+            <TimelineEntryLinkStatus id={highlightedNoteId} invalid={invalidNoteLink} loadedIds={caseData.timeline.map(entry => entry.id)} />
             <EvidenceNoteSourceIndex caseId={caseData.id} entries={caseData.timeline} onSelect={noteId => { const params = new URLSearchParams(searchParams); params.set('note', String(noteId)); navigate(`/cases/${caseId}?${params}`, { replace: true }); }} />
             <TimelineExplorer key={caseData.id} exportContext={{ caseId: caseData.id, title: caseData.title }} entries={caseData.timeline} pinnedIds={[highlightedNoteId, editingNoteId].filter((id): id is number => id !== null)}>
                 {(entry) => {

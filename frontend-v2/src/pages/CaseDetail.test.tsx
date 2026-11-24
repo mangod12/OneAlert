@@ -269,6 +269,25 @@ describe('Editing timeline notes', () => {
     expect(screen.getByText(/linked or edited entry is kept visible/)).toBeTruthy();
   });
 
+  it.each(['note=021', 'note=2.1e1', 'note=21&note=22', 'note=21&note=21', 'note=%2B21'])('does not highlight or pin a coerced or ambiguous linked entry: %s', query => {
+    mockLoadWithTimeline([noteEntry, actionEntry]);
+    renderDetail(`/cases/7?${query}`);
+    return screen.findByText('Original note').then(() => {
+      expect(screen.getByText(/This timeline entry link is invalid/)).toBeTruthy();
+      expect(document.getElementById('case-note-21')?.className).not.toContain('ring-2');
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Find timeline evidence' }), { target: { value: 'no matching content' } });
+      expect(document.getElementById('case-note-21')).toBeNull();
+      expect(mockPost).not.toHaveBeenCalled(); expect(mockPatch).not.toHaveBeenCalled(); expect(mockDelete).not.toHaveBeenCalled();
+    });
+  });
+
+  it('reports a well-formed entry link missing from the loaded timeline without selecting another entry', async () => {
+    mockLoadWithTimeline([noteEntry, actionEntry]); renderDetail('/cases/7?note=999');
+    await screen.findByText('Original note');
+    expect(screen.getByText(/Linked entry #999 is not present/)).toBeTruthy();
+    expect(document.getElementById('case-note-21')?.className).not.toContain('ring-2');
+  });
+
   it('keeps an active note edit visible while timeline filters change', async () => {
     mockLoadWithTimeline([noteEntry, actionEntry]);
     renderDetail();
