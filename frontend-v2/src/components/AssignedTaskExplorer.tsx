@@ -1,3 +1,5 @@
+import { SavedViewsMenu } from './SavedViewsMenu';
+import { readWorkloadView, savedWorkloadFilters } from '../utils/assignedWorkloadViews';
 import { AssignedWorkloadBreakdown } from './AssignedWorkloadBreakdown';
 import { AssignedWorkloadPageExport } from './AssignedWorkloadPageExport';
 import { workloadPageSnapshot, type WorkloadPageSnapshot } from '../utils/assignedWorkloadExport';
@@ -50,6 +52,16 @@ export function AssignedTaskExplorer({ onEdited, editingBlocked = false }: { onE
     {notice && <p role="status" className="text-sm text-warning">{notice}</p>}
     {open && <>
       <p className="text-xs text-surface-400">Explore and individually edit tasks currently assigned to you on currently visible investigations. Defaults to open work on active investigations. Include completed tasks or inactive investigations to find records missing from the editing snapshot. This is not past assignment history, a work log or proof of external remediation. A recorded completion may not have a timestamp. Search and filters apply before server paging, not just to the first 200 tasks. Review a task change here or open its investigation for the full checklist. This does not change selection or due-date drafts in the editing snapshot below. Refresh this explorer after edits elsewhere.</p>
+      <section aria-label="Saved assigned workload filters" className="space-y-2 rounded border border-surface-700 p-3">
+        <h3 className="text-sm font-semibold text-surface-100">Your saved workload views</h3>
+        <p className="text-xs text-surface-400">Save applied filters only, not draft edits, tasks, selection, pages or access. Views are private to your account. Calendar dates are fixed, not rolling: check the saved date before relying on due buckets. Applying a view replaces filter drafts and reloads current assigned records from page 1; it never edits a task or grants investigation access.</p>
+        <SavedViewsMenu basePath="/cases/workload-views/" currentFilters={savedWorkloadFilters(filters)} onApply={value => {
+          const next = readWorkloadView(value);
+          if (!next) { setNotice('Saved workload view is invalid. Filters and current results were not changed.'); return; }
+          setQuery(next.query); setSeverity(next.severity); setDue(next.due); setToday(next.today); setCompletion(next.completion); setInvestigations(next.investigations); setDueFrom(next.dueFrom); setDueThrough(next.dueThrough);
+          setSnapshot(null); setFilters(next); setPage(1); setNotice('Applied saved workload filters. Check the fixed calendar date. Records reload with your current assignment and visibility.');
+        }} />
+      </section>
       <form className="flex flex-wrap items-end gap-2" onSubmit={event => { event.preventDefault(); if (!windowValid || !today) return; setSnapshot(null); setFilters({ query, severity, due, today, completion, investigations, dueFrom, dueThrough, investigationId: filters.investigationId }); setPage(1); }}>
         <label className="flex min-w-0 basis-full flex-col gap-1 text-xs text-surface-400 sm:basis-64 sm:flex-1">Search all assigned task titles, investigations or IDs<input aria-label="Search full assigned workload" maxLength={200} value={query} onChange={event => setQuery(event.target.value)} className={control} /></label>
         <label className="flex flex-col gap-1 text-xs text-surface-400">Investigation severity<select aria-label="Full workload severity" value={severity} onChange={event => setSeverity(event.target.value)} className={control}><option value="all">All severities</option>{['critical', 'high', 'medium', 'low', 'info'].map(value => <option key={value} value={value}>{value}</option>)}</select></label>

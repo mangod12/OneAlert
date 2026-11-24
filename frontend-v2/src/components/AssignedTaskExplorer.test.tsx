@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { AssignedTaskExplorer } from './AssignedTaskExplorer';
+vi.mock('./SavedViewsMenu', () => ({ SavedViewsMenu: () => null }));
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), patch: vi.fn() } }));
 const get = vi.mocked(apiClient.get);
 const task = { done: false, completed_at: null, task_id: 209, case_id: 7, title: 'Collect late-page evidence', case_title: 'Gateway investigation', case_severity: 'high', case_status: 'open', due_date: '2026-11-20', case_due_date: null };
