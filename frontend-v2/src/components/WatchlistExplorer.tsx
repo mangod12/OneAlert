@@ -1,3 +1,5 @@
+import { WatchlistPageExport } from './WatchlistPageExport';
+import { watchlistPageSnapshot, type WatchPageExport } from '../utils/watchlistPageExport';
 import { SavedViewsMenu } from './SavedViewsMenu';
 import { checkedWatchlistView } from '../utils/watchlistViews';
 import { useEffect, useRef, useState } from 'react';
@@ -24,13 +26,15 @@ export function WatchlistExplorer() {
 function WatchlistSearch({ initial }: { initial: WatchScope | null }) {
   const [draft, setDraft] = useState(initial?.query ?? ''), [query, setQuery] = useState(initial?.query ?? ''), [kind, setKind] = useState(initial?.kind ?? 'all'), [severity, setSeverity] = useState(initial?.severity ?? 'all'), [scope, setScope] = useState(initial?.scope ?? 'all'), [sort, setSort] = useState(initial?.sort ?? 'severity');
   const [page, setPage] = useState(1), [retry, setRetry] = useState(0), [result, setResult] = useState<Result | null>(null), [error, setError] = useState('');
+  const [exportSnapshot, setExportSnapshot] = useState<WatchPageExport | null>(null);
+  const [loadedAt, setLoadedAt] = useState('');
   const [viewNotice, setViewNotice] = useState('');
   const [invalid, setInvalid] = useState(!initial), [copyStatus, setCopyStatus] = useState(''); const copies = useRef(0);
   useEffect(() => {
     if (invalid) return;
     let cancelled = false; setResult(null); setError('');
     apiClient.get<Result>('/cases/watched-record-explorer', { params: { page, size: 25, query, kind, severity, scope, sort } })
-      .then(response => { if (!cancelled) setResult(response.data); })
+      .then(response => { if (!cancelled) { setResult(response.data); setLoadedAt(new Date().toISOString()); } })
       .catch(err => { if (!cancelled) setError(getApiErrorMessage(err, 'The complete watchlist search could not be loaded.')); });
     return () => { cancelled = true; };
   }, [page, retry, query, kind, severity, scope, sort, invalid]);
@@ -73,6 +77,7 @@ function WatchlistSearch({ initial }: { initial: WatchScope | null }) {
     {!invalid && (error ? <div className="space-y-2"><p role="alert" className="text-sm text-danger">{error}</p><button type="button" className={style} onClick={() => setRetry(value => value + 1)}>Retry full watchlist search</button></div> : !result ? <p role="status" className="text-sm text-surface-400">Searching all followed records...</p> : <>
       <p role="status" className="text-sm text-surface-300">{result.total} followed records match across your entire watchlist. Showing {result.data.length} on page {page} of {pages}. UTC date basis: {result.date_basis}.</p>
       <section aria-label="Full matching watchlist workload" className="space-y-2 rounded border border-surface-700 p-3"><h3 className="text-sm font-semibold text-surface-200">Full matching workload</h3><p className="text-xs text-surface-400">Across all result pages with the applied filters, not the {result.data.length} visible rows. Missing due dates are not counted as overdue. These are current followed records, not all assigned work or a historical snapshot.</p>{summaryValid ? <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">{Object.entries({ 'Followed alerts': summary.alerts, 'Followed investigations': summary.cases, 'Active records': summary.active, 'Completed records': summary.done, 'Active overdue records (UTC)': summary.overdue, 'Active records without due date': summary.active_without_due_date }).map(([label, value]) => <div key={label}><dt className="text-surface-400">{label}</dt><dd className="mt-1 text-base font-semibold text-surface-100">{value}</dd></div>)}</dl> : <p role="status" className="text-xs text-warning">Matching workload totals are unavailable or inconsistent. No totals were inferred from this page. Refresh to request them again.</p>}</section>
+      <button type="button" className={style} disabled={watchlistPageSnapshot(result, page, { query, kind, severity, scope, sort }, loadedAt, '') === null} onClick={() => setExportSnapshot(watchlistPageSnapshot(result, page, { query, kind, severity, scope, sort }, loadedAt, new Date().toISOString()))}>Review this watchlist page CSV ({result.data.length} records only)</button>
       {!result.data.length && <p className="text-sm text-surface-400">No followed records match this page and these filters.{page > 1 ? ' Records may have moved. Return to the first page.' : ' Try other filters or follow an alert or investigation.'}</p>}
       <ul aria-label="Full watchlist results" className="space-y-3">{result.data.map(row => <li key={`${row.kind}-${row.id}`} className="min-w-0 space-y-2 rounded border border-surface-700 p-3 text-xs text-surface-300">
         <p className="break-words">{row.kind === 'alert' ? 'Alert' : 'Investigation'} #{row.id} · {row.severity ?? 'Severity not recorded'} · {row.status ?? 'Status not recorded'}</p>
@@ -82,5 +87,6 @@ function WatchlistSearch({ initial }: { initial: WatchScope | null }) {
       </li>)}</ul>
       <nav aria-label="Full watchlist pages" className="flex flex-wrap items-center gap-2"><button type="button" className={style} disabled={page === 1} onClick={() => setPage(1)}>First watched page</button><button type="button" className={style} disabled={page === 1} onClick={() => setPage(value => value - 1)}>Previous watched page</button><button type="button" className={style} disabled={page >= pages} onClick={() => setPage(value => value + 1)}>Next watched page</button></nav>
     </>)}
+    {exportSnapshot && <WatchlistPageExport snapshot={exportSnapshot} onClose={() => setExportSnapshot(null)} />}
   </section>;
 }
