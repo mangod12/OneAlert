@@ -1,0 +1,48 @@
+import '@testing-library/jest-dom/vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, expect, it } from 'vitest';
+import { TimelineCapturedRows } from './TimelineCapturedRows';
+import { TimelineExplorer } from './TimelineExplorer';
+const rows = Array.from({ length: 23 }, (_, i) => ({ id: i + 1, timestamp: '2026-11-24T00:30:00+05:30', entry_type: 'note', source: 'human', author_email: 'author@example.com', content: `Saved evidence ${i + 1}` }));
+afterEach(cleanup);
+it('previews bounded pages in captured order including the final partial page', () => {
+  render(<TimelineCapturedRows rows={rows} />); fireEvent.click(screen.getByText('Inspect captured matching rows (23)'));
+  expect(screen.getAllByRole('listitem')).toHaveLength(10);
+  expect(screen.getByRole('button', { name: 'Previous captured rows' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Next captured rows' }));
+  expect(screen.getByText('Captured entry #11')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Next captured rows' }));
+  expect(screen.getAllByRole('listitem')).toHaveLength(3);
+  expect(screen.getByRole('status')).toHaveTextContent('Captured rows 21-23 of 23');
+  expect(screen.getByRole('button', { name: 'Next captured rows' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Previous captured rows' }));
+  expect(screen.getByText('Captured entry #11')).toBeInTheDocument();
+});
+it('shows raw timestamp and literal saved text without executing HTML, links or formulas', () => {
+  render(<TimelineCapturedRows rows={[{ ...rows[0], author_email: null, source: '', content: '=HYPERLINK("https://example.test","<img src=x onerror=alert(1)>")\nsecond line' }]} />);
+  fireEvent.click(screen.getByText('Inspect captured matching rows (1)'));
+  expect(screen.getByText('2026-11-24T00:30:00+05:30')).toBeInTheDocument();
+  expect(screen.getAllByText('Not recorded')).toHaveLength(2);
+  expect(screen.getByText(/=HYPERLINK/)).toHaveTextContent('<img src=x onerror=alert(1)>');
+  expect(document.querySelector('img,a')).toBeNull();
+});
+it('keeps preview rows frozen through live filter and record changes, excludes pinned nonmatches, resets on discard and recapture', () => {
+  const view = render(<TimelineExplorer entries={rows} pinnedIds={[23]} exportContext={{ caseId: 7, title: 'Seven' }}>{row => <p key={row.id}>{row.content}</p>}</TimelineExplorer>);
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Saved evidence 1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review matching timeline CSV' }));
+  const review = screen.getByRole('region', { name: 'Matching timeline CSV review' });
+  fireEvent.click(within(review).getByText('Inspect captured matching rows (11)'));
+  expect(within(review).queryByText('Captured entry #23')).toBeNull();
+  fireEvent.click(within(review).getByRole('button', { name: 'Next captured rows' }));
+  expect(within(review).getByText('Captured entry #19')).toBeInTheDocument();
+  view.rerender(<TimelineExplorer entries={[{ ...rows[0], content: 'Changed live text' }]} exportContext={{ caseId: 7, title: 'Seven' }}>{row => <p key={row.id}>{row.content}</p>}</TimelineExplorer>);
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Changed' } });
+  expect(within(review).getByText('Saved evidence 19')).toBeInTheDocument();
+  expect(within(review).queryByText('Changed live text')).toBeNull();
+  fireEvent.click(within(review).getByRole('button', { name: 'Discard captured review' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Review matching timeline CSV' }));
+  const next = screen.getByRole('region', { name: 'Matching timeline CSV review' });
+  fireEvent.click(within(next).getByText('Inspect captured matching rows (1)'));
+  expect(within(next).getByText('Changed live text')).toBeInTheDocument();
+  expect(within(next).getByRole('status')).toHaveTextContent('Captured rows 1-1 of 1');
+});

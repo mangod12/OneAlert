@@ -1,3 +1,4 @@
+import { TimelineCapturedRows } from './TimelineCapturedRows';
 import { timelineSearchMatch, timelineSearchValid, type TimelineSearchField } from '../utils/timelineSearch';
 import { timelineComposition, timelineDayComposition } from '../utils/timelineComposition';
 import { timelineReviewCsv, type TimelineExportSnapshot } from '../utils/timelineReviewExport';
@@ -109,6 +110,7 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
         <p>Captured review for investigation #{snapshot.caseId}: {snapshot.title}</p>
         <p>{snapshot.rows.length} matching entries of {snapshot.loadedCount} loaded. {snapshot.excludedPinnedCount} outside-filter linked or edited entries excluded. All captured loaded matches, not just the visible page. Only this loaded matching review, not the full timeline, edit history or audit evidence. Captured {snapshot.capturedAt}.</p>
         <p className="break-words">Captured criteria: search field {snapshot.filters.searchField || 'all'}; text {snapshot.filters.query || 'any'}; type {snapshot.filters.kind || 'any'}; source {snapshot.filters.source || 'any'}; author {snapshot.filters.author || 'any'}; UTC dates {snapshot.filters.from || 'unbounded'} through {snapshot.filters.through || 'unbounded'}; order {snapshot.filters.order}. Later filter or record changes do not change this captured review. No unsaved note edits are included.</p>
+        <TimelineCapturedRows key={snapshot.capturedAt} rows={snapshot.rows} />
         <button type="button" onClick={download} className="min-h-9 rounded-md bg-primary-500 px-2 text-surface-950">Download captured matching CSV</button>
         <button type="button" onClick={() => setSnapshot(null)} className="ml-2 min-h-9 rounded-md border border-surface-600 px-2">Discard captured review</button>
       </section>}
