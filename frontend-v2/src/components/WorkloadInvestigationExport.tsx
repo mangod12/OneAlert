@@ -1,0 +1,17 @@
+import { useRef } from 'react';
+import { useDialogFocus } from './ui/useDialogFocus';
+import { investigationSummaryCsv, type InvestigationExportSnapshot } from '../utils/workloadInvestigationExport';
+const control = 'max-w-full rounded border border-surface-700 px-3 py-2 text-xs text-surface-200';
+export function WorkloadInvestigationExport({ snapshot, onClose }: { snapshot: InvestigationExportSnapshot; onClose: () => void }) {
+  const ref = useRef<HTMLElement>(null); useDialogFocus(ref, onClose); const f = snapshot.filters;
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-surface-950/80 p-4"><section ref={ref} role="dialog" aria-modal="true" aria-label="Review workload investigation summary export" className="max-h-[90dvh] w-full max-w-2xl space-y-3 overflow-y-auto rounded-xl border border-surface-700 bg-surface-900 p-5 [overflow-wrap:anywhere]">
+    <h3 className="text-lg font-semibold">Review workload investigation summary export</h3>
+    <p className="text-sm">{snapshot.groups.length} loaded groups of {snapshot.groupCount} matching investigations; {snapshot.total} matching tasks across all task pages at that read. Group limit 50, ordered by matching task count then investigation ID. Loaded {snapshot.loadedAt}; captured locally {snapshot.capturedAt}.</p>
+    {snapshot.groups.length < snapshot.groupCount && <p className="text-sm text-warning">Partial investigation list: {snapshot.groupCount - snapshot.groups.length} matching investigations are not included. This is not the whole matching workload.</p>}
+    <p className="text-xs text-warning">This freezes loaded group counts, not freshly fetched state, task records, full checklists or complete audit history. Current assignments can change. Completion is not remediation proof; no lateness is inferred. Investigation IDs and search text may be sensitive. Review before sharing. Download sends no message, upload, access grant or task save.</p>
+    <p className="text-xs">Applied filters: query {JSON.stringify(f.query)}; severity {f.severity}; due {f.due}{f.due === 'range' ? ` (${f.dueFrom} through ${f.dueThrough}, inclusive)` : ''}; calendar date {f.today}; completion {f.completion}; investigations {f.investigations}{f.investigationId != null ? `; exact investigation #${f.investigationId}` : ''}; task order {f.sort ?? 'priority'}. Group order is separate from task order. Draft edits and task titles are not included.</p>
+    <ul aria-label="Investigation summary export review" className="max-h-64 space-y-2 overflow-y-auto text-sm">{snapshot.groups.map(row => <li key={row.case_id} className="rounded border border-surface-700 p-2">Investigation #{row.case_id}: {row.total} matching tasks<p className="text-xs">{row.open} open · {row.completed} completed · {row.without_due_date} without task due date</p></li>)}</ul>
+    <button type="button" className={control} onClick={() => { const url = URL.createObjectURL(new Blob([investigationSummaryCsv(snapshot)], { type: 'text/csv;charset=utf-8' })); const link = document.createElement('a'); link.href = url; link.download = 'assigned-workload-investigation-summary.csv'; link.click(); URL.revokeObjectURL(url); }}>Download reviewed investigation summary CSV ({snapshot.groups.length} groups)</button>
+    <button type="button" className={control} onClick={onClose}>Cancel investigation summary export</button>
+  </section></div>;
+}

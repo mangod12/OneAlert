@@ -187,3 +187,15 @@ it('applies server-wide sort only on apply, keeps it on later pages and requires
   get.mockImplementationOnce(async (_url, config) => ({ data: { ...result(2), sort: 'title', filter_date: (config?.params as { today: string }).today } }));
   fireEvent.click(screen.getByRole('button', { name: 'Refresh full workload page' })); await screen.findByRole('alert'); expect(screen.queryByRole('link')).toBeNull();
 });
+
+it('reviews all loaded investigation counts rather than task-page sample and excludes filter drafts', async () => {
+  get.mockImplementation(async (_url, config) => ({ data: { ...result(), filter_date: (config?.params as { today: string }).today, by_investigation: [{ case_id: 7, total: 201, open: 201, completed: 0, without_due_date: 0 }], investigation_groups_total: 1, investigation_group_limit: 50 } }));
+  show(); await screen.findByText(/201 matching assigned task records/);
+  fireEvent.change(screen.getByLabelText('Search full assigned workload'), { target: { value: 'unapplied draft' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review loaded investigation summary CSV (up to 50 groups)' }));
+  const dialog = screen.getByRole('dialog'); expect(dialog.textContent).toContain('Investigation #7: 201 matching tasks'); expect(dialog.textContent).toContain('1 loaded groups of 1'); expect(dialog.textContent).not.toContain('unapplied draft'); expect(dialog.textContent).not.toContain('Collect late-page evidence');
+  expect(get).toHaveBeenCalledTimes(1); expect(apiClient.patch).not.toHaveBeenCalled();
+});
+it('does not enable summary export without validated loaded groups', async () => {
+  show(); await screen.findByText(/201 matching assigned/); expect(screen.getByRole('button', { name: 'Review loaded investigation summary CSV (up to 50 groups)' })).toHaveProperty('disabled', true);
+});
