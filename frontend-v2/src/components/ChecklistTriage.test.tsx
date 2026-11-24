@@ -90,3 +90,14 @@ it('disables export for no matching tasks or while checklist work is busy', () =
   fireEvent.change(screen.getByLabelText('Search investigation task titles'), { target: { value: 'none' } });
   expect((screen.getByText('Review matching checklist CSV (0 tasks)') as HTMLButtonElement).disabled).toBe(true);
 });
+it('restores exact incoming filters without replacing an unknown assignee with anyone', () => {
+  render(<ChecklistTriage {...props} caseId={12} initialSearch="checklist=1&checklist_assignee=99&checklist_status=open">{row}</ChecklistTriage>);
+  expect(screen.getByText(/No tasks match/)).toBeTruthy(); expect((screen.getByText('Review matching checklist CSV (0 tasks)') as HTMLButtonElement).disabled).toBe(true);
+});
+it('fails closed on ambiguous incoming filter handoffs and recovers only through an explicit filter choice', () => {
+  render(<ChecklistTriage {...props} caseId={12} onSelectMatching={() => {}} initialSearch="checklist=1&checklist_assignee=mine">{row}</ChecklistTriage>);
+  expect(screen.getByRole('alert').textContent).toContain('invalid or ambiguous'); expect(screen.queryByText('Task 1')).toBeNull();
+  expect((screen.getByText('Select matching checklist tasks (up to 100)') as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByText('Copy current checklist filter link') as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByText('Clear task filters')); expect(screen.queryByRole('alert')).toBeNull(); expect(screen.getByText('Task 1')).toBeTruthy();
+});
