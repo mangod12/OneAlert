@@ -1,3 +1,5 @@
+import { SavedViewsMenu } from './SavedViewsMenu';
+import { checkedWatchlistView } from '../utils/watchlistViews';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import apiClient from '../api/client';
@@ -22,6 +24,7 @@ export function WatchlistExplorer() {
 function WatchlistSearch({ initial }: { initial: WatchScope | null }) {
   const [draft, setDraft] = useState(initial?.query ?? ''), [query, setQuery] = useState(initial?.query ?? ''), [kind, setKind] = useState(initial?.kind ?? 'all'), [severity, setSeverity] = useState(initial?.severity ?? 'all'), [scope, setScope] = useState(initial?.scope ?? 'all'), [sort, setSort] = useState(initial?.sort ?? 'severity');
   const [page, setPage] = useState(1), [retry, setRetry] = useState(0), [result, setResult] = useState<Result | null>(null), [error, setError] = useState('');
+  const [viewNotice, setViewNotice] = useState('');
   const [invalid, setInvalid] = useState(!initial), [copyStatus, setCopyStatus] = useState(''); const copies = useRef(0);
   useEffect(() => {
     if (invalid) return;
@@ -46,6 +49,13 @@ function WatchlistSearch({ initial }: { initial: WatchScope | null }) {
     <h2 className="text-base font-semibold text-surface-100">Search entire watchlist</h2>
     <p className="text-xs text-surface-400">Search and rank all alert and investigation records you currently follow, beyond the loaded review list. This read-only search does not change your watch subscriptions. Open an exact record to work on it.</p>
     {invalid && <p role="alert" className="text-sm text-danger">This watchlist search link is invalid or ambiguous. No full-watchlist query was run. Submit a new search or clear the filters to continue.</p>}
+    <section aria-label="Private saved watchlist filters" className="space-y-2 rounded border border-surface-700 p-3"><h3 className="text-sm font-semibold text-surface-100">Your saved watchlist views</h3><p className="text-xs text-surface-400">Save applied keywords, type, severity, work scope and order, not search drafts, result pages, records or watch subscriptions. Views are private to your account. Restoring replaces the search draft and reloads page 1 using only records you currently follow. Overdue is recalculated using the server's current UTC date, not the date the view was saved. No record access, subscription, message or task change is granted.</p>
+      <SavedViewsMenu basePath="/cases/watchlist-views/" currentFilters={{ query, kind, severity, scope, sort }} onApply={value => {
+        const next = checkedWatchlistView(value);
+        if (!next) { setViewNotice('Saved watchlist view is invalid. Current filters, draft and results were not changed.'); return; }
+        setInvalid(false); setDraft(next.query); setQuery(next.query); setKind(next.kind); setSeverity(next.severity); setScope(next.scope); setSort(next.sort); setPage(1); setResult(null); setRetry(value => value + 1); setViewNotice('Applied saved watchlist filters. Current followed records are reloaded from page 1 using the current UTC date.');
+      }} />{viewNotice && <p role="status" className="text-xs text-warning">{viewNotice}</p>}
+    </section>
     <form className="flex flex-wrap gap-2" onSubmit={event => { event.preventDefault(); setInvalid(false); setQuery(draft.trim()); setPage(1); }}>
       <input aria-label="Search all watched records" type="search" maxLength={200} value={draft} onChange={event => setDraft(event.target.value)} placeholder="Title, CVE, asset name or record ID" className={`${style} min-w-0 flex-1 basis-full sm:basis-0`} />
       <button type="submit" className={style}>Search all followed records</button>

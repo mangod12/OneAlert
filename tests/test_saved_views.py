@@ -385,3 +385,47 @@ class TestAssignedWorkloadViews:
         case_view = client.post('/api/v1/cases/views/', headers=headers,
                                 json={'name': 'Same name', 'filters': {}})
         assert case_view.status_code == 201
+
+
+class TestWatchlistViews:
+    path = '/api/v1/cases/watchlist-views/'
+    filters: ClassVar[dict] = {'query': 'gateway', 'kind': 'case', 'severity': 'high',
+                              'scope': 'overdue', 'sort': 'due'}
+
+    def test_scoped_private_crud_does_not_follow_or_grant_access(self, client):
+        headers = _register_and_login(client, 'watchlist-views@example.com')
+        other = _register_and_login(client, 'watchlist-other@example.com')
+        response = client.post(self.path, headers=headers, json={'name': 'Gateway', 'filters': self.filters})
+        assert response.status_code == 201, response.text
+        value = response.json()
+        assert value['scope'] == 'watchlist' and value['filters'] == self.filters
+        assert client.get(self.path, headers=headers).json() == [value]
+        assert client.get(self.path, headers=other).json() == []
+        assert client.get('/api/v1/cases/workload-views/', headers=headers).json() == []
+        assert client.get('/api/v1/cases/views/', headers=headers).json() == []
+        item = f'{self.path}{value["id"]}'
+        assert client.delete(item, headers=other).status_code == 404
+        assert client.patch(item, headers=other, json={'name': 'Stolen'}).status_code == 404
+        assert client.delete(f'/api/v1/cases/views/{value["id"]}', headers=headers).status_code == 404
+        assert client.get('/api/v1/cases/watched-record-explorer', headers=headers).json()['total'] == 0
+        renamed = client.patch(item, headers=headers, json={'name': 'Renamed'})
+        assert renamed.status_code == 200 and renamed.json()['filters'] == self.filters
+        assert client.post(self.path, headers=headers,
+                           json={'name': 'renamed', 'filters': self.filters}).status_code == 409
+        assert client.delete(item, headers=headers).status_code == 204
+        assert client.get(self.path, headers=headers).json() == []
+
+    @pytest.mark.parametrize('override', [
+        {'page': 2}, {'records': []}, {'watcher_ids': [7]}, {'user_id': 7}, {'today': '2026-11-24'},
+        {'kind': 'hidden'}, {'severity': 'urgent'}, {'scope': 'mine'}, {'sort': 'random'}, {'query': 'x' * 201},
+    ])
+    def test_rejects_record_subscription_and_invalid_criteria(self, client, override):
+        headers = _register_and_login(client, 'invalid-watchlist@example.com')
+        response = client.post(self.path, headers=headers,
+                               json={'name': 'Bad', 'filters': {**self.filters, **override}})
+        assert response.status_code == 422, response.text
+        assert client.get(self.path, headers=headers).json() == []
+
+    def test_requires_authentication(self, client):
+        assert client.get(self.path).status_code == 401
+        assert client.post(self.path, json={'name': 'No', 'filters': {}}).status_code == 401

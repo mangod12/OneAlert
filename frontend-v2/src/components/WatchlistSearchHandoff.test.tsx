@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import apiClient from '../api/client';
 import { WatchlistExplorer } from './WatchlistExplorer';
 import { Watchlist } from '../pages/Watchlist';
+vi.mock('./SavedViewsMenu', () => ({ SavedViewsMenu: () => null }));
 vi.mock('../api/client', () => ({ default: { get: vi.fn() } }));
 const get = vi.mocked(apiClient.get), writeText = vi.fn();
 const defaults = { query: '', kind: 'all', severity: 'all', scope: 'all', sort: 'severity' };

@@ -112,9 +112,20 @@ class WorkloadViewFilters(BaseModel):
         return self
 
 
+class WatchlistViewFilters(BaseModel):
+    """Current caller's followed-record search only, never subscriptions or records."""
+
+    query: str = Field("", max_length=200)
+    kind: Literal["all", "alert", "case"] = "all"
+    severity: Literal["all", "critical", "high", "medium", "low", "info"] = "all"
+    scope: Literal["all", "active", "done", "overdue"] = "all"
+    sort: Literal["severity", "newest", "oldest", "name", "due"] = "severity"
+    model_config = {"extra": "forbid"}
+
+
 FILTERS_MODELS = {"alerts": SavedViewFilters, "cases": CaseViewFilters,
                  "events": EventViewFilters, "assets": AssetViewFilters,
-                 "workload": WorkloadViewFilters}
+                 "workload": WorkloadViewFilters, "watchlist": WatchlistViewFilters}
 
 
 class SavedViewCreate(BaseModel):
