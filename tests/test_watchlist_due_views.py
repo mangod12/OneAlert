@@ -1,14 +1,14 @@
 """Due triage views remain private criteria and accept no fixed UTC date."""
 import pytest
 
-from tests.test_saved_views import _register_and_login
+from tests.test_saved_views import _seed_view_actor
 from tests.test_saved_views import client as client
 
 
 @pytest.mark.parametrize('scope', ['today', 'future', 'undated'])
 def test_private_due_views_round_trip_with_no_fixed_date(client, scope):
-    owner = _register_and_login(client, 'due-owner@example.com')
-    other = _register_and_login(client, 'due-other@example.com')
+    owner = _seed_view_actor(client, 'due-owner@example.com')
+    other = _seed_view_actor(client, 'due-other@example.com')
     url = '/api/v1/cases/watchlist-views/'
     filters = {'query': 'gateway', 'kind': 'alert', 'severity': 'high', 'scope': scope, 'sort': 'due'}
     response = client.post(url, headers=owner, json={'name': 'Due triage', 'filters': filters})

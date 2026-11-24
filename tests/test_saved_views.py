@@ -63,6 +63,26 @@ def _register_and_login(client: TestClient, email: str, password: str = "securep
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
+def _seed_view_actor(client: TestClient, email: str):
+    """Seed a fresh workflow identity; retain production token/database checks.
+
+    Authentication endpoints keep their own registration/login tests. No shared
+    password cache, password-hash override or authorization dependency override.
+    """
+    from backend.models.user import User
+    from backend.services.auth_service import create_access_token
+
+    with _TestingSessionLocal() as db:
+        db.add(User(email=email, hashed_password=None, full_name="Analyst",
+                    is_active=True, is_verified=False))
+        db.commit()
+    headers = {"Authorization": f"Bearer {create_access_token({'sub': email})}"}
+    response = client.get("/api/v1/auth/me", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["email"] == email
+    return headers
+
+
 def _create(client, headers, name="Critical pending", filters=None):
     return client.post("/api/v1/alerts/views/", headers=headers, json={
         "name": name,
@@ -74,7 +94,7 @@ def _create(client, headers, name="Critical pending", filters=None):
 
 class TestSavedViews:
     def test_create_and_list(self, client):
-        headers = _register_and_login(client, "views@example.com")
+        headers = _seed_view_actor(client, "views@example.com")
         resp = _create(client, headers)
         assert resp.status_code == 201, resp.text
         body = resp.json()
@@ -89,28 +109,28 @@ class TestSavedViews:
         assert views[0]["id"] == body["id"]
 
     def test_empty_filters_allowed(self, client):
-        headers = _register_and_login(client, "allalerts@example.com")
+        headers = _seed_view_actor(client, "allalerts@example.com")
         resp = _create(client, headers, name="Everything", filters={})
         assert resp.status_code == 201, resp.text
 
     def test_unknown_filter_key_rejected(self, client):
-        headers = _register_and_login(client, "strict@example.com")
+        headers = _seed_view_actor(client, "strict@example.com")
         resp = _create(client, headers, filters={"not_a_filter": "x"})
         assert resp.status_code == 422
 
     def test_duplicate_name_rejected_case_insensitive(self, client):
-        headers = _register_and_login(client, "dupe@example.com")
+        headers = _seed_view_actor(client, "dupe@example.com")
         assert _create(client, headers).status_code == 201
         resp = _create(client, headers, name="critical PENDING")
         assert resp.status_code == 409
 
     def test_blank_name_rejected(self, client):
-        headers = _register_and_login(client, "blank@example.com")
+        headers = _seed_view_actor(client, "blank@example.com")
         resp = _create(client, headers, name="   ")
         assert resp.status_code == 400
 
     def test_delete(self, client):
-        headers = _register_and_login(client, "delete@example.com")
+        headers = _seed_view_actor(client, "delete@example.com")
         view_id = _create(client, headers).json()["id"]
         resp = client.delete(f"/api/v1/alerts/views/{view_id}", headers=headers)
         assert resp.status_code == 204
@@ -118,14 +138,14 @@ class TestSavedViews:
         assert client.delete(f"/api/v1/alerts/views/{view_id}", headers=headers).status_code == 404
 
     def test_isolation_between_users(self, client):
-        owner = _register_and_login(client, "owner2@example.com")
-        other = _register_and_login(client, "other2@example.com")
+        owner = _seed_view_actor(client, "owner2@example.com")
+        other = _seed_view_actor(client, "other2@example.com")
         view_id = _create(client, owner).json()["id"]
         assert client.get("/api/v1/alerts/views/", headers=other).json() == []
         assert client.delete(f"/api/v1/alerts/views/{view_id}", headers=other).status_code == 404
 
     def test_per_user_cap(self, client):
-        headers = _register_and_login(client, "cap@example.com")
+        headers = _seed_view_actor(client, "cap@example.com")
         for i in range(25):
             resp = _create(client, headers, name=f"view {i}")
             assert resp.status_code == 201, resp.text
@@ -144,7 +164,7 @@ def _create_case_view(client, headers, name="Overdue criticals", filters=None):
 
 class TestCaseScopeViews:
     def test_create_and_list_cases_views(self, client):
-        headers = _register_and_login(client, "caseviews@example.com")
+        headers = _seed_view_actor(client, "caseviews@example.com")
         resp = _create_case_view(client, headers)
         assert resp.status_code == 201, resp.text
         body = resp.json()
@@ -156,7 +176,7 @@ class TestCaseScopeViews:
         assert [v["id"] for v in listing.json()] == [body["id"]]
 
     def test_scopes_are_isolated(self, client):
-        headers = _register_and_login(client, "isolated@example.com")
+        headers = _seed_view_actor(client, "isolated@example.com")
         alerts_view = _create(client, headers).json()
         cases_view = _create_case_view(client, headers).json()
         assert alerts_view["scope"] == "alerts"
@@ -175,12 +195,12 @@ class TestCaseScopeViews:
         ).status_code == 404
 
     def test_same_name_allowed_across_scopes(self, client):
-        headers = _register_and_login(client, "samename@example.com")
+        headers = _seed_view_actor(client, "samename@example.com")
         assert _create(client, headers, name="Mine").status_code == 201
         assert _create_case_view(client, headers, name="Mine").status_code == 201
 
     def test_alerts_only_filter_key_rejected_for_cases(self, client):
-        headers = _register_and_login(client, "strictcases@example.com")
+        headers = _seed_view_actor(client, "strictcases@example.com")
         resp = _create_case_view(client, headers, filters={"asset_id": 3})
         assert resp.status_code == 422
         resp = _create_case_view(client, headers, filters={"not_a_filter": 1})
@@ -199,7 +219,7 @@ def _create_event_view(client, headers, name="Critical DNS", filters=None):
 
 class TestEventScopeViews:
     def test_create_and_list_events_views(self, client):
-        headers = _register_and_login(client, "eventviews@example.com")
+        headers = _seed_view_actor(client, "eventviews@example.com")
         resp = _create_event_view(client, headers)
         assert resp.status_code == 201, resp.text
         body = resp.json()
@@ -211,7 +231,7 @@ class TestEventScopeViews:
         assert [v["id"] for v in listing.json()] == [body["id"]]
 
     def test_events_scope_isolated_from_alerts_and_cases(self, client):
-        headers = _register_and_login(client, "evtisolated@example.com")
+        headers = _seed_view_actor(client, "evtisolated@example.com")
         alerts_view = _create(client, headers).json()
         events_view = _create_event_view(client, headers).json()
 
@@ -228,14 +248,14 @@ class TestEventScopeViews:
         ).status_code == 404
 
     def test_non_events_filter_key_rejected(self, client):
-        headers = _register_and_login(client, "strictevents@example.com")
+        headers = _seed_view_actor(client, "strictevents@example.com")
         resp = _create_event_view(client, headers, filters={"status": "open"})
         assert resp.status_code == 422
         resp = _create_event_view(client, headers, filters={"asset_id": 3})
         assert resp.status_code == 422
 
     def test_delete_events_view(self, client):
-        headers = _register_and_login(client, "evtdelete@example.com")
+        headers = _seed_view_actor(client, "evtdelete@example.com")
         view = _create_event_view(client, headers).json()
         assert client.delete(
             f"/api/v1/events/views/{view['id']}", headers=headers
@@ -245,7 +265,7 @@ class TestEventScopeViews:
 
 class TestRenameView:
     def test_rename_keeps_filters(self, client):
-        headers = _register_and_login(client, "rename@example.com")
+        headers = _seed_view_actor(client, "rename@example.com")
         view = _create(client, headers).json()
         resp = client.patch(
             f"/api/v1/alerts/views/{view['id']}", headers=headers,
@@ -259,7 +279,7 @@ class TestRenameView:
         assert listing[0]["name"] == "Renamed view"
 
     def test_rename_trims_whitespace(self, client):
-        headers = _register_and_login(client, "trim@example.com")
+        headers = _seed_view_actor(client, "trim@example.com")
         view = _create(client, headers).json()
         resp = client.patch(
             f"/api/v1/alerts/views/{view['id']}", headers=headers,
@@ -269,7 +289,7 @@ class TestRenameView:
         assert resp.json()["name"] == "Trimmed"
 
     def test_rename_blank_name_rejected(self, client):
-        headers = _register_and_login(client, "renameblank@example.com")
+        headers = _seed_view_actor(client, "renameblank@example.com")
         view = _create(client, headers).json()
         resp = client.patch(
             f"/api/v1/alerts/views/{view['id']}", headers=headers,
@@ -278,7 +298,7 @@ class TestRenameView:
         assert resp.status_code == 400
 
     def test_rename_to_own_name_allowed(self, client):
-        headers = _register_and_login(client, "ownname@example.com")
+        headers = _seed_view_actor(client, "ownname@example.com")
         view = _create(client, headers).json()
         resp = client.patch(
             f"/api/v1/alerts/views/{view['id']}", headers=headers,
@@ -288,7 +308,7 @@ class TestRenameView:
         assert resp.json()["name"] == "critical PENDING"
 
     def test_rename_duplicate_name_rejected(self, client):
-        headers = _register_and_login(client, "renamedupe@example.com")
+        headers = _seed_view_actor(client, "renamedupe@example.com")
         _create(client, headers, name="Taken")
         other = _create(client, headers, name="Original").json()
         resp = client.patch(
@@ -298,7 +318,7 @@ class TestRenameView:
         assert resp.status_code == 409
 
     def test_rename_not_found_and_cross_scope(self, client):
-        headers = _register_and_login(client, "notfound@example.com")
+        headers = _seed_view_actor(client, "notfound@example.com")
         alerts_view = _create(client, headers).json()
         assert client.patch(
             "/api/v1/alerts/views/9999", headers=headers, json={"name": "x"},
@@ -310,8 +330,8 @@ class TestRenameView:
         ).status_code == 404
 
     def test_rename_other_users_view_not_found(self, client):
-        owner = _register_and_login(client, "renowner@example.com")
-        other = _register_and_login(client, "renother@example.com")
+        owner = _seed_view_actor(client, "renowner@example.com")
+        other = _seed_view_actor(client, "renother@example.com")
         view = _create(client, owner).json()
         resp = client.patch(
             f"/api/v1/alerts/views/{view['id']}", headers=other,
@@ -323,7 +343,7 @@ class TestRenameView:
 
 
 def test_event_time_window_saved_view_validates_and_round_trips(client):
-    headers = _register_and_login(client, 'windowview@example.com')
+    headers = _seed_view_actor(client, 'windowview@example.com')
     filters = {'started_at': '2026-11-20T10:00:00Z', 'ended_before': '2026-11-20T11:00:00Z'}
     response = client.post('/api/v1/events/views/', headers=headers,
                            json={'name': 'Incident window', 'filters': filters})
@@ -343,8 +363,8 @@ class TestAssignedWorkloadViews:
                'dueFrom': '2026-11-20', 'dueThrough': '2026-11-24', 'investigationId': 7}
 
     def test_private_scoped_crud_and_no_investigation_grant(self, client):
-        owner = _register_and_login(client, 'workload-views@example.com')
-        other = _register_and_login(client, 'other-workload@example.com')
+        owner = _seed_view_actor(client, 'workload-views@example.com')
+        other = _seed_view_actor(client, 'other-workload@example.com')
         created = client.post(self.path, headers=owner, json={'name': 'Gateway', 'filters': self.filters})
         assert created.status_code == 201, created.text
         value = created.json()
@@ -370,14 +390,14 @@ class TestAssignedWorkloadViews:
         {'investigationId': 0}, {'investigationId': '7'}, {'investigationId': True}, {'query': 'x' * 201},
     ])
     def test_invalid_or_record_bearing_filters_rejected(self, client, override):
-        headers = _register_and_login(client, 'invalid-workload@example.com')
+        headers = _seed_view_actor(client, 'invalid-workload@example.com')
         resp = client.post(self.path, headers=headers, json={'name': 'Bad', 'filters': {**self.filters, **override}})
         assert resp.status_code == 422, resp.text
         assert client.get(self.path, headers=headers).json() == []
 
     def test_fixed_date_required_duplicate_scoped_and_unauthenticated(self, client):
         assert client.get(self.path).status_code == 401
-        headers = _register_and_login(client, 'fixed-workload@example.com')
+        headers = _seed_view_actor(client, 'fixed-workload@example.com')
         assert client.post(self.path, headers=headers, json={'name': 'Missing date', 'filters': {}}).status_code == 422
         payload = {'name': 'Same name', 'filters': {'today': '2026-11-24'}}
         assert client.post(self.path, headers=headers, json=payload).status_code == 201
@@ -393,8 +413,8 @@ class TestWatchlistViews:
                               'scope': 'overdue', 'sort': 'due'}
 
     def test_scoped_private_crud_does_not_follow_or_grant_access(self, client):
-        headers = _register_and_login(client, 'watchlist-views@example.com')
-        other = _register_and_login(client, 'watchlist-other@example.com')
+        headers = _seed_view_actor(client, 'watchlist-views@example.com')
+        other = _seed_view_actor(client, 'watchlist-other@example.com')
         response = client.post(self.path, headers=headers, json={'name': 'Gateway', 'filters': self.filters})
         assert response.status_code == 201, response.text
         value = response.json()
@@ -420,7 +440,7 @@ class TestWatchlistViews:
         {'kind': 'hidden'}, {'severity': 'urgent'}, {'scope': 'mine'}, {'sort': 'random'}, {'query': 'x' * 201},
     ])
     def test_rejects_record_subscription_and_invalid_criteria(self, client, override):
-        headers = _register_and_login(client, 'invalid-watchlist@example.com')
+        headers = _seed_view_actor(client, 'invalid-watchlist@example.com')
         response = client.post(self.path, headers=headers,
                                json={'name': 'Bad', 'filters': {**self.filters, **override}})
         assert response.status_code == 422, response.text
