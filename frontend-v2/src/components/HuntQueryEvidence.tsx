@@ -1,6 +1,6 @@
 import { RetainedHuntCurrentEvent } from './RetainedHuntCurrentEvent';
 import { useState } from 'react';
-import { huntQueryCsv, saveHuntDownload } from '../utils/huntEvidence';
+import { huntQueryCsv, huntQueryJson, saveHuntDownload } from '../utils/huntEvidence';
 import { FileCode } from 'lucide-react';
 
 type HuntRow = Record<string, unknown>;
@@ -39,6 +39,8 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
       <p className={result.outcome === 'completed' ? 'text-success' : result.outcome ? 'text-warning' : 'text-surface-500'}>{result.outcome === 'completed' ? 'Query completed' : result.outcome === 'rejected' ? 'Rejected before execution' : result.outcome === 'failed' ? 'Execution failed' : 'Query outcome not recorded'}</p>
       <button type="button" disabled={!rows.length} aria-label={`Export retained rows for query ${index + 1}`} onClick={() => saveHuntDownload(huntQueryCsv(result, index), `hunt-query-${index + 1}-retained-rows.csv`, 'text/csv;charset=utf-8')} className="rounded border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Export retained rows CSV</button>
     </div>
+    <button type="button" onClick={() => saveHuntDownload(huntQueryJson(result, index, new Date().toISOString()), `hunt-query-${index + 1}-retained-evidence.json`, 'application/json;charset=utf-8')} className="mb-2 rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">Export retained query JSON</button>
+    <p className="mb-2 text-xs text-surface-400">JSON includes this query's recorded SQL, parameters, execution bounds, outcome and all retained rows across pages, regardless of local search. Missing evidence stays missing. Raw text has no spreadsheet formula protection. Review sensitive telemetry before sharing; downloading sends nothing to another person.</p>
     <p className="mb-2 text-xs text-surface-400">{typeof result.row_count === 'number' ? `${result.row_count} results reported` : 'Result count not recorded'} · {rows.length} evidence rows retained</p>
     <p className="mb-3 text-xs text-surface-500">Recorded query output, not a new query or live check. Only retained rows can be reviewed here.</p>
     <pre className="mb-3 max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-950 p-3 text-xs text-surface-400">{result.query?.sql || 'SQL not recorded'}</pre>

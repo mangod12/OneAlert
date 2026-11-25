@@ -21,6 +21,19 @@ export function huntEvidenceJson(result: HuntEvidenceResult, exportedAt: string)
   return JSON.stringify({ format: 'onealert_hunt_evidence_v1', exported_at: exportedAt, scope, result }, null, 2) + '\n';
 }
 
+export function huntQueryJson(result: HuntQueryResult, index: number, exportedAt: string): string {
+  if (!Number.isSafeInteger(index) || index < 0) throw Error('Invalid retained query position');
+  return JSON.stringify({ format: 'onealert.retained-hunt-query', version: 1, exported_at: exportedAt,
+    query_position: index + 1, scope: scope + ' Only this displayed query result, not the full hunt. No upload, message or access grant sent.',
+    result: { ...(result.outcome !== undefined ? { outcome: result.outcome } : {}),
+      ...(result.query !== undefined ? { query: result.query } : {}),
+      ...(result.execution !== undefined ? { execution: result.execution } : {}),
+      ...(result.time_window !== undefined ? { time_window: result.time_window } : {}),
+      ...(result.row_count !== undefined ? { reported_row_count: result.row_count } : {}),
+      ...(result.error !== undefined ? { error: result.error } : {}),
+      ...(result.rows !== undefined ? { rows: result.rows } : {}) } }, null, 2) + '\n';
+}
+
 function csvCell(value: unknown): string {
   const text = value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
   let start = 0;
