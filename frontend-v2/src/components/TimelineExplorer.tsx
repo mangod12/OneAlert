@@ -1,7 +1,7 @@
 import { TimelineCapturedRows } from './TimelineCapturedRows';
 import { timelineSearchMatch, timelineSearchValid, type TimelineSearchField } from '../utils/timelineSearch';
 import { timelineComposition, timelineDayComposition } from '../utils/timelineComposition';
-import { timelineReviewCsv, timelineReviewJson, type TimelineExportSnapshot } from '../utils/timelineReviewExport';
+import { timelineReviewCsv, timelineReviewJson, timelineExportEvidenceValid, type TimelineExportSnapshot } from '../utils/timelineReviewExport';
 import { timelineRecordedTime, timelineReviewMatch, timelineWindowValid } from '../utils/timelineReview';
 import { useMemo, useState, type ReactNode } from 'react';
 
@@ -52,8 +52,9 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
     if (bTime === null) return -1;
     return (order === 'newest' ? bTime - aTime : aTime - bTime) || a.id - b.id;
   });
+  const exportValid = !!exportContext && timelineExportEvidenceValid(exportContext.caseId, exportContext.title, entries, entries.length);
   const capture = () => {
-    if (!exportContext || !validWindow || !timelineSearchValid(query, searchField) || !matches.length) return;
+    if (!exportContext || !exportValid || !validWindow || !timelineSearchValid(query, searchField) || !matches.length) return;
     const matchingIds = new Set(matches.map(entry => entry.id));
     setSnapshot({ ...exportContext, capturedAt: new Date().toISOString(), loadedCount: entries.length, excludedPinnedCount: pinned.length, filters: { searchField, query, kind, source, order, author, from, through }, rows: shown.filter(entry => matchingIds.has(entry.id)).map(entry => ({ id: entry.id, timestamp: entry.timestamp, entry_type: entry.entry_type, source: entry.source, content: entry.content, author_email: entry.author_email })) });
   };
@@ -110,7 +111,8 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
         {composition.length ? composition.map(group => <div key={group.facet}><h4 className="mb-1 font-medium text-surface-100">{group.label}</h4><div className="flex flex-wrap gap-2">{group.rows.map(row => <button type="button" key={row.value} onClick={() => narrow(group.facet, row.value)} className="min-h-9 max-w-full rounded-md border border-surface-600 px-2 text-left [overflow-wrap:anywhere]">{row.label}: {row.count} {row.count === 1 ? 'entry' : 'entries'}</button>)}</div></div>) : <p>No matching entries to summarize. No wider timeline scope was substituted.</p>}
         <div><h4 className="mb-1 font-medium text-surface-100">Recorded UTC days</h4><p className="mb-2">Newest UTC day first, using the same recorded timestamp rules as date filters, not displayed local dates. Choose a day to set both inclusive UTC boundaries while retaining other criteria. This does not establish an event sequence or elapsed response time.</p><div className="flex flex-wrap gap-2">{dayComposition.days.map(row => <button type="button" key={row.day} onClick={() => narrow('day', row.day)} className="min-h-9 rounded-md border border-surface-600 px-2">UTC {row.day}: {row.count} {row.count === 1 ? 'entry' : 'entries'}</button>)}</div>{dayComposition.undated > 0 && <p className="mt-2 text-warning">{dayComposition.undated} matching {dayComposition.undated === 1 ? 'entry has' : 'entries have'} no usable recorded UTC day. These remain in the current matching count only when no date boundary is set, and are not assigned to a calendar day.</p>}{!dayComposition.days.length && <p>No usable UTC day in these matching entries.</p>}</div>
       </section>}
-      {exportContext && <button type="button" disabled={!validWindow || !timelineSearchValid(query, searchField) || !matches.length} onClick={capture} className="mt-3 min-h-9 rounded-md border border-surface-600 px-2 text-xs text-surface-200 disabled:opacity-50">Review matching timeline CSV</button>}
+      {exportContext && <button type="button" disabled={!exportValid || !validWindow || !timelineSearchValid(query, searchField) || !matches.length} onClick={capture} className="mt-3 min-h-9 rounded-md border border-surface-600 px-2 text-xs text-surface-200 disabled:opacity-50">Review matching timeline CSV</button>}
+      {exportContext && !exportValid && <p role="status" className="mt-2 text-xs text-warning">Timeline export unavailable because the loaded entry identities or raw fields could not be verified. No new export was captured. Refresh the investigation before relying on these records. An earlier captured review, if present, remains frozen and is not a fresh verification.</p>}
       {snapshot && <section aria-label="Matching timeline CSV review" className="mt-3 space-y-2 rounded-md border border-primary-700 p-3 text-xs text-surface-200">
         <p>Captured review for investigation #{snapshot.caseId}: {snapshot.title}</p>
         <p>{snapshot.rows.length} matching entries of {snapshot.loadedCount} loaded. {snapshot.excludedPinnedCount} outside-filter linked or edited entries excluded. All captured loaded matches, not just the visible page. Only this loaded matching review, not the full timeline, edit history or audit evidence. Captured {snapshot.capturedAt}.</p>
