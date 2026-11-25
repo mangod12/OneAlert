@@ -34,3 +34,39 @@ it('cannot compare the same or unavailable captured entry and never substitutes 
   const view = render(<TimelineCapturedComparison rows={rows} baselineId={1} comparisonId={1} onClear={() => {}} />); expect(view.container).toBeEmptyDOMElement();
   view.rerender(<TimelineCapturedComparison rows={rows} baselineId={1} comparisonId={99} onClear={() => {}} />); expect(view.container).toBeEmptyDOMElement();
 });
+
+it('focuses exact raw differences and restores same fields without changing input values', () => {
+  const before = JSON.stringify(rows); render(<TimelineCapturedComparison rows={rows} baselineId={1} comparisonId={12} onClear={() => {}} />);
+  expect(screen.getByRole('status')).toHaveTextContent('3 of 5 captured fields differ.');
+  fireEvent.click(screen.getByRole('button', { name: 'Show only different captured fields' }));
+  expect(screen.getByRole('button', { name: 'Show only different captured fields' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.queryByText('Type: Same saved value')).toBeNull(); expect(screen.queryByText('Source: Same saved value')).toBeNull();
+  expect(screen.getByText('Raw timestamp: Different saved values')).toBeInTheDocument();
+  expect(screen.getByText('Recorded author: Different saved values')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Show only different captured fields' })); expect(screen.getByText('Type: Same saved value')).toBeInTheDocument();
+  expect(JSON.stringify(rows)).toBe(before);
+});
+it('swaps baseline and comparison labels without changing selected entries or hiding differences', () => {
+  render(<TimelineCapturedComparison rows={rows} baselineId={1} comparisonId={12} onClear={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Show only different captured fields' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Swap captured comparison sides' }));
+  expect(screen.getByText('Captured entry #12 compared with #1')).toBeInTheDocument();
+  expect(screen.getAllByText('Baseline #12')).toHaveLength(3); expect(screen.getAllByText('Comparison #1')).toHaveLength(3);
+  expect(screen.getByRole('status')).toHaveTextContent('3 of 5 captured fields differ. Only different saved fields shown.');
+  fireEvent.click(screen.getByRole('button', { name: 'Swap captured comparison sides' })); expect(screen.getByText('Captured entry #1 compared with #12')).toBeInTheDocument();
+});
+it('explains an equal-field comparison without treating distinct entry identities as duplicates', () => {
+  render(<TimelineCapturedComparison rows={rows} baselineId={1} comparisonId={2} onClear={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Show only different captured fields' }));
+  expect(screen.getByRole('status')).toHaveTextContent('0 of 5 captured fields differ.');
+  expect(screen.getByText(/No different saved fields/)).toHaveTextContent('not duplicate evidence or equivalent events');
+  expect(screen.queryByText('Type: Same saved value')).toBeNull();
+});
+it('keeps selection through focused reversed comparison when inspection text has no matches', () => {
+  render(<TimelineCapturedRows rows={rows} />); fireEvent.click(screen.getByText('Inspect captured matching rows (12)'));
+  fireEvent.click(screen.getByRole('button', { name: 'Compare captured entry 1' })); fireEvent.click(screen.getByRole('button', { name: 'Compare captured entry 2' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Show only different captured fields' })); fireEvent.click(screen.getByRole('button', { name: 'Swap captured comparison sides' }));
+  fireEvent.change(screen.getByLabelText('Find within captured rows'), { target: { value: 'unmatched' } });
+  expect(screen.getByText('Captured entry #2 compared with #1')).toBeInTheDocument(); expect(screen.getByText('Comparison selection: baseline #1; comparison #2.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Clear captured comparison' })); expect(screen.queryByRole('region', { name: 'Captured timeline entry comparison' })).toBeNull();
+});
