@@ -199,3 +199,12 @@ it('reviews all loaded investigation counts rather than task-page sample and exc
 it('does not enable summary export without validated loaded groups', async () => {
   show(); await screen.findByText(/201 matching assigned/); expect(screen.getByRole('button', { name: 'Review loaded investigation summary CSV (up to 50 groups)' })).toHaveProperty('disabled', true);
 });
+
+it('reviews a late-page task link without another request or task write and drops the review on page navigation', async () => {
+  const write = vi.fn().mockResolvedValue(undefined); Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: write } });
+  show(); await screen.findByText(/201 matching/); fireEvent.click(screen.getByRole('button', { name: 'Next workload page' })); await screen.findByText(/Page 2 of 9/);
+  const reads = get.mock.calls.length; fireEvent.click(screen.getByRole('button', { name: 'Review assigned task #209 link' }));
+  expect(screen.getByRole('dialog').textContent).toContain('Gateway investigation'); expect(get).toHaveBeenCalledTimes(reads); expect(apiClient.patch).not.toHaveBeenCalled(); expect(write).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Copy ID-only assigned task link' })); await screen.findByText(/ID-only assigned task link copied/); expect(write).toHaveBeenCalledWith(`${window.location.origin}/app/cases/7?task=209`);
+  fireEvent.click(screen.getByRole('button', { name: 'Close assigned task link review' })); fireEvent.click(screen.getByRole('button', { name: 'Previous workload page' })); await screen.findByText(/Page 1 of 9/); expect(screen.queryByRole('dialog')).toBeNull();
+});
