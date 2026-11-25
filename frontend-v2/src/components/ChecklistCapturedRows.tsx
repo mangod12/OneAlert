@@ -3,12 +3,25 @@ import { useState } from 'react';
 import type { ChecklistExportSnapshot } from '../utils/checklistSnapshotExport';
 export function ChecklistCapturedRows({ tasks }: { tasks: ChecklistExportSnapshot['tasks'] }) {
   const [query, setQuery] = useState(''), [page, setPage] = useState(0);
+  const [compositionOpen, setCompositionOpen] = useState(false);
+  const [category, setCategory] = useState<{ field: 'done' | 'assignee_id' | 'due_date'; value: boolean | number | string | null } | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
   const select = (id: number) => setSelected(current => current.includes(id) ? current.filter(value => value !== id) : current.length < 2 ? [...current, id] : current);
   const needle = query.trim().toLowerCase();
-  const matching = tasks.filter(task => !needle || [String(task.id), task.title, task.done ? 'completed' : 'open', task.due_date ?? 'not set', task.assignee_id === null ? 'unassigned' : String(task.assignee_id), String(task.position)].some(value => value.toLowerCase().includes(needle)));
+  const matching = tasks.filter(task => (!category || task[category.field] === category.value) && (!needle || [String(task.id), task.title, task.done ? 'completed' : 'open', task.due_date ?? 'not set', task.assignee_id === null ? 'unassigned' : String(task.assignee_id), String(task.position)].some(value => value.toLowerCase().includes(needle))));
   const pages = Math.max(1, Math.ceil(matching.length / 10)), current = Math.min(page, pages - 1);
   return <section aria-label="Captured checklist task inspection" className="space-y-2 rounded border border-surface-700 p-2 text-xs">
+    <button type="button" aria-expanded={compositionOpen} onClick={() => setCompositionOpen(value => !value)} className="min-h-9 rounded border border-surface-700 px-2">Explore captured checklist composition</button>
+    {compositionOpen && <section aria-label="Captured checklist composition" className="space-y-3 rounded border border-surface-700 p-2">
+      <p>Counts cover all {tasks.length} frozen captured tasks across inspection pages, independent of inspection search/category. These are recorded task counts, not fresh state, current people or remediation proof. Choose an exact category to inspect while retaining text search. Comparison selection and CSV/JSON downloads stay unchanged.</p>
+      {(['done', 'assignee_id', 'due_date'] as const).map(field => {
+        const counts = new Map<boolean | number | string | null, number>(); for (const task of tasks) counts.set(task[field], (counts.get(task[field]) ?? 0) + 1);
+        const label = field === 'done' ? 'Completion' : field === 'assignee_id' ? 'Recorded assignee' : 'Raw due date';
+        return <div key={field}><h4 className="font-medium">{label}</h4><div className="mt-1 flex flex-wrap gap-2">{[...counts].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))).map(([value, count]) => <button type="button" key={JSON.stringify(value)} aria-pressed={category?.field === field && category.value === value} onClick={() => { setCategory({ field, value }); setPage(0); }} className="min-h-9 max-w-full rounded border border-surface-700 px-2 text-left [overflow-wrap:anywhere]">{label}: {field === 'done' ? value ? 'Completed' : 'Open' : field === 'assignee_id' ? value === null ? 'Unassigned' : `#${value}` : value === null ? '(Not set)' : value === '' ? '(Empty saved value)' : value} · {count} {count === 1 ? 'task' : 'tasks'}</button>)}</div></div>;
+      })}
+      <p>Assignee IDs are raw recorded IDs, not names or current access. Due dates are exact saved strings, not validated deadlines, overdue counts or the viewer's current local day. Missing and empty due dates stay distinct.</p>
+    </section>}
+    {category && <p role="status" className="[overflow-wrap:anywhere]">Inspection category: {category.field} = {category.value === null ? '(Not set)' : category.value === '' ? '(Empty saved value)' : String(category.value)}. <button type="button" className="min-h-9 rounded border border-surface-700 px-2" onClick={() => { setCategory(null); setPage(0); }}>Clear captured checklist category</button></p>}
     <label className="block">Find within captured checklist tasks<input aria-label="Find within captured checklist tasks" value={query} onChange={event => { setQuery(event.target.value); setPage(0); }} className="mt-1 min-h-9 w-full min-w-0 rounded border border-surface-600 bg-surface-950 px-2" /></label>
     <p>Literal case-insensitive matching across captured task ID, title, open/completed state, due date, assignee ID or unassigned, and checklist position. This narrows inspection only, not the reviewed CSV/JSON tasks or captured filter criteria. No saved task or live filter changes.</p>
     <p role="status">Captured tasks {matching.length ? current * 10 + 1 : 0}-{Math.min((current + 1) * 10, matching.length)} of {matching.length} inspection matches; {tasks.length} tasks remain in the reviewed export. Inspection page {current + 1} of {pages}.</p>
@@ -19,6 +32,6 @@ export function ChecklistCapturedRows({ tasks }: { tasks: ChecklistExportSnapsho
     {selected.length > 0 && <button type="button" className="min-h-9 rounded border border-surface-700 px-2" onClick={() => setSelected([])}>Clear checklist comparison selection</button>}
     {selected.length === 2 && <ChecklistCapturedComparison tasks={tasks} baselineId={selected[0]} comparisonId={selected[1]} onClear={() => setSelected([])} />}
     <ul aria-label="Checklist export task review" className="max-h-72 space-y-2 overflow-y-auto text-sm">{matching.slice(current * 10, (current + 1) * 10).map(task => <li key={task.id} className="rounded border border-surface-700 p-2 [overflow-wrap:anywhere]">#{task.id}: {task.title}<button type="button" aria-label={`Compare captured checklist task ${task.id}`} aria-pressed={selected.includes(task.id)} disabled={selected.length === 2 && !selected.includes(task.id)} onClick={() => select(task.id)} className="my-1 block min-h-9 rounded border border-surface-700 px-2 text-xs disabled:opacity-40">{selected.includes(task.id) ? 'Remove task from comparison' : 'Select task for comparison'}</button><p className="text-xs">{task.done ? 'Completed' : 'Open'} · Due {task.due_date || 'not set'} · {task.assignee_id === null ? 'Unassigned' : `Assignee #${task.assignee_id}`} · Position {task.position}</p></li>)}</ul>
-    {!matching.length && <p>No captured tasks match this inspection text. The reviewed export is unchanged. Clear the search to inspect all captured tasks.</p>}
+    {!matching.length && <p>No captured tasks match this inspection text. Category filters, if selected, also apply. The reviewed export is unchanged. Clear the search to inspect all captured tasks.</p>}
   </section>;
 }
