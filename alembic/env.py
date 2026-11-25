@@ -5,23 +5,37 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
-
 from backend.config import settings
 from backend.database.db import Base
 
-# Import all models so they register with Base.metadata
-from backend.models.user import User  # noqa: F401
-from backend.models.asset import Asset  # noqa: F401
+# Register every model family, including the tables repaired in a7d92e4c610f.
+# Missing registration would make autogenerate propose dropping valid tables.
+from backend.models import (  # noqa: F401
+    alert_note,
+    api_token,
+    case,
+    detection_rule,
+    notification,
+    response_plan,
+    saved_view,
+    security_event,
+    suppression_rule,
+    validation,
+)
 from backend.models.alert import Alert  # noqa: F401
+from backend.models.asset import Asset  # noqa: F401
 from backend.models.audit_log import AuditLog  # noqa: F401
+from backend.models.compliance import ComplianceAssessment, ComplianceControl, ComplianceFramework  # noqa: F401
 from backend.models.discovered_device import DiscoveredDevice, NetworkSensor  # noqa: F401
+from backend.models.integration_config import IntegrationConfig  # noqa: F401
+from backend.models.network_connection import NetworkConnection  # noqa: F401
 from backend.models.organization import Organization  # noqa: F401
 from backend.models.remediation import RemediationAction  # noqa: F401
-from backend.models.compliance import ComplianceFramework, ComplianceControl, ComplianceAssessment  # noqa: F401
 from backend.models.sbom import SBOM, SBOMComponent  # noqa: F401
-from backend.models.network_connection import NetworkConnection  # noqa: F401
 from backend.models.subscription import Subscription  # noqa: F401
-from backend.models.integration_config import IntegrationConfig  # noqa: F401
+
+# Import all models so they register with Base.metadata
+from backend.models.user import User  # noqa: F401
 
 config = context.config
 

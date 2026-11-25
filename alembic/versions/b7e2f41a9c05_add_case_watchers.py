@@ -18,6 +18,10 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # PostgreSQL requires cases before this historical foreign key is created.
+    # The new head also runs this frozen, additive repair for existing installs.
+    from backend.database.migration_schema_20261126 import upgrade_missing_tables
+    upgrade_missing_tables()
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     if 'case_watchers' in inspector.get_table_names():
