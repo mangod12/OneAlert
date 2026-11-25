@@ -18,3 +18,9 @@ it('downloads only after review using the exact case filename and frees the obje
   render(<ChecklistSnapshotExport snapshot={snapshot} onClose={() => {}} />); expect(create).not.toHaveBeenCalled();
   fireEvent.click(screen.getByText('Download reviewed checklist CSV (1 tasks)')); expect(create).toHaveBeenCalledOnce(); expect(click).toHaveBeenCalledOnce(); expect(revoke).toHaveBeenCalledWith('blob:reviewed');
 });
+
+it('downloads JSON only on explicit choice with case-specific name, JSON MIME and cleanup', () => {
+ const create = vi.fn(() => 'blob:json'), revoke = vi.fn(); Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: create }); Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revoke }); const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function(this: HTMLAnchorElement) { expect(this.download).toBe('investigation-12-checklist-snapshot.json'); });
+ render(<ChecklistSnapshotExport snapshot={snapshot} onClose={() => {}} />); expect(create).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByText('Download reviewed checklist JSON (1 tasks)')); expect(create).toHaveBeenCalledOnce(); expect((create.mock.calls[0] as unknown as Blob[])[0].type).toBe('application/json;charset=utf-8'); expect(click).toHaveBeenCalledOnce(); expect(revoke).toHaveBeenCalledWith('blob:json');
+});
