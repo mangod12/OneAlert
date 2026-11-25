@@ -56,3 +56,7 @@ it('preserves missing evidence versus known empty retained rows and failure outc
  expect(JSON.parse(huntQueryJson({}, 0, 'time')).result).toEqual({}); expect(JSON.parse(huntQueryJson({ outcome: 'failed', error: 'Recorded failure', rows: [] }, 0, 'time')).result).toEqual({ outcome: 'failed', error: 'Recorded failure', rows: [] }); expect(() => huntQueryJson({}, -1, 'time')).toThrow();
 });
 it('exports all retained pages rather than reported unretained rows', () => { const value = JSON.parse(huntQueryJson({ rows: Array.from({ length: 45 }, (_, id) => ({ id })), row_count: 100 }, 0, 'time')); expect(value.result.rows).toHaveLength(45); expect(value.result.rows[44].id).toBe(44); });
+
+it('exports matching retained rows with search scope while leaving original query count and context intact', () => {
+ const value = JSON.parse(huntQueryJson({ query: { sql: 'SELECT id, metadata' }, row_count: 120, rows: [{ id: 23, metadata: { raw: false }, zero: 0 }] }, 0, 'time', { text: 'FALSE', field: 'metadata', retained_total: 45 })); expect(value.retained_search).toEqual({ text: 'FALSE', field: 'metadata', retained_total: 45 }); expect(value.result.rows).toEqual([{ id: 23, metadata: { raw: false }, zero: 0 }]); expect(value.result.reported_row_count).toBe(120); expect(value.scope).toContain('not all retained or reported rows'); expect(value.result.query.sql).toBe('SELECT id, metadata'); expect(JSON.parse(huntQueryJson({}, 0, 'time')).retained_search).toBeUndefined();
+});

@@ -21,10 +21,11 @@ export function huntEvidenceJson(result: HuntEvidenceResult, exportedAt: string)
   return JSON.stringify({ format: 'onealert_hunt_evidence_v1', exported_at: exportedAt, scope, result }, null, 2) + '\n';
 }
 
-export function huntQueryJson(result: HuntQueryResult, index: number, exportedAt: string): string {
+export function huntQueryJson(result: HuntQueryResult, index: number, exportedAt: string, search?: { text: string; field: string | null; retained_total: number }): string {
   if (!Number.isSafeInteger(index) || index < 0) throw Error('Invalid retained query position');
   return JSON.stringify({ format: 'onealert.retained-hunt-query', version: 1, exported_at: exportedAt,
-    query_position: index + 1, scope: scope + ' Only this displayed query result, not the full hunt. No upload, message or access grant sent.',
+    query_position: index + 1, scope: scope + (search ? ' Only locally matching retained rows from this displayed query result, not all retained or reported rows.' : ' Only this displayed query result, not the full hunt.') + ' No upload, message or access grant sent.',
+    ...(search ? { retained_search: { text: search.text, field: search.field, retained_total: search.retained_total } } : {}),
     result: { ...(result.outcome !== undefined ? { outcome: result.outcome } : {}),
       ...(result.query !== undefined ? { query: result.query } : {}),
       ...(result.execution !== undefined ? { execution: result.execution } : {}),
