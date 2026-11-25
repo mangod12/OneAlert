@@ -1,14 +1,25 @@
 import { ChecklistCapturedComparison } from './ChecklistCapturedComparison';
+import { validTaskDate } from '../utils/checklistTriage';
 import { useState } from 'react';
 import type { ChecklistExportSnapshot } from '../utils/checklistSnapshotExport';
 export function ChecklistCapturedRows({ tasks }: { tasks: ChecklistExportSnapshot['tasks'] }) {
   const [query, setQuery] = useState(''), [page, setPage] = useState(0);
+  const [order, setOrder] = useState('captured');
   const [compositionOpen, setCompositionOpen] = useState(false);
   const [category, setCategory] = useState<{ field: 'done' | 'assignee_id' | 'due_date'; value: boolean | number | string | null } | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
   const select = (id: number) => setSelected(current => current.includes(id) ? current.filter(value => value !== id) : current.length < 2 ? [...current, id] : current);
   const needle = query.trim().toLowerCase();
   const matching = tasks.filter(task => (!category || task[category.field] === category.value) && (!needle || [String(task.id), task.title, task.done ? 'completed' : 'open', task.due_date ?? 'not set', task.assignee_id === null ? 'unassigned' : String(task.assignee_id), String(task.position)].some(value => value.toLowerCase().includes(needle))));
+  if (order !== 'captured') matching.sort((a, b) => {
+    if (order === 'id') return a.id - b.id;
+    if (order === 'position') return a.position - b.position;
+    if (order === 'title') return a.title.localeCompare(b.title);
+    const aValid = validTaskDate(a.due_date), bValid = validTaskDate(b.due_date);
+    if (!aValid) return bValid ? 1 : 0;
+    if (!bValid) return -1;
+    return a.due_date!.localeCompare(b.due_date!);
+  });
   const pages = Math.max(1, Math.ceil(matching.length / 10)), current = Math.min(page, pages - 1);
   return <section aria-label="Captured checklist task inspection" className="space-y-2 rounded border border-surface-700 p-2 text-xs">
     <button type="button" aria-expanded={compositionOpen} onClick={() => setCompositionOpen(value => !value)} className="min-h-9 rounded border border-surface-700 px-2">Explore captured checklist composition</button>
@@ -24,6 +35,8 @@ export function ChecklistCapturedRows({ tasks }: { tasks: ChecklistExportSnapsho
     {category && <p role="status" className="[overflow-wrap:anywhere]">Inspection category: {category.field} = {category.value === null ? '(Not set)' : category.value === '' ? '(Empty saved value)' : String(category.value)}. <button type="button" className="min-h-9 rounded border border-surface-700 px-2" onClick={() => { setCategory(null); setPage(0); }}>Clear captured checklist category</button></p>}
     <label className="block">Find within captured checklist tasks<input aria-label="Find within captured checklist tasks" value={query} onChange={event => { setQuery(event.target.value); setPage(0); }} className="mt-1 min-h-9 w-full min-w-0 rounded border border-surface-600 bg-surface-950 px-2" /></label>
     <p>Literal case-insensitive matching across captured task ID, title, open/completed state, due date, assignee ID or unassigned, and checklist position. This narrows inspection only, not the reviewed CSV/JSON tasks or captured filter criteria. No saved task or live filter changes.</p>
+    <label className="block">Captured checklist inspection order<select aria-label="Captured checklist inspection order" value={order} onChange={event => { setOrder(event.target.value); setPage(0); }} className="mt-1 min-h-9 w-full rounded border border-surface-600 bg-surface-950 px-2"><option value="captured">Original captured order</option><option value="due">Valid saved due date, earliest first</option><option value="title">Saved title, ascending</option><option value="position">Checklist position, ascending</option><option value="id">Task ID, ascending</option></select></label>
+    <p>Order changes inspection only, never captured CSV/JSON order, criteria, composition or comparison selection. Equal sort values keep captured order. Missing or invalid due dates stay last in captured order, without claiming an overdue state or a current deadline.</p>
     <p role="status">Captured tasks {matching.length ? current * 10 + 1 : 0}-{Math.min((current + 1) * 10, matching.length)} of {matching.length} inspection matches; {tasks.length} tasks remain in the reviewed export. Inspection page {current + 1} of {pages}.</p>
     {query && <button type="button" className="min-h-9 rounded border border-surface-700 px-2" onClick={() => { setQuery(''); setPage(0); }}>Clear captured checklist search</button>}
     {pages > 1 && <div className="flex flex-wrap gap-2"><button type="button" disabled={current === 0} className="min-h-9 rounded border border-surface-700 px-2 disabled:opacity-40" onClick={() => setPage(current - 1)}>Previous captured checklist tasks</button><button type="button" disabled={current === pages - 1} className="min-h-9 rounded border border-surface-700 px-2 disabled:opacity-40" onClick={() => setPage(current + 1)}>Next captured checklist tasks</button></div>}
