@@ -252,3 +252,20 @@ it.each(['critical','medium','low','info'])('rejects task evidence outside appli
 it.each(['critical','high','medium','low','info'])('accepts the matching server-normalized %s severity and keeps unapplied draft separate',async severity=>{
  get.mockImplementation(async(_url,config)=>{const p=config?.params as Record<string,unknown>;return {data:{...result(),filter_date:p.today,data:[{...task,case_severity:p.severity==='all'?'high':p.severity}]}};});show();await screen.findByText(/201 matching assigned task records/);fireEvent.change(screen.getByLabelText('Full workload severity'),{target:{value:severity}});expect(screen.getByRole('button',{name:'Edit assigned task #209'})).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Apply full workload filters'}));await screen.findByText(new RegExp('severity: '+severity));expect(screen.queryByRole('alert')).toBeNull();expect(screen.getByRole('button',{name:'Edit assigned task #209'})).toBeTruthy();
 });
+
+it('hides out-of-scope group actions and export while retaining valid page records, then accepts corrected groups independently of drafts', async () => {
+ let bad = true;
+ get.mockImplementation(async (_url, config) => ({ data: { ...result(), filter_date: (config?.params as { today: string }).today, by_investigation: [{ case_id: 7, total: 201, open: bad ? 200 : 201, completed: bad ? 1 : 0, without_due_date: 0 }], investigation_groups_total: 1, investigation_group_limit: 50 } }));
+ show(); await screen.findByText(/201 matching assigned task records/);
+ expect(screen.getByText(/Investigation breakdown unavailable/)).toBeTruthy();
+ expect(screen.queryByRole('button', { name: 'Explore matching tasks in investigation #7' })).toBeNull();
+ expect(screen.getByRole('button', { name: 'Review loaded investigation summary CSV (up to 50 groups)' })).toHaveProperty('disabled', true);
+ expect(screen.getByRole('button', { name: 'Edit assigned task #209' })).toBeTruthy();
+ bad = false; fireEvent.click(screen.getByRole('button', { name: 'Refresh full workload page' }));
+ await screen.findByText(/201 matching tasks · 201 open/);
+ fireEvent.change(screen.getByLabelText('Full workload completion'), { target: { value: 'completed' } });
+ expect(screen.getByRole('button', { name: 'Review loaded investigation summary CSV (up to 50 groups)' })).toHaveProperty('disabled', false);
+ fireEvent.click(screen.getByRole('button', { name: 'Review loaded investigation summary CSV (up to 50 groups)' }));
+ expect(screen.getByRole('dialog').textContent).toContain('completion open');
+ expect(get).toHaveBeenCalledTimes(2); expect(apiClient.patch).not.toHaveBeenCalled();
+});
