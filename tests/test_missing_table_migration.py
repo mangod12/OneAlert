@@ -155,3 +155,18 @@ def test_new_revision_is_additive_and_frozen():
     }
     assert created == MISSING
     assert "backend.models" not in source
+
+
+def test_alembic_environment_registers_all_model_modules():
+    import ast
+
+    tree = ast.parse((ROOT / "alembic/env.py").read_text())
+    registered = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            if node.module == "backend.models":
+                registered.update(alias.name for alias in node.names)
+            elif node.module.startswith("backend.models."):
+                registered.add(node.module.rsplit(".", 1)[1])
+    expected = {module.name for module in pkgutil.iter_modules(models.__path__)}
+    assert expected <= registered
