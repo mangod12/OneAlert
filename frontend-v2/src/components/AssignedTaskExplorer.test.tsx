@@ -208,3 +208,20 @@ it('reviews a late-page task link without another request or task write and drop
   fireEvent.click(screen.getByRole('button', { name: 'Copy ID-only assigned task link' })); await screen.findByText(/ID-only assigned task link copied/); expect(write).toHaveBeenCalledWith(`${window.location.origin}/app/cases/7?task=209`);
   fireEvent.click(screen.getByRole('button', { name: 'Close assigned task link review' })); fireEvent.click(screen.getByRole('button', { name: 'Previous workload page' })); await screen.findByText(/Page 1 of 9/); expect(screen.queryByRole('dialog')).toBeNull();
 });
+
+it('returns from investigation drilldown to exact prior applied filters/page without applying or discarding drafts', async () => {
+  get.mockImplementation(async (_url, config) => { const p=config?.params as Record<string, unknown>; return { data: { ...result(Number(p.page)), filter_date:p.today, investigation_id:p.investigation_id, by_investigation:[{case_id:7,total:201,open:201,completed:0,without_due_date:0}], investigation_groups_total:1, investigation_group_limit:50 } }; });
+  show(); await screen.findByText(/201 matching assigned task records/); fireEvent.click(screen.getByRole('button', {name:'Next workload page'})); await screen.findByText(/Page 2 of 9/);
+  fireEvent.change(screen.getByLabelText('Search full assigned workload'), {target:{value:'unapplied private draft'}});
+  fireEvent.click(screen.getByText('Matching assigned workload by investigation')); fireEvent.click(screen.getByRole('button',{name:'Explore matching tasks in investigation #7'}));
+  await waitFor(()=>expect(get).toHaveBeenLastCalledWith('/cases/assigned-task-explorer',{params:expect.objectContaining({query:'',investigation_id:7,page:1})}));
+  await screen.findByText(/Applied investigation #7 only/); expect((screen.getByLabelText('Search full assigned workload') as HTMLInputElement).value).toBe('unapplied private draft');
+  fireEvent.click(screen.getByRole('button',{name:'Return to prior applied workload search'}));
+  await waitFor(()=>expect(get).toHaveBeenLastCalledWith('/cases/assigned-task-explorer',{params:expect.objectContaining({query:'',page:2})}));
+  expect(get.mock.calls.at(-1)?.[1]?.params).not.toHaveProperty('investigation_id'); expect((screen.getByLabelText('Search full assigned workload') as HTMLInputElement).value).toBe('unapplied private draft'); expect(screen.queryByRole('button',{name:'Return to prior applied workload search'})).toBeNull(); expect(apiClient.patch).not.toHaveBeenCalled();
+});
+it('clears the prior drilldown return when new workload filters are explicitly applied', async () => {
+  get.mockImplementation(async (_url,config)=>{const p=config?.params as Record<string,unknown>;return {data:{...result(Number(p.page)),filter_date:p.today,investigation_id:p.investigation_id,by_investigation:[{case_id:7,total:201,open:201,completed:0,without_due_date:0}],investigation_groups_total:1,investigation_group_limit:50}};});
+  show();await screen.findByText(/201 matching assigned task records/);fireEvent.click(screen.getByText('Matching assigned workload by investigation'));fireEvent.click(screen.getByRole('button',{name:'Explore matching tasks in investigation #7'}));await screen.findByText(/Applied investigation #7 only/);
+  fireEvent.change(screen.getByLabelText('Search full assigned workload'),{target:{value:'new applied'}});fireEvent.click(screen.getByRole('button',{name:'Apply full workload filters'}));await waitFor(()=>expect(get).toHaveBeenLastCalledWith('/cases/assigned-task-explorer',{params:expect.objectContaining({query:'new applied',investigation_id:7,page:1})}));expect(screen.queryByRole('button',{name:'Return to prior applied workload search'})).toBeNull();
+});
