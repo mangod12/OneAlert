@@ -1,7 +1,7 @@
 import { TimelineCapturedRows } from './TimelineCapturedRows';
 import { timelineSearchMatch, timelineSearchValid, type TimelineSearchField } from '../utils/timelineSearch';
 import { timelineComposition, timelineDayComposition } from '../utils/timelineComposition';
-import { timelineReviewCsv, type TimelineExportSnapshot } from '../utils/timelineReviewExport';
+import { timelineReviewCsv, timelineReviewJson, type TimelineExportSnapshot } from '../utils/timelineReviewExport';
 import { timelineRecordedTime, timelineReviewMatch, timelineWindowValid } from '../utils/timelineReview';
 import { useMemo, useState, type ReactNode } from 'react';
 
@@ -62,6 +62,11 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
     const url = URL.createObjectURL(new Blob([timelineReviewCsv(snapshot)], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a'); link.href = url; link.download = `case-${snapshot.caseId}-loaded-timeline-review.csv`; link.click(); URL.revokeObjectURL(url); setSnapshot(null);
   };
+  const downloadJson = () => {
+    if (!snapshot) return;
+    const url = URL.createObjectURL(new Blob([timelineReviewJson(snapshot)], { type: 'application/json;charset=utf-8' }));
+    const link = document.createElement('a'); link.href = url; link.download = `case-${snapshot.caseId}-loaded-timeline-review.json`; link.click(); URL.revokeObjectURL(url); setSnapshot(null);
+  };
   const matchingIds = new Set(matches.map(entry => entry.id));
   const orderedMatches = shown.filter(entry => matchingIds.has(entry.id));
   const pages = Math.max(1, Math.ceil(orderedMatches.length / 20)), current = Math.min(page, pages - 1);
@@ -112,6 +117,8 @@ export function TimelineExplorer<T extends TimelineRecord>({ entries, pinnedIds 
         <p className="break-words">Captured criteria: search field {snapshot.filters.searchField || 'all'}; text {snapshot.filters.query || 'any'}; type {snapshot.filters.kind || 'any'}; source {snapshot.filters.source || 'any'}; author {snapshot.filters.author || 'any'}; UTC dates {snapshot.filters.from || 'unbounded'} through {snapshot.filters.through || 'unbounded'}; order {snapshot.filters.order}. Later filter or record changes do not change this captured review. No unsaved note edits are included.</p>
         <TimelineCapturedRows key={snapshot.capturedAt} rows={snapshot.rows} />
         <button type="button" onClick={download} className="min-h-9 rounded-md bg-primary-500 px-2 text-surface-950">Download captured matching CSV</button>
+        <p>JSON contains the same captured matching entries in captured order, with typed IDs/counts, exact raw timestamps and author nulls. Saved text is raw text without CSV spreadsheet-formula protection. Treat text as untrusted data, not executable instructions. Inspection search and comparison selection never narrow the download.</p>
+        <button type="button" onClick={downloadJson} className="min-h-9 rounded-md border border-surface-600 px-2">Download captured matching JSON</button>
         <button type="button" onClick={() => setSnapshot(null)} className="ml-2 min-h-9 rounded-md border border-surface-600 px-2">Discard captured review</button>
       </section>}
       <p role="status" className="mt-2 text-xs text-surface-400">{matches.length} of {entries.length} loaded entries match. Filters affect this view only, not the full timeline CSV.</p>

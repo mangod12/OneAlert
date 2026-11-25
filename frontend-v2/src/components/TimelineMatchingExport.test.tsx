@@ -13,3 +13,14 @@ it('captures matching rows, excludes pinned nonmatches and freezes snapshot thro
 it('does not capture zero matches or invalid windows and supports discarding', () => { show(); fireEvent.click(screen.getByRole('button', { name: 'Review matching timeline CSV' })); fireEvent.click(screen.getByRole('button', { name: 'Discard captured review' })); expect(screen.queryByRole('region')).not.toBeInTheDocument(); fireEvent.change(screen.getByLabelText('Timeline from UTC date'), { target: { value: '2026-11-25' } }); fireEvent.change(screen.getByLabelText('Timeline through UTC date'), { target: { value: '2026-11-24' } }); expect(screen.getByRole('button', { name: 'Review matching timeline CSV' })).toBeDisabled(); });
 
 it('omits local export outside a named investigation context', () => { render(<TimelineExplorer entries={entries}>{entry => <p key={entry.id}>{entry.content}</p>}</TimelineExplorer>); expect(screen.queryByRole('button', { name: 'Review matching timeline CSV' })).not.toBeInTheDocument(); });
+
+it('downloads only captured matching JSON after explicit choice, ignores later live/inspection changes and cleans up', async () => {
+ const blobs: Blob[] = []; vi.stubGlobal('URL', { createObjectURL: vi.fn((blob: Blob) => { blobs.push(blob); return 'blob:json'; }), revokeObjectURL: vi.fn() });
+ const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function(this: HTMLAnchorElement) { expect(this.download).toBe('case-7-loaded-timeline-review.json'); });
+ const view = show(); expect(blobs).toHaveLength(0); fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'matching' } }); fireEvent.click(screen.getByRole('button', { name: 'Review matching timeline CSV' }));
+ fireEvent.click(screen.getByText('Inspect captured matching rows (1)')); fireEvent.change(screen.getByLabelText('Find within captured rows'), { target: { value: 'no inspection matches' } });
+ view.rerender(<TimelineExplorer entries={[] as typeof entries} exportContext={{ caseId: 7, title: 'Changed' }}>{entry => <p key={entry.id}>{entry.content}</p>}</TimelineExplorer>);
+ expect(blobs).toHaveLength(0); fireEvent.click(screen.getByRole('button', { name: 'Download captured matching JSON' })); expect(click).toHaveBeenCalledOnce(); expect(blobs[0].type).toBe('application/json;charset=utf-8'); expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:json');
+ const text = await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(blobs[0]); }); const value = JSON.parse(text);
+ expect(value.entries).toHaveLength(1); expect(value.entries[0].content).toBe('Matching saved evidence'); expect(value.investigation_title).toBe('Seven'); expect(value.excluded_outside_filter_pinned_count).toBe(1); expect(value.captured_filters.query).toBe('matching'); expect(text).not.toContain('Pinned outside review'); expect(screen.queryByRole('region')).toBeNull();
+});
