@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { useDialogFocus } from './ui/useDialogFocus';
-import { investigationSummaryCsv, type InvestigationExportSnapshot } from '../utils/workloadInvestigationExport';
+import { investigationSummaryCsv, investigationSummaryJson, type InvestigationExportSnapshot } from '../utils/workloadInvestigationExport';
 const control = 'max-w-full rounded border border-surface-700 px-3 py-2 text-xs text-surface-200';
 export function WorkloadInvestigationExport({ snapshot, onClose }: { snapshot: InvestigationExportSnapshot; onClose: () => void }) {
   const ref = useRef<HTMLElement>(null); useDialogFocus(ref, onClose); const f = snapshot.filters;
@@ -12,6 +12,8 @@ export function WorkloadInvestigationExport({ snapshot, onClose }: { snapshot: I
     <p className="text-xs">Applied filters: query {JSON.stringify(f.query)}; severity {f.severity}; due {f.due}{f.due === 'range' ? ` (${f.dueFrom} through ${f.dueThrough}, inclusive)` : ''}; calendar date {f.today}; completion {f.completion}; investigations {f.investigations}{f.investigationId != null ? `; exact investigation #${f.investigationId}` : ''}; task order {f.sort ?? 'priority'}. Group order is separate from task order. Draft edits and task titles are not included.</p>
     <ul aria-label="Investigation summary export review" className="max-h-64 space-y-2 overflow-y-auto text-sm">{snapshot.groups.map(row => <li key={row.case_id} className="rounded border border-surface-700 p-2">Investigation #{row.case_id}: {row.total} matching tasks<p className="text-xs">{row.open} open · {row.completed} completed · {row.without_due_date} without task due date</p></li>)}</ul>
     <button type="button" className={control} onClick={() => { const url = URL.createObjectURL(new Blob([investigationSummaryCsv(snapshot)], { type: 'text/csv;charset=utf-8' })); const link = document.createElement('a'); link.href = url; link.download = 'assigned-workload-investigation-summary.csv'; link.click(); URL.revokeObjectURL(url); }}>Download reviewed investigation summary CSV ({snapshot.groups.length} groups)</button>
+    <p className="text-xs text-surface-400">JSON contains the same frozen loaded groups, explicit omitted-group count and applied criteria. It preserves numeric counts, booleans, nulls and raw search text without CSV spreadsheet-formula protection. Treat text as untrusted data, not executable instructions. It contains no task records or unshown groups.</p>
+    <button type="button" className={control} onClick={() => { const url = URL.createObjectURL(new Blob([investigationSummaryJson(snapshot)], { type: 'application/json;charset=utf-8' })); const link = document.createElement('a'); link.href = url; link.download = 'assigned-workload-investigation-summary.json'; link.click(); URL.revokeObjectURL(url); }}>Download reviewed investigation summary JSON ({snapshot.groups.length} groups)</button>
     <button type="button" className={control} onClick={onClose}>Cancel investigation summary export</button>
   </section></div>;
 }
