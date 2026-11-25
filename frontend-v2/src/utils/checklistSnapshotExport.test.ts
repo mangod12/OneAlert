@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { checklistExportSnapshot, checklistSnapshotCsv, checklistSnapshotJson } from './checklistSnapshotExport';
+import { checklistExportSnapshot, checklistSnapshotCsv, checklistSnapshotJson, checklistExportEvidenceValid } from './checklistSnapshotExport';
 import { defaultChecklistFilters } from './checklistTriage';
 const task = { id: 7, title: 'Endpoint, "evidence"\nreview', done: false, position: 2, due_date: null, assignee_id: 99 };
 it('freezes exact matching rows and filters without following later changes', () => {
@@ -37,4 +37,19 @@ it('exports versioned frozen matching rows with typed values and only allowliste
 it('preserves fixed filter dates and exact assignee selection in JSON without inferring account details', () => {
  const snapshot = checklistExportSnapshot(12, [task], 1, { ...defaultChecklistFilters, assignee: '99', due: 'range', dueFrom: '2026-11-20', dueTo: '2026-11-24' }, '2026-11-24', 'now');
  const value = JSON.parse(checklistSnapshotJson(snapshot)); expect(value.filters.due_from).toBe('2026-11-20'); expect(value.filters.due_through).toBe('2026-11-24'); expect(value.filters.assignee).toBe('99'); expect(value.tasks[0].assignee_id).toBe(99); expect(value.local_date_for_filters).toBe('2026-11-24');
+});
+
+it.each([NaN, Infinity, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])('rejects invalid loaded counts %s before capturing evidence', count => {
+ expect(checklistExportEvidenceValid(12, [task], count)).toBe(false); expect(() => checklistExportSnapshot(12, [task], count, defaultChecklistFilters, '', '')).toThrow();
+});
+it.each([
+ { id: 0 }, { id: Number.MAX_SAFE_INTEGER + 1 }, { title: null }, { done: 'false' }, { position: -1 }, { position: 0.5 }, { assignee_id: 0 }, { assignee_id: '99' }, { due_date: 20261125 },
+])('refuses malformed task evidence rather than creating misleading JSON/CSV %j', invalid => {
+ const rows = [{ ...task, ...invalid }] as unknown as typeof task[]; expect(checklistExportEvidenceValid(12, rows, 1)).toBe(false); expect(() => checklistExportSnapshot(12, rows, 1, defaultChecklistFilters, '', '')).toThrow();
+});
+it('rejects duplicated task IDs without silently deduplicating or substituting rows', () => {
+ expect(checklistExportEvidenceValid(12, [task, { ...task, title: 'Different' }], 2)).toBe(false); expect(() => checklistExportSnapshot(12, [task, task], 2, defaultChecklistFilters, '', '')).toThrow();
+});
+it('accepts raw invalid calendar text as saved evidence, not a valid date or lateness claim', () => {
+ const rows = [{ ...task, due_date: 'not-a-date', position: 0, assignee_id: null }]; expect(checklistExportEvidenceValid(12, rows, 1)).toBe(true); const value = JSON.parse(checklistSnapshotJson(checklistExportSnapshot(12, rows, 1, defaultChecklistFilters, '', ''))); expect(value.tasks[0].due_date).toBe('not-a-date'); expect(value.tasks[0].assignee_id).toBeNull();
 });

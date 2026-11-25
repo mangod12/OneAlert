@@ -1,7 +1,7 @@
 import { readChecklistFilterLink } from '../utils/checklistFilterLink';
 import { ChecklistFilterHandoff } from './ChecklistFilterHandoff';
 import { ChecklistSnapshotExport } from './ChecklistSnapshotExport';
-import { checklistExportSnapshot, type ChecklistExportSnapshot } from '../utils/checklistSnapshotExport';
+import { checklistExportEvidenceValid, checklistExportSnapshot, type ChecklistExportSnapshot } from '../utils/checklistSnapshotExport';
 import { checklistWorkload } from '../utils/checklistWorkload';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { defaultChecklistFilters, filterChecklist, validTaskDate, type ChecklistTask } from '../utils/checklistTriage';
@@ -20,6 +20,7 @@ export function ChecklistTriage<T extends ChecklistTask>({ initialSearch = '', c
     if (element) { element.scrollIntoView?.({ block: 'center' }); element.focus({ preventScroll: true }); revealed.current = key; }
   }, [linkedTaskId, linkedIndex, reveal, page]);
   const filtered = invalidLink ? [] : filterChecklist(tasks, filters, today, currentUserId);
+  const exportValid = caseId !== undefined && checklistExportEvidenceValid(caseId, filtered, tasks.length);
   const totalPages = Math.max(1, Math.ceil(filtered.length / 20)), currentPage = Math.min(page, totalPages);
   const update = (key: keyof typeof filters, value: string) => { setInvalidLink(false); setFilters(values => ({ ...values, [key]: value })); setPage(1); };
   const workload = checklistWorkload(tasks, today);
@@ -54,7 +55,8 @@ export function ChecklistTriage<T extends ChecklistTask>({ initialSearch = '', c
     <p className="text-xs text-surface-500">Relative due filters use your device's local date{today ? ` (${today})` : ''}. Overdue, today and later include open tasks only. Filters and sorting change the view, never saved task order or state.</p>
     {onSelectMatching && <button type="button" className={control} disabled={selectionBusy || !filtered.length} onClick={() => onSelectMatching(filtered.map(task => task.id))}>Select matching checklist tasks (up to 100)</button>}
     {caseId !== undefined && <ChecklistFilterHandoff caseId={caseId} filters={filters} currentUserId={currentUserId} disabled={invalidLink || selectionBusy} />}
-    {caseId !== undefined && <button type="button" className={control} disabled={selectionBusy || !filtered.length} onClick={() => setExportSnapshot(checklistExportSnapshot(caseId, filtered, tasks.length, filters, today, new Date().toISOString()))}>Review matching checklist CSV ({filtered.length} tasks)</button>}
+    {caseId !== undefined && <button type="button" className={control} disabled={selectionBusy || !filtered.length || !exportValid} onClick={() => setExportSnapshot(checklistExportSnapshot(caseId, filtered, tasks.length, filters, today, new Date().toISOString()))}>Review matching checklist CSV ({filtered.length} tasks)</button>}
+    {caseId !== undefined && !exportValid && <p role="status" className="text-xs text-warning">Checklist export unavailable because the loaded task identities or fields could not be verified. No export was captured. Refresh the investigation before relying on these records.</p>}
     {exportSnapshot && <ChecklistSnapshotExport snapshot={exportSnapshot} onClose={() => setExportSnapshot(null)} />}
     {!filtered.length && <p role="status" className="text-sm text-surface-400">No tasks match these filters. Clear task filters to see the whole checklist.</p>}
     <ul className="space-y-1.5">{filtered.slice((currentPage - 1) * 20, currentPage * 20).map(children)}</ul>

@@ -116,3 +116,14 @@ it('offers a fixed inclusive date window with fail-closed incomplete ranges and 
   fireEvent.click(screen.getByText('Review matching checklist CSV (1 tasks)'));
   expect(screen.getByRole('dialog').textContent).toContain('2026-11-20 through 2026-11-20, inclusive');
 });
+
+it('disables export for duplicate task identities without capturing an ambiguous review', () => {
+ render(<ChecklistTriage {...props} caseId={12} tasks={[tasks[0], { ...tasks[0], title: 'Conflicting duplicate' }]}>{row}</ChecklistTriage>);
+ expect(screen.getByText(/Checklist export unavailable because/)).toBeTruthy(); expect(screen.getByRole('button', { name: 'Review matching checklist CSV (2 tasks)' })).toHaveProperty('disabled', true);
+ fireEvent.click(screen.getByRole('button', { name: 'Review matching checklist CSV (2 tasks)' })); expect(screen.queryByRole('dialog')).toBeNull();
+});
+it('recovers export only when the refreshed source evidence is valid', () => {
+ const view = render(<ChecklistTriage {...props} caseId={12} tasks={[{ ...tasks[0], position: -1 }]}>{row}</ChecklistTriage>);
+ expect(screen.getByRole('button', { name: 'Review matching checklist CSV (1 tasks)' })).toHaveProperty('disabled', true);
+ view.rerender(<ChecklistTriage {...props} caseId={12} tasks={[tasks[0]]}>{row}</ChecklistTriage>); expect(screen.queryByText(/Checklist export unavailable because/)).toBeNull(); fireEvent.click(screen.getByRole('button', { name: 'Review matching checklist CSV (1 tasks)' })); expect(screen.getByRole('dialog')).toBeTruthy();
+});
