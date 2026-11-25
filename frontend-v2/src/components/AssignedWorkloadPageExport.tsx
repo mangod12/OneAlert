@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { useDialogFocus } from './ui/useDialogFocus';
-import { workloadPageCsv, type WorkloadPageSnapshot } from '../utils/assignedWorkloadExport';
+import { workloadPageCsv, workloadPageJson, type WorkloadPageSnapshot } from '../utils/assignedWorkloadExport';
 const control = 'max-w-full rounded border border-surface-700 px-3 py-2 text-xs text-surface-200';
 export function AssignedWorkloadPageExport({ snapshot, onClose }: { snapshot: WorkloadPageSnapshot; onClose: () => void }) {
   const ref = useRef<HTMLElement>(null); useDialogFocus(ref, onClose); const f = snapshot.filters;
@@ -11,6 +11,8 @@ export function AssignedWorkloadPageExport({ snapshot, onClose }: { snapshot: Wo
     <p className="text-xs">Applied filters: sort {f.sort ?? 'priority'}; query {JSON.stringify(f.query)}; severity {f.severity}; due {f.due}{f.due === 'range' ? ` (${f.dueFrom} through ${f.dueThrough}, inclusive)` : ''}; calendar date {f.today}; completion {f.completion}; investigations {f.investigations}{f.investigationId != null ? `; exact investigation #${f.investigationId}` : ''}. Draft edits are not included.</p>
     <ul aria-label="Workload page export task review" className="max-h-72 space-y-2 overflow-y-auto text-sm">{snapshot.tasks.map(task => <li key={task.task_id} className="rounded border border-surface-700 p-2">Task #{task.task_id}: {task.title}<p className="text-xs">Investigation #{task.case_id}: {task.case_title} · {task.case_severity} · {task.case_status} · {task.done ? 'Completed' : 'Open'} · Recorded completion {task.completed_at || 'not recorded'} · Task due {task.due_date || 'not set'} · Investigation due {task.case_due_date || 'not set'}</p></li>)}</ul>
     <button type="button" className={control} onClick={() => { const url = URL.createObjectURL(new Blob([workloadPageCsv(snapshot)], { type: 'text/csv;charset=utf-8' })); const link = document.createElement('a'); link.href = url; link.download = `assigned-workload-page-${snapshot.page}.csv`; link.click(); URL.revokeObjectURL(url); }}>Download reviewed workload page CSV ({snapshot.tasks.length} records)</button>
+    <p className="text-xs text-surface-400">JSON contains the same frozen page and applied criteria, with exact saved text, nulls and booleans preserved. Unlike CSV, JSON does not add spreadsheet-formula protection. Treat saved text as untrusted data, never executable instructions. Neither format includes other pages, draft edits, credentials or access grants.</p>
+    <button type="button" className={control} onClick={() => { const url = URL.createObjectURL(new Blob([workloadPageJson(snapshot)], { type: 'application/json;charset=utf-8' })); const link = document.createElement('a'); link.href = url; link.download = `assigned-workload-page-${snapshot.page}.json`; link.click(); URL.revokeObjectURL(url); }}>Download reviewed workload page JSON ({snapshot.tasks.length} records)</button>
     <button type="button" className={control} onClick={onClose}>Cancel workload page export</button>
   </section></div>;
 }
