@@ -1,16 +1,24 @@
 import { TimelineCapturedComparison } from './TimelineCapturedComparison';
-import { timelineUtcDay } from '../utils/timelineReview';
+import { timelineRecordedTime, timelineUtcDay } from '../utils/timelineReview';
 import { useState } from 'react';
 import type { TimelineExportSnapshot } from '../utils/timelineReviewExport';
 
 export function TimelineCapturedRows({ rows }: { rows: TimelineExportSnapshot['rows'] }) {
   const [page, setPage] = useState(0), [query, setQuery] = useState('');
   const [facet, setFacet] = useState<{ field: 'entry_type' | 'source' | 'author_email' | 'day'; value: string | null } | null>(null);
+  const [order, setOrder] = useState('captured');
   const [compositionOpen, setCompositionOpen] = useState(false);
   const [selected, setSelected] = useState<number[]>([]);
   const select = (id: number) => setSelected(current => current.includes(id) ? current.filter(value => value !== id) : current.length < 2 ? [...current, id] : current);
   const needle = query.trim().toLowerCase();
   const matching = rows.filter(row => (!facet || (facet.field === 'day' ? timelineUtcDay(row.timestamp) : row[facet.field]) === facet.value) && (!needle || [String(row.id), row.timestamp, row.entry_type, row.source, row.author_email, row.content].some(value => value?.toLowerCase().includes(needle))));
+  if (order !== 'captured') matching.sort((a, b) => {
+    if (order === 'id') return a.id - b.id;
+    const aTime = timelineRecordedTime(a.timestamp), bTime = timelineRecordedTime(b.timestamp);
+    if (aTime === null) return bTime === null ? 0 : 1;
+    if (bTime === null) return -1;
+    return order === 'newest' ? bTime - aTime : aTime - bTime;
+  });
   const pages = Math.max(1, Math.ceil(matching.length / 10)), current = Math.min(page, pages - 1);
   return <details className="rounded-md border border-surface-700 p-2">
     <summary className="min-h-9 cursor-pointer py-2">Inspect captured matching rows ({rows.length})</summary>
@@ -29,6 +37,8 @@ export function TimelineCapturedRows({ rows }: { rows: TimelineExportSnapshot['r
     {facet && <p role="status" className="my-2 [overflow-wrap:anywhere]">Inspection category: {facet.field} = {facet.value === null ? '(Not recorded or no usable UTC day)' : facet.value === '' ? '(Empty saved value)' : facet.value}. <button type="button" onClick={() => { setFacet(null); setPage(0); }} className="min-h-9 rounded-md border border-surface-600 px-2">Clear captured category</button></p>}
     <label className="mt-2 block">Find within captured rows<input type="text" aria-label="Find within captured rows" value={query} onChange={event => { setPage(0); setQuery(event.target.value); }} className="mt-1 min-h-9 w-full min-w-0 rounded-md border border-surface-600 bg-surface-950 px-2" /></label>
     <p className="my-2">Literal case-insensitive text matching across captured ID, raw timestamp, type, source, author and saved text. This narrows only this inspection, never the captured CSV rows, capture criteria or live timeline filters.</p>
+    <label className="my-2 block">Captured row inspection order<select aria-label="Captured row inspection order" value={order} onChange={event => { setOrder(event.target.value); setPage(0); }} className="mt-1 min-h-9 w-full rounded-md border border-surface-600 bg-surface-950 px-2"><option value="captured">Original captured order</option><option value="oldest">Recorded timestamp, oldest first</option><option value="newest">Recorded timestamp, newest first</option><option value="id">Entry ID, ascending</option></select></label>
+    <p>Order affects inspection only, never captured CSV/JSON row order, capture criteria, composition counts or comparison selections. Recorded timestamp order uses UTC; equivalent instants keep captured order. Unusable timestamps stay last in captured order. This is recorded time, not proof of event sequence.</p>
     <p role="status">Captured rows {matching.length ? current * 10 + 1 : 0}-{Math.min((current + 1) * 10, matching.length)} of {matching.length}. {matching.length} inspection matches of {rows.length} captured rows. Page {current + 1} of {pages}.</p>
     {pages > 1 && <div className="my-2 flex flex-wrap gap-2">
       <button type="button" disabled={current === 0} onClick={() => setPage(current - 1)} className="min-h-9 rounded-md border border-surface-600 px-2 disabled:opacity-50">Previous captured rows</button>
