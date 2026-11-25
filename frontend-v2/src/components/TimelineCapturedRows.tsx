@@ -1,5 +1,5 @@
 import { TimelineCapturedComparison } from './TimelineCapturedComparison';
-import { timelineRecordedTime, timelineUtcDay } from '../utils/timelineReview';
+import { timelineRecordedTime, timelineUtcDay, timelineReviewMatch, timelineWindowValid } from '../utils/timelineReview';
 import { useState } from 'react';
 import type { TimelineExportSnapshot } from '../utils/timelineReviewExport';
 
@@ -9,12 +9,14 @@ export function TimelineCapturedRows({ rows }: { rows: TimelineExportSnapshot['r
   const [facets, setFacets] = useState<Partial<Record<FacetField, string | null>>>({});
   const [searchField, setSearchField] = useState('all');
   const [order, setOrder] = useState('captured');
+  const [from, setFrom] = useState(''), [through, setThrough] = useState('');
+  const windowValid = timelineWindowValid({ author: '', from, through });
   const [compositionOpen, setCompositionOpen] = useState(false);
   const [selected, setSelected] = useState<number[]>([]);
   const select = (id: number) => setSelected(current => current.includes(id) ? current.filter(value => value !== id) : current.length < 2 ? [...current, id] : current);
   const needle = query.trim().toLowerCase();
   const validSearch = searchField !== 'id' || !needle || (/^[1-9][0-9]*$/.test(needle) && Number.isSafeInteger(Number(needle)));
-  const matching = rows.filter(row => (Object.entries(facets) as [FacetField, string | null][]).every(([field, value]) => (field === 'day' ? timelineUtcDay(row.timestamp) : row[field]) === value) && validSearch && (!needle || (searchField === 'id' ? row.id === Number(needle) : (searchField === 'content' ? [row.content] : searchField === 'author' ? [row.author_email] : searchField === 'timestamp' ? [row.timestamp] : searchField === 'type' ? [row.entry_type] : searchField === 'source' ? [row.source] : [String(row.id), row.timestamp, row.entry_type, row.source, row.author_email, row.content]).some(value => value?.toLowerCase().includes(needle)))));
+  const matching = rows.filter(row => timelineReviewMatch(row, { author: '', from, through }) && (Object.entries(facets) as [FacetField, string | null][]).every(([field, value]) => (field === 'day' ? timelineUtcDay(row.timestamp) : row[field]) === value) && validSearch && (!needle || (searchField === 'id' ? row.id === Number(needle) : (searchField === 'content' ? [row.content] : searchField === 'author' ? [row.author_email] : searchField === 'timestamp' ? [row.timestamp] : searchField === 'type' ? [row.entry_type] : searchField === 'source' ? [row.source] : [String(row.id), row.timestamp, row.entry_type, row.source, row.author_email, row.content]).some(value => value?.toLowerCase().includes(needle)))));
   if (order !== 'captured') matching.sort((a, b) => {
     if (order === 'id') return a.id - b.id;
     const aTime = timelineRecordedTime(a.timestamp), bTime = timelineRecordedTime(b.timestamp);
@@ -47,6 +49,13 @@ export function TimelineCapturedRows({ rows }: { rows: TimelineExportSnapshot['r
     <p>Field search affects frozen inspection only. Text is a literal case-insensitive substring in the chosen raw field. Exact entry ID requires one positive safe whole-number ID, not a partial ID or text. Empty search keeps all rows within the inspection category. Raw null authors never become invented text.</p>
     {!validSearch && <p role="status" className="my-2 text-warning">Enter one positive whole captured entry ID. No inspection rows match this invalid ID; captured exports remain unchanged.</p>}
     <p className="my-2">The chosen search field and category narrow only this inspection, never captured CSV/JSON rows, capture criteria or live timeline filters.</p>
+    <div className="my-2 flex flex-wrap gap-2">
+      <label className="flex min-w-0 max-w-full flex-col gap-1">Captured from UTC date<input type="date" aria-label="Captured from UTC date" value={from} onChange={event => { setFrom(event.target.value); setPage(0); }} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2" /></label>
+      <label className="flex min-w-0 max-w-full flex-col gap-1">Captured through UTC date<input type="date" aria-label="Captured through UTC date" value={through} onChange={event => { setThrough(event.target.value); setPage(0); }} className="min-h-9 max-w-full rounded-md border border-surface-600 bg-surface-950 px-2" /></label>
+      {(from || through) && <button type="button" onClick={() => { setFrom(''); setThrough(''); setPage(0); }} className="min-h-9 rounded-md border border-surface-600 px-2">Clear captured UTC window</button>}
+    </div>
+    <p>Inclusive UTC dates narrow this frozen inspection together with text and exact categories. No window keeps entries with unusable timestamps; a window excludes them. Offset timestamps use their recorded UTC day; timezone-free timestamps follow the existing UTC convention. Capture criteria, exports and live date filters stay unchanged.</p>
+    {!windowValid && <p role="status" className="my-2 text-warning">Captured UTC date window is invalid. No inspection rows match; captured exports and comparison selection remain unchanged.</p>}
     <label className="my-2 block">Captured row inspection order<select aria-label="Captured row inspection order" value={order} onChange={event => { setOrder(event.target.value); setPage(0); }} className="mt-1 min-h-9 w-full rounded-md border border-surface-600 bg-surface-950 px-2"><option value="captured">Original captured order</option><option value="oldest">Recorded timestamp, oldest first</option><option value="newest">Recorded timestamp, newest first</option><option value="id">Entry ID, ascending</option></select></label>
     <p>Order affects inspection only, never captured CSV/JSON row order, capture criteria, composition counts or comparison selections. Recorded timestamp order uses UTC; equivalent instants keep captured order. Unusable timestamps stay last in captured order. This is recorded time, not proof of event sequence.</p>
     <p role="status">Captured rows {matching.length ? current * 10 + 1 : 0}-{Math.min((current + 1) * 10, matching.length)} of {matching.length}. {matching.length} inspection matches of {rows.length} captured rows. Page {current + 1} of {pages}.</p>
