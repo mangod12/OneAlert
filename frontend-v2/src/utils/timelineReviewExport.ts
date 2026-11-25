@@ -4,7 +4,20 @@ export interface TimelineExportSnapshot {
   filters: { searchField?: 'all' | 'content' | 'author' | 'id'; query: string; kind: string; source: string; order: string; author: string; from: string; through: string };
   rows: TimelineRecord[];
 }
+export function timelineExportEvidenceValid(caseId: number, title: string, rows: TimelineRecord[], loadedCount: number, excludedPinnedCount = 0): boolean {
+  return Number.isSafeInteger(caseId) && caseId > 0 && typeof title === 'string'
+    && Number.isSafeInteger(loadedCount) && loadedCount >= rows.length
+    && Number.isSafeInteger(excludedPinnedCount) && excludedPinnedCount >= 0 && excludedPinnedCount <= loadedCount - rows.length
+    && new Set(rows.map(row => row?.id)).size === rows.length
+    && rows.every(row => row != null && Number.isSafeInteger(row.id) && row.id > 0
+      && typeof row.timestamp === 'string' && typeof row.entry_type === 'string' && typeof row.source === 'string'
+      && typeof row.content === 'string' && (row.author_email === null || typeof row.author_email === 'string'));
+}
+function requireTimelineExportEvidence(snapshot: TimelineExportSnapshot): void {
+  if (!timelineExportEvidenceValid(snapshot.caseId, snapshot.title, snapshot.rows, snapshot.loadedCount, snapshot.excludedPinnedCount)) throw Error('Invalid timeline export evidence');
+}
 export function timelineReviewCsv(snapshot: TimelineExportSnapshot): string {
+  requireTimelineExportEvidence(snapshot);
   const cell = (value: unknown) => {
     const text = String(value ?? ''); let start = 0; while (start < text.length && (text.charCodeAt(start) <= 32 || /\s/u.test(text[start]))) start++; const trimmed = text.slice(start);
     return '"' + (['=', '+', '-', '@'].includes(trimmed[0]) ? "'" + text : text).replaceAll('"', '""') + '"';
@@ -16,6 +29,7 @@ export function timelineReviewCsv(snapshot: TimelineExportSnapshot): string {
 }
 
 export function timelineReviewJson(snapshot: TimelineExportSnapshot): string {
+  requireTimelineExportEvidence(snapshot);
   const f = snapshot.filters;
   return JSON.stringify({
     format: 'onealert.loaded-matching-timeline-review', version: 1,

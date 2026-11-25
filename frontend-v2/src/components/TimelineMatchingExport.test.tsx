@@ -24,3 +24,16 @@ it('downloads only captured matching JSON after explicit choice, ignores later l
  const text = await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(blobs[0]); }); const value = JSON.parse(text);
  expect(value.entries).toHaveLength(1); expect(value.entries[0].content).toBe('Matching saved evidence'); expect(value.investigation_title).toBe('Seven'); expect(value.excluded_outside_filter_pinned_count).toBe(1); expect(value.captured_filters.query).toBe('matching'); expect(text).not.toContain('Pinned outside review'); expect(screen.queryByRole('region')).toBeNull();
 });
+
+it('blocks duplicate loaded identities even outside matches and restores after corrected records', () => {
+ const view = render(<TimelineExplorer entries={[...entries, { ...entries[1], content: 'Another outside record' }]} exportContext={{ caseId: 7, title: 'Seven' }}>{entry => <p>{entry.content}</p>}</TimelineExplorer>);
+ fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'matching' } }); expect(screen.getByRole('button', { name: 'Review matching timeline CSV' })).toBeDisabled(); expect(screen.getByText(/Timeline export unavailable/)).toBeInTheDocument();
+ view.rerender(<TimelineExplorer entries={entries} exportContext={{ caseId: 7, title: 'Seven' }}>{entry => <p>{entry.content}</p>}</TimelineExplorer>); expect(screen.queryByText(/Timeline export unavailable/)).toBeNull(); fireEvent.click(screen.getByRole('button', { name: 'Review matching timeline CSV' })); expect(screen.getByRole('region', { name: 'Matching timeline CSV review' })).toBeInTheDocument();
+});
+it('rejects invalid context and preserves a prior captured review after new evidence becomes invalid', async () => {
+ const view = show(); fireEvent.click(screen.getByRole('button', { name: 'Review matching timeline CSV' }));
+ view.rerender(<TimelineExplorer entries={entries} exportContext={{ caseId: 0, title: 'Invalid' }}>{entry => <p key={entry.id}>{entry.content}</p>}</TimelineExplorer>); expect(screen.getByRole('button', { name: 'Review matching timeline CSV' })).toBeDisabled(); expect(screen.getByText(/earlier captured review/)).toBeInTheDocument(); const region = screen.getByRole('region', { name: 'Matching timeline CSV review' }); expect(within(region).getByText(/investigation #7: Seven/)).toBeInTheDocument(); expect(within(region).getByRole('button', { name: 'Download captured matching JSON' })).toBeEnabled();
+});
+it('blocks raw field type errors without coercing them into export evidence', () => {
+ render(<TimelineExplorer entries={[{ ...entries[0], author_email: undefined } as unknown as typeof entries[number]]} exportContext={{ caseId: 7, title: 'Seven' }}>{entry => <p>{entry.content}</p>}</TimelineExplorer>); expect(screen.getByRole('button', { name: 'Review matching timeline CSV' })).toBeDisabled(); expect(screen.getByText(/Timeline export unavailable/)).toBeInTheDocument();
+});
