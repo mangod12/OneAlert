@@ -17,3 +17,15 @@ export function workloadPageCsv(snapshot: WorkloadPageSnapshot): string {
   for (const task of snapshot.tasks) rows.push(['Only this loaded server page, not the full matching workload or audit history. Current assignments may change. Completion is not remediation proof; due dates alone do not prove lateness. No message or upload sent.', snapshot.capturedAt, snapshot.loadedAt, snapshot.page, 25, snapshot.total, f.query, f.severity, f.due, f.today, f.completion, f.investigations, f.due === 'range' ? f.dueFrom : '', f.due === 'range' ? f.dueThrough : '', task.task_id, task.case_id, task.title, task.case_title, task.case_severity, task.case_status, task.done, task.completed_at, task.due_date, task.case_due_date, f.investigationId ?? '', f.sort ?? 'priority']);
   return '\uFEFF' + rows.map(row => row.map(cell).join(',')).join('\r\n') + '\r\n';
 }
+
+export function workloadPageJson(snapshot: WorkloadPageSnapshot): string {
+  const f = snapshot.filters;
+  return JSON.stringify({
+    format: 'onealert.assigned-workload-page', version: 1,
+    scope: 'Only this captured loaded server page, not the full matching workload, assignment history or audit evidence. Current assignments may change. Completion is not remediation proof. No message or upload sent.',
+    captured_at: snapshot.capturedAt, page_loaded_at: snapshot.loadedAt, page: snapshot.page, page_size: 25,
+    matching_total_at_read: snapshot.total, captured_task_count: snapshot.tasks.length,
+    applied_filters: { sort: f.sort ?? 'priority', query: f.query, severity: f.severity, due: f.due, calendar_date: f.today, completion: f.completion, investigations: f.investigations, exact_investigation_id: f.investigationId ?? null, due_from: f.due === 'range' ? f.dueFrom : null, due_through: f.due === 'range' ? f.dueThrough : null },
+    tasks: snapshot.tasks.map(t => ({ task_id: t.task_id, investigation_id: t.case_id, title: t.title, investigation_title: t.case_title, investigation_severity: t.case_severity, investigation_status: t.case_status, completed: t.done, recorded_completion_at: t.completed_at, task_due_date: t.due_date, investigation_due_date: t.case_due_date })),
+  }, null, 2) + '\n';
+}
