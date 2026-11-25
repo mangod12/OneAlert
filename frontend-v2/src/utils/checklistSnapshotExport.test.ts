@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { checklistExportSnapshot, checklistSnapshotCsv } from './checklistSnapshotExport';
+import { checklistExportSnapshot, checklistSnapshotCsv, checklistSnapshotJson } from './checklistSnapshotExport';
 import { defaultChecklistFilters } from './checklistTriage';
 const task = { id: 7, title: 'Endpoint, "evidence"\nreview', done: false, position: 2, due_date: null, assignee_id: 99 };
 it('freezes exact matching rows and filters without following later changes', () => {
@@ -23,4 +23,18 @@ it('exports exact fixed date-window metadata alongside the reviewed filter', () 
   const csv = checklistSnapshotCsv(checklistExportSnapshot(12, [task], 1, { ...defaultChecklistFilters, due: 'range', dueFrom: '2026-11-20', dueTo: '2026-11-24' }, '', 'now'));
   expect(csv).toContain('"due_window_from","due_window_through"');
   expect(csv).toContain('"2026-11-20","2026-11-24"');
+});
+
+it('exports versioned frozen matching rows with typed values and only allowlisted fields', () => {
+ const row = { ...task, title: '=SUM(A1)', done: true, assignee_id: null, secret: 'excluded' }, filters = { ...defaultChecklistFilters, query: '=literal', dueFrom: 'stale', dueTo: 'draft' };
+ const snapshot = checklistExportSnapshot(12, [row], 23, filters, '', 'captured'); row.title = 'Changed'; filters.query = 'Changed';
+ const value = JSON.parse(checklistSnapshotJson(snapshot));
+ expect(value.format).toBe('onealert.checklist-snapshot'); expect(value.version).toBe(1); expect(value.investigation_id).toBe(12); expect(value.loaded_task_count).toBe(23); expect(value.captured_task_count).toBe(1); expect(value.local_date_for_filters).toBeNull();
+ expect(value.filters.query).toBe('=literal'); expect(value.filters.due_from).toBeNull(); expect(value.filters.due_through).toBeNull();
+ expect(value.tasks).toEqual([{ task_id: 7, title: '=SUM(A1)', completed: true, due_date: null, assignee_id: null, checklist_position: 2 }]);
+ expect(JSON.stringify(value)).not.toContain('excluded'); expect(JSON.stringify(value)).not.toContain('Changed');
+});
+it('preserves fixed filter dates and exact assignee selection in JSON without inferring account details', () => {
+ const snapshot = checklistExportSnapshot(12, [task], 1, { ...defaultChecklistFilters, assignee: '99', due: 'range', dueFrom: '2026-11-20', dueTo: '2026-11-24' }, '2026-11-24', 'now');
+ const value = JSON.parse(checklistSnapshotJson(snapshot)); expect(value.filters.due_from).toBe('2026-11-20'); expect(value.filters.due_through).toBe('2026-11-24'); expect(value.filters.assignee).toBe('99'); expect(value.tasks[0].assignee_id).toBe(99); expect(value.local_date_for_filters).toBe('2026-11-24');
 });
