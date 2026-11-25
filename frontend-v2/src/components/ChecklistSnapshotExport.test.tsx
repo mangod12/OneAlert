@@ -24,3 +24,9 @@ it('downloads JSON only on explicit choice with case-specific name, JSON MIME an
  render(<ChecklistSnapshotExport snapshot={snapshot} onClose={() => {}} />); expect(create).not.toHaveBeenCalled();
  fireEvent.click(screen.getByText('Download reviewed checklist JSON (1 tasks)')); expect(create).toHaveBeenCalledOnce(); expect((create.mock.calls[0] as unknown as Blob[])[0].type).toBe('application/json;charset=utf-8'); expect(click).toHaveBeenCalledOnce(); expect(revoke).toHaveBeenCalledWith('blob:json');
 });
+it('inspection search never changes the reviewed JSON or CSV download counts', () => {
+ const create = vi.fn(() => 'blob:search'), revoke = vi.fn(); Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: create }); Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revoke }); vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+ render(<ChecklistSnapshotExport snapshot={snapshot} onClose={() => {}} />); fireEvent.change(screen.getByLabelText('Find within captured checklist tasks'), { target: { value: 'no matches' } });
+ expect(screen.getByText(/0 inspection matches; 1 tasks remain/)).toBeTruthy();
+ expect(screen.getByRole('button', { name: 'Download reviewed checklist CSV (1 tasks)' })).toHaveProperty('disabled', false); fireEvent.click(screen.getByRole('button', { name: 'Download reviewed checklist JSON (1 tasks)' })); expect(create).toHaveBeenCalledOnce();
+});
