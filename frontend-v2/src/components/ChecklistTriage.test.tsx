@@ -75,9 +75,14 @@ it('exports all matching pages, never just the visible page, and holds the revie
   fireEvent.click(screen.getByRole('button', { name: 'Next task page' }));
   fireEvent.click(screen.getByText('Review matching checklist CSV (23 tasks)'));
   expect(screen.getByRole('dialog').textContent).toContain('23 matching tasks of 23 loaded tasks');
-  expect(screen.getByRole('list', { name: 'Checklist export task review' }).children).toHaveLength(23);
+  expect(screen.getByRole('list', { name: 'Checklist export task review' }).children).toHaveLength(10);
+  fireEvent.click(screen.getByRole('button', { name: 'Next captured checklist tasks' })); fireEvent.click(screen.getByRole('button', { name: 'Next captured checklist tasks' }));
+  expect(screen.getByRole('list', { name: 'Checklist export task review' }).children).toHaveLength(3);
+  expect(screen.getByRole('list', { name: 'Checklist export task review' }).textContent).toContain('#23: Task 23');
+  expect(screen.getByRole('button', { name: 'Download reviewed checklist JSON (23 tasks)' })).toBeTruthy();
   view.rerender(<ChecklistTriage {...props} caseId={12} tasks={tasks.slice(0, 2)}>{row}</ChecklistTriage>);
   expect(screen.getByRole('dialog').textContent).toContain('23 matching tasks of 23 loaded tasks');
+  expect(screen.getByRole('list', { name: 'Checklist export task review' }).textContent).toContain('#23: Task 23');
   fireEvent.click(screen.getByText('Cancel checklist export'));
   fireEvent.change(screen.getByLabelText('Filter checklist task status'), { target: { value: 'done' } });
   fireEvent.click(screen.getByText('Review matching checklist CSV (1 tasks)'));
