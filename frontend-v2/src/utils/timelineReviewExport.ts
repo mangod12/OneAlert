@@ -14,3 +14,15 @@ export function timelineReviewCsv(snapshot: TimelineExportSnapshot): string {
   for (const row of snapshot.rows) rows.push(['Only this captured loaded matching timeline review, not the full timeline, edit history or audit evidence. No unsaved edits included. No upload or message sent.', snapshot.caseId, snapshot.title, snapshot.capturedAt, snapshot.loadedCount, snapshot.rows.length, snapshot.excludedPinnedCount, f.query, f.kind, f.source, f.author, f.from, f.through, f.order, row.id, row.timestamp, row.entry_type, row.source, row.author_email, row.content, f.searchField || 'all']);
   return '\uFEFF' + rows.map(row => row.map(cell).join(',')).join('\r\n') + '\r\n';
 }
+
+export function timelineReviewJson(snapshot: TimelineExportSnapshot): string {
+  const f = snapshot.filters;
+  return JSON.stringify({
+    format: 'onealert.loaded-matching-timeline-review', version: 1,
+    scope: 'Only frozen matching entries from this loaded timeline review across local pages, not the full timeline, edit history, source truth or audit evidence. Outside-filter pinned entries and unsaved edits excluded. No upload, message or access grant sent.',
+    investigation_id: snapshot.caseId, investigation_title: snapshot.title, captured_at: snapshot.capturedAt,
+    loaded_entry_count: snapshot.loadedCount, captured_entry_count: snapshot.rows.length, excluded_outside_filter_pinned_count: snapshot.excludedPinnedCount,
+    captured_filters: { search_field: f.searchField ?? 'all', query: f.query, type: f.kind, source: f.source, recorded_author: f.author, from_utc_date: f.from || null, through_utc_date: f.through || null, order: f.order },
+    entries: snapshot.rows.map(row => ({ entry_id: row.id, recorded_timestamp: row.timestamp, entry_type: row.entry_type, source: row.source, recorded_author: row.author_email, content: row.content })),
+  }, null, 2) + '\n';
+}
