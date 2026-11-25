@@ -1,5 +1,5 @@
 """
-Regression test: the full Alembic migration chain must run cleanly on a
+Regression test: the legacy reversible Alembic chain must run cleanly on a
 fresh SQLite database (dev/docker-compose default), and back down again.
 
 Guard for the bug where e5c07dc452f3 used op.create_foreign_key outside
@@ -31,14 +31,16 @@ def _table_names(db_path: Path) -> set:
         conn.close()
 
 
-def test_alembic_upgrade_and_downgrade_on_sqlite(tmp_path, monkeypatch):
+def test_legacy_alembic_upgrade_and_downgrade_on_sqlite(tmp_path, monkeypatch):
     db_path = tmp_path / "migrations_test.db"
     monkeypatch.setattr(settings, "database_url", f"sqlite:///{db_path}")
 
     cfg = Config(str(REPO_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(REPO_ROOT / "alembic"))
 
-    command.upgrade(cfg, "head")
+    # The later additive schema repair intentionally blocks destructive downgrade.
+    # Full head coverage and its retention guard live in test_missing_table_migration.
+    command.upgrade(cfg, "ac319608f458")
 
     tables = _table_names(db_path)
     assert "users" in tables
