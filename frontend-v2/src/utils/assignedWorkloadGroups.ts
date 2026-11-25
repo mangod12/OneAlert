@@ -1,8 +1,10 @@
+import type { WorkloadExportFilters } from './assignedWorkloadExport';
 export interface WorkloadGroup { case_id: number; total: number; open: number; completed: number; without_due_date: number; }
-export function checkedWorkloadGroups(value: unknown, groupCount: unknown, limit: unknown, total: number): WorkloadGroup[] | null {
+export function checkedWorkloadGroups(value: unknown, groupCount: unknown, limit: unknown, total: number, filters?: Pick<WorkloadExportFilters, 'completion' | 'due' | 'investigationId'>): WorkloadGroup[] | null {
   if (!Array.isArray(value) || !Number.isSafeInteger(groupCount) || (groupCount as number) < 0 || (groupCount as number) > total || (total > 0 && groupCount === 0) || limit !== 50 || value.length !== Math.min(50, groupCount as number) || new Set(value.map(row => row?.case_id)).size !== value.length) return null;
   const groups = value as WorkloadGroup[];
   if (groups.some((row, index) => !row || !Number.isSafeInteger(row.case_id) || row.case_id < 1 || ![row.total, row.open, row.completed, row.without_due_date].every(n => Number.isSafeInteger(n) && n >= 0) || row.total < 1 || row.open + row.completed !== row.total || row.without_due_date > row.total || (index > 0 && (groups[index - 1].total < row.total || (groups[index - 1].total === row.total && groups[index - 1].case_id >= row.case_id))))) return null;
+  if (filters && groups.some(row => (filters.investigationId != null && row.case_id !== filters.investigationId) || (filters.completion === 'open' && row.completed !== 0) || (filters.completion === 'completed' && row.open !== 0) || (filters.due === 'none' && row.without_due_date !== row.total) || (['overdue', 'today', 'future', 'range'].includes(filters.due) && row.without_due_date !== 0))) return null;
   const sum = groups.reduce((n, row) => n + row.total, 0);
   return sum > total || ((groupCount as number) <= 50 && sum !== total) ? null : groups;
 }

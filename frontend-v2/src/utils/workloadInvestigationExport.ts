@@ -3,7 +3,7 @@ import type { WorkloadExportFilters } from './assignedWorkloadExport';
 export interface InvestigationExportSnapshot { groups: WorkloadGroup[]; groupCount: number; total: number; filters: WorkloadExportFilters; loadedAt: string; capturedAt: string; }
 export function investigationExportSnapshot(groups: unknown, groupCount: unknown, limit: unknown, total: number, filters: WorkloadExportFilters, loadedAt: string, capturedAt: string): InvestigationExportSnapshot | null {
   if (!Number.isSafeInteger(total) || total < 1) return null;
-  const checked = checkedWorkloadGroups(groups, groupCount, limit, total);
+  const checked = checkedWorkloadGroups(groups, groupCount, limit, total, filters);
   if (!checked?.length) return null;
   return { groups: checked.map(row => ({ ...row })), groupCount: groupCount as number, total, filters: { ...filters }, loadedAt, capturedAt };
 }
