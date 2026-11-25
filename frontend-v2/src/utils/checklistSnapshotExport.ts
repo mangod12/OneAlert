@@ -1,7 +1,14 @@
 import { type ChecklistFilters, type ChecklistTask } from './checklistTriage';
 export interface ChecklistExportSnapshot { caseId: number; capturedAt: string; localDate: string; loadedCount: number; filters: ChecklistFilters; tasks: ChecklistTask[]; }
+export function checklistExportEvidenceValid(caseId: number, tasks: ChecklistTask[], loadedCount: number): boolean {
+  return Number.isSafeInteger(caseId) && caseId > 0 && Number.isSafeInteger(loadedCount) && loadedCount >= tasks.length
+    && new Set(tasks.map(task => task?.id)).size === tasks.length
+    && tasks.every(task => task != null && Number.isSafeInteger(task.id) && task.id > 0 && typeof task.title === 'string' && typeof task.done === 'boolean'
+      && Number.isSafeInteger(task.position) && task.position >= 0 && (task.assignee_id === null || (Number.isSafeInteger(task.assignee_id) && task.assignee_id > 0))
+      && (task.due_date === null || typeof task.due_date === 'string'));
+}
 export function checklistExportSnapshot(caseId: number, tasks: ChecklistTask[], loadedCount: number, filters: ChecklistFilters, localDate: string, capturedAt: string): ChecklistExportSnapshot {
-  if (!Number.isSafeInteger(caseId) || caseId < 1 || loadedCount < tasks.length) throw Error('Invalid checklist export scope');
+  if (!checklistExportEvidenceValid(caseId, tasks, loadedCount)) throw Error('Invalid checklist export scope');
   return { caseId, capturedAt, localDate, loadedCount, filters: { ...filters }, tasks: tasks.map(task => ({ ...task })) };
 }
 export function checklistSnapshotCsv(snapshot: ChecklistExportSnapshot): string {
