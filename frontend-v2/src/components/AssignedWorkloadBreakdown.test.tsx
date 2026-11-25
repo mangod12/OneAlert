@@ -1,6 +1,6 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { AssignedWorkloadBreakdown } from './AssignedWorkloadBreakdown';
 afterEach(cleanup);
 const group = { case_id: 7, total: 209, open: 200, completed: 9, without_due_date: 2 };
@@ -14,3 +14,10 @@ it.each([
   { groups: [{ ...group, case_id: 8 }, { ...group, case_id: 7 }], count: 2, total: 418 },
   { groups: [{ ...group, total: 1, open: 1, completed: 0, without_due_date: 0 }, group], count: 2, total: 210 },
 ])('rejects inconsistent totals and ordering %j', value => { show(value.groups, value.count, value.total); expect(screen.getByText(/breakdown unavailable/)).toBeTruthy(); });
+
+it('routes exact per-investigation category counts and disables empty subsets', () => {
+ const explore=vi.fn();render(<MemoryRouter><AssignedWorkloadBreakdown groups={[{...group, completed:0, open:209}]} groupCount={1} total={209} limit={50} onExplore={explore} /></MemoryRouter>);
+ fireEvent.click(screen.getByRole('button',{name:'Explore 209 open tasks in investigation #7'}));expect(explore).toHaveBeenLastCalledWith(7,'open');
+ fireEvent.click(screen.getByRole('button',{name:'Explore 2 tasks without due date in investigation #7'}));expect(explore).toHaveBeenLastCalledWith(7,'undated');
+ expect((screen.getByRole('button',{name:'Explore 0 completed tasks in investigation #7'}) as HTMLButtonElement).disabled).toBe(true);
+});
