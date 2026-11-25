@@ -17,13 +17,15 @@ import apiClient from '../api/client';
 import { getApiErrorMessage } from '../api/errors';
 interface Task { done: boolean; completed_at: string | null; task_id: number; case_id: number; title: string; case_title: string; case_severity: string; case_status: string; due_date: string | null; case_due_date: string | null; }
 interface Summary { total: number; investigations: number; open: number; completed: number; without_due_date: number; completed_without_timestamp: number; }
-function summaryFrom(value: unknown, total: number, completion: string): Summary | null {
+function summaryFrom(value: unknown, total: number, filters: Pick<WorkloadFilters, 'completion' | 'due' | 'investigationId'>): Summary | null {
   if (!value || typeof value !== 'object') return null;
   const s = value as Summary;
   if (![s.total, s.investigations, s.open, s.completed, s.without_due_date, s.completed_without_timestamp].every(n => Number.isSafeInteger(n) && n >= 0)
     || s.total !== total || s.open + s.completed !== total || s.investigations > total || (total > 0 && !s.investigations)
     || s.without_due_date > total || s.completed_without_timestamp > s.completed
-    || (completion === 'open' && s.completed !== 0) || (completion === 'completed' && s.open !== 0)) return null;
+    || (filters.completion === 'open' && s.completed !== 0) || (filters.completion === 'completed' && s.open !== 0)
+    || (filters.due === 'none' && s.without_due_date !== total) || (['overdue', 'today', 'future', 'range'].includes(filters.due) && s.without_due_date !== 0)
+    || (filters.investigationId != null && s.investigations !== (total > 0 ? 1 : 0))) return null;
   return s;
 }
 const control = 'max-w-full rounded border border-surface-600 bg-surface-950 px-3 py-2 text-xs text-surface-200 disabled:opacity-40';
@@ -56,7 +58,7 @@ function AssignedTaskSearch({ onEdited, editingBlocked = false, initial }: { onE
       const value = response.data;
       if ((filters.sort !== 'priority' && value.sort !== filters.sort) || (filters.investigationId !== null && (value.investigation_id !== filters.investigationId || (Array.isArray(value.data) && value.data.some((task: Task) => task?.case_id !== filters.investigationId)))) || (filters.due === 'range' && (value.due_from !== filters.dueFrom || value.due_through !== filters.dueThrough || (Array.isArray(value.data) && value.data.some((task: Task) => !validTaskDate(task?.due_date) || task.due_date! < filters.dueFrom || task.due_date! > filters.dueThrough)))) || value.completion !== filters.completion || value.investigations !== filters.investigations || !Array.isArray(value.data) || !Number.isSafeInteger(value.total) || value.total < 0 || value.page !== page || value.size !== 25 || value.data.length > 25 || new Set(value.data.map((task: Task) => task?.task_id)).size !== value.data.length || value.filter_date !== filters.today || value.data.some((task: Task) => !task || (filters.severity !== 'all' && task.case_severity !== filters.severity) || !workloadDueScopeMatches(task.due_date, filters) || typeof task.done !== 'boolean' || (task.completed_at !== null && typeof task.completed_at !== 'string') || (filters.completion !== 'all' && task.done !== (filters.completion === 'completed')) || (filters.investigations !== 'all' && ['resolved', 'closed', 'false_positive'].includes(task.case_status) !== (filters.investigations === 'inactive')) || !Number.isSafeInteger(task.task_id) || task.task_id < 1 || !Number.isSafeInteger(task.case_id) || task.case_id < 1 || typeof task.title !== 'string' || typeof task.case_title !== 'string' || typeof task.case_status !== 'string' || typeof task.case_severity !== 'string' || (task.due_date !== null && typeof task.due_date !== 'string') || (task.case_due_date !== null && typeof task.case_due_date !== 'string'))) throw new Error('Assigned task evidence did not match the requested page. Retry before relying on it.');
       const last = Math.max(1, Math.ceil(value.total / 25)); if (page > last) { setPage(last); return; }
-      setSnapshot({ groups: value.by_investigation, groupCount: value.investigation_groups_total, groupLimit: value.investigation_group_limit, tasks: value.data, total: value.total, summary: summaryFrom(value.summary, value.total, filters.completion), loadedAt: new Date().toLocaleString() }); setMustRefresh(false);
+      setSnapshot({ groups: value.by_investigation, groupCount: value.investigation_groups_total, groupLimit: value.investigation_group_limit, tasks: value.data, total: value.total, summary: summaryFrom(value.summary, value.total, filters), loadedAt: new Date().toLocaleString() }); setMustRefresh(false);
     }).catch(err => { if (requestId.current === request) setError(getApiErrorMessage(err, 'Assigned task exploration unavailable.')); }).finally(() => { if (requestId.current === request) setLoading(false); });
     return () => { requestId.current += 1; };
   }, [open, filters, page, retry, invalidLink]);
