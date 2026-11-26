@@ -146,3 +146,15 @@ export function retainedHuntValueRows(rows: Record<string, unknown>[], field: st
 export function retainedHuntMissingRows(rows: Record<string, unknown>[], field: string): number[] {
   return rows.flatMap((row, index) => Object.hasOwn(row, field) ? [] : [index + 1]);
 }
+
+
+export function huntProfileMatchesJson(result: HuntQueryResult, index: number, field: string, selection: { kind: 'missing' } | { kind: 'value'; firstRow: number }, exportedAt: string): string {
+  if (!result.rows?.some(row => Object.hasOwn(row, field))) throw Error('Choose a recorded retained field');
+  const positions = selection.kind === 'missing' ? retainedHuntMissingRows(result.rows, field) : retainedHuntValueRows(result.rows, field, selection.firstRow);
+  if (!positions.length) throw Error('No matching retained rows');
+  const query = JSON.parse(huntQueryJson(result, index, exportedAt));
+  return JSON.stringify({ format: 'onealert.retained-hunt-profile-matches', version: 1, exported_at: exportedAt, query_position: index + 1, field, retained_total: result.rows.length,
+    selection: selection.kind === 'missing' ? { kind: 'missing' } : { kind: 'value', first_retained_position: selection.firstRow, value: result.rows[selection.firstRow - 1][field] },
+    scope: scope + ' Only retained rows matching this exact typed profile selection, across all local pages. Missing fields differ from recorded null. Original positions and recorded query context are unchanged. No upload, message or access grant sent.',
+    query_context: { ...query.result, rows: undefined }, matched_retained_count: positions.length, rows: positions.map(position => ({ retained_row_position: position, row: result.rows![position - 1] })) }, null, 2) + '\n';
+}
