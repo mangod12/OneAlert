@@ -97,3 +97,14 @@ export function huntRowComparisonJson(result: HuntQueryResult, index: number, ba
     baseline: { retained_row_position: baselineRow, row: baseline.result.rows[0] }, inspected: { retained_row_position: inspectedRow, row: inspected.result.rows[0] },
     query_context: { ...baseline.result, rows: undefined }, fields: compareRetainedHuntRows(result.rows![baselineRow - 1], result.rows![inspectedRow - 1]) }, null, 2) + '\n';
 }
+
+
+export function huntRowComparisonCsv(result: HuntQueryResult, index: number, baselineRow: number, inspectedRow: number): string {
+  // Reuse the JSON export validation and context contract before producing a table.
+  const evidence = JSON.parse(huntRowComparisonJson(result, index, baselineRow, inspectedRow, ''));
+  const table: unknown[][] = [['query_position', 'baseline_retained_position', 'inspected_retained_position', 'retained_total', 'reported_row_count', 'evidence_scope', 'field', 'comparison', 'baseline_present', 'baseline_json', 'inspected_present', 'inspected_json']];
+  for (const item of compareRetainedHuntRows(result.rows![baselineRow - 1], result.rows![inspectedRow - 1])) {
+    table.push([index + 1, baselineRow, inspectedRow, result.rows!.length, result.row_count, evidence.scope, item.field, item.status, item.baselinePresent, item.baselinePresent ? JSON.stringify(item.baseline) : '', item.inspectedPresent, item.inspectedPresent ? JSON.stringify(item.inspected) : '']);
+  }
+  return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
