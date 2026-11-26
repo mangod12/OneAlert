@@ -158,3 +158,12 @@ export function huntProfileMatchesJson(result: HuntQueryResult, index: number, f
     scope: scope + ' Only retained rows matching this exact typed profile selection, across all local pages. Missing fields differ from recorded null. Original positions and recorded query context are unchanged. No upload, message or access grant sent.',
     query_context: { ...query.result, rows: undefined }, matched_retained_count: positions.length, rows: positions.map(position => ({ retained_row_position: position, row: result.rows![position - 1] })) }, null, 2) + '\n';
 }
+
+
+export function huntFieldProfileCsv(result: HuntQueryResult, index: number, field: string): string {
+  const evidence = JSON.parse(huntFieldProfileJson(result, index, field, ''));
+  const profile = retainedHuntFieldProfile(result.rows!, field);
+  const table: unknown[][] = [['query_position', 'field', 'retained_total', 'reported_row_count', 'present_count', 'missing_count', 'recorded_null_count', 'distinct_count', 'evidence_scope', 'value_json', 'retained_count', 'first_retained_position']];
+  for (const item of profile.values) table.push([index + 1, field, profile.total, result.row_count, profile.present, profile.missing, profile.nulls, profile.distinct, evidence.scope, JSON.stringify(item.value), item.count, item.firstRow]);
+  return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
