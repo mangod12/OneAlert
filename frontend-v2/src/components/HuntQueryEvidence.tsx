@@ -1,6 +1,6 @@
 import { RetainedHuntCurrentEvent } from './RetainedHuntCurrentEvent';
 import { useState } from 'react';
-import { compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, saveHuntDownload } from '../utils/huntEvidence';
+import { compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, saveHuntDownload } from '../utils/huntEvidence';
 import { FileCode } from 'lucide-react';
 
 type HuntRow = Record<string, unknown>;
@@ -121,6 +121,8 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
       <p className="text-surface-400">Compare two original retained row positions from this query only. These may be different events, not earlier and later versions of one event. No live lookup, chronology, cause or threat verdict is inferred. All recorded fields are compared, including hidden columns. Missing fields differ from recorded null; nested object key order is ignored, array order and JSON value types are preserved.</p>
       {detailRow == null || detailRow === baselineRow ? <p className="text-surface-300">Inspect a different retained row to compare it with this baseline. The baseline stays selected across search, order and page changes.</p> : rows[detailRow - 1] && <>
         <p className="text-surface-100">Baseline row {baselineRow} compared with inspected row {detailRow}, original saved positions.</p>
+        <button type="button" onClick={() => saveHuntDownload(huntRowComparisonJson(result, index, baselineRow, detailRow, new Date().toISOString()), `hunt-query-${index + 1}-retained-rows-${baselineRow}-${detailRow}-comparison.json`, 'application/json;charset=utf-8')} className="min-h-9 rounded border border-surface-600 px-3 py-2 text-primary-300">Export retained row comparison JSON</button>
+        <p className="text-surface-400">Downloads both full retained rows, original positions, query context and every compared field, regardless of local focus or hidden columns. Raw JSON has no spreadsheet formula protection. Review sensitive telemetry before sharing; downloading sends nothing to another person.</p>
         <label className="flex min-h-9 items-center gap-2 text-surface-200"><input type="checkbox" checked={differencesOnly} onChange={event => setDifferencesOnly(event.target.checked)} />Show only differing retained fields</label>
         <p role="status" className="text-surface-300">{differences.length} differing or one-sided fields, {comparison.length - differences.length} equal fields, {comparison.length} fields compared. Showing {comparisonVisible.length} fields.</p>
         {differencesOnly && !differences.length && <p className="text-surface-300">No differing retained fields in this pair. All compared recorded values are equal; this does not establish that the rows are the same event or reflect current data.</p>}

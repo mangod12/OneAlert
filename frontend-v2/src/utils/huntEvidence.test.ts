@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson } from './huntEvidence';
+import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson } from './huntEvidence';
 
 describe('Retained hunt evidence exports', () => {
   it('preserves recorded queries, params, applied metadata, errors and rows without inventing missing values', () => {
@@ -75,4 +75,12 @@ it('compares every retained field with typed nested equality and missing distinc
 });
 it('compares empty and falsy values without collapsing types or nested missing keys',()=>{
  const fields=compareRetainedHuntRows({a:false,b:0,c:'',d:{a:null},e:[{a:1,b:2}]},{a:0,b:'0',c:null,d:{},e:[{b:2,a:1}]});expect(fields.map(item=>item.status)).toEqual(['Different recorded value','Different recorded value','Different recorded value','Different recorded value','Same recorded value']);expect(compareRetainedHuntRows({},{})).toEqual([]);
+});
+
+
+it('exports both retained positions all typed fields and original query context in a comparison artifact',()=>{
+ const input={query:{sql:'SELECT id, detail',params:{limit:100}},time_window:{since:'saved-bound'},row_count:120,rows:[{id:3,old:null,detail:{a:false},raw:'=1 <script>literal</script>'},{id:1,new:0,detail:{a:false}}]},before=JSON.stringify(input);const value=JSON.parse(huntRowComparisonJson(input,1,1,2,'time'));expect(value.format).toBe('onealert.retained-hunt-row-comparison');expect(value.query_position).toBe(2);expect(value.retained_total).toBe(2);expect(value.baseline).toEqual({retained_row_position:1,row:input.rows[0]});expect(value.inspected).toEqual({retained_row_position:2,row:input.rows[1]});expect(value.query_context).toEqual({query:input.query,time_window:input.time_window,reported_row_count:120});expect(value.fields).toHaveLength(5);expect(value.fields.find((field:{field:string})=>field.field==='old')).toMatchObject({baselinePresent:true,inspectedPresent:false,baseline:null});expect(value.fields.find((field:{field:string})=>field.field==='detail').status).toBe('Same recorded value');expect(JSON.stringify(input)).toBe(before);
+});
+it('rejects equal invalid or missing comparison positions and preserves absent query metadata',()=>{
+ const input={rows:[{id:1},{id:2}]};for(const pair of [[1,1],[0,2],[1,3],[NaN,2],[1,1.5]])expect(()=>huntRowComparisonJson(input,0,pair[0],pair[1],'time')).toThrow();expect(()=>huntRowComparisonJson({},0,1,2,'time')).toThrow();expect(JSON.parse(huntRowComparisonJson(input,0,1,2,'time')).query_context).toEqual({});
 });

@@ -86,3 +86,14 @@ export function compareRetainedHuntRows(baseline: Record<string, unknown>, inspe
       status: !baselinePresent ? 'Only in inspected row' : !inspectedPresent ? 'Only in baseline row' : same(baseline[field], inspected[field]) ? 'Same recorded value' : 'Different recorded value' };
   });
 }
+
+
+export function huntRowComparisonJson(result: HuntQueryResult, index: number, baselineRow: number, inspectedRow: number, exportedAt: string): string {
+  if (baselineRow === inspectedRow) throw Error('Choose different retained row positions');
+  const baseline = JSON.parse(huntRowJson(result, index, baselineRow, exportedAt));
+  const inspected = JSON.parse(huntRowJson(result, index, inspectedRow, exportedAt));
+  return JSON.stringify({ format: 'onealert.retained-hunt-row-comparison', version: 1, exported_at: exportedAt, query_position: index + 1, retained_total: result.rows!.length,
+    scope: scope + ' Only two retained rows from the same displayed query. They may be different events, not versions of one event. No chronology, cause, threat verdict, upload, message or access grant is inferred or sent. All recorded fields are included regardless of local comparison focus or hidden columns.',
+    baseline: { retained_row_position: baselineRow, row: baseline.result.rows[0] }, inspected: { retained_row_position: inspectedRow, row: inspected.result.rows[0] },
+    query_context: { ...baseline.result, rows: undefined }, fields: compareRetainedHuntRows(result.rows![baselineRow - 1], result.rows![inspectedRow - 1]) }, null, 2) + '\n';
+}
