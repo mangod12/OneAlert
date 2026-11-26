@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv } from './huntEvidence';
+import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile } from './huntEvidence';
 
 describe('Retained hunt evidence exports', () => {
   it('preserves recorded queries, params, applied metadata, errors and rows without inventing missing values', () => {
@@ -92,4 +92,12 @@ it('exports all comparison fields as formula-safe CSV with typed JSON presence p
 
 it('validates CSV comparison positions and leaves absent counts empty without inventing evidence',()=>{
  const input={rows:[{},{}]};expect(huntRowComparisonCsv(input,0,1,2).split('\r\n')).toHaveLength(2);for(const pair of [[1,1],[0,2],[1,3],[NaN,2],[1,1.5]])expect(()=>huntRowComparisonCsv(input,0,pair[0],pair[1])).toThrow();expect(()=>huntRowComparisonCsv({},0,1,2)).toThrow();const csv=huntRowComparisonCsv({rows:[{id:1},{id:2}]},0,1,2);expect(csv).toContain('"1","1","2","2","",');
+});
+
+
+it('profiles all retained values with typed equality missing distinct from null and stable frequency ordering',()=>{
+ const rows=[{x:{a:false,b:0}},{x:{b:0,a:false}},{},{x:null},{x:0},{x:'0'},{x:false},{x:[1,2]},{x:[2,1]},{x:null}],before=JSON.stringify(rows);const profile=retainedHuntFieldProfile(rows,'x');expect(profile).toMatchObject({total:10,present:9,missing:1,nulls:2,distinct:7});expect(profile.values.map(item=>[item.count,item.firstRow])).toEqual([[2,1],[2,4],[1,5],[1,6],[1,7],[1,8],[1,9]]);expect(JSON.stringify(rows)).toBe(before);expect(retainedHuntFieldProfile([],'x')).toEqual({total:0,present:0,missing:0,nulls:0,distinct:0,values:[]});
+});
+it('profiles unusual field names nested key order and original first positions without prototype inheritance',()=>{
+ const row=JSON.parse('{"__proto__":{"x":false}}');expect(retainedHuntFieldProfile([{},row],'__proto__')).toMatchObject({missing:1,present:1,values:[{value:{x:false},count:1,firstRow:2}]});expect(retainedHuntFieldProfile([{x:[{a:1,b:2}]},{x:[{b:2,a:1}]}],'x').distinct).toBe(1);
 });

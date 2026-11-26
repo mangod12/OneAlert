@@ -108,3 +108,20 @@ export function huntRowComparisonCsv(result: HuntQueryResult, index: number, bas
   }
   return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
+
+
+export function retainedHuntFieldProfile(rows: Record<string, unknown>[], field: string) {
+  const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical) : value !== null && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical((value as Record<string, unknown>)[key])])) : value;
+  let missing = 0, nulls = 0;
+  const values = new Map<string, { value: unknown; count: number; firstRow: number }>();
+  rows.forEach((row, index) => {
+    if (!Object.hasOwn(row, field)) { missing++; return; }
+    const value = row[field];
+    if (value === null) nulls++;
+    const key = JSON.stringify(canonical(value));
+    const found = values.get(key);
+    if (found) found.count++;
+    else values.set(key, { value, count: 1, firstRow: index + 1 });
+  });
+  return { total: rows.length, present: rows.length - missing, missing, nulls, distinct: values.size, values: [...values.values()].sort((a, b) => b.count - a.count || a.firstRow - b.firstRow) };
+}
