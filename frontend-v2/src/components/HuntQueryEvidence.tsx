@@ -1,6 +1,6 @@
 import { RetainedHuntCurrentEvent } from './RetainedHuntCurrentEvent';
 import { useState } from 'react';
-import { huntQueryCsv, huntQueryJson, huntRowJson, saveHuntDownload } from '../utils/huntEvidence';
+import { compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, saveHuntDownload } from '../utils/huntEvidence';
 import { FileCode } from 'lucide-react';
 
 type HuntRow = Record<string, unknown>;
@@ -24,6 +24,7 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
   const [inspectionOrder, setInspectionOrder] = useState('retained');
   const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
   const [detailRow, setDetailRow] = useState<number | null>(null);
+  const [baselineRow, setBaselineRow] = useState<number | null>(null);
   const [page, setPage] = useState(1), [search, setSearch] = useState(''), [field, setField] = useState('');
   const rows = result.rows ?? [];
   const columns = [...new Set(rows.flatMap(row => Object.keys(row)))];
@@ -69,7 +70,7 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
       <p className="text-surface-400">Recorded execution bounds, not a new time window or live check.</p>
     </div> : <p className="mb-3 text-xs text-surface-500">Applied event-time bounds were not recorded for this result.</p>}
     {result.query?.params && Object.keys(result.query.params).length > 0 && <details className="mb-3 rounded border border-surface-700 p-3 text-xs text-surface-400"><summary className="cursor-pointer">Recorded query parameters</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all">{JSON.stringify(result.query.params, null, 2)}</pre></details>}
-    {rows.length > 0 && (search || field || inspectionOrder !== 'retained' || hiddenColumns.length > 0 || currentPage !== 1 || detailRow != null) && <button type="button" onClick={() => { setSearch(''); setField(''); setInspectionOrder('retained'); setHiddenColumns([]); setPage(1); setDetailRow(null); }} className="mb-3 min-h-9 rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">Reset local row inspection</button>}
+    {rows.length > 0 && (search || field || inspectionOrder !== 'retained' || hiddenColumns.length > 0 || currentPage !== 1 || detailRow != null || baselineRow != null) && <button type="button" onClick={() => { setSearch(''); setField(''); setInspectionOrder('retained'); setHiddenColumns([]); setPage(1); setDetailRow(null); setBaselineRow(null); }} className="mb-3 min-h-9 rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">Reset local row inspection</button>}
     {rows.length > 0 && <section aria-label={`Search query ${index + 1} retained rows`} className="mb-3 space-y-2 rounded border border-surface-700 p-3">
       <label className="block text-xs text-surface-300">Search retained row values<input type="search" aria-label={`Search retained rows for query ${index + 1}`} maxLength={200} value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} className="mt-1 min-h-9 w-full min-w-0 rounded border border-surface-600 bg-surface-950 px-2 text-sm text-surface-100" /></label>
       <div className="flex flex-wrap gap-2"><select aria-label={`Search field for query ${index + 1}`} value={field} onChange={event => { setField(event.target.value); setPage(1); }} className="max-w-full rounded border border-surface-600 bg-surface-950 px-2 py-2 text-xs text-surface-200"><option value="">All retained fields</option>{columns.map(column => <option key={column} value={column}>{column}</option>)}</select>
@@ -106,9 +107,18 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
     {detailRow != null && rows[detailRow - 1] && <section aria-label={`Retained row ${detailRow} detail for query ${index + 1}`} className="my-3 min-w-0 space-y-2 rounded border border-primary-600 p-3 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-semibold text-surface-100">Retained row {detailRow}, original saved position</h4><button type="button" onClick={() => setDetailRow(null)} className="min-h-9 rounded border border-surface-600 px-3 py-2 text-surface-200">Close retained row detail</button></div>
       <p className="text-surface-400">All fields recorded for this retained row, including hidden table columns. This local detail stays selected across search, order and page changes. It is not a current-event lookup or a new query. Missing fields are not inferred; null, false, zero and nested values retain their recorded JSON types.</p>
+      <button type="button" disabled={baselineRow === detailRow} onClick={() => setBaselineRow(detailRow)} className="min-h-9 rounded border border-surface-600 px-3 py-2 text-primary-300 disabled:opacity-40">Use this retained row as comparison baseline</button>
       <button type="button" onClick={() => saveHuntDownload(huntRowJson(result, index, detailRow, new Date().toISOString()), `hunt-query-${index + 1}-retained-row-${detailRow}.json`, 'application/json;charset=utf-8')} className="min-h-9 rounded border border-surface-600 px-3 py-2 text-primary-300">Export this retained row JSON</button>
       <p className="text-surface-400">Downloads this row with its original retained position, query context, retained total and unchanged reported count. Raw JSON text has no spreadsheet formula protection. Review sensitive telemetry before sharing; downloading sends nothing to another person.</p>
       <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded bg-surface-950 p-3 text-surface-200">{JSON.stringify(rows[detailRow - 1], null, 2)}</pre>
+    </section>}
+    {baselineRow != null && rows[baselineRow - 1] && <section aria-label={`Retained row comparison for query ${index + 1}`} className="my-3 min-w-0 space-y-2 rounded border border-surface-600 p-3 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-semibold text-surface-100">Retained comparison baseline: row {baselineRow}</h4><button type="button" onClick={() => setBaselineRow(null)} className="min-h-9 rounded border border-surface-600 px-3 py-2 text-surface-200">Clear retained comparison baseline</button></div>
+      <p className="text-surface-400">Compare two original retained row positions from this query only. These may be different events, not earlier and later versions of one event. No live lookup, chronology, cause or threat verdict is inferred. All recorded fields are compared, including hidden columns. Missing fields differ from recorded null; nested object key order is ignored, array order and JSON value types are preserved.</p>
+      {detailRow == null || detailRow === baselineRow ? <p className="text-surface-300">Inspect a different retained row to compare it with this baseline. The baseline stays selected across search, order and page changes.</p> : rows[detailRow - 1] && <>
+        <p className="text-surface-100">Baseline row {baselineRow} compared with inspected row {detailRow}, original saved positions.</p>
+        <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr>{['Field', 'Comparison', `Baseline row ${baselineRow}`, `Inspected row ${detailRow}`].map(label => <th key={label} scope="col" className="p-2 text-left text-surface-400">{label}</th>)}</tr></thead><tbody>{compareRetainedHuntRows(rows[baselineRow - 1], rows[detailRow - 1]).map(item => <tr key={item.field} className="border-t border-surface-700"><th scope="row" className="min-w-28 break-all p-2 text-left align-top text-surface-200">{item.field}</th><td className="min-w-32 p-2 align-top text-surface-300">{item.status}</td><td className="min-w-32 max-w-xs whitespace-pre-wrap break-all p-2 align-top text-surface-300">{item.baselinePresent ? JSON.stringify(item.baseline) : 'Not recorded'}</td><td className="min-w-32 max-w-xs whitespace-pre-wrap break-all p-2 align-top text-surface-300">{item.inspectedPresent ? JSON.stringify(item.inspected) : 'Not recorded'}</td></tr>)}</tbody></table></div>
+      </>}
     </section>}
     {typeof result.row_count === 'number' && result.row_count > rows.length && <p className="mt-3 text-xs text-warning">{result.row_count - rows.length} reported rows were not retained in this result. They are not available through paging.</p>}
     {savedReview && !canReview && <p className="mb-3 text-xs text-surface-400">Current event comparison needs a saved completed scoped-select result with the event ID selected and a supported loaded-evidence fingerprint. No ID or execution context is inferred for older results.</p>}
