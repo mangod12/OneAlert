@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson, retainedHuntValueRows, retainedHuntMissingRows, huntProfileMatchesJson } from './huntEvidence';
+import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson, huntFieldProfileCsv, retainedHuntValueRows, retainedHuntMissingRows, huntProfileMatchesJson } from './huntEvidence';
 
 describe('Retained hunt evidence exports', () => {
   it('preserves recorded queries, params, applied metadata, errors and rows without inventing missing values', () => {
@@ -126,4 +126,12 @@ it('exports all exact typed matches in original positions with full rows and que
 });
 it('exports missing fields separately from null and rejects invalid empty or absent profile selections',()=>{
  const input={rows:[{x:null},{id:2},{x:0},{x:'0'}]};const missing=JSON.parse(huntProfileMatchesJson(input,0,'x',{kind:'missing'},'time'));expect(missing.selection).toEqual({kind:'missing'});expect(missing.rows).toEqual([{retained_row_position:2,row:{id:2}}]);expect(missing.query_context).toEqual({});expect(JSON.parse(huntProfileMatchesJson(input,0,'x',{kind:'value',firstRow:1},'time')).rows).toHaveLength(1);for(const position of [0,2,9,NaN])expect(()=>huntProfileMatchesJson(input,0,'x',{kind:'value',firstRow:position},'time')).toThrow();expect(()=>huntProfileMatchesJson({rows:[{x:0}]},0,'x',{kind:'missing'},'time')).toThrow();expect(()=>huntProfileMatchesJson(input,-1,'x',{kind:'missing'},'time')).toThrow();expect(()=>huntProfileMatchesJson({},0,'x',{kind:'missing'},'time')).toThrow();
+});
+
+
+it('exports every typed field profile value as CSV with full counts first positions and spreadsheet protection',()=>{
+ const input={row_count:120,rows:[...Array.from({length:12},(_,i)=>({'=field':i})),{'=field':null},{},{'=field':false},{'=field':'0'},{'=field':{raw:false}},{'=field':0}]},before=JSON.stringify(input);const csv=huntFieldProfileCsv(input,1,'=field');expect(csv.startsWith('\ufeff"query_position","field"')).toBe(true);expect(csv).toContain('"2","\'=field","18","120","17","1","1","16"');expect(csv).toContain('"0","2","1"');expect(csv).toContain('"null","1","13"');expect(csv).toContain('"false","1","15"');expect(csv).toContain('"""0""","1","16"');expect(csv).toContain('"{""raw"":false}","1","17"');expect(csv.split('\r\n')).toHaveLength(18);expect(JSON.stringify(input)).toBe(before);
+});
+it('validates CSV field and index without inventing reported counts or interpreting raw JSON strings',()=>{
+ expect(()=>huntFieldProfileCsv({},0,'x')).toThrow();expect(()=>huntFieldProfileCsv({rows:[{}]},0,'x')).toThrow();expect(()=>huntFieldProfileCsv({rows:[{x:0}]},-1,'x')).toThrow();const csv=huntFieldProfileCsv({rows:[{x:'=SUM(A1)'},{x:'line\n"quote"'}]},0,'x');expect(csv).toContain('"1","x","2","","2","0","0","2"');expect(csv).toContain('"""=SUM(A1)"""');expect(csv).toContain('line\\n');
 });
