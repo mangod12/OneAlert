@@ -1,6 +1,6 @@
 import { RetainedHuntCurrentEvent } from './RetainedHuntCurrentEvent';
 import { useState } from 'react';
-import { compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, saveHuntDownload } from '../utils/huntEvidence';
+import { compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, saveHuntDownload } from '../utils/huntEvidence';
 import { FileCode } from 'lucide-react';
 
 type HuntRow = Record<string, unknown>;
@@ -27,6 +27,7 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
   const [baselineRow, setBaselineRow] = useState<number | null>(null);
   const [differencesOnly, setDifferencesOnly] = useState(false);
   const [comparisonSearch, setComparisonSearch] = useState('');
+  const [profileField, setProfileField] = useState('');
   const [page, setPage] = useState(1), [search, setSearch] = useState(''), [field, setField] = useState('');
   const rows = result.rows ?? [];
   const comparison = baselineRow != null && detailRow != null && baselineRow !== detailRow && rows[baselineRow - 1] && rows[detailRow - 1] ? compareRetainedHuntRows(rows[baselineRow - 1], rows[detailRow - 1]) : [];
@@ -34,6 +35,7 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
   const comparisonNeedle = comparisonSearch.trim().toLowerCase();
   const comparisonVisible = (differencesOnly ? differences : comparison).filter(item => !comparisonNeedle || [item.field, item.baselinePresent ? JSON.stringify(item.baseline) : 'Not recorded', item.inspectedPresent ? JSON.stringify(item.inspected) : 'Not recorded'].some(value => value?.toLowerCase().includes(comparisonNeedle)));
   const columns = [...new Set(rows.flatMap(row => Object.keys(row)))];
+  const profile = profileField && columns.includes(profileField) ? retainedHuntFieldProfile(rows, profileField) : null;
   const displayedColumns = columns.filter(column => !hiddenColumns.includes(column));
   const needle = search.trim().toLowerCase();
   const matches = needle ? rows.filter(row => (field ? [row[field]] : Object.values(row)).some(value => value != null && (typeof value === 'object' ? JSON.stringify(value) : String(value)).toLowerCase().includes(needle))) : rows;
@@ -76,7 +78,7 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
       <p className="text-surface-400">Recorded execution bounds, not a new time window or live check.</p>
     </div> : <p className="mb-3 text-xs text-surface-500">Applied event-time bounds were not recorded for this result.</p>}
     {result.query?.params && Object.keys(result.query.params).length > 0 && <details className="mb-3 rounded border border-surface-700 p-3 text-xs text-surface-400"><summary className="cursor-pointer">Recorded query parameters</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all">{JSON.stringify(result.query.params, null, 2)}</pre></details>}
-    {rows.length > 0 && (search || field || inspectionOrder !== 'retained' || hiddenColumns.length > 0 || currentPage !== 1 || detailRow != null || baselineRow != null) && <button type="button" onClick={() => { setSearch(''); setField(''); setInspectionOrder('retained'); setHiddenColumns([]); setPage(1); setDetailRow(null); setBaselineRow(null); setDifferencesOnly(false); setComparisonSearch(''); }} className="mb-3 min-h-9 rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">Reset local row inspection</button>}
+    {rows.length > 0 && (search || field || inspectionOrder !== 'retained' || hiddenColumns.length > 0 || currentPage !== 1 || detailRow != null || baselineRow != null || profileField) && <button type="button" onClick={() => { setSearch(''); setField(''); setInspectionOrder('retained'); setHiddenColumns([]); setPage(1); setDetailRow(null); setBaselineRow(null); setDifferencesOnly(false); setComparisonSearch(''); setProfileField(''); }} className="mb-3 min-h-9 rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">Reset local row inspection</button>}
     {rows.length > 0 && <section aria-label={`Search query ${index + 1} retained rows`} className="mb-3 space-y-2 rounded border border-surface-700 p-3">
       <label className="block text-xs text-surface-300">Search retained row values<input type="search" aria-label={`Search retained rows for query ${index + 1}`} maxLength={200} value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} className="mt-1 min-h-9 w-full min-w-0 rounded border border-surface-600 bg-surface-950 px-2 text-sm text-surface-100" /></label>
       <div className="flex flex-wrap gap-2"><select aria-label={`Search field for query ${index + 1}`} value={field} onChange={event => { setField(event.target.value); setPage(1); }} className="max-w-full rounded border border-surface-600 bg-surface-950 px-2 py-2 text-xs text-surface-200"><option value="">All retained fields</option>{columns.map(column => <option key={column} value={column}>{column}</option>)}</select>
@@ -110,6 +112,13 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
         </div>
       </div>
     </> : <p className="text-xs text-surface-400">{rows.length ? 'No retained rows match this local search. Clear it to review the retained evidence.' : 'No retained evidence rows for this query.'}</p>}
+    {columns.length > 0 && <section aria-label={`Retained field profile for query ${index + 1}`} className="my-3 min-w-0 space-y-2 rounded border border-surface-700 p-3 text-xs">
+      <label className="block text-surface-300">Profile a retained field<select aria-label={`Profile retained field for query ${index + 1}`} value={profileField} onChange={event => setProfileField(event.target.value)} className="mt-1 min-h-9 max-w-full rounded border border-surface-600 bg-surface-950 px-2 text-surface-100"><option value="">Choose a recorded field</option>{columns.map(column => <option key={column} value={column}>{column}</option>)}</select></label>
+      <p className="text-surface-400">All retained rows in this query, regardless of local search, order, page or hidden columns. Not all reported events or a current distribution. Missing differs from recorded null; JSON value types and array order are preserved, object key order is ignored. No query is rerun.</p>
+      {profile && <><p role="status" className="text-surface-200">{profile.total} retained rows: {profile.present} present, {profile.missing} missing, {profile.nulls} recorded null. {profile.distinct} distinct recorded values.</p>
+        <p className="text-surface-400">Showing {Math.min(10, profile.values.length)} most frequent recorded values. Ties use first retained position. Values are not threat verdicts.</p>
+        <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr>{['Recorded JSON value', 'Retained count', 'First retained row'].map(label => <th key={label} scope="col" className="p-2 text-surface-400">{label}</th>)}</tr></thead><tbody>{profile.values.slice(0, 10).map(item => <tr key={item.firstRow} className="border-t border-surface-700"><td className="min-w-32 max-w-xs whitespace-pre-wrap break-all p-2 text-surface-200">{JSON.stringify(item.value)}</td><td className="p-2 text-surface-300">{item.count}</td><td className="p-2"><button type="button" onClick={() => setDetailRow(item.firstRow)} className="min-h-9 rounded border border-surface-600 px-3 py-2 text-primary-300" aria-label={`Inspect first retained row ${item.firstRow} for profiled value`}>Row {item.firstRow}</button></td></tr>)}</tbody></table></div></>}
+    </section>}
     {detailRow != null && rows[detailRow - 1] && <section aria-label={`Retained row ${detailRow} detail for query ${index + 1}`} className="my-3 min-w-0 space-y-2 rounded border border-primary-600 p-3 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-semibold text-surface-100">Retained row {detailRow}, original saved position</h4><button type="button" onClick={() => setDetailRow(null)} className="min-h-9 rounded border border-surface-600 px-3 py-2 text-surface-200">Close retained row detail</button></div>
       <p className="text-surface-400">All fields recorded for this retained row, including hidden table columns. This local detail stays selected across search, order and page changes. It is not a current-event lookup or a new query. Missing fields are not inferred; null, false, zero and nested values retain their recorded JSON types.</p>
