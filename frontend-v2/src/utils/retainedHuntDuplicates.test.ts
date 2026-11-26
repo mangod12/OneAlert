@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { huntRepeatedRowsJson, retainedHuntDuplicateGroups } from './retainedHuntDuplicates';
+import { huntRepeatedRowsCsv, huntRepeatedRowsJson, retainedHuntDuplicateGroups } from './retainedHuntDuplicates';
 
 describe('Repeated full retained row values', () => {
   it('groups entire typed rows in original first-position order without mutating evidence', () => {
@@ -22,4 +22,11 @@ it('exports every repeated group with original positions and full recorded query
 });
 it('exports explicit zero groups without inventing missing rows or context and validates query positions',()=>{
  const value=JSON.parse(huntRepeatedRowsJson({},0,''));expect(value.retained_total).toBe(0);expect(value.repeated_group_count).toBe(0);expect(value.repeated_position_count).toBe(0);expect(value.groups).toEqual([]);expect(value.query_context).toEqual({});expect(()=>huntRepeatedRowsJson({},-1,'')).toThrow('Invalid retained query position');
+});
+
+it('exports every repeated group as typed row JSON with exact positions and CSV escaping',()=>{
+ const row={id:1,raw:'=SUM(A1),"quoted"\nnext',flag:false,zero:0,optional:null,nested:[2,1]};const csv=huntRepeatedRowsCsv({rows:[row,{id:2},row],row_count:120},1);expect(csv.startsWith('\ufeff"query_position"')).toBe(true);expect(csv).toContain('"2","3","120","1","2","1","2","[1,3]"');expect(csv).toContain('""raw"":""=SUM(A1),\\""quoted\\""\\nnext""');expect(csv).toContain('""flag"":false');expect(csv).toContain('""zero"":0');expect(csv).toContain('""optional"":null');expect(csv).toContain('""nested"":[2,1]');expect(csv).not.toContain('event.id');
+});
+it('exports a header only for unique evidence and validates query position',()=>{
+ expect(huntRepeatedRowsCsv({rows:[{id:1}]},0).split('\r\n')).toHaveLength(2);expect(()=>huntRepeatedRowsCsv({},-1)).toThrow('Invalid retained query position');
 });
