@@ -1,4 +1,4 @@
-import { retainedHuntDuplicateGroups } from '../utils/retainedHuntDuplicates';
+import { huntRepeatedRowsJson, retainedHuntDuplicateGroups } from '../utils/retainedHuntDuplicates';
 import { RetainedHuntCurrentEvent } from './RetainedHuntCurrentEvent';
 import { useState } from 'react';
 import { compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson, huntFieldProfileCsv, retainedHuntValueRows, retainedHuntMissingRows, huntProfileMatchesJson, huntProfileMatchesCsv, huntFieldCoverageJson, huntFieldCoverageCsv, saveHuntDownload } from '../utils/huntEvidence';
@@ -151,6 +151,8 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
       <summary onClick={() => setDuplicatesOpen(!duplicatesOpen)} className="cursor-pointer text-surface-200">Repeated full retained rows</summary>
       {duplicatesOpen && <section aria-label={`Repeated full retained rows for query ${index + 1}`} className="mt-2 space-y-3">
         <p className="text-surface-400">Exact full-row JSON values across all retained positions, regardless of local search, hidden columns or order. Object key order is ignored; JSON types, missing fields and array order are preserved. Repeated values do not prove duplicate events, repeated ingestion or a threat. No rows are removed, no query is rerun and downloads stay unchanged.</p>
+        <button type="button" onClick={() => saveHuntDownload(huntRepeatedRowsJson(result, index, new Date().toISOString()), `hunt-query-${index + 1}-repeated-retained-rows.json`, 'application/json;charset=utf-8')} className="min-h-9 rounded border border-surface-600 px-3 py-2 text-primary-300">Export repeated retained rows JSON</button>
+        <p className="text-surface-400">Includes every repeated group across pages, original retained positions, one full raw row per group and recorded query context. Unique rows are not included. Raw JSON has no spreadsheet formula protection. Review sensitive telemetry before sharing; downloading sends nothing to another person.</p>
         <p className="text-surface-200">{duplicateGroups.length} repeated value groups across {duplicateGroups.reduce((total, group) => total + group.length, 0)} retained row positions. {rows.length} rows retained.</p>
         {!duplicateGroups.length && <p className="text-surface-400">No repeated full-row values in the retained evidence. Unretained reported rows are not checked.</p>}
         {duplicateGroups.slice((currentDuplicatePage - 1) * 10, currentDuplicatePage * 10).map(positions => <div key={positions[0]} className="min-w-0 rounded border border-surface-700 p-3">
