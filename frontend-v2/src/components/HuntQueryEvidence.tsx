@@ -22,9 +22,11 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
   const [selected, setSelected] = useState<{ rowNumber: number; eventId: number } | null>(null);
   const canReview = savedReview && Number.isSafeInteger(savedReview.sessionId) && savedReview.sessionId > 0 && /^[0-9a-f]{64}$/.test(savedReview.fingerprint) && result.outcome === 'completed' && result.execution?.contract === 'scoped_select_v1' && result.execution.selected_columns.includes('id') && new Set(result.execution.selected_columns).size === result.execution.selected_columns.length;
   const [inspectionOrder, setInspectionOrder] = useState('retained');
+  const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
   const [page, setPage] = useState(1), [search, setSearch] = useState(''), [field, setField] = useState('');
   const rows = result.rows ?? [];
   const columns = [...new Set(rows.flatMap(row => Object.keys(row)))];
+  const displayedColumns = columns.filter(column => !hiddenColumns.includes(column));
   const needle = search.trim().toLowerCase();
   const matches = needle ? rows.filter(row => (field ? [row[field]] : Object.values(row)).some(value => value != null && (typeof value === 'object' ? JSON.stringify(value) : String(value)).toLowerCase().includes(needle))) : rows;
   const ordered = inspectionOrder === 'retained' ? matches : [...matches].sort((a, b) => {
@@ -77,13 +79,18 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
       <p className="text-xs text-surface-400">Searches literal text in retained values only, including nested JSON values, across their local pages. No query is rerun. Missing values do not match. Unretained reported rows are not searched. The original retained-row export above remains unfiltered.</p>
       <label className="block text-xs text-surface-300">Retained row inspection order<select aria-label={`Retained row inspection order for query ${index + 1}`} value={inspectionOrder} onChange={event => { setInspectionOrder(event.target.value); setPage(1); }} className="mt-1 block max-w-full rounded border border-surface-600 bg-surface-950 px-2 py-2 text-xs text-surface-200"><option value="retained">Original retained order</option><option value="id-asc">Recorded numeric ID, ascending</option><option value="id-desc">Recorded numeric ID, descending</option></select></label>
       <p className="text-xs text-surface-400">Inspection order affects this table only, never query execution, recorded order or CSV/JSON download order. Equal IDs keep retained order; missing or invalid IDs stay last in retained order. ID order is not event chronology or severity.</p>
+      <details className="rounded border border-surface-600 p-2 text-xs text-surface-300"><summary className="cursor-pointer">Inspection columns: {displayedColumns.length} of {columns.length}</summary>
+        <p className="my-2 text-surface-400">Choose table columns only. Search still uses its selected field or all retained fields, including hidden columns. Downloads keep every retained field. Current-event comparison uses the original saved selection.</p>
+        <fieldset aria-label={`Inspection columns for query ${index + 1}`} className="flex flex-wrap gap-3">{columns.map(column => <label key={column} className="flex min-h-9 max-w-full items-center gap-2 break-all"><input type="checkbox" checked={!hiddenColumns.includes(column)} disabled={!hiddenColumns.includes(column) && displayedColumns.length === 1} onChange={event => setHiddenColumns(previous => event.target.checked ? previous.filter(value => value !== column) : [...previous, column])} />{column}</label>)}</fieldset>
+        {hiddenColumns.length > 0 && <button type="button" onClick={() => setHiddenColumns([])} className="mt-2 min-h-9 rounded border border-surface-600 px-3 py-2 text-surface-200">Show all retained fields</button>}
+      </details>
       <p role="status" className="text-xs text-surface-300">{matches.length} of {rows.length} retained rows match{field ? ` in ${field}` : ''}.</p>
     </section>}
     {matches.length > 0 ? <>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
-          <thead><tr className="border-b border-surface-700">{columns.map(column => <th key={column} scope="col" className="p-2 text-left text-surface-400">{column}</th>)}{canReview && <th scope="col" className="p-2 text-left text-surface-400">Current selected-field evidence</th>}</tr></thead>
-          <tbody>{visible.map((row, rowIndex) => <tr key={rowIndex} className="border-b border-surface-800">{columns.map(column => <td key={column} className="min-w-32 max-w-xs whitespace-pre-wrap break-words p-2 align-top text-surface-300">{cellText(row[column])}</td>)}{canReview && <td className="p-2 align-top">{Number.isSafeInteger(row.id) && Number(row.id) > 0 && Number(row.id) <= 2147483647 ? <button type="button" className="min-h-10 rounded border border-surface-600 px-3 py-2 text-left text-primary-300" onClick={() => setSelected({ rowNumber: rows.indexOf(row) + 1, eventId: Number(row.id) })}>Compare current event for retained row {rows.indexOf(row) + 1}</button> : <span className="text-surface-400">No supported retained event ID</span>}</td>}</tr>)}</tbody>
+          <thead><tr className="border-b border-surface-700">{displayedColumns.map(column => <th key={column} scope="col" className="p-2 text-left text-surface-400">{column}</th>)}{canReview && <th scope="col" className="p-2 text-left text-surface-400">Current selected-field evidence</th>}</tr></thead>
+          <tbody>{visible.map((row, rowIndex) => <tr key={rowIndex} className="border-b border-surface-800">{displayedColumns.map(column => <td key={column} className="min-w-32 max-w-xs whitespace-pre-wrap break-words p-2 align-top text-surface-300">{cellText(row[column])}</td>)}{canReview && <td className="p-2 align-top">{Number.isSafeInteger(row.id) && Number(row.id) > 0 && Number(row.id) <= 2147483647 ? <button type="button" className="min-h-10 rounded border border-surface-600 px-3 py-2 text-left text-primary-300" onClick={() => setSelected({ rowNumber: rows.indexOf(row) + 1, eventId: Number(row.id) })}>Compare current event for retained row {rows.indexOf(row) + 1}</button> : <span className="text-surface-400">No supported retained event ID</span>}</td>}</tr>)}</tbody>
         </table>
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
