@@ -51,6 +51,11 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
     const counts = new Map(coverageFields.map(column => [column, rows.reduce((count, row) => count + (coverageOrder === 'nulls' ? Number(Object.hasOwn(row, column) && row[column] === null) : Number(!Object.hasOwn(row, column))), 0)]));
     coverageFields.sort((a, b) => (counts.get(b)! - counts.get(a)!));
   }
+  const coverageSummary = coverageOpen ? columns.reduce((summary, column) => {
+    const missing = rows.some(row => !Object.hasOwn(row, column));
+    const nulls = rows.some(row => Object.hasOwn(row, column) && row[column] === null);
+    return { complete: summary.complete + Number(!missing), missing: summary.missing + Number(missing), nulls: summary.nulls + Number(nulls), nonNull: summary.nonNull + Number(!missing && !nulls) };
+  }, { complete: 0, missing: 0, nulls: 0, nonNull: 0 }) : null;
   const profile = profileField && columns.includes(profileField) ? retainedHuntFieldProfile(rows, profileField) : null;
   const profilePositions = profile ? profileMissing ? retainedHuntMissingRows(rows, profileField) : profileValueRow != null ? retainedHuntValueRows(rows, profileField, profileValueRow) : [] : [];
   const profileNeedle = profileSearch.trim().toLowerCase();
@@ -140,6 +145,11 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
       <summary onClick={() => setCoverageOpen(!coverageOpen)} className="cursor-pointer text-surface-200">Retained field coverage: {columns.length} recorded fields</summary>
       {coverageOpen && <section aria-label={`Retained field coverage for query ${index + 1}`} className="mt-2 space-y-2">
         <p className="text-surface-400">All retained rows only, regardless of row search, order, page or hidden columns. Present includes recorded null. Missing is not recorded null. Counts do not describe all reported events or current data. Choose a field to inspect its typed values, or a nonzero missing/null count to inspect those exact retained rows. No query is rerun.</p>
+        {coverageSummary && <section aria-label={`Retained field coverage summary for query ${index + 1}`} className="rounded border border-surface-700 p-3">
+          <h4 className="font-medium text-surface-100">Coverage across all retained rows</h4>
+          <dl className="mt-2 grid grid-cols-2 gap-3 md:grid-cols-4">{[['Present in every retained row', coverageSummary.complete], ['Missing from at least one retained row', coverageSummary.missing], ['With recorded nulls', coverageSummary.nulls], ['Always present without recorded null', coverageSummary.nonNull]].map(([label, count]) => <div key={label} className="min-w-0"><dt className="text-surface-400">{label}</dt><dd className="mt-1 text-base text-surface-100">{count}</dd></div>)}</dl>
+          <p className="mt-2 text-surface-400">{columns.length} recorded fields across {rows.length} retained rows. Field counts, not event counts. Categories overlap: a field may be both missing and recorded null. Present includes null; false, zero and empty text are recorded values. This summary ignores local search, focus and paging. It is not a live data-quality or threat verdict.</p>
+        </section>}
         <div className="flex flex-wrap gap-2"><button type="button" onClick={() => saveHuntDownload(huntFieldCoverageJson(result, index, new Date().toISOString()), `hunt-query-${index + 1}-retained-field-coverage.json`, 'application/json;charset=utf-8')} className="min-h-9 rounded border border-surface-600 px-3 py-2 text-primary-300">Export retained field coverage JSON</button><button type="button" onClick={() => saveHuntDownload(huntFieldCoverageCsv(result, index), `hunt-query-${index + 1}-retained-field-coverage.csv`, 'text/csv;charset=utf-8')} className="min-h-9 rounded border border-surface-600 px-3 py-2 text-primary-300">Export retained field coverage CSV</button></div>
         <p className="text-surface-400">Downloads all recorded field names and coverage counts across pages, not only search matches. JSON includes full recorded query context, but not row values. CSV protects formula-like text cells. Review sensitive field names and query context before sharing. Downloading sends nothing to another person.</p>
         <label className="block text-surface-300">Find a recorded field<input type="search" aria-label={`Search retained coverage fields for query ${index + 1}`} value={coverageSearch} maxLength={200} onChange={event => { setCoverageSearch(event.target.value); setCoveragePage(1); }} className="mt-1 min-h-9 w-full min-w-0 rounded border border-surface-600 bg-surface-950 px-2 text-sm text-surface-100" /></label>
