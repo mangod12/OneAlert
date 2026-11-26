@@ -1,3 +1,4 @@
+import { retainedHuntDuplicateGroups } from '../utils/retainedHuntDuplicates';
 import { RetainedHuntCurrentEvent } from './RetainedHuntCurrentEvent';
 import { useState } from 'react';
 import { compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson, huntFieldProfileCsv, retainedHuntValueRows, retainedHuntMissingRows, huntProfileMatchesJson, huntProfileMatchesCsv, huntFieldCoverageJson, huntFieldCoverageCsv, saveHuntDownload } from '../utils/huntEvidence';
@@ -19,6 +20,8 @@ function cellText(value: unknown): string {
 }
 
 export function HuntQueryEvidence({ result, index, savedReview, originalDraftQuery }: { result: HuntQueryResult; index: number; originalDraftQuery?: number; savedReview?: { sessionId: number; fingerprint: string; onRefresh: () => void } }) {
+  const [duplicatesOpen, setDuplicatesOpen] = useState(false);
+  const [duplicatePage, setDuplicatePage] = useState(1);
   const [selected, setSelected] = useState<{ rowNumber: number; eventId: number } | null>(null);
   const canReview = savedReview && Number.isSafeInteger(savedReview.sessionId) && savedReview.sessionId > 0 && /^[0-9a-f]{64}$/.test(savedReview.fingerprint) && result.outcome === 'completed' && result.execution?.contract === 'scoped_select_v1' && result.execution.selected_columns.includes('id') && new Set(result.execution.selected_columns).size === result.execution.selected_columns.length;
   const [inspectionOrder, setInspectionOrder] = useState('retained');
@@ -41,6 +44,9 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
   const [profilePage, setProfilePage] = useState(1);
   const [page, setPage] = useState(1), [search, setSearch] = useState(''), [field, setField] = useState('');
   const rows = result.rows ?? [];
+  const duplicateGroups = duplicatesOpen ? retainedHuntDuplicateGroups(rows) : [];
+  const duplicatePages = Math.max(1, Math.ceil(duplicateGroups.length / 10));
+  const currentDuplicatePage = Math.min(duplicatePage, duplicatePages);
   const comparison = baselineRow != null && detailRow != null && baselineRow !== detailRow && rows[baselineRow - 1] && rows[detailRow - 1] ? compareRetainedHuntRows(rows[baselineRow - 1], rows[detailRow - 1]) : [];
   const differences = comparison.filter(item => item.status !== 'Same recorded value');
   const comparisonNeedle = comparisonSearch.trim().toLowerCase();
@@ -107,7 +113,7 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
       <p className="text-surface-400">Recorded execution bounds, not a new time window or live check.</p>
     </div> : <p className="mb-3 text-xs text-surface-500">Applied event-time bounds were not recorded for this result.</p>}
     {result.query?.params && Object.keys(result.query.params).length > 0 && <details className="mb-3 rounded border border-surface-700 p-3 text-xs text-surface-400"><summary className="cursor-pointer">Recorded query parameters</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all">{JSON.stringify(result.query.params, null, 2)}</pre></details>}
-    {rows.length > 0 && (search || field || inspectionOrder !== 'retained' || hiddenColumns.length > 0 || currentPage !== 1 || detailRow != null || baselineRow != null || profileField || coveragePage !== 1 || coverageSearch || coverageOrder !== 'retained' || coverageScope !== 'all') && <button type="button" onClick={() => { setSearch(''); setField(''); setInspectionOrder('retained'); setHiddenColumns([]); setPage(1); setDetailRow(null); setBaselineRow(null); setDifferencesOnly(false); setComparisonSearch(''); setCoveragePage(1); setCoverageSearch(''); setCoverageOrder('retained'); setCoverageScope('all'); setProfileField(''); setProfileSearch(''); setProfileOrder('frequent'); setProfileValuePage(1); setProfileValueRow(null); setProfileMissing(false); setProfilePage(1); }} className="mb-3 min-h-9 rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">Reset local row inspection</button>}
+    {rows.length > 0 && (search || field || inspectionOrder !== 'retained' || hiddenColumns.length > 0 || currentPage !== 1 || detailRow != null || baselineRow != null || profileField || coveragePage !== 1 || coverageSearch || coverageOrder !== 'retained' || coverageScope !== 'all' || duplicatePage !== 1) && <button type="button" onClick={() => { setSearch(''); setField(''); setInspectionOrder('retained'); setHiddenColumns([]); setPage(1); setDetailRow(null); setBaselineRow(null); setDifferencesOnly(false); setComparisonSearch(''); setCoveragePage(1); setCoverageSearch(''); setCoverageOrder('retained'); setCoverageScope('all'); setDuplicatePage(1); setProfileField(''); setProfileSearch(''); setProfileOrder('frequent'); setProfileValuePage(1); setProfileValueRow(null); setProfileMissing(false); setProfilePage(1); }} className="mb-3 min-h-9 rounded border border-surface-600 px-3 py-2 text-xs text-surface-200">Reset local row inspection</button>}
     {rows.length > 0 && <section aria-label={`Search query ${index + 1} retained rows`} className="mb-3 space-y-2 rounded border border-surface-700 p-3">
       <label className="block text-xs text-surface-300">Search retained row values<input type="search" aria-label={`Search retained rows for query ${index + 1}`} maxLength={200} value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} className="mt-1 min-h-9 w-full min-w-0 rounded border border-surface-600 bg-surface-950 px-2 text-sm text-surface-100" /></label>
       <div className="flex flex-wrap gap-2"><select aria-label={`Search field for query ${index + 1}`} value={field} onChange={event => { setField(event.target.value); setPage(1); }} className="max-w-full rounded border border-surface-600 bg-surface-950 px-2 py-2 text-xs text-surface-200"><option value="">All retained fields</option>{columns.map(column => <option key={column} value={column}>{column}</option>)}</select>
@@ -141,6 +147,19 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
         </div>
       </div>
     </> : <p className="text-xs text-surface-400">{rows.length ? 'No retained rows match this local search. Clear it to review the retained evidence.' : 'No retained evidence rows for this query.'}</p>}
+    {rows.length > 1 && <details className="my-3 min-w-0 rounded border border-surface-700 p-3 text-xs">
+      <summary onClick={() => setDuplicatesOpen(!duplicatesOpen)} className="cursor-pointer text-surface-200">Repeated full retained rows</summary>
+      {duplicatesOpen && <section aria-label={`Repeated full retained rows for query ${index + 1}`} className="mt-2 space-y-3">
+        <p className="text-surface-400">Exact full-row JSON values across all retained positions, regardless of local search, hidden columns or order. Object key order is ignored; JSON types, missing fields and array order are preserved. Repeated values do not prove duplicate events, repeated ingestion or a threat. No rows are removed, no query is rerun and downloads stay unchanged.</p>
+        <p className="text-surface-200">{duplicateGroups.length} repeated value groups across {duplicateGroups.reduce((total, group) => total + group.length, 0)} retained row positions. {rows.length} rows retained.</p>
+        {!duplicateGroups.length && <p className="text-surface-400">No repeated full-row values in the retained evidence. Unretained reported rows are not checked.</p>}
+        {duplicateGroups.slice((currentDuplicatePage - 1) * 10, currentDuplicatePage * 10).map(positions => <div key={positions[0]} className="min-w-0 rounded border border-surface-700 p-3">
+          <h4 className="text-surface-100">{positions.length} identical retained values, first at row {positions[0]}</h4>
+          <div className="mt-2 flex flex-wrap gap-2">{positions.map(position => <button type="button" key={position} aria-label={`Inspect repeated retained row ${position} for query ${index + 1}`} onClick={() => setDetailRow(position)} className="min-h-9 rounded border border-surface-600 px-3 py-2 text-primary-300">Row {position}</button>)}</div>
+        </div>)}
+        {duplicateGroups.length > 10 && <div className="flex flex-wrap items-center gap-2"><button type="button" disabled={currentDuplicatePage === 1} onClick={() => setDuplicatePage(currentDuplicatePage - 1)} className="min-h-9 rounded border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Previous repeated groups</button><span className="text-surface-400">Repeated group page {currentDuplicatePage} of {duplicatePages}</span><button type="button" disabled={currentDuplicatePage === duplicatePages} onClick={() => setDuplicatePage(currentDuplicatePage + 1)} className="min-h-9 rounded border border-surface-600 px-3 py-2 text-surface-200 disabled:opacity-40">Next repeated groups</button></div>}
+      </section>}
+    </details>}
     {columns.length > 0 && <details className="my-3 min-w-0 rounded border border-surface-700 p-3 text-xs">
       <summary onClick={() => setCoverageOpen(!coverageOpen)} className="cursor-pointer text-surface-200">Retained field coverage: {columns.length} recorded fields</summary>
       {coverageOpen && <section aria-label={`Retained field coverage for query ${index + 1}`} className="mt-2 space-y-2">
