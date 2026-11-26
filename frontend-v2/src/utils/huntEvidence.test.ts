@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { huntEvidenceJson, huntQueryCsv } from './huntEvidence';
+import { huntEvidenceJson, huntQueryCsv, huntQueryJson } from './huntEvidence';
 
 describe('Retained hunt evidence exports', () => {
   it('preserves recorded queries, params, applied metadata, errors and rows without inventing missing values', () => {
@@ -48,3 +48,11 @@ it('labels matching retained-row exports with exact local search scope and neutr
   const csv = huntQueryCsv({outcome:'completed',rows:[{host:'match',count:0}]},0,{text:'=search',field:'host',retained_total:45});
   expect(csv).toContain('retained_search_text');expect(csv).toContain('retained_total_before_search');expect(csv).toContain("'=search");expect(csv).toContain('only matching retained rows');expect(csv).toContain('"45"');expect(csv).toContain('"0"');
 });
+
+it('exports one query with raw typed retained evidence and exact context without extra query fields', () => {
+ const input = { outcome: 'completed' as const, query: { sql: 'SELECT id', params: { flag: false } }, time_window: { since: 'raw offset' }, row_count: 500, rows: [{ id: 0, empty: '', absent: null, nested: { false: false }, text: '=SUM(A1) <script>literal</script>' }], private_extra: 'omit' }; const before = JSON.stringify(input); const value = JSON.parse(huntQueryJson(input, 1, 'saved time')); expect(value.query_position).toBe(2); expect(value.result.reported_row_count).toBe(500); expect(value.result.rows).toEqual(input.rows); expect(value.result.query).toEqual(input.query); expect(value.result.time_window).toEqual(input.time_window); expect(value.result.private_extra).toBeUndefined(); expect(value.scope).toContain('No queries were rerun'); expect(JSON.stringify(input)).toBe(before);
+});
+it('preserves missing evidence versus known empty retained rows and failure outcome', () => {
+ expect(JSON.parse(huntQueryJson({}, 0, 'time')).result).toEqual({}); expect(JSON.parse(huntQueryJson({ outcome: 'failed', error: 'Recorded failure', rows: [] }, 0, 'time')).result).toEqual({ outcome: 'failed', error: 'Recorded failure', rows: [] }); expect(() => huntQueryJson({}, -1, 'time')).toThrow();
+});
+it('exports all retained pages rather than reported unretained rows', () => { const value = JSON.parse(huntQueryJson({ rows: Array.from({ length: 45 }, (_, id) => ({ id })), row_count: 100 }, 0, 'time')); expect(value.result.rows).toHaveLength(45); expect(value.result.rows[44].id).toBe(44); });

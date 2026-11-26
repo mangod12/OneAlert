@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HuntQueryEvidence } from './HuntQueryEvidence';
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const rows = Array.from({ length: 45 }, (_, index) => ({ host: `host-${index + 1}`, count: index }));
 
 describe('Retained hunt query evidence', () => {
@@ -92,4 +92,8 @@ it('searches all retained pages using literal nested values, preserves zero and 
   fireEvent.click(screen.getByRole('button',{name:'Next rows for query 1'}));fireEvent.change(screen.getByLabelText('Search retained rows for query 1'),{target:{value:'100%_MATCH'}});expect(screen.getByText('late-special')).toBeTruthy();expect(screen.getByText('1 of 46 retained rows match.')).toBeTruthy();expect(screen.getByText(/74 reported rows were not retained/)).toBeTruthy();
   fireEvent.change(screen.getByLabelText('Search field for query 1'),{target:{value:'host'}});expect(screen.getByText(/No retained rows match this local search/)).toBeTruthy();expect(screen.getByRole('button',{name:'Export matching retained rows CSV'})).toHaveProperty('disabled',true);
   fireEvent.change(screen.getByLabelText('Search retained rows for query 1'),{target:{value:'0'}});fireEvent.change(screen.getByLabelText('Search field for query 1'),{target:{value:'count'}});expect(screen.getByText('6 of 46 retained rows match in count.')).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Clear retained row search'}));expect(screen.getByText('host-1')).toBeTruthy();expect(screen.getByText('Showing 1–20 of 46 retained rows · Page 1 of 3')).toBeTruthy();
+});
+
+it('downloads full retained query JSON despite local search and paging without changing review', async () => {
+ const blobs: Blob[] = []; vi.stubGlobal('URL', { createObjectURL: vi.fn((blob: Blob) => { blobs.push(blob); return 'blob:hunt'; }), revokeObjectURL: vi.fn() }); const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function(this: HTMLAnchorElement) { expect(this.download).toBe('hunt-query-1-retained-evidence.json'); }); render(<HuntQueryEvidence index={0} result={{ outcome: 'completed', row_count: 120, rows }} />); fireEvent.click(screen.getByRole('button', { name: 'Next rows for query 1' })); fireEvent.change(screen.getByLabelText('Search retained rows for query 1'), { target: { value: 'no match' } }); expect(blobs).toHaveLength(0); fireEvent.click(screen.getByRole('button', { name: 'Export retained query JSON' })); expect(click).toHaveBeenCalledOnce(); const text = await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(blobs[0]); }); const value = JSON.parse(text); expect(value.result.rows).toEqual(rows); expect(value.result.reported_row_count).toBe(120); expect(screen.getByLabelText('Search retained rows for query 1')).toHaveProperty('value', 'no match'); expect(screen.getByRole('region', { name: 'Query 1 evidence' })).toBeTruthy();
 });
