@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile } from './huntEvidence';
+import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson } from './huntEvidence';
 
 describe('Retained hunt evidence exports', () => {
   it('preserves recorded queries, params, applied metadata, errors and rows without inventing missing values', () => {
@@ -100,4 +100,12 @@ it('profiles all retained values with typed equality missing distinct from null 
 });
 it('profiles unusual field names nested key order and original first positions without prototype inheritance',()=>{
  const row=JSON.parse('{"__proto__":{"x":false}}');expect(retainedHuntFieldProfile([{},row],'__proto__')).toMatchObject({missing:1,present:1,values:[{value:{x:false},count:1,firstRow:2}]});expect(retainedHuntFieldProfile([{x:[{a:1,b:2}]},{x:[{b:2,a:1}]}],'x').distinct).toBe(1);
+});
+
+
+it('exports the full typed retained field profile beyond the presentation limit with exact query context',()=>{
+ const input={query:{sql:'SELECT id, x',params:{limit:100}},time_window:{since:'recorded-bound'},row_count:120,rows:[...Array.from({length:12},(_,i)=>({x:i})),{x:null},{},{x:false},{x:'0'}]},before=JSON.stringify(input);const value=JSON.parse(huntFieldProfileJson(input,1,'x','time'));expect(value).toMatchObject({format:'onealert.retained-hunt-field-profile',version:1,exported_at:'time',query_position:2,field:'x',profile:{total:16,present:15,missing:1,nulls:1,distinct:15}});expect(value.profile.values).toHaveLength(15);expect(value.profile.values[14]).toEqual({value:'0',count:1,firstRow:16});expect(value.query_context).toEqual({query:input.query,time_window:input.time_window,reported_row_count:120});expect(value.scope).toContain('displayed profile limit');expect(JSON.stringify(input)).toBe(before);
+});
+it('validates profile field and query positions and preserves absent context and formula-like text literally',()=>{
+ expect(()=>huntFieldProfileJson({},0,'x','time')).toThrow();expect(()=>huntFieldProfileJson({rows:[{}]},0,'x','time')).toThrow();expect(()=>huntFieldProfileJson({rows:[{x:1}]},-1,'x','time')).toThrow();const value=JSON.parse(huntFieldProfileJson({rows:[{'=field':'=1 <script>literal</script>'}]},0,'=field','time'));expect(value.field).toBe('=field');expect(value.profile.values[0].value).toBe('=1 <script>literal</script>');expect(value.query_context).toEqual({});
 });

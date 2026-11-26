@@ -125,3 +125,12 @@ export function retainedHuntFieldProfile(rows: Record<string, unknown>[], field:
   });
   return { total: rows.length, present: rows.length - missing, missing, nulls, distinct: values.size, values: [...values.values()].sort((a, b) => b.count - a.count || a.firstRow - b.firstRow) };
 }
+
+
+export function huntFieldProfileJson(result: HuntQueryResult, index: number, field: string, exportedAt: string): string {
+  if (!result.rows?.some(row => Object.hasOwn(row, field))) throw Error('Choose a recorded retained field');
+  const query = JSON.parse(huntQueryJson(result, index, exportedAt));
+  return JSON.stringify({ format: 'onealert.retained-hunt-field-profile', version: 1, exported_at: exportedAt, query_position: index + 1, field,
+    scope: scope + ' All retained rows for this field regardless of local search, focus, hidden columns or displayed profile limit. Not all reported events or a current distribution. JSON types and array order are preserved; object key order is ignored. Values are frequency ordered, ties use first retained position. No upload, message or access grant sent.',
+    query_context: { ...query.result, rows: undefined }, profile: retainedHuntFieldProfile(result.rows, field) }, null, 2) + '\n';
+}
