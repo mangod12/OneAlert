@@ -1,6 +1,6 @@
 import { RetainedHuntCurrentEvent } from './RetainedHuntCurrentEvent';
 import { useState } from 'react';
-import { compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, saveHuntDownload } from '../utils/huntEvidence';
+import { compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, saveHuntDownload } from '../utils/huntEvidence';
 import { FileCode } from 'lucide-react';
 
 type HuntRow = Record<string, unknown>;
@@ -124,6 +124,8 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
       {detailRow == null || detailRow === baselineRow ? <p className="text-surface-300">Inspect a different retained row to compare it with this baseline. The baseline stays selected across search, order and page changes.</p> : rows[detailRow - 1] && <>
         <p className="text-surface-100">Baseline row {baselineRow} compared with inspected row {detailRow}, original saved positions.</p>
         <button type="button" onClick={() => saveHuntDownload(huntRowComparisonJson(result, index, baselineRow, detailRow, new Date().toISOString()), `hunt-query-${index + 1}-retained-rows-${baselineRow}-${detailRow}-comparison.json`, 'application/json;charset=utf-8')} className="min-h-9 rounded border border-surface-600 px-3 py-2 text-primary-300">Export retained row comparison JSON</button>
+        <button type="button" onClick={() => saveHuntDownload(huntRowComparisonCsv(result, index, baselineRow, detailRow), `hunt-query-${index + 1}-retained-rows-${baselineRow}-${detailRow}-comparison.csv`, 'text/csv;charset=utf-8')} className="min-h-9 rounded border border-surface-600 px-3 py-2 text-primary-300">Export retained row comparison CSV</button>
+        <p className="text-surface-400">CSV includes every compared field regardless of search, focus or hidden columns, with original row positions, presence flags, JSON-encoded values and recorded counts. Spreadsheet text formulas are escaped. CSV is a field table, not the full query context; use JSON for the full retained evidence. Downloading sends nothing to another person. Review sensitive telemetry before sharing.</p>
         <p className="text-surface-400">Downloads both full retained rows, original positions, query context and every compared field, regardless of local focus or hidden columns. Raw JSON has no spreadsheet formula protection. Review sensitive telemetry before sharing; downloading sends nothing to another person.</p>
         <label className="flex min-h-9 items-center gap-2 text-surface-200"><input type="checkbox" checked={differencesOnly} onChange={event => setDifferencesOnly(event.target.checked)} />Show only differing retained fields</label>
         <label className="block text-surface-300">Search compared field names and recorded values<input type="search" aria-label={`Search retained row comparison for query ${index + 1}`} maxLength={200} value={comparisonSearch} onChange={event => setComparisonSearch(event.target.value)} className="mt-1 min-h-9 w-full min-w-0 rounded border border-surface-600 bg-surface-950 px-2 text-sm text-surface-100" /></label>

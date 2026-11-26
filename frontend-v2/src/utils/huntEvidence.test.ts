@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson } from './huntEvidence';
+import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv } from './huntEvidence';
 
 describe('Retained hunt evidence exports', () => {
   it('preserves recorded queries, params, applied metadata, errors and rows without inventing missing values', () => {
@@ -83,4 +83,13 @@ it('exports both retained positions all typed fields and original query context 
 });
 it('rejects equal invalid or missing comparison positions and preserves absent query metadata',()=>{
  const input={rows:[{id:1},{id:2}]};for(const pair of [[1,1],[0,2],[1,3],[NaN,2],[1,1.5]])expect(()=>huntRowComparisonJson(input,0,pair[0],pair[1],'time')).toThrow();expect(()=>huntRowComparisonJson({},0,1,2,'time')).toThrow();expect(JSON.parse(huntRowComparisonJson(input,0,1,2,'time')).query_context).toEqual({});
+});
+
+
+it('exports all comparison fields as formula-safe CSV with typed JSON presence positions and original counts',()=>{
+ const input={row_count:120,rows:[{id:7,'=host':'=SUM(A1)',nullOnly:null,detail:{raw:false},zero:0},{id:2,new:false,detail:{raw:false},zero:'0'}]},before=JSON.stringify(input);const csv=huntRowComparisonCsv(input,1,1,2);expect(csv.startsWith('\ufeff"query_position","baseline_retained_position"')).toBe(true);expect(csv).toContain('"2","1","2","2","120"');expect(csv).toContain('"\'=host"');expect(csv).toContain('"true","null","false",""');expect(csv).toContain('"false","","true","false"');expect(csv).toContain('"true","0","true","""0"""');expect(csv).toContain('"true","{""raw"":false}"');expect(csv).toContain('not versions of one event');expect(csv).toContain('regardless of local comparison focus');expect(csv.split('\r\n')).toHaveLength(8);expect(JSON.stringify(input)).toBe(before);
+});
+
+it('validates CSV comparison positions and leaves absent counts empty without inventing evidence',()=>{
+ const input={rows:[{},{}]};expect(huntRowComparisonCsv(input,0,1,2).split('\r\n')).toHaveLength(2);for(const pair of [[1,1],[0,2],[1,3],[NaN,2],[1,1.5]])expect(()=>huntRowComparisonCsv(input,0,pair[0],pair[1])).toThrow();expect(()=>huntRowComparisonCsv({},0,1,2)).toThrow();const csv=huntRowComparisonCsv({rows:[{id:1},{id:2}]},0,1,2);expect(csv).toContain('"1","1","2","2","",');
 });
