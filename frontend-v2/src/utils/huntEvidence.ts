@@ -167,3 +167,16 @@ export function huntFieldProfileCsv(result: HuntQueryResult, index: number, fiel
   for (const item of profile.values) table.push([index + 1, field, profile.total, result.row_count, profile.present, profile.missing, profile.nulls, profile.distinct, evidence.scope, JSON.stringify(item.value), item.count, item.firstRow]);
   return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
+
+
+export function huntProfileMatchesCsv(result: HuntQueryResult, index: number, field: string, selection: { kind: 'missing' } | { kind: 'value'; firstRow: number }): string {
+  const evidence = JSON.parse(huntProfileMatchesJson(result, index, field, selection, ''));
+  const positions = selection.kind === 'missing' ? retainedHuntMissingRows(result.rows!, field) : retainedHuntValueRows(result.rows!, field, selection.firstRow);
+  const columns = [...new Set(positions.flatMap(position => Object.keys(result.rows![position - 1])))];
+  const table: unknown[][] = [['query_position', 'profile_field', 'selection_kind', 'selected_value_json', 'retained_total', 'matched_retained_count', 'reported_row_count', 'retained_row_position', 'evidence_scope', ...columns.flatMap(column => [`event.${column}.present`, `event.${column}.json`])]];
+  for (const position of positions) {
+    const row = result.rows![position - 1];
+    table.push([index + 1, field, selection.kind, selection.kind === 'value' ? JSON.stringify(result.rows![selection.firstRow - 1][field]) : '', result.rows!.length, positions.length, result.row_count, position, evidence.scope, ...columns.flatMap(column => [Object.hasOwn(row, column), Object.hasOwn(row, column) ? JSON.stringify(row[column]) : ''])]);
+  }
+  return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}

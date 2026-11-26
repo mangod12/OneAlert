@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson, huntFieldProfileCsv, retainedHuntValueRows, retainedHuntMissingRows, huntProfileMatchesJson } from './huntEvidence';
+import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson, huntFieldProfileCsv, retainedHuntValueRows, retainedHuntMissingRows, huntProfileMatchesJson, huntProfileMatchesCsv } from './huntEvidence';
 
 describe('Retained hunt evidence exports', () => {
   it('preserves recorded queries, params, applied metadata, errors and rows without inventing missing values', () => {
@@ -134,4 +134,12 @@ it('exports every typed field profile value as CSV with full counts first positi
 });
 it('validates CSV field and index without inventing reported counts or interpreting raw JSON strings',()=>{
  expect(()=>huntFieldProfileCsv({},0,'x')).toThrow();expect(()=>huntFieldProfileCsv({rows:[{}]},0,'x')).toThrow();expect(()=>huntFieldProfileCsv({rows:[{x:0}]},-1,'x')).toThrow();const csv=huntFieldProfileCsv({rows:[{x:'=SUM(A1)'},{x:'line\n"quote"'}]},0,'x');expect(csv).toContain('"1","x","2","","2","0","0","2"');expect(csv).toContain('"""=SUM(A1)"""');expect(csv).toContain('line\\n');
+});
+
+
+it('exports every matching typed profile row to CSV across pages with original positions and presence columns',()=>{
+ const input={row_count:120,rows:Array.from({length:45},(_,i)=>i===44?{id:i+1,tag:false,extra:null}:{id:i+1,tag:false})},before=JSON.stringify(input);const csv=huntProfileMatchesCsv(input,1,'tag',{kind:'value',firstRow:1});expect(csv.startsWith('\ufeff"query_position","profile_field"')).toBe(true);expect(csv).toContain('"2","tag","value","false","45","45","120","45"');expect(csv).toContain('"event.extra.present","event.extra.json"');expect(csv).toContain('"false",""\r\n');expect(csv).toContain('"true","null"');expect(csv.split('\r\n')).toHaveLength(47);expect(JSON.stringify(input)).toBe(before);
+});
+it('keeps missing separate from typed zero and null in CSV and validates selection before export',()=>{
+ const input={rows:[{x:null},{id:2},{x:0},{x:'0'},{x:false}]};const csv=huntProfileMatchesCsv(input,0,'x',{kind:'missing'});expect(csv).toContain('"1","x","missing","","5","1","","2"');expect(csv.split('\r\n')).toHaveLength(3);expect(huntProfileMatchesCsv(input,0,'x',{kind:'value',firstRow:3})).toContain('"value","0","5","1"');for(const firstRow of [0,2,9,NaN])expect(()=>huntProfileMatchesCsv(input,0,'x',{kind:'value',firstRow})).toThrow();expect(()=>huntProfileMatchesCsv(input,-1,'x',{kind:'missing'})).toThrow();expect(()=>huntProfileMatchesCsv({rows:[{x:1}]},0,'x',{kind:'missing'})).toThrow();
 });
