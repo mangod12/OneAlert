@@ -70,3 +70,19 @@ export function saveHuntDownload(content: string, name: string, mime: string): v
   // Allow the browser to begin reading the object URL before releasing it.
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+
+export function compareRetainedHuntRows(baseline: Record<string, unknown>, inspected: Record<string, unknown>) {
+  const same = (a: unknown, b: unknown): boolean => {
+    if (a === b) return true;
+    if (a == null || b == null || typeof a !== 'object' || typeof b !== 'object') return false;
+    if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((value, i) => same(value, b[i]));
+    const left = Object.keys(a), right = Object.keys(b);
+    return left.length === right.length && left.every(key => Object.hasOwn(b, key) && same((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]));
+  };
+  return [...new Set([...Object.keys(baseline), ...Object.keys(inspected)])].map(field => {
+    const baselinePresent = Object.hasOwn(baseline, field), inspectedPresent = Object.hasOwn(inspected, field);
+    return { field, baselinePresent, inspectedPresent, baseline: baseline[field], inspected: inspected[field],
+      status: !baselinePresent ? 'Only in inspected row' : !inspectedPresent ? 'Only in baseline row' : same(baseline[field], inspected[field]) ? 'Same recorded value' : 'Different recorded value' };
+  });
+}

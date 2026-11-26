@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { huntEvidenceJson, huntQueryCsv, huntQueryJson, huntRowJson } from './huntEvidence';
+import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson } from './huntEvidence';
 
 describe('Retained hunt evidence exports', () => {
   it('preserves recorded queries, params, applied metadata, errors and rows without inventing missing values', () => {
@@ -67,4 +67,12 @@ it('exports only one original retained row with typed hidden fields and unchange
 });
 it('rejects missing and invalid retained row or query positions without guessing a selection', () => {
  for(const row of [0,-1,1.5,NaN,Infinity,2]) expect(()=>huntRowJson({rows:[{id:1}]},0,row,'time')).toThrow(); expect(()=>huntRowJson({},0,1,'time')).toThrow(); expect(()=>huntRowJson({rows:[]},0,1,'time')).toThrow(); expect(()=>huntRowJson({rows:[{id:1}]},-1,1,'time')).toThrow(); const value=JSON.parse(huntRowJson({rows:[{id:1}]},0,1,'time')); expect(value.result).not.toHaveProperty('reported_row_count'); expect(value.result).not.toHaveProperty('query');
+});
+
+
+it('compares every retained field with typed nested equality and missing distinct from null', () => {
+ const left={id:1,nested:{a:0,b:false},array:[1,2],nullOnly:null,text:'1',raw:'<script>literal</script>'},right={id:2,nested:{b:false,a:0},array:[2,1],text:1,added:null,raw:'<script>literal</script>'},before=JSON.stringify([left,right]); const fields=compareRetainedHuntRows(left,right);expect(fields.map(item=>[item.field,item.status])).toEqual([['id','Different recorded value'],['nested','Same recorded value'],['array','Different recorded value'],['nullOnly','Only in baseline row'],['text','Different recorded value'],['raw','Same recorded value'],['added','Only in inspected row']]);expect(fields.find(item=>item.field==='nullOnly')).toMatchObject({baselinePresent:true,inspectedPresent:false,baseline:null});expect(fields.find(item=>item.field==='added')).toMatchObject({baselinePresent:false,inspectedPresent:true,inspected:null});expect(JSON.stringify([left,right])).toBe(before);
+});
+it('compares empty and falsy values without collapsing types or nested missing keys',()=>{
+ const fields=compareRetainedHuntRows({a:false,b:0,c:'',d:{a:null},e:[{a:1,b:2}]},{a:0,b:'0',c:null,d:{},e:[{b:2,a:1}]});expect(fields.map(item=>item.status)).toEqual(['Different recorded value','Different recorded value','Different recorded value','Different recorded value','Same recorded value']);expect(compareRetainedHuntRows({},{})).toEqual([]);
 });
