@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson, retainedHuntValueRows, retainedHuntMissingRows } from './huntEvidence';
+import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson, retainedHuntValueRows, retainedHuntMissingRows, huntProfileMatchesJson } from './huntEvidence';
 
 describe('Retained hunt evidence exports', () => {
   it('preserves recorded queries, params, applied metadata, errors and rows without inventing missing values', () => {
@@ -118,4 +118,12 @@ it('finds exact typed profile rows in original positions with nested equality mi
 
 it('finds missing fields by own presence without conflating recorded null false zero empty or inherited values',()=>{
  const rows=[{x:null},{},{x:false},{x:0},{x:''},{x:[]},{x:{}},{}],before=JSON.stringify(rows);expect(retainedHuntMissingRows(rows,'x')).toEqual([2,8]);expect(retainedHuntMissingRows([{},JSON.parse('{"__proto__":null}')],'__proto__')).toEqual([1]);expect(retainedHuntMissingRows([],'x')).toEqual([]);expect(JSON.stringify(rows)).toBe(before);
+});
+
+
+it('exports all exact typed matches in original positions with full rows and query context beyond displayed pages',()=>{
+ const input={query:{sql:'SELECT id, tag',params:{limit:100}},row_count:120,rows:Array.from({length:45},(_,i)=>({id:i+1,tag:{raw:false},text:'=1 <script>literal</script>'}))},before=JSON.stringify(input);const value=JSON.parse(huntProfileMatchesJson(input,1,'tag',{kind:'value',firstRow:1},'time'));expect(value).toMatchObject({format:'onealert.retained-hunt-profile-matches',query_position:2,field:'tag',retained_total:45,matched_retained_count:45,selection:{kind:'value',first_retained_position:1,value:{raw:false}}});expect(value.rows[44]).toEqual({retained_row_position:45,row:input.rows[44]});expect(value.query_context).toEqual({query:input.query,reported_row_count:120});expect(JSON.stringify(input)).toBe(before);
+});
+it('exports missing fields separately from null and rejects invalid empty or absent profile selections',()=>{
+ const input={rows:[{x:null},{id:2},{x:0},{x:'0'}]};const missing=JSON.parse(huntProfileMatchesJson(input,0,'x',{kind:'missing'},'time'));expect(missing.selection).toEqual({kind:'missing'});expect(missing.rows).toEqual([{retained_row_position:2,row:{id:2}}]);expect(missing.query_context).toEqual({});expect(JSON.parse(huntProfileMatchesJson(input,0,'x',{kind:'value',firstRow:1},'time')).rows).toHaveLength(1);for(const position of [0,2,9,NaN])expect(()=>huntProfileMatchesJson(input,0,'x',{kind:'value',firstRow:position},'time')).toThrow();expect(()=>huntProfileMatchesJson({rows:[{x:0}]},0,'x',{kind:'missing'},'time')).toThrow();expect(()=>huntProfileMatchesJson(input,-1,'x',{kind:'missing'},'time')).toThrow();expect(()=>huntProfileMatchesJson({},0,'x',{kind:'missing'},'time')).toThrow();
 });
