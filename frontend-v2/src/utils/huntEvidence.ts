@@ -141,3 +141,8 @@ export function retainedHuntValueRows(rows: Record<string, unknown>[], field: st
   const value = rows[firstRow - 1][field];
   return rows.flatMap((row, index) => Object.hasOwn(row, field) && compareRetainedHuntRows({ value }, { value: row[field] })[0].status === 'Same recorded value' ? [index + 1] : []);
 }
+
+
+export function retainedHuntMissingRows(rows: Record<string, unknown>[], field: string): number[] {
+  return rows.flatMap((row, index) => Object.hasOwn(row, field) ? [] : [index + 1]);
+}

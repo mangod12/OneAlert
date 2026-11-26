@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson, retainedHuntValueRows } from './huntEvidence';
+import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson, retainedHuntValueRows, retainedHuntMissingRows } from './huntEvidence';
 
 describe('Retained hunt evidence exports', () => {
   it('preserves recorded queries, params, applied metadata, errors and rows without inventing missing values', () => {
@@ -113,4 +113,9 @@ it('validates profile field and query positions and preserves absent context and
 
 it('finds exact typed profile rows in original positions with nested equality missing-null separation and no mutation',()=>{
  const rows=[{x:0},{x:'0'},{x:null},{},{x:false},{x:{a:1,b:[2,3]}},{x:{b:[2,3],a:1}},{x:{a:1,b:[3,2]}}],before=JSON.stringify(rows);expect(retainedHuntValueRows(rows,'x',1)).toEqual([1]);expect(retainedHuntValueRows(rows,'x',2)).toEqual([2]);expect(retainedHuntValueRows(rows,'x',3)).toEqual([3]);expect(retainedHuntValueRows(rows,'x',6)).toEqual([6,7]);expect(JSON.stringify(rows)).toBe(before);for(const position of [0,-1,1.5,NaN,9,4])expect(retainedHuntValueRows(rows,'x',position)).toEqual([]);
+});
+
+
+it('finds missing fields by own presence without conflating recorded null false zero empty or inherited values',()=>{
+ const rows=[{x:null},{},{x:false},{x:0},{x:''},{x:[]},{x:{}},{}],before=JSON.stringify(rows);expect(retainedHuntMissingRows(rows,'x')).toEqual([2,8]);expect(retainedHuntMissingRows([{},JSON.parse('{"__proto__":null}')],'__proto__')).toEqual([1]);expect(retainedHuntMissingRows([],'x')).toEqual([]);expect(JSON.stringify(rows)).toBe(before);
 });
