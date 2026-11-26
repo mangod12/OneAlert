@@ -180,3 +180,21 @@ export function huntProfileMatchesCsv(result: HuntQueryResult, index: number, fi
   }
   return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
+
+
+export function huntFieldCoverageJson(result: HuntQueryResult, index: number, exportedAt: string): string {
+  if (!result.rows?.length) throw Error('No retained rows');
+  const columns = [...new Set(result.rows.flatMap(row => Object.keys(row)))];
+  if (!columns.length) throw Error('No recorded fields');
+  const query = JSON.parse(huntQueryJson(result, index, exportedAt));
+  return JSON.stringify({ format: 'onealert.retained-hunt-field-coverage', version: 1, exported_at: exportedAt, query_position: index + 1, retained_total: result.rows.length,
+    scope: scope + ' All recorded fields across all retained rows, regardless of coverage search, page, profile selection, row search or hidden columns. Present includes recorded null. Missing differs from null. Distinct counts preserve JSON types and array order; object key order is ignored. Not all reported events or current data. No upload, message or access grant sent.',
+    query_context: { ...query.result, rows: undefined }, fields: columns.map(field => { const profile = retainedHuntFieldProfile(result.rows!, field); return { field, present: profile.present, missing: profile.missing, recorded_null: profile.nulls, distinct: profile.distinct }; }) }, null, 2) + '\n';
+}
+
+export function huntFieldCoverageCsv(result: HuntQueryResult, index: number): string {
+  const evidence = JSON.parse(huntFieldCoverageJson(result, index, ''));
+  const table: unknown[][] = [['query_position', 'retained_total', 'reported_row_count', 'evidence_scope', 'field', 'present_count', 'missing_count', 'recorded_null_count', 'distinct_count']];
+  for (const field of evidence.fields) table.push([index + 1, result.rows!.length, result.row_count, evidence.scope, field.field, field.present, field.missing, field.recorded_null, field.distinct]);
+  return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
