@@ -134,3 +134,10 @@ export function huntFieldProfileJson(result: HuntQueryResult, index: number, fie
     scope: scope + ' All retained rows for this field regardless of local search, focus, hidden columns or displayed profile limit. Not all reported events or a current distribution. JSON types and array order are preserved; object key order is ignored. Values are frequency ordered, ties use first retained position. No upload, message or access grant sent.',
     query_context: { ...query.result, rows: undefined }, profile: retainedHuntFieldProfile(result.rows, field) }, null, 2) + '\n';
 }
+
+
+export function retainedHuntValueRows(rows: Record<string, unknown>[], field: string, firstRow: number): number[] {
+  if (!Number.isSafeInteger(firstRow) || firstRow < 1 || firstRow > rows.length || !Object.hasOwn(rows[firstRow - 1], field)) return [];
+  const value = rows[firstRow - 1][field];
+  return rows.flatMap((row, index) => Object.hasOwn(row, field) && compareRetainedHuntRows({ value }, { value: row[field] })[0].status === 'Same recorded value' ? [index + 1] : []);
+}
