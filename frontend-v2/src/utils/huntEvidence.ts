@@ -35,6 +35,13 @@ export function huntQueryJson(result: HuntQueryResult, index: number, exportedAt
       ...(result.rows !== undefined ? { rows: result.rows } : {}) } }, null, 2) + '\n';
 }
 
+export function huntRowJson(result: HuntQueryResult, index: number, rowNumber: number, exportedAt: string): string {
+  if (!Number.isSafeInteger(rowNumber) || rowNumber < 1 || !result.rows || rowNumber > result.rows.length) throw Error('Invalid retained row position');
+  const queryEvidence = JSON.parse(huntQueryJson({ ...result, rows: [result.rows[rowNumber - 1]] }, index, exportedAt));
+  return JSON.stringify({ ...queryEvidence, format: 'onealert.retained-hunt-row', retained_row_position: rowNumber, retained_total: result.rows.length,
+    scope: scope + ' Only one retained row at its original saved position in this displayed query, not all retained or reported rows. Recorded query counts and context are unchanged. No upload, message or access grant sent.' }, null, 2) + '\n';
+}
+
 function csvCell(value: unknown): string {
   const text = value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
   let start = 0;

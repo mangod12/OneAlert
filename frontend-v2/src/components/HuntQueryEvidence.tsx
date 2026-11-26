@@ -1,6 +1,6 @@
 import { RetainedHuntCurrentEvent } from './RetainedHuntCurrentEvent';
 import { useState } from 'react';
-import { huntQueryCsv, huntQueryJson, saveHuntDownload } from '../utils/huntEvidence';
+import { huntQueryCsv, huntQueryJson, huntRowJson, saveHuntDownload } from '../utils/huntEvidence';
 import { FileCode } from 'lucide-react';
 
 type HuntRow = Record<string, unknown>;
@@ -106,6 +106,8 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
     {detailRow != null && rows[detailRow - 1] && <section aria-label={`Retained row ${detailRow} detail for query ${index + 1}`} className="my-3 min-w-0 space-y-2 rounded border border-primary-600 p-3 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-semibold text-surface-100">Retained row {detailRow}, original saved position</h4><button type="button" onClick={() => setDetailRow(null)} className="min-h-9 rounded border border-surface-600 px-3 py-2 text-surface-200">Close retained row detail</button></div>
       <p className="text-surface-400">All fields recorded for this retained row, including hidden table columns. This local detail stays selected across search, order and page changes. It is not a current-event lookup or a new query. Missing fields are not inferred; null, false, zero and nested values retain their recorded JSON types.</p>
+      <button type="button" onClick={() => saveHuntDownload(huntRowJson(result, index, detailRow, new Date().toISOString()), `hunt-query-${index + 1}-retained-row-${detailRow}.json`, 'application/json;charset=utf-8')} className="min-h-9 rounded border border-surface-600 px-3 py-2 text-primary-300">Export this retained row JSON</button>
+      <p className="text-surface-400">Downloads this row with its original retained position, query context, retained total and unchanged reported count. Raw JSON text has no spreadsheet formula protection. Review sensitive telemetry before sharing; downloading sends nothing to another person.</p>
       <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded bg-surface-950 p-3 text-surface-200">{JSON.stringify(rows[detailRow - 1], null, 2)}</pre>
     </section>}
     {typeof result.row_count === 'number' && result.row_count > rows.length && <p className="mt-3 text-xs text-warning">{result.row_count - rows.length} reported rows were not retained in this result. They are not available through paging.</p>}

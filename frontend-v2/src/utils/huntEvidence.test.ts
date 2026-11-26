@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { huntEvidenceJson, huntQueryCsv, huntQueryJson } from './huntEvidence';
+import { huntEvidenceJson, huntQueryCsv, huntQueryJson, huntRowJson } from './huntEvidence';
 
 describe('Retained hunt evidence exports', () => {
   it('preserves recorded queries, params, applied metadata, errors and rows without inventing missing values', () => {
@@ -59,4 +59,12 @@ it('exports all retained pages rather than reported unretained rows', () => { co
 
 it('exports matching retained rows with search scope while leaving original query count and context intact', () => {
  const value = JSON.parse(huntQueryJson({ query: { sql: 'SELECT id, metadata' }, row_count: 120, rows: [{ id: 23, metadata: { raw: false }, zero: 0 }] }, 0, 'time', { text: 'FALSE', field: 'metadata', retained_total: 45 })); expect(value.retained_search).toEqual({ text: 'FALSE', field: 'metadata', retained_total: 45 }); expect(value.result.rows).toEqual([{ id: 23, metadata: { raw: false }, zero: 0 }]); expect(value.result.reported_row_count).toBe(120); expect(value.scope).toContain('not all retained or reported rows'); expect(value.result.query.sql).toBe('SELECT id, metadata'); expect(JSON.parse(huntQueryJson({}, 0, 'time')).retained_search).toBeUndefined();
+});
+
+
+it('exports only one original retained row with typed hidden fields and unchanged query context and counts', () => {
+ const input = { outcome: 'completed' as const, query: { sql: 'SELECT id, detail', params: { flag: false } }, time_window: { since: 'recorded-bound' }, row_count: 120, rows: [{ id: 8 }, { id: 3, detail: { raw: false }, zero: 0, missing: null, text: '=SUM(A1) <script>literal</script>' }] }, before=JSON.stringify(input); const value=JSON.parse(huntRowJson(input, 1, 2, 'export-time')); expect(value.format).toBe('onealert.retained-hunt-row'); expect(value.version).toBe(1); expect(value.query_position).toBe(2); expect(value.retained_row_position).toBe(2); expect(value.retained_total).toBe(2); expect(value.exported_at).toBe('export-time'); expect(value.result.rows).toEqual([input.rows[1]]); expect(value.result.reported_row_count).toBe(120); expect(value.result.query).toEqual(input.query); expect(value.result.time_window).toEqual(input.time_window); expect(value.scope).toContain('Only one retained row'); expect(value.retained_search).toBeUndefined(); expect(JSON.stringify(input)).toBe(before);
+});
+it('rejects missing and invalid retained row or query positions without guessing a selection', () => {
+ for(const row of [0,-1,1.5,NaN,Infinity,2]) expect(()=>huntRowJson({rows:[{id:1}]},0,row,'time')).toThrow(); expect(()=>huntRowJson({},0,1,'time')).toThrow(); expect(()=>huntRowJson({rows:[]},0,1,'time')).toThrow(); expect(()=>huntRowJson({rows:[{id:1}]},-1,1,'time')).toThrow(); const value=JSON.parse(huntRowJson({rows:[{id:1}]},0,1,'time')); expect(value.result).not.toHaveProperty('reported_row_count'); expect(value.result).not.toHaveProperty('query');
 });
