@@ -21,14 +21,21 @@ function cellText(value: unknown): string {
 export function HuntQueryEvidence({ result, index, savedReview, originalDraftQuery }: { result: HuntQueryResult; index: number; originalDraftQuery?: number; savedReview?: { sessionId: number; fingerprint: string; onRefresh: () => void } }) {
   const [selected, setSelected] = useState<{ rowNumber: number; eventId: number } | null>(null);
   const canReview = savedReview && Number.isSafeInteger(savedReview.sessionId) && savedReview.sessionId > 0 && /^[0-9a-f]{64}$/.test(savedReview.fingerprint) && result.outcome === 'completed' && result.execution?.contract === 'scoped_select_v1' && result.execution.selected_columns.includes('id') && new Set(result.execution.selected_columns).size === result.execution.selected_columns.length;
+  const [inspectionOrder, setInspectionOrder] = useState('retained');
   const [page, setPage] = useState(1), [search, setSearch] = useState(''), [field, setField] = useState('');
   const rows = result.rows ?? [];
   const columns = [...new Set(rows.flatMap(row => Object.keys(row)))];
   const needle = search.trim().toLowerCase();
   const matches = needle ? rows.filter(row => (field ? [row[field]] : Object.values(row)).some(value => value != null && (typeof value === 'object' ? JSON.stringify(value) : String(value)).toLowerCase().includes(needle))) : rows;
+  const ordered = inspectionOrder === 'retained' ? matches : [...matches].sort((a, b) => {
+    const aValid = Number.isSafeInteger(a.id) && Number(a.id) > 0, bValid = Number.isSafeInteger(b.id) && Number(b.id) > 0;
+    if (!aValid) return bValid ? 1 : 0;
+    if (!bValid) return -1;
+    return inspectionOrder === 'id-desc' ? Number(b.id) - Number(a.id) : Number(a.id) - Number(b.id);
+  });
   const pages = Math.max(1, Math.ceil(matches.length / 20));
   const currentPage = Math.min(page, pages);
-  const visible = matches.slice((currentPage - 1) * 20, currentPage * 20);
+  const visible = ordered.slice((currentPage - 1) * 20, currentPage * 20);
   return <section aria-label={`Query ${index + 1} evidence`} className="mb-4 min-w-0 rounded-lg border border-surface-700 p-3 last:mb-0">
     {Number.isInteger(originalDraftQuery) && Number(originalDraftQuery) >= 1 && Number(originalDraftQuery) <= 3 && <p className="mb-3 text-xs text-surface-400">Original saved draft query #{originalDraftQuery}, shown as result position {index + 1} in this selected-query execution.</p>}
     <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -68,6 +75,8 @@ export function HuntQueryEvidence({ result, index, savedReview, originalDraftQue
       </div>
       <p className="text-xs text-surface-400">Matching JSON includes all locally matching retained rows across pages, the literal search and selected field, the retained total before search and unchanged recorded query context. Reported counts still describe the original query, not the local match count. No query is rerun; the full retained JSON export stays unfiltered.</p>
       <p className="text-xs text-surface-400">Searches literal text in retained values only, including nested JSON values, across their local pages. No query is rerun. Missing values do not match. Unretained reported rows are not searched. The original retained-row export above remains unfiltered.</p>
+      <label className="block text-xs text-surface-300">Retained row inspection order<select aria-label={`Retained row inspection order for query ${index + 1}`} value={inspectionOrder} onChange={event => { setInspectionOrder(event.target.value); setPage(1); }} className="mt-1 block max-w-full rounded border border-surface-600 bg-surface-950 px-2 py-2 text-xs text-surface-200"><option value="retained">Original retained order</option><option value="id-asc">Recorded numeric ID, ascending</option><option value="id-desc">Recorded numeric ID, descending</option></select></label>
+      <p className="text-xs text-surface-400">Inspection order affects this table only, never query execution, recorded order or CSV/JSON download order. Equal IDs keep retained order; missing or invalid IDs stay last in retained order. ID order is not event chronology or severity.</p>
       <p role="status" className="text-xs text-surface-300">{matches.length} of {rows.length} retained rows match{field ? ` in ${field}` : ''}.</p>
     </section>}
     {matches.length > 0 ? <>
