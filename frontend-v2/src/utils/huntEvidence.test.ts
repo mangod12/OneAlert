@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson, huntFieldProfileCsv, retainedHuntValueRows, retainedHuntMissingRows, huntProfileMatchesJson, huntProfileMatchesCsv } from './huntEvidence';
+import { huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson, huntFieldProfileCsv, retainedHuntValueRows, retainedHuntMissingRows, huntProfileMatchesJson, huntProfileMatchesCsv, huntFieldCoverageJson, huntFieldCoverageCsv } from './huntEvidence';
 
 describe('Retained hunt evidence exports', () => {
   it('preserves recorded queries, params, applied metadata, errors and rows without inventing missing values', () => {
@@ -142,4 +142,12 @@ it('exports every matching typed profile row to CSV across pages with original p
 });
 it('keeps missing separate from typed zero and null in CSV and validates selection before export',()=>{
  const input={rows:[{x:null},{id:2},{x:0},{x:'0'},{x:false}]};const csv=huntProfileMatchesCsv(input,0,'x',{kind:'missing'});expect(csv).toContain('"1","x","missing","","5","1","","2"');expect(csv.split('\r\n')).toHaveLength(3);expect(huntProfileMatchesCsv(input,0,'x',{kind:'value',firstRow:3})).toContain('"value","0","5","1"');for(const firstRow of [0,2,9,NaN])expect(()=>huntProfileMatchesCsv(input,0,'x',{kind:'value',firstRow})).toThrow();expect(()=>huntProfileMatchesCsv(input,-1,'x',{kind:'missing'})).toThrow();expect(()=>huntProfileMatchesCsv({rows:[{x:1}]},0,'x',{kind:'missing'})).toThrow();
+});
+
+
+it('exports all field coverage with exact counts types and unchanged recorded context without row values',()=>{
+ const input={query:{sql:'SELECT *',params:{limit:100}},time_window:{since:'saved'},row_count:120,rows:[{x:null,tag:0},{x:false,tag:'0'},{tag:0},...Array.from({length:12},(_,i)=>({[`extra-${i}`]:i}))]},before=JSON.stringify(input);const value=JSON.parse(huntFieldCoverageJson(input,1,'time'));expect(value).toMatchObject({format:'onealert.retained-hunt-field-coverage',query_position:2,retained_total:15,exported_at:'time'});expect(value.fields).toHaveLength(14);expect(value.fields[0]).toEqual({field:'x',present:2,missing:13,recorded_null:1,distinct:2});expect(value.fields[1]).toEqual({field:'tag',present:3,missing:12,recorded_null:0,distinct:2});expect(value.query_context).toEqual({query:input.query,time_window:input.time_window,reported_row_count:120});expect(value.rows).toBeUndefined();expect(value.fields[0].values).toBeUndefined();expect(JSON.stringify(input)).toBe(before);
+});
+it('exports complete coverage CSV with protected field names and validates absent fields rows and query positions',()=>{
+ const input={rows:[{'=field':null},{},{'=field':false}]};const csv=huntFieldCoverageCsv(input,0);expect(csv.startsWith('\ufeff"query_position"')).toBe(true);expect(csv).toContain('"1","3",""');expect(csv).toContain('"\'=field","2","1","1","2"');expect(csv.split('\r\n')).toHaveLength(3);expect(JSON.parse(huntFieldCoverageJson(input,0,'time')).query_context).toEqual({});for(const result of [{},{rows:[]},{rows:[{}]}]){expect(()=>huntFieldCoverageJson(result,0,'time')).toThrow();expect(()=>huntFieldCoverageCsv(result,0)).toThrow();}expect(()=>huntFieldCoverageCsv(input,-1)).toThrow();
 });
