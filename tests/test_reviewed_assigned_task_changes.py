@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 from test_case_tasks import (  # noqa: F401
-    _register_and_login,
+    _seed_checklist_actor,
     _setup,
     _TestingSessionLocal,
     _user_id,
@@ -88,7 +88,7 @@ def test_reassignment_blocks_stale_owner_even_when_case_is_owned(client):
 
 def test_foreign_task_and_unauthenticated_requests_cannot_mutate(client):
     _headers, task, payload = setup_task(client)
-    other = _register_and_login(client, "other@example.com")
+    other = _seed_checklist_actor(client, "other@example.com")
     url = f'/api/v1/cases/assigned-task-explorer/{task["id"]}'
     assert client.patch(url, headers=other, json=payload).status_code == 404
     client.cookies.clear()

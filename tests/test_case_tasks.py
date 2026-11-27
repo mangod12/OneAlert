@@ -52,6 +52,26 @@ def client():
     Base.metadata.drop_all(bind=_engine)
 
 
+def _seed_checklist_actor(client: TestClient, email: str):
+    """Create a workflow identity with real token/database authentication.
+
+    Checklist authorization tests do not test registration or password hashing.
+    Keep _register_and_login below for explicit authentication coverage. A null
+    password cannot be used to log in through the password endpoint.
+    """
+    from backend.services.auth_service import create_access_token
+
+    with _TestingSessionLocal() as db:
+        db.add(User(email=email, hashed_password=None, full_name="Analyst",
+                    is_active=True, is_verified=False))
+        db.commit()
+    headers = {"Authorization": f"Bearer {create_access_token({'sub': email})}"}
+    response = client.get("/api/v1/auth/me", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["email"] == email
+    return headers
+
+
 def _register_and_login(client: TestClient, email: str, password: str = "securepass123"):
     reg = client.post("/api/v1/auth/register", json={
         "email": email, "password": password, "full_name": "Analyst",
@@ -81,7 +101,7 @@ def _make_case(user_id: int, title="Beaconing host") -> int:
 
 
 def _setup(client, email="owner@example.com"):
-    headers = _register_and_login(client, email)
+    headers = _seed_checklist_actor(client, email)
     case_id = _make_case(_user_id(client, headers))
     return headers, case_id
 
@@ -180,7 +200,7 @@ def test_task_from_another_case_not_found(client):
 
 def test_tasks_hidden_from_users_without_case_access(client):
     _headers, case_id = _setup(client)
-    outsider = _register_and_login(client, "outsider@example.com")
+    outsider = _seed_checklist_actor(client, "outsider@example.com")
     for method in ("get", "post"):
         resp = getattr(client, method)(
             f"/api/v1/cases/{case_id}/tasks",
@@ -256,7 +276,7 @@ def test_seed_tasks_from_plan_rejects_other_cases_plan(client):
 def test_seed_tasks_hidden_from_users_without_case_access(client):
     headers, case_id = _setup(client)
     plan_id = _seed_plan(case_id, _user_id(client, headers))
-    outsider = _register_and_login(client, "outsider@example.com")
+    outsider = _seed_checklist_actor(client, "outsider@example.com")
     resp = client.post(f"/api/v1/cases/{case_id}/tasks/from-plan/{plan_id}", headers=outsider)
     assert resp.status_code == 404
 
@@ -274,8 +294,8 @@ def _share_org(*user_ids: int) -> None:
 
 
 def test_assign_task_to_org_member_on_create(client):
-    owner = _register_and_login(client, "owner@example.com")
-    member = _register_and_login(client, "member@example.com")
+    owner = _seed_checklist_actor(client, "owner@example.com")
+    member = _seed_checklist_actor(client, "member@example.com")
     owner_id = _user_id(client, owner)
     member_id = _user_id(client, member)
     _share_org(owner_id, member_id)
@@ -291,8 +311,8 @@ def test_assign_task_to_org_member_on_create(client):
 
 
 def test_reassign_and_unassign_task_records_timeline(client):
-    owner = _register_and_login(client, "owner@example.com")
-    member = _register_and_login(client, "member@example.com")
+    owner = _seed_checklist_actor(client, "owner@example.com")
+    member = _seed_checklist_actor(client, "member@example.com")
     owner_id = _user_id(client, owner)
     member_id = _user_id(client, member)
     _share_org(owner_id, member_id)
@@ -334,11 +354,11 @@ def test_assign_task_unknown_user_returns_400(client):
 
 
 def test_assign_task_outside_org_returns_400(client):
-    owner = _register_and_login(client, "owner@example.com")
-    outsider = _register_and_login(client, "outsider@example.com")
+    owner = _seed_checklist_actor(client, "owner@example.com")
+    outsider = _seed_checklist_actor(client, "outsider@example.com")
     owner_id = _user_id(client, owner)
     outsider_id = _user_id(client, outsider)
-    other_org = _register_and_login(client, "third@example.com")
+    other_org = _seed_checklist_actor(client, "third@example.com")
     third_id = _user_id(client, other_org)
     _share_org(owner_id, third_id)  # owner has an org; the outsider is not in it
     case_id = _make_case(owner_id)
@@ -352,8 +372,8 @@ def test_assign_task_outside_org_returns_400(client):
 
 
 def test_omitting_assignee_leaves_it_untouched(client):
-    owner = _register_and_login(client, "owner@example.com")
-    member = _register_and_login(client, "member@example.com")
+    owner = _seed_checklist_actor(client, "owner@example.com")
+    member = _seed_checklist_actor(client, "member@example.com")
     owner_id = _user_id(client, owner)
     member_id = _user_id(client, member)
     _share_org(owner_id, member_id)
@@ -371,8 +391,8 @@ def test_omitting_assignee_leaves_it_untouched(client):
 
 
 def test_assigning_a_task_notifies_the_assignee(client):
-    owner = _register_and_login(client, "owner@example.com")
-    member = _register_and_login(client, "member@example.com")
+    owner = _seed_checklist_actor(client, "owner@example.com")
+    member = _seed_checklist_actor(client, "member@example.com")
     owner_id = _user_id(client, owner)
     member_id = _user_id(client, member)
     _share_org(owner_id, member_id)
@@ -412,8 +432,8 @@ def _make_case_for(user_id: int, title: str, severity: str = "medium", status: s
 
 class TestMyTasks:
     def _setup_team(self, client):
-        owner = _register_and_login(client, "owner@example.com")
-        member = _register_and_login(client, "member@example.com")
+        owner = _seed_checklist_actor(client, "owner@example.com")
+        member = _seed_checklist_actor(client, "member@example.com")
         owner_id = _user_id(client, owner)
         member_id = _user_id(client, member)
         _share_org(owner_id, member_id)
@@ -477,8 +497,8 @@ class TestMyTasks:
 def test_task_assignee_can_open_the_case(client):
     """A member assigned a task on a case may open that case (the link in
     their assignment notification must not 404)."""
-    owner = _register_and_login(client, "owner@example.com")
-    member = _register_and_login(client, "member@example.com")
+    owner = _seed_checklist_actor(client, "owner@example.com")
+    member = _seed_checklist_actor(client, "member@example.com")
     owner_id = _user_id(client, owner)
     member_id = _user_id(client, member)
     _share_org(owner_id, member_id)
@@ -496,9 +516,9 @@ def test_task_assignee_can_open_the_case(client):
 
 class TestCaseTaskDueDates:
     def test_create_task_with_due_date(self, client):
-        headers = _register_and_login(client, "due-owner@example.com")
+        headers = _seed_checklist_actor(client, "due-owner@example.com")
         owner_id = _user_id(client, headers)
-        other_headers = _register_and_login(client, "due-assignee@example.com")
+        other_headers = _seed_checklist_actor(client, "due-assignee@example.com")
         other_id = _user_id(client, other_headers)
         _share_org(owner_id, other_id)
         case_id = _make_case(owner_id)
@@ -602,7 +622,7 @@ def test_assigned_task_explorer_keeps_owner_open_case_and_literal_search_scope(c
     from backend.models.case import CaseTask
     headers, case_id = _setup(client)
     user_id = _user_id(client, headers)
-    outsider = _register_and_login(client, "task-explorer@example.com")
+    outsider = _seed_checklist_actor(client, "task-explorer@example.com")
     with _TestingSessionLocal() as db:
         db.add_all([CaseTask(case_id=case_id, title="100%_literal", position=0, assignee_id=user_id, done=False),
                     CaseTask(case_id=case_id, title="100different", position=1, assignee_id=user_id, done=False),
@@ -634,7 +654,7 @@ def test_my_tasks_prioritizes_before_applying_return_limit(client):
 
     from backend.models.case import CaseTask
 
-    headers = _register_and_login(client, "cap-owner@example.com")
+    headers = _seed_checklist_actor(client, "cap-owner@example.com")
     uid = _user_id(client, headers)
     with _TestingSessionLocal() as db:
         low = Case(user_id=uid, title="Low priority", status="open", severity="low")
@@ -720,7 +740,7 @@ def test_selected_checklist_import_rejects_invalid_indexes(client, indexes):
 def test_checklist_preview_preserves_case_visibility_and_plan_case_binding(client):
     headers, case_id = _setup(client)
     plan_id = _seed_plan(case_id, _user_id(client, headers))
-    outsider = _register_and_login(client, "preview-outsider@example.com")
+    outsider = _seed_checklist_actor(client, "preview-outsider@example.com")
     assert client.get(f"/api/v1/cases/{case_id}/tasks/from-plan/{plan_id}/preview", headers=outsider).status_code == 404
     other_case = _make_case(_user_id(client, headers))
     response = client.get(f"/api/v1/cases/{other_case}/tasks/from-plan/{plan_id}/preview", headers=headers)
@@ -729,7 +749,7 @@ def test_checklist_preview_preserves_case_visibility_and_plan_case_binding(clien
 
 def test_checklist_preview_does_not_disclose_another_plan_owners_evidence(client):
     headers, case_id = _setup(client)
-    other = _register_and_login(client, "plan-owner@example.com")
+    other = _seed_checklist_actor(client, "plan-owner@example.com")
     plan_id = _seed_plan(case_id, _user_id(client, other))
     path = f"/api/v1/cases/{case_id}/tasks/from-plan/{plan_id}"
     assert client.get(path + "/preview", headers=headers).status_code == 404
@@ -820,7 +840,7 @@ def test_assigned_task_history_does_not_leak_other_assignees_or_removed_assignme
 
     headers, case_id = _setup(client)
     uid = _user_id(client, headers)
-    other = _register_and_login(client, "task-history-other@example.com")
+    other = _seed_checklist_actor(client, "task-history-other@example.com")
     other_id = _user_id(client, other)
     with _TestingSessionLocal() as db:
         db.add_all([CaseTask(case_id=case_id, title="Own current assignment", position=0, assignee_id=uid, done=True),
@@ -866,7 +886,7 @@ def test_assigned_task_summary_counts_all_matches_before_paging_and_uses_applied
     assert missing_due == {**expected, 'total': 20, 'open': 20, 'completed': 0, 'completed_without_timestamp': 0}
     empty = client.get(path, params={**params, 'query': 'No record matches this'}, headers=headers).json()['summary']
     assert all(value == 0 for value in empty.values())
-    outsider = _register_and_login(client, 'task-summary-outsider@example.com')
+    outsider = _seed_checklist_actor(client, 'task-summary-outsider@example.com')
     assert all(value == 0 for value in client.get(path, params=params, headers=outsider).json()['summary'].values())
 
 
@@ -875,7 +895,7 @@ def test_assigned_task_fixed_due_window_filters_before_summary_and_paging(client
 
     headers, case_id = _setup(client)
     uid = _user_id(client, headers)
-    other = _register_and_login(client, 'fixed-window-other@example.com')
+    other = _seed_checklist_actor(client, 'fixed-window-other@example.com')
     other_id = _user_id(client, other)
     with _TestingSessionLocal() as db:
         db.add_all([CaseTask(case_id=case_id, title=f'Window task {i}', position=i, assignee_id=uid,
@@ -956,7 +976,7 @@ def test_assigned_workload_investigation_breakdown_uses_global_filters_and_cap(c
     assert filtered['by_investigation'] == [{'case_id': case_id, 'total': 5, 'open': 0, 'completed': 5,
                                             'without_due_date': 0}]
     assert filtered['investigation_groups_total'] == 1
-    outsider = _register_and_login(client, 'grouped-outsider@example.com')
+    outsider = _seed_checklist_actor(client, 'grouped-outsider@example.com')
     empty = client.get(path, headers=outsider).json()
     assert empty['by_investigation'] == [] and empty['investigation_groups_total'] == 0
 
@@ -966,7 +986,7 @@ def test_assigned_workload_exact_investigation_scope_composes_before_counts_and_
 
     headers, case_id = _setup(client)
     uid = _user_id(client, headers)
-    other = _register_and_login(client, 'drilldown-other@example.com')
+    other = _seed_checklist_actor(client, 'drilldown-other@example.com')
     with _TestingSessionLocal() as db:
         second = Case(user_id=uid, title='Another assigned investigation', status='open', severity='high')
         db.add(second)
@@ -1032,6 +1052,6 @@ def test_assigned_workload_sorts_full_matching_set_before_paging_with_stable_tie
                                            'due_from': '2026-01-01', 'due_through': '2026-01-01'},
                               headers=headers).json()
         assert filtered['total'] == 2 and filtered['data'][0]['task_id'] == first_ids[0]
-    outsider = _register_and_login(client, 'sort-outsider@example.com')
+    outsider = _seed_checklist_actor(client, 'sort-outsider@example.com')
     assert client.get(path, params={'sort': 'task_due'}, headers=outsider).json()['total'] == 0
     assert client.get(path, params={'sort': 'untrusted'}, headers=headers).status_code == 422
