@@ -1,4 +1,4 @@
-import { huntProfileValueJson, huntComparedFieldCsv, huntComparedFieldJson } from './huntEvidence';
+import { huntProfileValueCsv, huntProfileValueJson, huntComparedFieldCsv, huntComparedFieldJson } from './huntEvidence';
 import { describe, expect, it } from 'vitest';
 import { huntRowFieldsJson, huntRowFieldsCsv, huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson, huntFieldProfileCsv, retainedHuntValueRows, retainedHuntMissingRows, huntProfileMatchesJson, huntProfileMatchesCsv, huntFieldCoverageJson, huntFieldCoverageCsv } from './huntEvidence';
 
@@ -176,4 +176,12 @@ it('exports one canonical typed profile value and frequency without other values
 });
 it('preserves null false zero arrays strings and formula-like text in single profile JSON',()=>{
  for(const value of [null,false,0,[],['x'], '=SUM(A1)']){const item=JSON.parse(huntProfileValueJson({rows:[{value},{}]},0,'value',1,''));expect(item.value).toEqual(value);expect(item.matching_retained_count).toBe(1);expect(item.recorded_type).toBe(value===null?'null':Array.isArray(value)?'array':typeof value);}
+});
+
+it('exports one typed profile CSV record with canonical frequency and no unrelated row fields',()=>{
+ const result={row_count:100,query:{sql:'PRIVATE_QUERY'},rows:[{'=field':{x:0,y:false},secret:'PRIVATE_FIELD'},{'=field':{y:false,x:0}},{'=field':'PRIVATE_OTHER_VALUE'}]};const csv=huntProfileValueCsv(result,2,'=field',1);expect(csv.startsWith('\ufeff')).toBe(true);expect(csv.split('\r\n')).toHaveLength(3);expect(csv).toContain('"3","\'=field","object","{""x"":0,""y"":false}","2","3","1","100"');expect(csv).not.toMatch(/PRIVATE_/);expect(csv).toContain('Full query context is available in JSON only');for(const pos of [0,2,4,1.5])expect(()=>huntProfileValueCsv(result,0,'=field',pos)).toThrow();
+});
+it('keeps typed null false zero and formula-like string JSON intact in profile CSV',()=>{
+ for(const [value,encoded] of [[null,'"null","null"'],[false,'"boolean","false"'],[0,'"number","0"'],['=SUM(A1)','"string","""=SUM(A1)"""']]){const csv=huntProfileValueCsv({rows:[{value},{}]},0,'value',1);expect(csv).toContain(encoded);expect(csv).toContain('"1","2","1"');}
+ const csv=huntProfileValueCsv({rows:[{' \t+field':'a,"b"\nc'}]},0,' \t+field',1);expect(csv).toContain('"\' \t+field"');expect(csv.split('\r\n')).toHaveLength(3);
 });
