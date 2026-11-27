@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { huntRepeatedRowsCsv, huntRepeatedRowsJson, retainedHuntDuplicateGroups, retainedHuntUniquePositions, huntUniqueRowsJson } from './retainedHuntDuplicates';
+import { huntRepeatedRowsCsv, huntRepeatedRowsJson, retainedHuntDuplicateGroups, retainedHuntUniquePositions, huntUniqueRowsJson, huntUniqueRowsCsv } from './retainedHuntDuplicates';
 
 describe('Repeated full retained row values', () => {
   it('groups entire typed rows in original first-position order without mutating evidence', () => {
@@ -36,4 +36,11 @@ it('finds once-occurring complete typed values without treating shared IDs as eq
 });
 it('exports all once-occurring raw rows with positions and recorded context but excludes repeated groups',()=>{
  const rows=[{id:1},{id:2,raw:'=SUM(A1)',nested:{flag:false},optional:null},{id:1}];const value=JSON.parse(huntUniqueRowsJson({rows,row_count:120,query:{sql:'SELECT id FROM security_events',params:{limit:100}},time_window:{since:'2026-11-20T00:00:00Z'}},1,'2026-11-27T00:00:00Z'));expect(value.format).toBe('onealert.retained-hunt-unique-rows');expect(value.query_position).toBe(2);expect(value.retained_total).toBe(3);expect(value.unique_full_row_count).toBe(1);expect(value.rows).toEqual([{retained_position:2,row:rows[1]}]);expect(value.query_context.reported_row_count).toBe(120);expect(value.query_context.query.params.limit).toBe(100);expect(value.query_context.time_window.since).toBe('2026-11-20T00:00:00Z');expect(value.query_context.rows).toBeUndefined();expect(JSON.parse(huntUniqueRowsJson({},0,'')).rows).toEqual([]);expect(()=>huntUniqueRowsJson({},-1,'')).toThrow('Invalid retained query position');
+});
+
+it('exports all once-occurring typed JSON values with exact positions and escaped CSV without repeated rows',()=>{
+ const row={id:2,raw:'=SUM(A1),"quoted"\nnext',flag:false,zero:0,optional:null,nested:[2,1]};const csv=huntUniqueRowsCsv({rows:[{id:1},row,{id:1}],row_count:120},1);expect(csv.startsWith('\ufeff"query_position"')).toBe(true);expect(csv).toContain('"2","3","120","1","2"');expect(csv).toContain('""raw"":""=SUM(A1),\\""quoted\\""\\nnext""');expect(csv).toContain('""flag"":false');expect(csv).toContain('""zero"":0');expect(csv).toContain('""optional"":null');expect(csv).toContain('""nested"":[2,1]');expect(csv).not.toContain('""id"":1');expect(csv.split('\r\n')).toHaveLength(3);
+});
+it('exports a header only without once-occurring rows, preserves missing reported count and validates query position',()=>{
+ expect(huntUniqueRowsCsv({rows:[{},{}]},0).split('\r\n')).toHaveLength(2);expect(huntUniqueRowsCsv({},0).split('\r\n')).toHaveLength(2);expect(huntUniqueRowsCsv({rows:[{id:2}]},0)).toContain('"1","1","","1","1"');expect(()=>huntUniqueRowsCsv({},-1)).toThrow('Invalid retained query position');
 });
