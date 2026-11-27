@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { huntRepeatedRowsCsv, huntRepeatedRowsJson, retainedHuntDuplicateGroups } from './retainedHuntDuplicates';
+import { huntRepeatedRowsCsv, huntRepeatedRowsJson, retainedHuntDuplicateGroups, retainedHuntUniquePositions, huntUniqueRowsJson } from './retainedHuntDuplicates';
 
 describe('Repeated full retained row values', () => {
   it('groups entire typed rows in original first-position order without mutating evidence', () => {
@@ -29,4 +29,11 @@ it('exports every repeated group as typed row JSON with exact positions and CSV 
 });
 it('exports a header only for unique evidence and validates query position',()=>{
  expect(huntRepeatedRowsCsv({rows:[{id:1}]},0).split('\r\n')).toHaveLength(2);expect(()=>huntRepeatedRowsCsv({},-1)).toThrow('Invalid retained query position');
+});
+
+it('finds once-occurring complete typed values without treating shared IDs as equal or mutating evidence',()=>{
+ const rows=[{id:1,nested:{b:0,a:false}},{id:1,value:'other'},{nested:{a:false,b:0},id:1},{a:null},{},{a:[1,2]},{a:[2,1]},{a:false},{a:0},{a:''}];const before=JSON.stringify(rows);expect(retainedHuntUniquePositions(rows)).toEqual([2,4,5,6,7,8,9,10]);expect(JSON.stringify(rows)).toBe(before);expect(retainedHuntUniquePositions([])).toEqual([]);expect(retainedHuntUniquePositions([{},{}])).toEqual([]);
+});
+it('exports all once-occurring raw rows with positions and recorded context but excludes repeated groups',()=>{
+ const rows=[{id:1},{id:2,raw:'=SUM(A1)',nested:{flag:false},optional:null},{id:1}];const value=JSON.parse(huntUniqueRowsJson({rows,row_count:120,query:{sql:'SELECT id FROM security_events',params:{limit:100}},time_window:{since:'2026-11-20T00:00:00Z'}},1,'2026-11-27T00:00:00Z'));expect(value.format).toBe('onealert.retained-hunt-unique-rows');expect(value.query_position).toBe(2);expect(value.retained_total).toBe(3);expect(value.unique_full_row_count).toBe(1);expect(value.rows).toEqual([{retained_position:2,row:rows[1]}]);expect(value.query_context.reported_row_count).toBe(120);expect(value.query_context.query.params.limit).toBe(100);expect(value.query_context.time_window.since).toBe('2026-11-20T00:00:00Z');expect(value.query_context.rows).toBeUndefined();expect(JSON.parse(huntUniqueRowsJson({},0,'')).rows).toEqual([]);expect(()=>huntUniqueRowsJson({},-1,'')).toThrow('Invalid retained query position');
 });
