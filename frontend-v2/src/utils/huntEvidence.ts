@@ -50,6 +50,21 @@ function csvCell(value: unknown): string {
   return `"${(formula ? `'${text}` : text).replace(/"/g, '""')}"`;
 }
 
+export function huntRowFieldsJson(result: HuntQueryResult, index: number, rowNumber: number, exportedAt: string): string {
+  const evidence = JSON.parse(huntRowJson(result, index, rowNumber, exportedAt));
+  const row = result.rows![rowNumber - 1];
+  return JSON.stringify({ format: 'onealert.retained-hunt-row-fields', version: 1, exported_at: exportedAt, query_position: index + 1,
+    retained_row_position: rowNumber, retained_total: result.rows!.length, recorded_field_count: Object.keys(row).length,
+    scope: scope + ' Every recorded field of one original retained row, regardless of local field search, type focus, name order or page. Absent fields are not inferred. Null, array order and JSON types are preserved. No upload, message or access grant is sent. Raw field values and query context may contain sensitive telemetry; review before sharing.',
+    query_context: { ...evidence.result, rows: undefined }, fields: Object.entries(row).map(([field, value]) => ({ field, recorded_type: value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value, value })) }, null, 2) + '\n';
+}
+export function huntRowFieldsCsv(result: HuntQueryResult, index: number, rowNumber: number): string {
+  const evidence = JSON.parse(huntRowFieldsJson(result, index, rowNumber, ''));
+  const table: unknown[][] = [['query_position', 'retained_row_position', 'retained_total', 'reported_row_count', 'recorded_field_count', 'field', 'recorded_type', 'value_json', 'evidence_scope']];
+  for (const field of evidence.fields) table.push([index + 1, rowNumber, evidence.retained_total, result.row_count, evidence.recorded_field_count, field.field, field.recorded_type, JSON.stringify(field.value), evidence.scope]);
+  return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
+
 export function huntQueryCsv(result: HuntQueryResult, index: number, search?: { text: string; field: string | null; retained_total: number }): string {
   const rows = result.rows ?? [];
   const columns = [...new Set(rows.flatMap(row => Object.keys(row)))];
