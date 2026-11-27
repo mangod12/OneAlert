@@ -253,3 +253,16 @@ export function huntProfileValueCsv(result: HuntQueryResult, index: number, fiel
       'One exact typed value and frequency across retained rows only. Object key order is ignored; array order and JSON types stay distinct. Missing is not null. Original position is not event identity or chronology. Other values and row fields are excluded. Full query context is available in JSON only. Text formulas are escaped. Review sensitive values before sharing; downloading sends nothing to another person.']];
   return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
+
+
+export function huntProfileReviewJson(result: HuntQueryResult, index: number, field: string, review: { search: string; type: string; frequency: string; order: string }, exportedAt: string): string {
+  if (!['all', 'null', 'string', 'number', 'boolean', 'array', 'object'].includes(review.type) || !['all', 'once', 'repeated'].includes(review.frequency) || !['frequent', 'rare', 'retained'].includes(review.order)) throw Error('Invalid retained profile review focus');
+  const full = JSON.parse(huntFieldProfileJson(result, index, field, exportedAt));
+  const needle = review.search.trim().toLowerCase();
+  const values = retainedHuntFieldProfile(result.rows!, field).values.filter(item => (review.type === 'all' || (item.value === null ? 'null' : Array.isArray(item.value) ? 'array' : typeof item.value) === review.type) && (review.frequency === 'all' || (review.frequency === 'once' ? item.count === 1 : item.count > 1)) && (!needle || JSON.stringify(item.value)?.toLowerCase().includes(needle)));
+  values.sort((a, b) => review.order === 'rare' ? a.count - b.count || a.firstRow - b.firstRow : review.order === 'retained' ? a.firstRow - b.firstRow : b.count - a.count || a.firstRow - b.firstRow);
+  return JSON.stringify({ format: 'onealert.retained-hunt-profile-review', version: 1, exported_at: exportedAt, query_position: index + 1, field,
+    scope: 'Only distinct recorded values matching the explicit local profile review focus, across every matching value page. Frequencies use all retained rows for this field, not filtered rows, all reported events or current data. Excludes nonmatching values and source rows. Missing differs from recorded null. JSON types and array order stay distinct; object key order is ignored. This is not a threat verdict. Recorded query context may contain sensitive telemetry. Review before sharing; raw JSON has no spreadsheet formula protection. Downloading sends nothing to another person.',
+    review: { ...review }, full_retained_summary: { total: full.profile.total, present: full.profile.present, missing: full.profile.missing, recorded_null: full.profile.nulls, distinct: full.profile.distinct },
+    matching_distinct_count: values.length, matching_retained_count: values.reduce((sum, item) => sum + item.count, 0), query_context: full.query_context, values }, null, 2) + '\n';
+}
