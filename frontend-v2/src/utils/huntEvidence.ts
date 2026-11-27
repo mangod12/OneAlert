@@ -213,3 +213,13 @@ export function huntFieldCoverageCsv(result: HuntQueryResult, index: number): st
   for (const field of evidence.fields) table.push([index + 1, result.rows!.length, result.row_count, evidence.scope, field.field, field.present, field.missing, field.recorded_null, field.distinct]);
   return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
+
+export function huntComparedFieldJson(result: HuntQueryResult, index: number, baselineRow: number, inspectedRow: number, field: string, exportedAt: string): string {
+  const pair = JSON.parse(huntRowComparisonJson(result, index, baselineRow, inspectedRow, exportedAt));
+  const selected = compareRetainedHuntRows(result.rows![baselineRow - 1], result.rows![inspectedRow - 1]).find(item => item.field === field);
+  if (!selected) throw Error('Choose a field recorded in at least one compared row');
+  return JSON.stringify({ format: 'onealert.retained-hunt-compared-field', version: 1, exported_at: exportedAt, query_position: index + 1,
+    retained_total: pair.retained_total, baseline_retained_position: baselineRow, inspected_retained_position: inspectedRow,
+    scope: 'One exact named field from two original retained row positions in this query, including recorded presence, JSON types and values. Missing is not null. This is not event identity, chronology, a threat verdict or live data. Other row fields are excluded, but recorded query context may contain sensitive telemetry. Review before sharing. Raw JSON has no spreadsheet formula protection. Downloading sends nothing to another person.',
+    query_context: pair.query_context, field: selected }, null, 2) + '\n';
+}
