@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 from test_case_tasks import (  # noqa: F401
-    _register_and_login,
+    _seed_checklist_actor,
     _setup,
     _TestingSessionLocal,
     _user_id,
@@ -122,8 +122,8 @@ def test_closeout_scope_does_not_smuggle_other_edits_or_nonterminal_statuses(cli
 
 def test_assignee_can_change_status_but_not_resolution_and_watcher_cannot_close(client):
     _headers, cid, _uid, _preview = setup_review(client)
-    editor = _register_and_login(client, "editor@example.com")
-    watcher = _register_and_login(client, "watcher@example.com")
+    editor = _seed_checklist_actor(client, "editor@example.com")
+    watcher = _seed_checklist_actor(client, "watcher@example.com")
     with _TestingSessionLocal() as db:
         db.get(Case, cid).assigned_to_id = _user_id(client, editor)
         db.add(CaseWatcher(case_id=cid, user_id=_user_id(client, watcher)))
@@ -141,7 +141,7 @@ def test_assignee_can_change_status_but_not_resolution_and_watcher_cannot_close(
 
 def test_unavailable_foreign_alert_link_is_counted_without_disclosing_its_contents(client):
     headers, cid, _uid, _preview = setup_review(client)
-    foreign = _register_and_login(client, "foreign@example.com")
+    foreign = _seed_checklist_actor(client, "foreign@example.com")
     with _TestingSessionLocal() as db:
         alert = Alert(user_id=_user_id(client, foreign), asset_id=db.query(Asset).first().id,
                       title="Private foreign finding", status="pending", severity="high")
