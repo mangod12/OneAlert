@@ -1,4 +1,4 @@
-import { huntProfileReviewJson, huntProfileValueCsv, huntProfileValueJson, huntComparedFieldCsv, huntComparedFieldJson } from './huntEvidence';
+import { huntProfileReviewCsv, huntProfileReviewJson, huntProfileValueCsv, huntProfileValueJson, huntComparedFieldCsv, huntComparedFieldJson } from './huntEvidence';
 import { describe, expect, it } from 'vitest';
 import { huntRowFieldsJson, huntRowFieldsCsv, huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson, huntFieldProfileCsv, retainedHuntValueRows, retainedHuntMissingRows, huntProfileMatchesJson, huntProfileMatchesCsv, huntFieldCoverageJson, huntFieldCoverageCsv } from './huntEvidence';
 
@@ -191,4 +191,11 @@ it('exports every focused profile value page with exact focus and full retained 
 });
 it('keeps canonical frequencies types null and stable ordering in profile review exports',()=>{
  const rows=[{v:{n:0,b:false}},{v:{b:false,n:0}},{v:null},{v:false},{v:0},{v:'0'},{v:[0]},{v:[0]},{}];const review={search:'  N  ',type:'object',frequency:'repeated',order:'rare'};const item=JSON.parse(huntProfileReviewJson({rows},0,'v',review,''));expect(item.review).toEqual(review);expect(item.values).toEqual([{value:{n:0,b:false},count:2,firstRow:1}]);const zero=JSON.parse(huntProfileReviewJson({rows},0,'v',{search:'0',type:'number',frequency:'once',order:'frequent'},''));expect(zero.values).toEqual([{value:0,count:1,firstRow:5}]);const none=JSON.parse(huntProfileReviewJson({rows},0,'v',{search:'nothing',type:'all',frequency:'all',order:'frequent'},''));expect(none.values).toEqual([]);expect(none.matching_retained_count).toBe(0);for(const change of [{type:'missing'},{frequency:'0'},{order:'name'}])expect(()=>huntProfileReviewJson({rows},0,'v',{...review,...change},'')).toThrow();expect(()=>huntProfileReviewJson({rows},-1,'v',review,'')).toThrow();expect(()=>huntProfileReviewJson({rows},0,'absent',review,'')).toThrow();
+});
+
+it('exports focused profile CSV across pages with full summary and explicit empty match record',()=>{
+ const rows=[...Array.from({length:13},(_,i)=>({v:i,private:'PRIVATE_FIELD'})),{v:0},{v:'PRIVATE_VALUE'},{}];const review={search:'',type:'number',frequency:'once',order:'retained'};const csv=huntProfileReviewCsv({rows,row_count:500},1,'v',review);expect(csv.startsWith('\ufeff')).toBe(true);expect(csv.split('\r\n')).toHaveLength(14);expect(csv).toContain('"2","v","","number","once","retained","16","15","1","0","14","12","12","500","true","number","1","1","2"');expect(csv).not.toMatch(/PRIVATE_/);const empty=huntProfileReviewCsv({rows},0,'v',{...review,search:'=none'});expect(empty.split('\r\n')).toHaveLength(3);expect(empty).toContain('"\'=none"');expect(empty).toContain('"0","0","","false","","","",""');
+});
+it('keeps recorded null distinct from empty review and escapes multiline formula-like names',()=>{
+ const csv=huntProfileReviewCsv({rows:[{'=v':null},{'=v':null},{}]},0,'=v',{search:'',type:'null',frequency:'repeated',order:'frequent'});expect(csv).toContain('"\'=v"');expect(csv).toContain('"true","null","null","2","1"');const object=huntProfileReviewCsv({rows:[{v:{a:0,b:false}},{v:{b:false,a:0}}]},0,'v',{search:'',type:'object',frequency:'repeated',order:'rare'});expect(object).toContain('"{""a"":0,""b"":false}","2","1"');expect(()=>huntProfileReviewCsv({rows:[{v:0}]},0,'v',{search:'',type:'bad',frequency:'all',order:'frequent'})).toThrow();
 });

@@ -266,3 +266,16 @@ export function huntProfileReviewJson(result: HuntQueryResult, index: number, fi
     review: { ...review }, full_retained_summary: { total: full.profile.total, present: full.profile.present, missing: full.profile.missing, recorded_null: full.profile.nulls, distinct: full.profile.distinct },
     matching_distinct_count: values.length, matching_retained_count: values.reduce((sum, item) => sum + item.count, 0), query_context: full.query_context, values }, null, 2) + '\n';
 }
+
+
+export function huntProfileReviewCsv(result: HuntQueryResult, index: number, field: string, review: { search: string; type: string; frequency: string; order: string }): string {
+  const evidence = JSON.parse(huntProfileReviewJson(result, index, field, review, ''));
+  const summary = evidence.full_retained_summary;
+  const table: unknown[][] = [['query_position', 'profile_field', 'review_search', 'review_type', 'review_frequency', 'review_order', 'retained_total', 'present_count', 'missing_count', 'recorded_null_count', 'full_distinct_count', 'matching_distinct_count', 'matching_retained_count', 'reported_row_count', 'value_present', 'recorded_type', 'value_json', 'retained_frequency', 'first_retained_position', 'evidence_scope']];
+  const scope = 'Only distinct values matching the explicit profile review across all value pages. Frequencies use all retained rows for this field, not filtered rows, reported events or current data. No source rows or nonmatching values. Missing is not null; JSON types and array order stay distinct, object key order is ignored. Original position is not event identity or chronology. Text formulas are escaped. Full query context is in JSON only. Review sensitive values before sharing; downloading sends nothing to another person.';
+  for (const item of evidence.values.length ? evidence.values : [null]) {
+    const type = item ? item.value === null ? 'null' : Array.isArray(item.value) ? 'array' : typeof item.value : '';
+    table.push([index + 1, field, review.search, review.type, review.frequency, review.order, summary.total, summary.present, summary.missing, summary.recorded_null, summary.distinct, evidence.matching_distinct_count, evidence.matching_retained_count, result.row_count, item !== null, type, item ? JSON.stringify(item.value) : '', item ? item.count : '', item ? item.firstRow : '', scope]);
+  }
+  return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
