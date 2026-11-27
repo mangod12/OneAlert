@@ -2,8 +2,9 @@
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from test_case_create import _TestingSessionLocal, register_and_login
+from test_case_create import _TestingSessionLocal
 from test_case_create import client as client
+from test_case_create import seed_investigation_actor as register_and_login
 from test_case_evidence_unlink import prepare
 
 from backend.models.alert import Alert

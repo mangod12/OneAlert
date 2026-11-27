@@ -4,8 +4,9 @@ from datetime import UTC, date, datetime
 
 import pytest
 from test_case_create import TestCaseAlertLinking as AlertHelper
-from test_case_create import _TestingSessionLocal, register_and_login
+from test_case_create import _TestingSessionLocal
 from test_case_create import client as client
+from test_case_create import seed_investigation_actor as register_and_login
 
 from backend.models.alert import Alert
 from backend.models.audit_log import AuditLog

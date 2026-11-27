@@ -1,7 +1,8 @@
 """Source comparison is an exact owner-scoped read, never an evidence update or certification."""
 import pytest
-from test_case_create import _TestingSessionLocal, register_and_login
+from test_case_create import _TestingSessionLocal
 from test_case_create import client as client
+from test_case_create import seed_investigation_actor as register_and_login
 from test_case_evidence_notes import setup_note
 
 from backend.models.alert import Alert
