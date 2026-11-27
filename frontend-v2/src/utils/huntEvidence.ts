@@ -231,3 +231,16 @@ export function huntComparedFieldCsv(result: HuntQueryResult, index: number, bas
     [index + 1, baselineRow, inspectedRow, evidence.retained_total, result.row_count, 'One exact compared field from two retained positions only. Presence distinguishes missing from null. JSON types and values are preserved; text formulas are escaped. No live data, chronology or event identity is inferred. Recorded query context is available in JSON only. Review sensitive values before sharing; downloading sends nothing to another person.', field, item.status, item.baselinePresent, item.baselinePresent ? JSON.stringify(item.baseline) : '', item.inspectedPresent, item.inspectedPresent ? JSON.stringify(item.inspected) : '']];
   return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
+
+
+export function huntProfileValueJson(result: HuntQueryResult, index: number, field: string, firstRow: number, exportedAt: string): string {
+  const positions = retainedHuntValueRows(result.rows ?? [], field, firstRow);
+  if (!positions.length || positions[0] !== firstRow) throw Error('Choose the first original retained position of a recorded profile value');
+  const query = JSON.parse(huntQueryJson(result, index, exportedAt));
+  const value = result.rows![firstRow - 1][field];
+  return JSON.stringify({ format: 'onealert.retained-hunt-profile-value', version: 1, exported_at: exportedAt, query_position: index + 1, field,
+    retained_total: result.rows!.length, matching_retained_count: positions.length, first_retained_position: firstRow,
+    recorded_type: value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value, value,
+    scope: 'One exact typed recorded value and its frequency across retained rows for this field. Original first position, not event identity or chronology. Object key order is ignored for matching; array order and JSON types stay distinct. Missing is not recorded null. Other values and row fields are excluded, but unchanged recorded query context may contain sensitive telemetry. Review before sharing. Raw JSON has no spreadsheet formula protection. No live lookup, upload, message or access grant sent.',
+    query_context: { ...query.result, rows: undefined } }, null, 2) + '\n';
+}

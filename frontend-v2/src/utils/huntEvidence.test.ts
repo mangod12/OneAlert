@@ -1,4 +1,4 @@
-import { huntComparedFieldCsv, huntComparedFieldJson } from './huntEvidence';
+import { huntProfileValueJson, huntComparedFieldCsv, huntComparedFieldJson } from './huntEvidence';
 import { describe, expect, it } from 'vitest';
 import { huntRowFieldsJson, huntRowFieldsCsv, huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson, huntFieldProfileCsv, retainedHuntValueRows, retainedHuntMissingRows, huntProfileMatchesJson, huntProfileMatchesCsv, huntFieldCoverageJson, huntFieldCoverageCsv } from './huntEvidence';
 
@@ -169,4 +169,11 @@ it('exports complete typed row fields as protected CSV including formula-like fi
 
 it('exports one compared field CSV with swapped positions, presence, exact JSON and formula-safe field name',()=>{
  const result={row_count:120,rows:[{'=formula':{flag:false,zero:0},private:'not-this-field'},{optional:null}]};const csv=huntComparedFieldCsv(result,0,2,1,'=formula');expect(csv.startsWith('\ufeff"query_position"')).toBe(true);expect(csv.split('\r\n')).toHaveLength(3);expect(csv).toContain('"1","2","1","2","120"');expect(csv).toContain('"\'=formula","Only in inspected row","false","","true","{');expect(csv).toContain('""flag"":false');expect(csv).not.toContain('not-this-field');expect(()=>huntComparedFieldCsv(result,0,1,2,'missing')).toThrow();expect(()=>huntComparedFieldCsv(result,0,0,2,'=formula')).toThrow();const nullCsv=huntComparedFieldCsv(result,0,1,2,'optional');expect(nullCsv).toContain('"optional","Only in inspected row","false","","true","null"');
+});
+
+it('exports one canonical typed profile value and frequency without other values or row fields',()=>{
+ const result={query:{sql:'SELECT value'},row_count:100,rows:[{value:{n:0,b:false},secret:'PRIVATE_OTHER_FIELD'},{value:{b:false,n:0}},{value:0},{value:'PRIVATE_OTHER_VALUE'},{}]};const item=JSON.parse(huntProfileValueJson(result,1,'value',1,'stamp'));expect(item).toMatchObject({format:'onealert.retained-hunt-profile-value',version:1,exported_at:'stamp',query_position:2,field:'value',retained_total:5,matching_retained_count:2,first_retained_position:1,recorded_type:'object',value:{n:0,b:false},query_context:{reported_row_count:100}});expect(item.query_context.rows).toBeUndefined();expect(JSON.stringify(item)).not.toMatch(/PRIVATE_OTHER/);for(const position of [0,2,5,6,1.5,NaN])expect(()=>huntProfileValueJson(result,0,'value',position,'')).toThrow();expect(()=>huntProfileValueJson(result,0,'missing',1,'')).toThrow();expect(()=>huntProfileValueJson({rows:[]},0,'value',1,'')).toThrow();
+});
+it('preserves null false zero arrays strings and formula-like text in single profile JSON',()=>{
+ for(const value of [null,false,0,[],['x'], '=SUM(A1)']){const item=JSON.parse(huntProfileValueJson({rows:[{value},{}]},0,'value',1,''));expect(item.value).toEqual(value);expect(item.matching_retained_count).toBe(1);expect(item.recorded_type).toBe(value===null?'null':Array.isArray(value)?'array':typeof value);}
 });
