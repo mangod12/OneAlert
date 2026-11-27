@@ -8,8 +8,9 @@ from test_case_create import (
 from test_case_create import (
     TestCaseEventLinking as EventHelper,
 )
-from test_case_create import _TestingSessionLocal, register_and_login
+from test_case_create import _TestingSessionLocal
 from test_case_create import client as client
+from test_case_create import seed_investigation_actor as register_and_login
 
 from backend.models.case import Case, CaseAlert, CaseEvent, CaseTimeline
 

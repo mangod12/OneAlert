@@ -5,7 +5,7 @@ import pytest
 from test_case_create import TestCaseAlertLinking as AlertHelper
 from test_case_create import _TestingSessionLocal
 from test_case_create import client as client
-from test_case_create import register_and_login as _register_and_login
+from test_case_create import seed_investigation_actor as _register_and_login
 
 from backend.models.alert import Alert
 from backend.models.audit_log import AuditLog
