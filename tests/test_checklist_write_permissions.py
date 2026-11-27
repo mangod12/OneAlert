@@ -2,7 +2,7 @@
 # ruff: noqa: F811
 import pytest
 from test_case_tasks import (  # noqa: F401
-    _register_and_login,
+    _seed_checklist_actor,
     _setup,
     _share_org,
     _TestingSessionLocal,
@@ -16,9 +16,9 @@ from backend.models.response_plan import ResponsePlan
 
 def team(client):
     owner, cid = _setup(client)
-    editor = _register_and_login(client, "editor@example.com")
-    worker = _register_and_login(client, "worker@example.com")
-    watcher = _register_and_login(client, "watcher@example.com")
+    editor = _seed_checklist_actor(client, "editor@example.com")
+    worker = _seed_checklist_actor(client, "worker@example.com")
+    watcher = _seed_checklist_actor(client, "watcher@example.com")
     ids = [_user_id(client, headers) for headers in [owner, editor, worker, watcher]]
     _share_org(*ids)
     with _TestingSessionLocal() as db:
