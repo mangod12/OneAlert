@@ -2,7 +2,7 @@ import type { HuntQueryResult } from '../components/HuntQueryEvidence';
 import { huntQueryJson } from './huntEvidence';
 
 // Compare full retained row values, not event identities or live data.
-export function retainedHuntDuplicateGroups(rows: Record<string, unknown>[]): number[][] {
+function retainedHuntValueGroups(rows: Record<string, unknown>[]): number[][] {
   const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical) : value !== null && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical((value as Record<string, unknown>)[key])])) : value;
   const groups = new Map<string, number[]>();
   rows.forEach((row, index) => {
@@ -11,7 +11,22 @@ export function retainedHuntDuplicateGroups(rows: Record<string, unknown>[]): nu
     if (positions) positions.push(index + 1);
     else groups.set(key, [index + 1]);
   });
-  return [...groups.values()].filter(positions => positions.length > 1);
+  return [...groups.values()];
+}
+
+export function retainedHuntDuplicateGroups(rows: Record<string, unknown>[]): number[][] {
+  return retainedHuntValueGroups(rows).filter(positions => positions.length > 1);
+}
+export function retainedHuntUniquePositions(rows: Record<string, unknown>[]): number[] {
+  return retainedHuntValueGroups(rows).filter(positions => positions.length === 1).map(positions => positions[0]);
+}
+export function huntUniqueRowsJson(result: HuntQueryResult, index: number, exportedAt: string): string {
+  const query = JSON.parse(huntQueryJson(result, index, exportedAt));
+  const rows = result.rows ?? [];
+  const positions = retainedHuntUniquePositions(rows);
+  return JSON.stringify({ format: 'onealert.retained-hunt-unique-rows', version: 1, exported_at: exportedAt, query_position: index + 1, retained_total: rows.length, unique_full_row_count: positions.length,
+    scope: 'Full-row JSON values occurring exactly once among all retained rows, regardless of local search, hidden columns, order or page. Object key order is ignored; JSON types, missing fields and array order are preserved. This does not mean a unique event, a rare event, a threat or uniqueness among unretained reported rows. No evidence is removed, no query is rerun and downloading sends nothing to another person. Raw values may contain sensitive telemetry; review before sharing.',
+    query_context: { ...query.result, rows: undefined }, rows: positions.map(position => ({ retained_position: position, row: rows[position - 1] })) }, null, 2) + '\n';
 }
 
 export function huntRepeatedRowsJson(result: HuntQueryResult, index: number, exportedAt: string): string {
