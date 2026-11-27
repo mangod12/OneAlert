@@ -72,6 +72,28 @@ def register_and_login(client: TestClient, email: str, password: str = "securepa
     return {"Authorization": f"Bearer {token}"}
 
 
+def seed_investigation_actor(client: TestClient, email: str):
+    """Fresh workflow actor with real JWT and database authentication.
+
+    Workflow tests do not test password registration or hashing. Keep the real
+    register_and_login helper above for authentication and manual-case coverage.
+    A null password cannot authenticate through the password login endpoint.
+    """
+    from backend.models.user import User
+    from backend.services.auth_service import create_access_token
+
+    with _TestingSessionLocal() as db:
+        db.add(User(email=email, hashed_password=None,
+                    full_name=f"User {email.split('@')[0]}", company="TestCorp",
+                    is_active=True, is_verified=False))
+        db.commit()
+    headers = {"Authorization": f"Bearer {create_access_token({'sub': email})}"}
+    response = client.get("/api/v1/auth/me", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["email"] == email
+    return headers
+
+
 class TestManualCaseCreation:
     """Tests for POST /api/v1/cases/"""
 
