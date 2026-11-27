@@ -244,3 +244,12 @@ export function huntProfileValueJson(result: HuntQueryResult, index: number, fie
     scope: 'One exact typed recorded value and its frequency across retained rows for this field. Original first position, not event identity or chronology. Object key order is ignored for matching; array order and JSON types stay distinct. Missing is not recorded null. Other values and row fields are excluded, but unchanged recorded query context may contain sensitive telemetry. Review before sharing. Raw JSON has no spreadsheet formula protection. No live lookup, upload, message or access grant sent.',
     query_context: { ...query.result, rows: undefined } }, null, 2) + '\n';
 }
+
+
+export function huntProfileValueCsv(result: HuntQueryResult, index: number, field: string, firstRow: number): string {
+  const evidence = JSON.parse(huntProfileValueJson(result, index, field, firstRow, ''));
+  const table: unknown[][] = [['query_position', 'profile_field', 'recorded_type', 'value_json', 'matching_retained_count', 'retained_total', 'first_retained_position', 'reported_row_count', 'evidence_scope'],
+    [index + 1, field, evidence.recorded_type, JSON.stringify(evidence.value), evidence.matching_retained_count, evidence.retained_total, evidence.first_retained_position, result.row_count,
+      'One exact typed value and frequency across retained rows only. Object key order is ignored; array order and JSON types stay distinct. Missing is not null. Original position is not event identity or chronology. Other values and row fields are excluded. Full query context is available in JSON only. Text formulas are escaped. Review sensitive values before sharing; downloading sends nothing to another person.']];
+  return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
