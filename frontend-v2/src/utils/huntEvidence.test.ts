@@ -1,4 +1,4 @@
-import { huntComparedFieldJson } from './huntEvidence';
+import { huntComparedFieldCsv, huntComparedFieldJson } from './huntEvidence';
 import { describe, expect, it } from 'vitest';
 import { huntRowFieldsJson, huntRowFieldsCsv, huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson, huntFieldProfileCsv, retainedHuntValueRows, retainedHuntMissingRows, huntProfileMatchesJson, huntProfileMatchesCsv, huntFieldCoverageJson, huntFieldCoverageCsv } from './huntEvidence';
 
@@ -166,3 +166,7 @@ it('exports complete typed row fields as protected CSV including formula-like fi
  it('rejects unknown fields, same positions and invalid positions without inventing missing field evidence',()=>{
   const result={rows:[{'=field':false},{}]};expect(()=>huntComparedFieldJson(result,0,1,2,'missing','fixed')).toThrow();expect(()=>huntComparedFieldJson(result,0,1,1,'=field','fixed')).toThrow();expect(()=>huntComparedFieldJson(result,0,0,2,'=field','fixed')).toThrow();expect(JSON.parse(huntComparedFieldJson(result,0,1,2,'=field','fixed')).field.field).toBe('=field');
  });
+
+it('exports one compared field CSV with swapped positions, presence, exact JSON and formula-safe field name',()=>{
+ const result={row_count:120,rows:[{'=formula':{flag:false,zero:0},private:'not-this-field'},{optional:null}]};const csv=huntComparedFieldCsv(result,0,2,1,'=formula');expect(csv.startsWith('\ufeff"query_position"')).toBe(true);expect(csv.split('\r\n')).toHaveLength(3);expect(csv).toContain('"1","2","1","2","120"');expect(csv).toContain('"\'=formula","Only in inspected row","false","","true","{');expect(csv).toContain('""flag"":false');expect(csv).not.toContain('not-this-field');expect(()=>huntComparedFieldCsv(result,0,1,2,'missing')).toThrow();expect(()=>huntComparedFieldCsv(result,0,0,2,'=formula')).toThrow();const nullCsv=huntComparedFieldCsv(result,0,1,2,'optional');expect(nullCsv).toContain('"optional","Only in inspected row","false","","true","null"');
+});
