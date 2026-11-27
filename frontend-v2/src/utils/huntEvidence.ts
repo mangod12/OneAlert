@@ -223,3 +223,11 @@ export function huntComparedFieldJson(result: HuntQueryResult, index: number, ba
     scope: 'One exact named field from two original retained row positions in this query, including recorded presence, JSON types and values. Missing is not null. This is not event identity, chronology, a threat verdict or live data. Other row fields are excluded, but recorded query context may contain sensitive telemetry. Review before sharing. Raw JSON has no spreadsheet formula protection. Downloading sends nothing to another person.',
     query_context: pair.query_context, field: selected }, null, 2) + '\n';
 }
+
+export function huntComparedFieldCsv(result: HuntQueryResult, index: number, baselineRow: number, inspectedRow: number, field: string): string {
+  const evidence = JSON.parse(huntComparedFieldJson(result, index, baselineRow, inspectedRow, field, ''));
+  const item = evidence.field;
+  const table: unknown[][] = [['query_position', 'baseline_retained_position', 'inspected_retained_position', 'retained_total', 'reported_row_count', 'evidence_scope', 'field', 'comparison', 'baseline_present', 'baseline_json', 'inspected_present', 'inspected_json'],
+    [index + 1, baselineRow, inspectedRow, evidence.retained_total, result.row_count, 'One exact compared field from two retained positions only. Presence distinguishes missing from null. JSON types and values are preserved; text formulas are escaped. No live data, chronology or event identity is inferred. Recorded query context is available in JSON only. Review sensitive values before sharing; downloading sends nothing to another person.', field, item.status, item.baselinePresent, item.baselinePresent ? JSON.stringify(item.baseline) : '', item.inspectedPresent, item.inspectedPresent ? JSON.stringify(item.inspected) : '']];
+  return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
