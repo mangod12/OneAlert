@@ -43,12 +43,20 @@ export function huntRepeatedRowsCsv(result: HuntQueryResult, index: number): str
   const evidence = JSON.parse(huntRepeatedRowsJson(result, index, ''));
   const table: unknown[][] = [['query_position', 'retained_total', 'reported_row_count', 'repeated_group_count', 'repeated_position_count', 'first_retained_position', 'group_retained_count', 'retained_positions_json', 'row_json', 'evidence_scope']];
   for (const positions of retainedHuntDuplicateGroups(result.rows ?? [])) table.push([index + 1, evidence.retained_total, result.row_count, evidence.repeated_group_count, evidence.repeated_position_count, positions[0], positions.length, JSON.stringify(positions), JSON.stringify(result.rows![positions[0] - 1]), evidence.scope]);
-  const cell = (value: unknown): string => {
+  return '\ufeff' + table.map(row => row.map(retainedCsvCell).join(',')).join('\r\n') + '\r\n';
+}
+
+function retainedCsvCell(value: unknown): string {
     const text = value == null ? '' : String(value);
     let start = 0;
     while (start < text.length && (text.charCodeAt(start) <= 32 || /\s/u.test(text[start]))) start++;
     const safe = typeof value === 'string' && '=+@-'.includes(text[start] ?? '\uffff') ? "'" + text : text;
     return '"' + safe.replace(/"/g, '""') + '"';
-  };
-  return '\ufeff' + table.map(row => row.map(cell).join(',')).join('\r\n') + '\r\n';
+}
+
+export function huntUniqueRowsCsv(result: HuntQueryResult, index: number): string {
+  const evidence = JSON.parse(huntUniqueRowsJson(result, index, ''));
+  const table: unknown[][] = [['query_position', 'retained_total', 'reported_row_count', 'unique_full_row_count', 'retained_position', 'row_json', 'evidence_scope']];
+  for (const position of retainedHuntUniquePositions(result.rows ?? [])) table.push([index + 1, evidence.retained_total, result.row_count, evidence.unique_full_row_count, position, JSON.stringify(result.rows![position - 1]), evidence.scope]);
+  return '\ufeff' + table.map(row => row.map(retainedCsvCell).join(',')).join('\r\n') + '\r\n';
 }
