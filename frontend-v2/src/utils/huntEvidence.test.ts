@@ -1,4 +1,4 @@
-import { huntProfileReviewRowsJson, huntProfileReviewCsv, huntProfileReviewJson, huntProfileValueCsv, huntProfileValueJson, huntComparedFieldCsv, huntComparedFieldJson } from './huntEvidence';
+import { huntProfileReviewRowsCsv, huntProfileReviewRowsJson, huntProfileReviewCsv, huntProfileReviewJson, huntProfileValueCsv, huntProfileValueJson, huntComparedFieldCsv, huntComparedFieldJson } from './huntEvidence';
 import { describe, expect, it } from 'vitest';
 import { huntRowFieldsJson, huntRowFieldsCsv, huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson, huntFieldProfileCsv, retainedHuntValueRows, retainedHuntMissingRows, huntProfileMatchesJson, huntProfileMatchesCsv, huntFieldCoverageJson, huntFieldCoverageCsv } from './huntEvidence';
 
@@ -205,4 +205,11 @@ it('exports all represented original rows across pages with full recorded fields
 });
 it('distinguishes null canonical objects and empty represented rows without inferring missing values',()=>{
  const rows=[{v:{a:0,b:false}},{v:null},{v:{b:false,a:0}},{v:false},{}];const review={search:'',type:'object',frequency:'repeated',order:'frequent'};expect(JSON.parse(huntProfileReviewRowsJson({rows},0,'v',review,'')).rows.map((r:{retained_row_position:number})=>r.retained_row_position)).toEqual([1,3]);expect(JSON.parse(huntProfileReviewRowsJson({rows},0,'v',{...review,type:'null',frequency:'all'},'')).rows).toEqual([{retained_row_position:2,row:{v:null}}]);const empty=JSON.parse(huntProfileReviewRowsJson({rows},0,'v',{...review,search:'nothing'},''));expect(empty.rows).toEqual([]);expect(empty.matching_retained_count).toBe(0);expect(()=>huntProfileReviewRowsJson({rows},0,'v',{...review,type:'missing'},'')).toThrow();
+});
+
+it('exports all matching full rows as protected CSV JSON cells in original order, with explicit focus',()=>{
+ const rows=[...Array.from({length:25},(_,i)=>({v:i,hidden:'=SUM(A1)',nested:{x:false},note:'quote" and\nline'})),{v:'NONMATCHING_PRIVATE'},{}];const csv=huntProfileReviewRowsCsv({rows,row_count:200},1,'v',{search:'',type:'number',frequency:'all',order:'rare'});expect(csv.startsWith('\ufeff')).toBe(true);expect(csv).toContain('"row_present","retained_row_position","row_json"');expect(csv).toContain('"true","25","{');expect(csv).toContain('""hidden"":""=SUM(A1)""');expect(csv).toContain('""x"":false');expect(csv).not.toContain('NONMATCHING_PRIVATE');expect(csv).toContain('"27","26","1","0","26","25","25","200"');
+});
+it('exports empty represented row reviews distinctly from recorded null and escapes focus formulas',()=>{
+ const rows=[{v:null},{v:false},{}];const csv=huntProfileReviewRowsCsv({rows},0,'v',{search:'=SUM(A1)',type:'null',frequency:'all',order:'retained'});expect(csv).toContain(`"'=SUM(A1)"`);expect(csv).toContain('"false","",""');expect(csv.split('\r\n')).toHaveLength(3);const recorded=huntProfileReviewRowsCsv({rows},0,'v',{search:'',type:'null',frequency:'all',order:'frequent'});expect(recorded).toContain('"true","1","{""v"":null}"');expect(recorded).not.toContain('query_context');expect(()=>huntProfileReviewRowsCsv({rows},0,'v',{search:'',type:'missing',frequency:'all',order:'frequent'})).toThrow();
 });

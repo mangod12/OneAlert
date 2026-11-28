@@ -288,3 +288,13 @@ export function huntProfileReviewRowsJson(result: HuntQueryResult, index: number
     scope: 'Full recorded fields of every retained row represented by the explicit profile review, across all value and row pages, in original retained position order. Review value order does not reorder rows. Missing profile fields are excluded; recorded null and JSON types are preserved. Frequencies use all retained rows for this field, not reported events or current data. Includes recorded query context and potentially sensitive telemetry from every matching row. Review before sharing. Raw JSON has no spreadsheet formula protection. No new lookup, event identity, chronology, threat verdict, upload, message or access grant is inferred or sent.',
     rows: positions.map(position => ({ retained_row_position: position, row: result.rows![position - 1] })) }, null, 2) + '\n';
 }
+
+
+export function huntProfileReviewRowsCsv(result: HuntQueryResult, index: number, field: string, review: { search: string; type: string; frequency: string; order: string }): string {
+  const evidence = JSON.parse(huntProfileReviewRowsJson(result, index, field, review, ''));
+  const summary = evidence.full_retained_summary;
+  const table: unknown[][] = [['query_position', 'profile_field', 'review_search', 'review_type', 'review_frequency', 'review_order', 'retained_total', 'present_count', 'missing_count', 'recorded_null_count', 'full_distinct_count', 'matching_distinct_count', 'matching_retained_count', 'reported_row_count', 'row_present', 'retained_row_position', 'row_json', 'evidence_scope']];
+  const scope = 'Full recorded rows represented by the explicit profile review across all value and row pages, in original retained position order regardless of review value order. Missing profile fields and nonmatching rows are excluded. Recorded null and JSON types preserved inside row_json. Counts use all retained rows, not reported events or current data. Contains sensitive hidden row fields. Text formulas are escaped; full recorded query context is in JSON only. Original position is not event identity, chronology or a threat verdict. Review before sharing; downloading sends nothing to another person.';
+  for (const item of evidence.rows.length ? evidence.rows : [null]) table.push([index + 1, field, review.search, review.type, review.frequency, review.order, summary.total, summary.present, summary.missing, summary.recorded_null, summary.distinct, evidence.matching_distinct_count, evidence.matching_retained_count, result.row_count, item !== null, item ? item.retained_row_position : '', item ? JSON.stringify(item.row) : '', scope]);
+  return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
