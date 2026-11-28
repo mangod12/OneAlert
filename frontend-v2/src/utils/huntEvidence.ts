@@ -58,6 +58,16 @@ export function huntRowFieldsJson(result: HuntQueryResult, index: number, rowNum
     scope: scope + ' Every recorded field of one original retained row, regardless of local field search, type focus, name order or page. Absent fields are not inferred. Null, array order and JSON types are preserved. No upload, message or access grant is sent. Raw field values and query context may contain sensitive telemetry; review before sharing.',
     query_context: { ...evidence.result, rows: undefined }, fields: Object.entries(row).map(([field, value]) => ({ field, recorded_type: value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value, value })) }, null, 2) + '\n';
 }
+export function huntRowFieldInspectionJson(result: HuntQueryResult, index: number, rowNumber: number, exportedAt: string, inspection: { search: string; type: string; coverage: string; order: string; fields: string[] }): string {
+  const evidence = JSON.parse(huntRowFieldsJson(result, index, rowNumber, exportedAt));
+  const row = result.rows![rowNumber - 1];
+  const names = [...new Set(inspection.fields)];
+  if (names.some(name => !Object.hasOwn(row, name))) throw Error('Invalid inspected field selection');
+  const fields = names.map(name => ({ ...evidence.fields.find((item: { field: string }) => item.field === name), present_retained_count: result.rows!.filter(item => Object.hasOwn(item, name)).length, missing_retained_count: retainedHuntMissingRows(result.rows!, name).length }));
+  return JSON.stringify({ ...evidence, format: 'onealert.retained-hunt-row-field-inspection', matching_field_count: fields.length, inspection: { search: inspection.search, type: inspection.type, coverage: inspection.coverage, order: inspection.order }, fields,
+    scope: scope + ' Only current locally matching inspected fields of this original retained row across all field pages, in current field order. Search, type, coverage and order are explicit. Coverage counts use all retained rows; recorded null is present, not missing. Other fields and unretained reported rows are excluded. Query context and reported counts are unchanged. Raw JSON has no spreadsheet formula protection. Review sensitive telemetry and query context before sharing. No upload, message or access grant is sent.' }, null, 2) + '\n';
+}
+
 export function huntRowFieldsCsv(result: HuntQueryResult, index: number, rowNumber: number): string {
   const evidence = JSON.parse(huntRowFieldsJson(result, index, rowNumber, ''));
   const table: unknown[][] = [['query_position', 'retained_row_position', 'retained_total', 'reported_row_count', 'recorded_field_count', 'field', 'recorded_type', 'value_json', 'evidence_scope']];
