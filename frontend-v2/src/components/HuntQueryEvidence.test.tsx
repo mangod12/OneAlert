@@ -624,3 +624,19 @@ it('summarizes the full original pair before focus and applies status shortcuts 
  expect(within(overview).getByRole('button',{name:'Same recorded values: 1'}).getAttribute('aria-pressed')).toBe('true');
  fireEvent.click(screen.getByRole('button',{name:'Reset comparison field review'}));expect(within(overview).getByRole('button',{name:'All compared fields: 5'}).getAttribute('aria-pressed')).toBe('true');
 });
+
+
+it('indexes every matching compared field across pages without changing the original pair or download scope',()=>{
+ const first=Object.fromEntries(Array.from({length:25},(_,i)=>[`field${String(i+1).padStart(2,'0')}`,i]));const second=Object.fromEntries(Object.entries(first).map(([name,value])=>[name,Number(value)+1]));
+ render(<HuntQueryEvidence index={0} result={{rows:[first,second]}}/>);fireEvent.click(screen.getByRole('button',{name:'Inspect retained row 1'}));fireEvent.click(screen.getByRole('button',{name:'Use this retained row as comparison baseline'}));fireEvent.click(screen.getByRole('button',{name:'Inspect retained row 2'}));
+ const nav=screen.getByRole('region',{name:'Compared field navigation for query 1'}), select=within(nav).getByRole('combobox',{name:'Show matching compared field for query 1'});
+ expect(within(select).getAllByRole('option').length).toBe(26);
+ fireEvent.change(select,{target:{value:'25'}});expect(within(nav).getByText('Matching fields 21 through 25 of 25, comparison page 3 of 3.')).toBeTruthy();
+ const comparison=screen.getByRole('region',{name:'Retained row comparison for query 1'});expect(within(comparison).getByRole('rowheader',{name:'field25'})).toBeTruthy();expect(within(comparison).queryByRole('rowheader',{name:'field01'})).toBeNull();
+ expect(screen.getByRole('region',{name:'Comparison field download scope for query 1'}).textContent).toContain('Focused download: 25 of 25 compared fields, across all comparison pages. Baseline position: 1. Inspected position: 2.');
+ fireEvent.click(within(nav).getByRole('button',{name:'First compared field page'}));expect(within(comparison).getByRole('rowheader',{name:'field01'})).toBeTruthy();
+ fireEvent.click(within(nav).getByRole('button',{name:'Last compared field page'}));expect(within(comparison).getByRole('rowheader',{name:'field25'})).toBeTruthy();
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search retained row comparison for query 1'}),{target:{value:'field01'}});expect(within(select).getAllByRole('option').length).toBe(2);expect(within(nav).getByText('Matching fields 1 through 1 of 1, comparison page 1 of 1.')).toBeTruthy();
+ fireEvent.click(screen.getByRole('button',{name:'Swap retained comparison sides'}));expect(within(select).getAllByRole('option').length).toBe(2);
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search retained row comparison for query 1'}),{target:{value:'no-match'}});expect(screen.queryByRole('region',{name:'Compared field navigation for query 1'})).toBeNull();
+});
