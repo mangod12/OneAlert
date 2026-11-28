@@ -1,4 +1,4 @@
-import { huntProfileRowInspectionJson, huntProfileReviewRowsCsv, huntProfileReviewRowsJson, huntProfileReviewCsv, huntProfileReviewJson, huntProfileValueCsv, huntProfileValueJson, huntComparedFieldCsv, huntComparedFieldJson } from './huntEvidence';
+import { huntProfileRowInspectionCsv, huntProfileRowInspectionJson, huntProfileReviewRowsCsv, huntProfileReviewRowsJson, huntProfileReviewCsv, huntProfileReviewJson, huntProfileValueCsv, huntProfileValueJson, huntComparedFieldCsv, huntComparedFieldJson } from './huntEvidence';
 import { describe, expect, it } from 'vitest';
 import { huntRowFieldsJson, huntRowFieldsCsv, huntEvidenceJson, compareRetainedHuntRows, huntQueryCsv, huntQueryJson, huntRowJson, huntRowComparisonJson, huntRowComparisonCsv, retainedHuntFieldProfile, huntFieldProfileJson, huntFieldProfileCsv, retainedHuntValueRows, retainedHuntMissingRows, huntProfileMatchesJson, huntProfileMatchesCsv, huntFieldCoverageJson, huntFieldCoverageCsv } from './huntEvidence';
 
@@ -219,4 +219,12 @@ it('exports exact represented row inspection across pages with separate basis an
 });
 it('preserves missing null and typed inspection semantics and rejects invalid focuses',()=>{
  const rows=[{v:0,x:null},{v:1},{v:2,x:false},{v:3,x:0},{v:4,x:'0'}];const review={search:'',type:'all',frequency:'all',order:'frequent'};const get=(type:string,search='')=>JSON.parse(huntProfileRowInspectionJson({rows},0,'v',review,{field:'x',type,search},''));expect(get('missing').rows.map((r:{retained_row_position:number})=>r.retained_row_position)).toEqual([2]);expect(get('null').rows[0].row.x).toBeNull();expect(get('boolean').rows[0].row.x).toBe(false);expect(get('number','0').rows).toHaveLength(1);expect(get('missing','null').rows).toEqual([]);expect(()=>get('invalid')).toThrow();expect(()=>huntProfileRowInspectionJson({rows},0,'v',review,{field:'unknown',type:'all',search:''},'')).toThrow();expect(()=>huntProfileRowInspectionJson({rows},0,'v',review,{field:'',type:'null',search:''},'')).toThrow();
+});
+
+
+it('exports focused row inspection CSV across pages with explicit basis counts and full original rows',()=>{
+ const rows=[...Array.from({length:25},(_,i)=>({v:i,x:i===24?'MATCH':'not',hidden:{zero:0,saved:false},note:'quote" and\nline'})),{v:'EXCLUDED',x:'MATCH'}];const csv=huntProfileRowInspectionCsv({rows,row_count:900},1,'v',{search:'',type:'number',frequency:'all',order:'rare'},{field:'x',type:'string',search:'match'});expect(csv.startsWith('\ufeff')).toBe(true);expect(csv.split('\r\n')).toHaveLength(3);expect(csv).toContain('"2","v","","number","all","rare","x","string","match","26","26","0","0","26","25","25","1","900","true","25"');expect(csv).toContain('""saved"":false');expect(csv).toContain('""zero"":0');expect(csv).toContain('quote');expect(csv).not.toContain('EXCLUDED');expect(csv).not.toContain('"query_context"');
+});
+it('keeps missing and recorded null distinct in inspection CSV and includes empty summary metadata',()=>{
+ const rows=[{v:0,x:null},{v:1},{v:2,x:false}];const review={search:'',type:'all',frequency:'all',order:'frequent'};const get=(type:string,search='')=>huntProfileRowInspectionCsv({rows},0,'v',review,{field:'x',type,search});expect(get('missing')).toContain('"true","2","{""v"":1}"');expect(get('null')).toContain('"true","1","{""v"":0,""x"":null}"');expect(get('boolean')).toContain('""x"":false');const empty=get('missing','=SUM(A1)');expect(empty).toContain(`"'=SUM(A1)"`);expect(empty).toContain('"3","3","0","","false","",""');expect(empty.split('\r\n')).toHaveLength(3);expect(()=>get('invalid')).toThrow();expect(()=>huntProfileRowInspectionCsv({rows},0,'v',review,{field:'',type:'null',search:''})).toThrow();
 });
