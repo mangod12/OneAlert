@@ -68,6 +68,16 @@ export function huntRowFieldInspectionJson(result: HuntQueryResult, index: numbe
     scope: scope + ' Only current locally matching inspected fields of this original retained row across all field pages, in current field order. Search, type, coverage and order are explicit. Coverage counts use all retained rows; recorded null is present, not missing. Other fields and unretained reported rows are excluded. Query context and reported counts are unchanged. Raw JSON has no spreadsheet formula protection. Review sensitive telemetry and query context before sharing. No upload, message or access grant is sent.' }, null, 2) + '\n';
 }
 
+export function huntRowFieldInspectionCsv(result: HuntQueryResult, index: number, rowNumber: number, inspection: Parameters<typeof huntRowFieldInspectionJson>[4]): string {
+  const evidence = JSON.parse(huntRowFieldInspectionJson(result, index, rowNumber, '', inspection));
+  const table: unknown[][] = [['query_position', 'retained_row_position', 'retained_total', 'reported_row_count', 'recorded_field_count', 'matching_field_count', 'inspection_search', 'inspection_type', 'inspection_coverage', 'inspection_order', 'field_present', 'field', 'recorded_type', 'value_json', 'present_retained_count', 'missing_retained_count', 'evidence_scope']];
+  const prefix = [index + 1, rowNumber, evidence.retained_total, result.row_count, evidence.recorded_field_count, evidence.matching_field_count, inspection.search, inspection.type, inspection.coverage, inspection.order];
+  const csvScope = scope + ' Current locally matching inspected fields across all field pages in current field order. Coverage counts use all retained rows, not reported totals; null is present. One field per record with JSON value; empty matches produce one field_present=false summary record. Formula-like text cells are escaped. Full query context remains in JSON. Review sensitive telemetry before sharing; no upload, message or access grant is sent.';
+  if (!evidence.fields.length) table.push([...prefix, false, '', '', '', '', '', csvScope]);
+  for (const field of evidence.fields) table.push([...prefix, true, field.field, field.recorded_type, JSON.stringify(field.value), field.present_retained_count, field.missing_retained_count, csvScope]);
+  return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
+
 export function huntRowFieldsCsv(result: HuntQueryResult, index: number, rowNumber: number): string {
   const evidence = JSON.parse(huntRowFieldsJson(result, index, rowNumber, ''));
   const table: unknown[][] = [['query_position', 'retained_row_position', 'retained_total', 'reported_row_count', 'recorded_field_count', 'field', 'recorded_type', 'value_json', 'evidence_scope']];
