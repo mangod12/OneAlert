@@ -604,3 +604,23 @@ it('focuses compared value type on either original side and resets independently
 it('separates recorded JSON type transitions from one-sided fields without inferring chronology',()=>{
  render(<HuntQueryEvidence index={0} result={{rows:[{changed:0,nullChange:null,array:[],object:{x:0},same:0,one:null},{changed:'0',nullChange:false,array:{},object:{y:1},same:1}]}}/>);fireEvent.click(screen.getByRole('button',{name:'Inspect retained row 1'}));fireEvent.click(screen.getByRole('button',{name:'Use this retained row as comparison baseline'}));fireEvent.click(screen.getByRole('button',{name:'Inspect retained row 2'}));const comparison=screen.getByRole('region',{name:'Retained row comparison for query 1'});const names=()=>within(comparison).queryAllByRole('rowheader').map(e=>e.getAttribute('aria-label'));const transition=within(comparison).getByLabelText('Retained comparison type transition for query 1');fireEvent.change(transition,{target:{value:'changed'}});expect(names()).toEqual(['changed','nullChange','array']);fireEvent.change(transition,{target:{value:'same'}});expect(names()).toEqual(['object','same']);fireEvent.click(within(comparison).getByRole('button',{name:'Swap retained comparison sides'}));expect(names()).toEqual(['object','same']);expect(screen.getByRole('region',{name:'Comparison field download scope for query 1'}).textContent).toContain('Type transition: same.');fireEvent.click(within(comparison).getByRole('button',{name:'Reset comparison field review'}));expect(transition).toHaveProperty('value','all');expect(names()).toHaveLength(6);
 });
+
+
+it('summarizes the full original pair before focus and applies status shortcuts without changing other controls',()=>{
+ render(<HuntQueryEvidence index={0} result={{rows:[{same:0,different:0,changed:null,baseline:false},{same:0,different:1,changed:[],inspected:0}]}}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Inspect retained row 1'}));fireEvent.click(screen.getByRole('button',{name:'Use this retained row as comparison baseline'}));fireEvent.click(screen.getByRole('button',{name:'Inspect retained row 2'}));
+ const overview=screen.getByRole('region',{name:'Full retained comparison overview for query 1'});
+ for(const name of ['All compared fields: 5','Different recorded values: 2','Same recorded values: 1','Baseline-only fields: 1','Inspected-only fields: 1'])expect(within(overview).getByRole('button',{name})).toBeTruthy();
+ expect(within(overview).getByText(/Recorded JSON type changes on both-present fields: 1/)).toBeTruthy();
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search retained row comparison for query 1'}),{target:{value:'same'}});
+ fireEvent.click(screen.getByRole('checkbox',{name:'Show only differing retained fields'}));
+ fireEvent.click(within(overview).getByRole('button',{name:'Same recorded values: 1'}));
+ expect((screen.getByRole('checkbox',{name:'Show only differing retained fields'}) as HTMLInputElement).checked).toBe(false);
+ expect(within(overview).getByRole('button',{name:'Same recorded values: 1'}).getAttribute('aria-pressed')).toBe('true');
+ expect((screen.getByRole('searchbox',{name:'Search retained row comparison for query 1'}) as HTMLInputElement).value).toBe('same');
+ expect(within(overview).getByRole('button',{name:'All compared fields: 5'})).toBeTruthy();
+ fireEvent.click(screen.getByRole('button',{name:'Swap retained comparison sides'}));
+ expect(within(overview).getByRole('button',{name:'Baseline-only fields: 1'})).toBeTruthy();
+ expect(within(overview).getByRole('button',{name:'Same recorded values: 1'}).getAttribute('aria-pressed')).toBe('true');
+ fireEvent.click(screen.getByRole('button',{name:'Reset comparison field review'}));expect(within(overview).getByRole('button',{name:'All compared fields: 5'}).getAttribute('aria-pressed')).toBe('true');
+});
