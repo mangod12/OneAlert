@@ -252,3 +252,7 @@ it('exports focused comparison CSV with typed values, absence and an explicit ze
 it('records comparison search target in focused JSON and CSV while older callers default to all',()=>{
  const result={rows:[{id:1},{id:2}]};const inspection={search:'1',search_target:'baseline',status:'all',type:'all',order:'retained',differences_only:false,fields:['id']};expect(JSON.parse(huntComparisonInspectionJson(result,0,1,2,'fixed',inspection)).inspection.search_target).toBe('baseline');const csv=huntComparisonInspectionCsv(result,0,1,2,inspection);expect(csv).toContain('"search_target"');expect(csv).toContain('"1","baseline","all"');expect(JSON.parse(huntComparisonInspectionJson(result,0,1,2,'fixed',{...inspection,search_target:undefined})).inspection.search_target).toBe('all');
 });
+
+it('records explicit and default comparison type side in focused exports',()=>{
+ const result={rows:[{id:1},{id:null}]};const inspection={search:'',status:'all',type:'null',type_side:'inspected',order:'retained',differences_only:false,fields:['id']};expect(JSON.parse(huntComparisonInspectionJson(result,0,1,2,'fixed',inspection)).inspection.type_side).toBe('inspected');expect(huntComparisonInspectionCsv(result,0,1,2,inspection)).toContain('"null","inspected","retained"');expect(JSON.parse(huntComparisonInspectionJson(result,0,1,2,'fixed',{...inspection,type_side:undefined})).inspection.type_side).toBe('either');
+});
