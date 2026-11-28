@@ -134,12 +134,12 @@ export function huntRowComparisonJson(result: HuntQueryResult, index: number, ba
 }
 
 
-export function huntComparisonInspectionJson(result: HuntQueryResult, index: number, baselineRow: number, inspectedRow: number, exportedAt: string, inspection: { search: string; search_target?: string; status: string; type: string; type_side?: string; order: string; differences_only: boolean; fields: string[] }): string {
+export function huntComparisonInspectionJson(result: HuntQueryResult, index: number, baselineRow: number, inspectedRow: number, exportedAt: string, inspection: { search: string; search_target?: string; status: string; type: string; type_side?: string; type_transition?: string; order: string; differences_only: boolean; fields: string[] }): string {
   const pair = JSON.parse(huntRowComparisonJson(result, index, baselineRow, inspectedRow, exportedAt));
   const compared = compareRetainedHuntRows(result.rows![baselineRow - 1], result.rows![inspectedRow - 1]);
   const selected = [...new Set(inspection.fields)].map(field => { const item = compared.find(item => item.field === field); if (!item) throw Error('Choose a compared retained field'); return item; });
   return JSON.stringify({ format: 'onealert.retained-hunt-comparison-inspection', version: 1, exported_at: exportedAt, query_position: index + 1, retained_total: result.rows!.length, baseline_retained_position: baselineRow, inspected_retained_position: inspectedRow, compared_field_count: compared.length, matching_field_count: selected.length,
-    inspection: { search: inspection.search, search_target: inspection.search_target ?? 'all', status: inspection.status, type: inspection.type, type_side: inspection.type_side ?? 'either', order: inspection.order, differences_only: inspection.differences_only },
+    inspection: { search: inspection.search, search_target: inspection.search_target ?? 'all', status: inspection.status, type: inspection.type, type_side: inspection.type_side ?? 'either', type_transition: inspection.type_transition ?? 'all', order: inspection.order, differences_only: inspection.differences_only },
     scope: scope + ' Only locally matching compared fields across every comparison page, in current order. Full source rows and other compared fields are excluded. Original positions and recorded query context are unchanged. Missing fields differ from recorded null. These may be different events, not versions of one event. No chronology, cause, threat verdict, upload, message or access grant is inferred or sent.',
     query_context: pair.query_context, fields: selected }, null, 2) + '\n';
 }
@@ -147,8 +147,8 @@ export function huntComparisonInspectionJson(result: HuntQueryResult, index: num
 
 export function huntComparisonInspectionCsv(result: HuntQueryResult, index: number, baselineRow: number, inspectedRow: number, inspection: Parameters<typeof huntComparisonInspectionJson>[5]): string {
   const evidence = JSON.parse(huntComparisonInspectionJson(result, index, baselineRow, inspectedRow, '', inspection));
-  const table: unknown[][] = [['query_position', 'baseline_retained_position', 'inspected_retained_position', 'retained_total', 'reported_row_count', 'compared_field_count', 'matching_field_count', 'search', 'search_target', 'status', 'type', 'type_side', 'order', 'differences_only', 'evidence_scope', 'field_present', 'field', 'comparison', 'baseline_present', 'baseline_json', 'inspected_present', 'inspected_json']];
-  const prefix = [index + 1, baselineRow, inspectedRow, evidence.retained_total, result.row_count, evidence.compared_field_count, evidence.matching_field_count, inspection.search, inspection.search_target ?? 'all', inspection.status, inspection.type, inspection.type_side ?? 'either', inspection.order, inspection.differences_only, evidence.scope];
+  const table: unknown[][] = [['query_position', 'baseline_retained_position', 'inspected_retained_position', 'retained_total', 'reported_row_count', 'compared_field_count', 'matching_field_count', 'search', 'search_target', 'status', 'type', 'type_side', 'type_transition', 'order', 'differences_only', 'evidence_scope', 'field_present', 'field', 'comparison', 'baseline_present', 'baseline_json', 'inspected_present', 'inspected_json']];
+  const prefix = [index + 1, baselineRow, inspectedRow, evidence.retained_total, result.row_count, evidence.compared_field_count, evidence.matching_field_count, inspection.search, inspection.search_target ?? 'all', inspection.status, inspection.type, inspection.type_side ?? 'either', inspection.type_transition ?? 'all', inspection.order, inspection.differences_only, evidence.scope];
   for (const item of evidence.fields) table.push([...prefix, true, item.field, item.status, item.baselinePresent, item.baselinePresent ? JSON.stringify(item.baseline) : '', item.inspectedPresent, item.inspectedPresent ? JSON.stringify(item.inspected) : '']);
   if (!evidence.fields.length) table.push([...prefix, false, '', '', '', '', '', '']);
   return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
