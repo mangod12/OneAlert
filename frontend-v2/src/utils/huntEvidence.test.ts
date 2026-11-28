@@ -254,5 +254,9 @@ it('records comparison search target in focused JSON and CSV while older callers
 });
 
 it('records explicit and default comparison type side in focused exports',()=>{
- const result={rows:[{id:1},{id:null}]};const inspection={search:'',status:'all',type:'null',type_side:'inspected',order:'retained',differences_only:false,fields:['id']};expect(JSON.parse(huntComparisonInspectionJson(result,0,1,2,'fixed',inspection)).inspection.type_side).toBe('inspected');expect(huntComparisonInspectionCsv(result,0,1,2,inspection)).toContain('"null","inspected","retained"');expect(JSON.parse(huntComparisonInspectionJson(result,0,1,2,'fixed',{...inspection,type_side:undefined})).inspection.type_side).toBe('either');
+ const result={rows:[{id:1},{id:null}]};const inspection={search:'',status:'all',type:'null',type_side:'inspected',order:'retained',differences_only:false,fields:['id']};expect(JSON.parse(huntComparisonInspectionJson(result,0,1,2,'fixed',inspection)).inspection.type_side).toBe('inspected');expect(huntComparisonInspectionCsv(result,0,1,2,inspection)).toContain('"null","inspected","all","retained"');expect(JSON.parse(huntComparisonInspectionJson(result,0,1,2,'fixed',{...inspection,type_side:undefined})).inspection.type_side).toBe('either');
+});
+
+it('records explicit and default type-transition focus in comparison downloads',()=>{
+ const result={rows:[{id:1},{id:'1'}]};const inspection={search:'',status:'all',type:'all',order:'retained',type_transition:'changed',differences_only:false,fields:['id']};expect(JSON.parse(huntComparisonInspectionJson(result,0,1,2,'fixed',inspection)).inspection.type_transition).toBe('changed');expect(huntComparisonInspectionCsv(result,0,1,2,inspection)).toContain('"either","changed","retained"');expect(JSON.parse(huntComparisonInspectionJson(result,0,1,2,'fixed',{...inspection,type_transition:undefined})).inspection.type_transition).toBe('all');
 });
