@@ -134,6 +134,17 @@ export function huntRowComparisonJson(result: HuntQueryResult, index: number, ba
 }
 
 
+export function huntComparisonInspectionJson(result: HuntQueryResult, index: number, baselineRow: number, inspectedRow: number, exportedAt: string, inspection: { search: string; status: string; type: string; order: string; differences_only: boolean; fields: string[] }): string {
+  const pair = JSON.parse(huntRowComparisonJson(result, index, baselineRow, inspectedRow, exportedAt));
+  const compared = compareRetainedHuntRows(result.rows![baselineRow - 1], result.rows![inspectedRow - 1]);
+  const selected = [...new Set(inspection.fields)].map(field => { const item = compared.find(item => item.field === field); if (!item) throw Error('Choose a compared retained field'); return item; });
+  return JSON.stringify({ format: 'onealert.retained-hunt-comparison-inspection', version: 1, exported_at: exportedAt, query_position: index + 1, retained_total: result.rows!.length, baseline_retained_position: baselineRow, inspected_retained_position: inspectedRow, compared_field_count: compared.length, matching_field_count: selected.length,
+    inspection: { search: inspection.search, status: inspection.status, type: inspection.type, order: inspection.order, differences_only: inspection.differences_only },
+    scope: scope + ' Only locally matching compared fields across every comparison page, in current order. Full source rows and other compared fields are excluded. Original positions and recorded query context are unchanged. Missing fields differ from recorded null. These may be different events, not versions of one event. No chronology, cause, threat verdict, upload, message or access grant is inferred or sent.',
+    query_context: pair.query_context, fields: selected }, null, 2) + '\n';
+}
+
+
 export function huntRowComparisonCsv(result: HuntQueryResult, index: number, baselineRow: number, inspectedRow: number): string {
   // Reuse the JSON export validation and context contract before producing a table.
   const evidence = JSON.parse(huntRowComparisonJson(result, index, baselineRow, inspectedRow, ''));
