@@ -298,3 +298,19 @@ export function huntProfileReviewRowsCsv(result: HuntQueryResult, index: number,
   for (const item of evidence.rows.length ? evidence.rows : [null]) table.push([index + 1, field, review.search, review.type, review.frequency, review.order, summary.total, summary.present, summary.missing, summary.recorded_null, summary.distinct, evidence.matching_distinct_count, evidence.matching_retained_count, result.row_count, item !== null, item ? item.retained_row_position : '', item ? JSON.stringify(item.row) : '', scope]);
   return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
+
+
+export function huntProfileRowInspectionJson(result: HuntQueryResult, index: number, field: string, review: { search: string; type: string; frequency: string; order: string }, inspection: { field: string; type: string; search: string }, exportedAt: string): string {
+  if (!['all', 'missing', 'null', 'string', 'number', 'boolean', 'array', 'object'].includes(inspection.type) || (!inspection.field && inspection.type !== 'all') || (inspection.field && !(result.rows ?? []).some(row => Object.hasOwn(row, inspection.field)))) throw Error('Invalid represented row inspection');
+  const evidence = JSON.parse(huntProfileReviewRowsJson(result, index, field, review, exportedAt));
+  const needle = inspection.search.trim().toLowerCase();
+  const rows = evidence.rows.filter((item: { row: Record<string, unknown> }) => {
+    const present = Object.hasOwn(item.row, inspection.field);
+    const value = item.row[inspection.field];
+    const type = present ? value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value : 'missing';
+    return (!inspection.field || inspection.type === 'all' || type === inspection.type) && (!needle || (inspection.field ? present && JSON.stringify(value)?.toLowerCase().includes(needle) : JSON.stringify(item.row).toLowerCase().includes(needle)));
+  });
+  return JSON.stringify({ ...evidence, format: 'onealert.retained-hunt-profile-row-inspection',
+    scope: 'Only retained rows matching both the explicit profile review and explicit local row inspection, across every matching row page, in original retained position order. Full recorded row fields and unchanged query context may include sensitive telemetry. Profile review counts and values describe the pre-inspection represented basis; matching_inspection_row_count describes this download. Missing field differs from recorded null; nonempty text excludes missing. No current data, chronology, event identity or threat verdict is inferred. Review before sharing. Raw JSON has no spreadsheet formula protection. Downloading sends nothing to another person.',
+    inspection: { ...inspection }, matching_inspection_row_count: rows.length, rows }, null, 2) + '\n';
+}
