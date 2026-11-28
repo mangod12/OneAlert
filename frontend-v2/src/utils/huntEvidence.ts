@@ -145,6 +145,16 @@ export function huntComparisonInspectionJson(result: HuntQueryResult, index: num
 }
 
 
+export function huntComparisonInspectionCsv(result: HuntQueryResult, index: number, baselineRow: number, inspectedRow: number, inspection: Parameters<typeof huntComparisonInspectionJson>[5]): string {
+  const evidence = JSON.parse(huntComparisonInspectionJson(result, index, baselineRow, inspectedRow, '', inspection));
+  const table: unknown[][] = [['query_position', 'baseline_retained_position', 'inspected_retained_position', 'retained_total', 'reported_row_count', 'compared_field_count', 'matching_field_count', 'search', 'status', 'type', 'order', 'differences_only', 'evidence_scope', 'field_present', 'field', 'comparison', 'baseline_present', 'baseline_json', 'inspected_present', 'inspected_json']];
+  const prefix = [index + 1, baselineRow, inspectedRow, evidence.retained_total, result.row_count, evidence.compared_field_count, evidence.matching_field_count, inspection.search, inspection.status, inspection.type, inspection.order, inspection.differences_only, evidence.scope];
+  for (const item of evidence.fields) table.push([...prefix, true, item.field, item.status, item.baselinePresent, item.baselinePresent ? JSON.stringify(item.baseline) : '', item.inspectedPresent, item.inspectedPresent ? JSON.stringify(item.inspected) : '']);
+  if (!evidence.fields.length) table.push([...prefix, false, '', '', '', '', '', '']);
+  return '\ufeff' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
+
+
 export function huntRowComparisonCsv(result: HuntQueryResult, index: number, baselineRow: number, inspectedRow: number): string {
   // Reuse the JSON export validation and context contract before producing a table.
   const evidence = JSON.parse(huntRowComparisonJson(result, index, baselineRow, inspectedRow, ''));
